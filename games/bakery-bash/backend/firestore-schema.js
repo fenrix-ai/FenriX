@@ -349,7 +349,7 @@ const AggregateRoundDocument = {
 };
 
 // ─────────────────────────────────────────────────────────────
-// /games/{gameId}/leaderboard  (single document path)
+// /games/{gameId}/leaderboard/current
 // Rewritten by Cloud Function at the end of each round.
 // ─────────────────────────────────────────────────────────────
 const LeaderboardDocument = {
@@ -408,7 +408,7 @@ const CsvRowsDocument = {
 // /games/{gameId}/players/{playerId}/decisions/{roundId}  ← DecisionDocument
 // /games/{gameId}/players/{playerId}/rounds/{roundId}     ← RoundResultDocument
 // /games/{gameId}/rounds/{roundId}         ← AggregateRoundDocument
-// /games/{gameId}/leaderboard              ← LeaderboardDocument (single document path)
+// /games/{gameId}/leaderboard/current      ← LeaderboardDocument
 // /games/{gameId}/csvRows/{playerId}/rounds/{roundId}  ← CsvRowsDocument
 //
 // ─────────────────────────────────────────────────────────────
@@ -449,7 +449,7 @@ const CsvRowsDocument = {
 //     }
 //
 //     // Leaderboard and aggregate rounds are readable by all players
-//     match /games/{gameId}/leaderboard {
+//     match /games/{gameId}/leaderboard/{leaderboardId} {
 //       allow read: if request.auth != null;
 //       allow write: if false;
 //     }
