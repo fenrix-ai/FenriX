@@ -1,4 +1,4 @@
-export type GamePhase = "lobby" | "decide" | "bid" | "simulate" | "results";
+export type GamePhase = "lobby" | "decide" | "bid" | "simulate" | "results" | "email";
 
 export type MenuItemId =
   | "croissant"
