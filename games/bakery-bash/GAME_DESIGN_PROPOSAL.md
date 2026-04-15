@@ -118,9 +118,9 @@ Chefs enter the bidding pool with a **higher minimum bid floor** than standard i
 
 | Skill Level | Proposed Minimum Bid |
 |---|---|
-| **Low** | ~2× baseline item floor |
-| **Medium** | ~3–4× baseline |
-| **High** | ~5–6× baseline |
+| **Novel** | ~2× baseline item floor |
+| **Intermediate** | ~3–4× baseline |
+| **Advanced** | ~5–6× baseline |
 
 > Exact values should be tuned to the existing bid economy. The principle: chefs should feel like meaningful investments that players compete over.
 
@@ -131,7 +131,7 @@ Chefs enter the bidding pool with a **higher minimum bid floor** than standard i
 | Attribute | Visible to Players? |
 |---|---|
 | Chef Nationality (French, Japanese, Italian, American) | ✅ Yes |
-| Skill Level (Low, Medium, High) | ✅ Yes |
+| Skill Level (Novel, Intermediate, Advanced) | ✅ Yes |
 | Specialty Products | ❌ Hidden |
 | Output Multiplier Values | ❌ Hidden |
 
@@ -145,11 +145,40 @@ Each chef produces independently. Their multiplier applies only to **their own u
 
 | Skill Level | Non-Specialty Output | Specialty Output |
 |---|---|---|
-| **Low** | 1.0× | 1.4× |
-| **Medium** | 1.25× | 1.75× |
-| **High** | 1.6× | 2.2× |
+| **Novel** | 1.0× | 1.4× |
+| **Intermediate** | 1.25× | 1.75× |
+| **Advanced** | 1.6× | 2.2× |
 
-**Example:** A Medium French chef assigned to Croissant production outputs 1.75× units. That same chef assigned to Bagels outputs 1.25×. Players never see these numbers — they see the resulting throughput and satisfaction signals over time.
+**Example:** An Intermediate French chef assigned to Croissant production outputs 1.75× units. That same chef assigned to Bagels outputs 1.25×. Players never see these numbers — they see the resulting throughput and satisfaction signals over time.
+
+---
+
+### Chef Nationalities & Specialties
+
+Each nationality has two hidden specialty products. Multipliers below show output per chef per round based on skill level.
+
+| Nationality | Specialties | Novel (Base / Specialty) | Intermediate (Base / Specialty) | Advanced (Base / Specialty) |
+|---|---|---|---|---|
+| **French** | Croissant, Coffee | 1.0× / 1.4× | 1.25× / 1.75× | 1.6× / 2.2× |
+| **Japanese** | Matcha, Croissant | 1.0× / 1.4× | 1.25× / 1.75× | 1.6× / 2.2× |
+| **Italian** | Sandwich, Coffee | 1.0× / 1.4× | 1.25× / 1.75× | 1.6× / 2.2× |
+| **American** | Bagel, Cookie | 1.0× / 1.4× | 1.25× / 1.75× | 1.6× / 2.2× |
+
+> Specialties are never shown to players. Nationality is visible — players must infer specialty alignment through observed throughput over time.
+
+---
+
+### Chef Spawn Rates by Round
+
+Spawn rate = probability a chef of that skill level appears in the auction pool for a given round. Male and female chefs of the same nationality share identical spawn rates. As the game progresses, high-skill chefs become more available to sustain competitive spending pressure.
+
+| Skill Level | Round 1 | Round 2 | Round 3 | Round 4 | Round 5 |
+|---|---|---|---|---|---|
+| **Novel** | 65% | 55% | 40% | 20% | 5% |
+| **Intermediate** | 30% | 35% | 40% | 45% | 45% |
+| **Advanced** | 5% | 10% | 20% | 35% | 50% |
+
+> Rates apply equally across all nationalities and both genders. Early rounds favor low-skill chefs to keep the auction economy accessible; late rounds surface high-skill chefs to reward players who have built strong cash positions.
 
 ---
 
@@ -175,7 +204,7 @@ Traffic × Price × Conversion = Revenue
 
 The hidden specialty system creates a **deduction game on top of the bidding game**:
 
-1. Player sees a High Japanese chef up for bid — bids aggressively expecting Matcha upside
+1. Player sees an Advanced Japanese chef up for bid — bids aggressively expecting Matcha upside
 2. Player stocks up on Matcha inventory to align with that chef
 3. Over rounds, they observe higher throughput on Matcha → satisfaction rises → more traffic
 4. That data point reinforces (or corrects) their predictive model for future rounds
