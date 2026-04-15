@@ -168,6 +168,20 @@ Each nationality has two hidden specialty products. Multipliers below show outpu
 
 ---
 
+### Chef Spawn Rates by Round
+
+Spawn rate = probability a chef of that skill level appears in the auction pool for a given round. Male and female chefs of the same nationality share identical spawn rates. As the game progresses, high-skill chefs become more available to sustain competitive spending pressure.
+
+| Skill Level | Round 1 | Round 2 | Round 3 | Round 4 | Round 5 |
+|---|---|---|---|---|---|
+| **Low** | 65% | 55% | 40% | 25% | 15% |
+| **Medium** | 30% | 35% | 40% | 45% | 45% |
+| **High** | 5% | 10% | 20% | 30% | 40% |
+
+> Rates apply equally across all nationalities and both genders. Early rounds favor low-skill chefs to keep the auction economy accessible; late rounds surface high-skill chefs to reward players who have built strong cash positions.
+
+---
+
 ### Revenue Flow (Per Chef)
 
 ```
