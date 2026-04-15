@@ -141,15 +141,44 @@ This is the core tension: players know a French chef is *probably* good at Crois
 
 ### Individual Chef Output Multipliers
 
-Each chef produces independently. Their multiplier applies only to **their own unit output per round**.
+Each chef independently produces a quantity of product per day based on a **base rate × their skill multiplier**. The total product output for any given item is the **sum of every chef's individual contribution** — including the base chef who is always present.
 
-| Skill Level | Non-Specialty Output | Specialty Output |
+**Base rate:** 30 units/day (applies to every chef, including base chef)
+
+| Skill Level | Non-Specialty Multiplier | Specialty Multiplier |
 |---|---|---|
 | **Novel** | 1.0× | 1.4× |
 | **Intermediate** | 1.25× | 1.75× |
 | **Advanced** | 1.6× | 2.2× |
 
-**Example:** An Intermediate French chef assigned to Croissant production outputs 1.75× units. That same chef assigned to Bagels outputs 1.25×. Players never see these numbers — they see the resulting throughput and satisfaction signals over time.
+**Output formula per chef:**
+```
+Chef Daily Output = Base Rate (30) × Skill Multiplier
+```
+
+**Total product output formula:**
+```
+Total Daily Output (e.g. Croissants) =
+    Base Chef             (30 × 1.0)
+  + Specialty Chef A      (30 × their multiplier)
+  + Specialty Chef B      (30 × their multiplier)
+  + Specialty Chef C      (30 × their multiplier)
+```
+
+**Concrete example — Croissant output with 2 specialty chefs:**
+
+| Chef | Type | Multiplier | Daily Output |
+|---|---|---|---|
+| Base Chef | — | 1.0× | 30 units |
+| Intermediate French Chef | Specialty (Croissant) | 1.75× | 52.5 units |
+| Advanced Japanese Chef | Specialty (Croissant) | 2.2× | 66 units |
+| **Total** | | | **148.5 units/day** |
+
+> **Supply cap:** Total output is bounded by the quantity of supplies the player purchased that round. If a player only stocked 100 units of Croissant supplies, output is capped at 100 regardless of chef capacity.
+
+**Non-specialty example:** An Intermediate French chef assigned to Bagels (not their specialty) outputs 30 × 1.25 = 37.5 units/day.
+
+Players never see multiplier values — they observe resulting throughput and satisfaction signals over time and must infer chef alignment through their predictive model.
 
 ---
 
@@ -165,6 +194,8 @@ Each nationality has two hidden specialty products. Multipliers below show outpu
 | **American** | Bagel, Cookie | 1.0× / 1.4× | 1.25× / 1.75× | 1.6× / 2.2× |
 
 > Specialties are never shown to players. Nationality is visible — players must infer specialty alignment through observed throughput over time.
+>
+> **Overlap note:** French and Japanese both specialize in Croissant; French and Italian both specialize in Coffee. This is intentional — a player who holds one of each can double their Croissant or Coffee throughput, making cross-nationality stacking a high-reward strategy. The risk is that it requires two high-cost bids to execute and leaves other products underserved.
 
 ---
 
@@ -182,20 +213,21 @@ Spawn rate = probability a chef of that skill level appears in the auction pool 
 
 ---
 
-### Revenue Flow (Per Chef)
+### Revenue Flow
 
 ```
-Individual Chef Base Output
-        × Skill Multiplier (applies to all products)
-        × Specialty Bonus (hidden — applies only to specialty products)
+Each Chef:
+    Base Rate (30 units/day) × Skill Multiplier = Chef's Daily Output
+
+Sum of all chefs' daily outputs = Total Product Throughput
         ↓
-That Chef's Unit Contribution to Product Throughput
+    (capped by player's purchased supply quantity)
         ↓
-Product Throughput feeds Customer Satisfaction
+Product Throughput → Customer Satisfaction
         ↓
-Satisfaction drives Foot Traffic
+Satisfaction → Foot Traffic
         ↓
-Traffic × Price × Conversion = Revenue
+Foot Traffic × Price × Conversion Rate = Revenue
 ```
 
 ---
@@ -332,7 +364,7 @@ Spawn rates increase for higher-skill chefs as rounds progress, encouraging cont
 | Chef cost/bidding? | Bid-based, higher minimum floor by skill tier |
 | Specialty visibility? | Hidden — nationality + skill level shown only |
 | Leveling up? | No — purchased at fixed skill level |
-| Multiplier stacking? | No stacking — each chef's multiplier is isolated to their own output |
+| How do multiple chefs interact? | Additive — each chef independently contributes their own daily output; total = sum of all chefs. Multipliers are not compounded on top of each other. |
 
 ---
 
