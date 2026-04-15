@@ -1,7 +1,23 @@
 import { useGame } from "../../contexts/GameContext";
 
+function downloadResultsCsv(results: { round: number; revenue: number; customerCount: number; customerSatisfaction: number }[]) {
+  const header = "Round,Revenue,Customers,Satisfaction";
+  const rows = results.map(
+    (r) => `${r.round},${r.revenue},${r.customerCount},${r.customerSatisfaction}`
+  );
+  const blob = new Blob([header + "\n" + rows.join("\n")], {
+    type: "text/csv",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "bakery-bash-results.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export function RoundHeader() {
-  const { currentRound, totalRounds, timeRemaining, player } = useGame();
+  const { currentRound, totalRounds, timeRemaining, roundResults } = useGame();
 
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);
@@ -11,6 +27,14 @@ export function RoundHeader() {
 
   return (
     <header className="round-header">
+      <button
+        className="round-header__email"
+        onClick={() => downloadResultsCsv(roundResults)}
+        title="Download results CSV"
+      >
+        <img src="/assets/ui/email.svg" alt="Download CSV" />
+      </button>
+
       <div className="round-header__round">
         Round {currentRound} of {totalRounds}
       </div>
@@ -22,12 +46,6 @@ export function RoundHeader() {
           }`}
         >
           {formatTime(timeRemaining)}
-        </div>
-      )}
-
-      {player && (
-        <div className="round-header__budget">
-          Budget: ${player.budget.toLocaleString()}
         </div>
       )}
     </header>

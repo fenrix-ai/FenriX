@@ -35,7 +35,6 @@ export function ResultsPhase() {
         </p>
       )}
 
-      <button className="btn btn--secondary">Download CSV</button>
       <p className="results-phase__waiting">
         Waiting for professor to advance to the next round…
       </p>
