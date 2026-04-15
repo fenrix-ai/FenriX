@@ -21,11 +21,13 @@
 
 **Specialties (Hidden):** Croissant, Coffee
 
-| Variant | Skin Tone | Hair | Facial Hair | Hat | Outfit |
-|---|---|---|---|---|---|
-| **A — Classic Parisian** | Light/fair, slight olive undertone | Short brown hair, neatly combed back | Thin classic French handlebar mustache, waxed tips | Tall toque blanche, straight and starched | Double-breasted white chef coat, blue neckerchief tied at collar, pressed trousers |
-| **B — Afro-French** | Deep warm brown (West/Central African-French heritage) | Short tight coils or low fade | Thin pencil mustache | Toque blanche worn slightly tilted | Same double-breasted coat, blue neckerchief — slightly more relaxed stance |
-| **C — Maghrebi-French** | Medium tan/warm beige (North African-French heritage) | Short dark straight hair, side-parted | Clean-shaven with faint stubble | Toque blanche | Classic coat, blue neckerchief, more compact build |
+| Variant | Skin Tone | Hair | Facial Hair | Accessories (randomizable) | Hat | Outfit |
+|---|---|---|---|---|---|---|
+| **A — Classic Parisian** | Light/fair, slight olive undertone | Short brown hair, neatly combed back | Thin classic French handlebar mustache, waxed tips | None / simple gold signet ring visible at collar cuff | Tall toque blanche, straight and starched | Double-breasted white chef coat, blue neckerchief tied at collar |
+| **B — Afro-French** | Deep warm brown (West/Central African-French heritage) | Short tight coils or low fade | Thin pencil mustache | Small gold stud earring (one ear) / thin gold chain just visible above neckerchief / small hoop earring | Toque blanche worn slightly tilted | Same double-breasted coat, blue neckerchief — slightly more relaxed stance |
+| **C — Maghrebi-French** | Medium tan/warm beige (North African-French heritage) | Short dark straight hair, side-parted | Clean-shaven with faint stubble | Thin silver chain just above collar / small silver stud (one ear) / none | Toque blanche | Classic coat, blue neckerchief |
+
+> **Jewelry note:** Accessories within each variant are interchangeable — the generator can randomize which option is shown to increase character variety across spawns.
 
 **Archetype feel:** Refined, proud, slightly theatrical. Stands upright. Chef coat is immaculate.
 
@@ -53,10 +55,12 @@
 
 **Specialties (Hidden):** Matcha, Croissant
 
-| Variant | Skin Tone | Hair | Facial Hair | Headwear | Outfit |
-|---|---|---|---|---|---|
-| **A — Traditional** | Light/medium warm beige | Short straight black hair, neatly cut | Clean-shaven | White hachimaki headband tied at the back, knot visible on side | Minimalist white chef coat, dark charcoal-gray apron, simple black shoes |
-| **B — Modern Tokyo** | Light/medium warm beige | Slightly longer black hair with a subtle textured fringe | Clean-shaven | White hachimaki worn lower on forehead | Slim-fit white chef coat, black apron with subtle geometric pattern, rolled sleeves |
+| Variant | Skin Tone | Hair | Facial Hair | Accessories (randomizable) | Headwear | Outfit |
+|---|---|---|---|---|---|---|
+| **A — Traditional** | Light/medium warm beige | Short straight black hair, neatly cut | Clean-shaven | None (consistent with minimal traditional aesthetic) | White hachimaki headband tied at the back, knot visible on side | Minimalist white chef coat, dark charcoal-gray apron |
+| **B — Modern Tokyo** | Light/medium warm beige | Slightly longer black hair with a subtle textured fringe | Clean-shaven | Small silver stud earring (one ear) / thin black cord necklace just above collar / tiny geometric ear cuff | White hachimaki worn lower on forehead | Slim-fit white chef coat, black apron with subtle geometric pattern, rolled sleeves |
+
+> **Jewelry note:** Accessories within each variant are interchangeable — the generator can randomize which option is shown to increase character variety across spawns.
 
 **Archetype feel:** Calm, precise, focused. Minimal ornamentation. Everything is deliberate and clean.
 
@@ -83,10 +87,12 @@
 
 **Specialties (Hidden):** Sandwich, Coffee
 
-| Variant | Skin Tone | Hair | Facial Hair | Hat | Outfit |
-|---|---|---|---|---|---|
-| **A — Classic Southern Italian** | Warm olive/medium tan | Short dark brown curly hair | Full thick Italian mustache, slightly curled ends — signature feature | Cappello da cuoco (floppy, pleated white pillow-style hat, worn slightly slouched) | White double-breasted chef coat, red neckerchief tied loosely, short white apron over trousers |
-| **B — Northern Italian** | Fair/light olive | Short straight dark hair, neat | Thinner groomed mustache with slight stubble | Cappello da cuoco, more upright | Cleaner coat silhouette, red neckerchief, same apron |
+| Variant | Skin Tone | Hair | Facial Hair | Accessories (randomizable) | Hat | Outfit |
+|---|---|---|---|---|---|---|
+| **A — Classic Southern Italian** | Warm olive/medium tan | Short dark brown curly hair | Full thick Italian mustache, slightly curled ends — signature feature | Thin gold chain visible above neckerchief / small gold horn (cornicello) pendant / none | Cappello da cuoco (floppy, pleated white pillow-style hat, worn slightly slouched) | White double-breasted chef coat, red neckerchief tied loosely |
+| **B — Northern Italian** | Fair/light olive | Short straight dark hair, neat | Thinner groomed mustache with slight stubble | Simple silver chain above collar / none / small silver medallion pendant | Cappello da cuoco, more upright | Cleaner coat silhouette, red neckerchief |
+
+> **Jewelry note:** Accessories within each variant are interchangeable — the generator can randomize which option is shown to increase character variety across spawns.
 
 **Archetype feel:** Warm, expressive, passionate. Gestures with hands often. Broad build, animated face.
 
@@ -115,11 +121,13 @@
 
 **Specialties (Hidden):** Bagel, Cookie
 
-| Variant | Skin Tone | Hair | Facial Hair | Hat | Outfit |
-|---|---|---|---|---|---|
-| **A — Classic All-American** | Fair/light, slight freckles | Short brown hair | Goatee — neat, trimmed close | Backwards baseball cap (white or khaki, no logo or generic brand) | White chef coat worn open over a plain white or grey t-shirt, dark denim apron, casual stance |
-| **B — African American** | Medium-deep brown | Short natural hair or low fade | Goatee or full short beard | Backwards baseball cap (dark color) | Same casual coat + denim apron combo, relaxed confident posture |
-| **C — Latino-American** | Warm medium tan | Short dark hair, slightly wavy | Goatee | Backwards cap | Same outfit, broad relaxed build |
+| Variant | Skin Tone | Hair | Facial Hair | Accessories (randomizable) | Hat | Outfit |
+|---|---|---|---|---|---|---|
+| **A — Classic All-American** | Fair/light, slight freckles | Short brown hair | Goatee — neat, trimmed close | None / small stud earring (one ear) / simple dog tag chain visible at neckline | Backwards baseball cap (white or khaki, no logo or generic brand) | White chef coat worn open over a plain white or grey t-shirt |
+| **B — African American** | Medium-deep brown | Short natural hair or low fade | Goatee or full short beard | Small gold hoop earring (one or both ears) / gold chain at neckline / diamond stud earring | Backwards baseball cap (dark color) | Same casual coat + denim apron combo |
+| **C — Latino-American** | Warm medium tan | Short dark hair, slightly wavy | Goatee | Small gold stud earring / thin gold chain at collar / none | Backwards cap | Same outfit, broad relaxed build |
+
+> **Jewelry note:** Accessories within each variant are interchangeable — the generator can randomize which option is shown to increase character variety across spawns.
 
 **Archetype feel:** Laid-back, confident, approachable. Uniform feels like it was styled casually rather than worn by the book.
 
