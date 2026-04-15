@@ -11,6 +11,8 @@
 ## Chef Roster Reference Grid
 
 > **Asset Design Note:** Each chef entry includes a primary archetype and one or more diverse variant suggestions. For culturally heterogeneous nationalities (French, American), multiple skin tone and hair type representations are listed — the generator should be able to spawn any variant. All descriptions are intended as direct input for front-end character design.
+>
+> **Scope:** Design the chef as a **head and face only** — no full body required. Focus on facial features, hair, hat, and any visible collar or neckerchief that sits directly below the face. Think portrait-style avatar icon.
 
 ---
 
