@@ -12,7 +12,7 @@
 /api/game/join          → Player joins session
 /api/game/start         → Professor starts game
 /api/game/advance       → Professor advances phase
-/api/decisions          → Player submits round decisions
+/api/decisions          → Player submits Closing Hours decisions
 /api/simulate           → Internal: runs revenue engine
 /api/csv/{gameId}/{id}  → Player downloads their CSV
 /api/professor/export   → Professor exports all data
@@ -61,6 +61,23 @@ revenue = 500
 ```
 
 ⚠️ These are placeholder coefficients. Game Design delivers finals by April 3.
+
+---
+
+### Decision Submission
+
+Players submit Closing Hours decisions through the `submitDecision` callable Cloud Function, never by writing decision snapshots directly from the browser. The function validates server-side before writing `/games/{gameId}/players/{playerId}/decisions/round_N`.
+
+Required validation:
+
+- Menu must include at least one sweet item (`croissant` or `cookie`)
+- Menu must include at least one savory item (`bagel` or `sandwich`)
+- Menu must include at least one drink (`latte` or `matchaLatte`)
+- Staff count, prices, quantities, ad spend, ad type, and chef bid fields must be well-formed
+- Submission round must match the game's current round
+- Game phase must be `closing_hours`
+
+If validation fails, the function returns a clear `invalid-argument` error for the frontend to display.
 
 ---
 

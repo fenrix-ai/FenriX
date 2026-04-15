@@ -208,7 +208,8 @@ const PlayerDocument = {
 
 // ─────────────────────────────────────────────────────────────
 // /games/{gameId}/players/{playerId}/decisions/{roundId}
-// Immutable historical snapshot of the player's submitted decision for a round.
+// Immutable historical snapshot written by the submitDecision Cloud Function
+// after server-side validation of the player's Closing Hours choices.
 // roundId = "round_1", "round_2", … "round_5"
 // ─────────────────────────────────────────────────────────────
 const DecisionDocument = {
@@ -495,7 +496,7 @@ const PlayerEmailDocument = {
 //
 //       match /decisions/{roundId} {
 //         allow read: if request.auth.uid == playerId;
-//         allow write: if request.auth.uid == playerId;
+//         allow write: if false; // Cloud Functions only
 //       }
 //
 //       match /rounds/{roundId} {

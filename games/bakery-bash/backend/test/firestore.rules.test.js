@@ -320,7 +320,7 @@ describe("Bakery Bash Firestore security rules", () => {
     );
   });
 
-  it("lets players create but not edit or delete their own decision snapshots", async () => {
+  it("does not let players write decision snapshots directly", async () => {
     const db = authedDb(PLAYER_A);
     const decisionRef = doc(
       db,
@@ -332,7 +332,7 @@ describe("Bakery Bash Firestore security rules", () => {
       "round_1"
     );
 
-    await assertSucceeds(
+    await assertFails(
       setDoc(decisionRef, {
         round: 1,
         submittedAt: null,

@@ -25,6 +25,31 @@ const PRODUCT_KEYS = [
 
 const AD_TYPES = ["TV", "Billboard", "Radio", "Newspaper"];
 
+const AD_TYPE_LOOKUP = {
+  tv: "TV",
+  television: "TV",
+  billboard: "Billboard",
+  radio: "Radio",
+  newspaper: "Newspaper",
+};
+
+const PRODUCT_ALIASES = {
+  croissant: "croissant",
+  cookie: "cookie",
+  bagel: "bagel",
+  sandwich: "sandwich",
+  latte: "latte",
+  matchaLatte: "matchaLatte",
+  "matcha-latte": "matchaLatte",
+  matcha_latte: "matchaLatte",
+};
+
+const MENU_CATEGORIES = {
+  sweet: ["croissant", "cookie"],
+  savory: ["bagel", "sandwich"],
+  drink: ["latte", "matchaLatte"],
+};
+
 const ROUND_PHASES = [
   "closing_hours",
   "auction",
@@ -137,6 +162,44 @@ function numberOrDefault(value, fallback) {
 
 function objectOrDefault(value, fallback) {
   return value && typeof value === "object" ? value : fallback;
+}
+
+function normalizeProductKey(product) {
+  return PRODUCT_ALIASES[product] || null;
+}
+
+function normalizeAdType(value) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  return AD_TYPE_LOOKUP[String(value).trim().toLowerCase()] || null;
+}
+
+function integerInRange(value, fieldName, { min = 0, max = Number.MAX_SAFE_INTEGER }) {
+  const numberValue = Number(value);
+
+  if (!Number.isInteger(numberValue) || numberValue < min || numberValue > max) {
+    throw new HttpsError(
+      "invalid-argument",
+      `${fieldName} must be an integer from ${min} to ${max}.`
+    );
+  }
+
+  return numberValue;
+}
+
+function nonNegativeNumber(value, fieldName) {
+  const numberValue = Number(value);
+
+  if (!Number.isFinite(numberValue) || numberValue < 0) {
+    throw new HttpsError(
+      "invalid-argument",
+      `${fieldName} must be a non-negative number.`
+    );
+  }
+
+  return numberValue;
 }
 
 function mergeConfig(rawConfig = {}) {
@@ -434,6 +497,158 @@ function cleanGameId(value) {
   }
 
   return gameId;
+}
+
+function normalizeMenuPayload(data) {
+  const rawMenu = data.menu ?? data.menuSelections ?? data.selectedMenu ?? {};
+  const rawPrices = objectOrDefault(data.productPrices ?? data.prices, {});
+  const rawQuantities = objectOrDefault(data.quantities ?? data.stockQuantities, {});
+  const menu = Object.fromEntries(PRODUCT_KEYS.map((product) => [product, false]));
+  const productPrices = Object.fromEntries(PRODUCT_KEYS.map((product) => [product, 0]));
+  const quantities = Object.fromEntries(PRODUCT_KEYS.map((product) => [product, 0]));
+
+  if (Array.isArray(rawMenu)) {
+    for (const product of rawMenu) {
+      const normalized = normalizeProductKey(product);
+
+      if (!normalized) {
+        throw new HttpsError(
+          "invalid-argument",
+          `Unknown menu item: ${product}.`
+        );
+      }
+
+      menu[normalized] = true;
+    }
+  } else if (rawMenu && typeof rawMenu === "object") {
+    for (const [product, selected] of Object.entries(rawMenu)) {
+      const normalized = normalizeProductKey(product);
+
+      if (!normalized) {
+        throw new HttpsError(
+          "invalid-argument",
+          `Unknown menu item: ${product}.`
+        );
+      }
+
+      menu[normalized] = selected === true;
+    }
+  } else {
+    throw new HttpsError(
+      "invalid-argument",
+      "menu must be an array of selected items or an object keyed by menu item."
+    );
+  }
+
+  for (const [product, price] of Object.entries(rawPrices)) {
+    const normalized = normalizeProductKey(product);
+
+    if (!normalized) {
+      throw new HttpsError(
+        "invalid-argument",
+        `Unknown product price item: ${product}.`
+      );
+    }
+
+    productPrices[normalized] = nonNegativeNumber(
+      price,
+      `productPrices.${product}`
+    );
+  }
+
+  for (const [product, quantity] of Object.entries(rawQuantities)) {
+    const normalized = normalizeProductKey(product);
+
+    if (!normalized) {
+      throw new HttpsError(
+        "invalid-argument",
+        `Unknown quantity item: ${product}.`
+      );
+    }
+
+    quantities[normalized] = integerInRange(quantity, `quantities.${product}`, {
+      min: 0,
+      max: 10000,
+    });
+  }
+
+  for (const product of PRODUCT_KEYS) {
+    if (menu[product] && productPrices[product] <= 0) {
+      throw new HttpsError(
+        "invalid-argument",
+        `${product} is on the menu and must have a price greater than $0.`
+      );
+    }
+  }
+
+  const activeMenuItems = activeProducts(menu);
+  const hasCategory = (category) =>
+    MENU_CATEGORIES[category].some((product) => menu[product] === true);
+
+  if (!hasCategory("sweet")) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Menu must include at least one sweet item."
+    );
+  }
+
+  if (!hasCategory("savory")) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Menu must include at least one savory item."
+    );
+  }
+
+  if (!hasCategory("drink")) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Menu must include at least one drink."
+    );
+  }
+
+  return {
+    menu,
+    productPrices,
+    quantities,
+    numProducts: activeMenuItems.length,
+  };
+}
+
+function validateDecisionInput(data) {
+  const staffCount = integerInRange(data.staffCount, "staffCount", {
+    min: 1,
+    max: 20,
+  });
+  const adSpend = nonNegativeNumber(data.adSpend ?? data.adBid?.amount ?? 0, "adSpend");
+  const adType = normalizeAdType(data.adType ?? data.adBid?.adType);
+
+  if (adSpend > 0 && !adType) {
+    throw new HttpsError(
+      "invalid-argument",
+      "adType must be TV, Radio, Newspaper, or Billboard when adSpend is greater than $0."
+    );
+  }
+
+  const chefBidData = objectOrDefault(data.chefBid, {});
+  const chefBid = {
+    skillLevel: integerInRange(chefBidData.skillLevel ?? 0, "chefBid.skillLevel", {
+      min: 0,
+      max: 100,
+    }),
+    amount: nonNegativeNumber(chefBidData.amount ?? 0, "chefBid.amount"),
+  };
+  const normalizedMenu = normalizeMenuPayload(data);
+
+  return {
+    staffCount,
+    adSpend,
+    ...normalizedMenu,
+    adBid: {
+      adType,
+      amount: adSpend,
+    },
+    chefBid,
+  };
 }
 
 function phaseEndTimeFromNow(config, phase) {
@@ -1067,6 +1282,113 @@ exports.advanceGamePhase = onCall(async (request) => {
     currentRound: updatedGameSnap.get("currentRound"),
     phaseEndTime:
       phaseEndTime instanceof Timestamp ? phaseEndTime.toMillis() : null,
+  };
+});
+
+exports.submitDecision = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError(
+      "unauthenticated",
+      "Sign in before submitting decisions."
+    );
+  }
+
+  const data = request.data || {};
+  const gameId = cleanGameId(data.gameId);
+  const uid = request.auth.uid;
+  const gameRef = db.collection("games").doc(gameId);
+  const playerRef = gameRef.collection("players").doc(uid);
+  const decision = validateDecisionInput(data);
+  let roundId;
+
+  await db.runTransaction(async (transaction) => {
+    const [gameSnap, playerSnap] = await Promise.all([
+      transaction.get(gameRef),
+      transaction.get(playerRef),
+    ]);
+
+    if (!gameSnap.exists) {
+      throw new HttpsError("not-found", "Game not found.");
+    }
+
+    if (!playerSnap.exists) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Join this game before submitting decisions."
+      );
+    }
+
+    const game = gameSnap.data();
+
+    if (game.phase !== "closing_hours" && game.phase !== "decide") {
+      throw new HttpsError(
+        "failed-precondition",
+        "Decisions can only be submitted during Closing Hours."
+      );
+    }
+
+    const currentRound = numberOrDefault(game.currentRound, 1);
+    const requestedRound =
+      data.round === undefined || data.round === null
+        ? currentRound
+        : integerInRange(data.round, "round", { min: 1, max: 100 });
+
+    if (requestedRound !== currentRound) {
+      throw new HttpsError(
+        "failed-precondition",
+        `This game is currently on round ${currentRound}.`
+      );
+    }
+
+    roundId = `round_${currentRound}`;
+    const decisionRef = playerRef.collection("decisions").doc(roundId);
+    const decisionSnap = await transaction.get(decisionRef);
+
+    if (decisionSnap.exists) {
+      throw new HttpsError(
+        "already-exists",
+        "Decisions have already been submitted for this round."
+      );
+    }
+
+    const decisionDoc = {
+      round: currentRound,
+      submittedAt: FieldValue.serverTimestamp(),
+      staffCount: decision.staffCount,
+      adSpend: decision.adSpend,
+      menu: decision.menu,
+      productPrices: decision.productPrices,
+      quantities: decision.quantities,
+      adBid: decision.adBid,
+      chefBid: decision.chefBid,
+      numProducts: decision.numProducts,
+      budgetBefore: numberOrDefault(playerSnap.get("budgetCurrent"), 0),
+    };
+
+    transaction.set(decisionRef, decisionDoc);
+    transaction.update(playerRef, {
+      pendingDecision: {
+        submitted: true,
+        submittedAt: FieldValue.serverTimestamp(),
+        staffCount: decision.staffCount,
+        adSpend: decision.adSpend,
+        menu: decision.menu,
+        productPrices: decision.productPrices,
+        quantities: decision.quantities,
+      },
+      pendingBids: {
+        adBid: decision.adBid,
+        chefBid: decision.chefBid,
+      },
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+
+  return {
+    gameId,
+    playerId: uid,
+    roundId,
+    submitted: true,
   };
 });
 
