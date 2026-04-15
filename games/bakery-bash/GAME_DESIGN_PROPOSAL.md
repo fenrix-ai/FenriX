@@ -213,6 +213,118 @@ Players who **misalign** chef purchases with inventory get penalized silently th
 
 ---
 
+### Chef Roster — Nationality, Specialties & Multipliers
+
+Each chef is randomly generated using the framework below. Specialty products are **hidden from players** and must never be surfaced in the UI.
+
+> **Asset Design Note:** Each entry includes a primary archetype and diverse variant suggestions. For culturally heterogeneous nationalities (French, American), multiple skin tone and hair type representations are listed — the generator can spawn any variant. All descriptions are direct input for front-end character design.
+>
+> **Scope:** Design each chef as a **head and neckline only** — portrait-style avatar icon. The crop should extend just past the collar so that neck attire (neckerchief, coat collar) is visible. No full body required.
+
+---
+
+#### 🇫🇷 French
+**Specialties (Hidden):** Croissant, Coffee
+**Possible Names — Male:** Jean-Pierre, Marcel | **Female:** Colette, Amélie
+
+| Gender | Variant | Skin Tone | Hair | Facial Hair / Features | Accessories (randomizable) | Hat | Neckline |
+|---|---|---|---|---|---|---|---|
+| Male | **A — Classic Parisian** | Light/fair, slight olive undertone | Short brown hair, neatly combed back | Thin classic French handlebar mustache, waxed tips | None / simple gold signet ring visible at collar cuff | Tall toque blanche, straight and starched | Double-breasted white chef coat, blue neckerchief |
+| Male | **B — Afro-French** | Deep warm brown (West/Central African-French heritage) | Short tight coils or low fade | Thin pencil mustache | Small gold stud earring / thin gold chain above neckerchief / small hoop | Toque blanche, slightly tilted | Same coat, blue neckerchief, relaxed |
+| Male | **C — Maghrebi-French** | Medium tan/warm beige (North African-French heritage) | Short dark straight hair, side-parted | Clean-shaven with faint stubble | Thin silver chain above collar / small silver stud / none | Toque blanche | Classic coat, blue neckerchief |
+| Female | **A — Classic Parisienne** | Fair, light pink undertone | Long brown hair in two braids draped forward | — | Pearl studs / small diamond studs / delicate gold drops | Low toque blanche, slightly tilted | Fitted white coat with blue trim at collar |
+| Female | **B — Afro-French** | Deep brown (West African-French heritage) | Long box braids or thick natural twists, pulled loosely to one side | — | Gold hoops / large statement hoops / beaded drop earrings | Low toque blanche or chef's beret | Same fitted coat with blue trim |
+| Female | **C — Maghrebi-French** | Warm medium tan | Dark wavy hair in two loose braids | — | Silver crescent earrings / turquoise studs / small silver hoop with charm | Low toque blanche | Fitted coat, blue trim |
+
+**Multipliers by Skill Level:**
+
+| Skill Level | Non-Specialty Products | Specialty Products (Croissant, Coffee) |
+|---|---|---|
+| **Novel** | 1.0× | 1.4× |
+| **Intermediate** | 1.25× | 1.75× |
+| **Advanced** | 1.6× | 2.2× |
+
+---
+
+#### 🇯🇵 Japanese
+**Specialties (Hidden):** Matcha, Croissant
+**Possible Names — Male:** Hiroshi, Kenji | **Female:** Yuki, Aiko
+
+| Gender | Variant | Skin Tone | Hair | Facial Hair / Features | Accessories (randomizable) | Headwear | Neckline |
+|---|---|---|---|---|---|---|---|
+| Male | **A — Traditional** | Light/medium warm beige | Short straight black hair, neatly cut | Clean-shaven | None | White hachimaki tied at back, knot on side | Minimalist white chef coat, dark charcoal-gray apron |
+| Male | **B — Modern Tokyo** | Light/medium warm beige | Slightly longer black hair, subtle textured fringe | Clean-shaven | Small silver stud (one ear) / thin black cord necklace / tiny geometric ear cuff | White hachimaki worn lower on forehead | Slim-fit white coat, black apron, rolled sleeves |
+| Female | **A — Traditional** | Light/medium warm beige | Black hair with blunt straight-cut bangs, high ponytail | — | Cherry blossom hair clip / red kanzashi pin / white floral clip at ponytail base | White hachimaki tied at ponytail base | Clean white coat, black apron with subtle embroidered edge |
+| Female | **B — Modern Tokyo** | Light/medium warm beige | Black hair, wispy side-swept bangs, high ponytail | — | Tiny silver studs / small pearl studs / minimalist geometric ear cuff | White hachimaki as thin headband across forehead | Slim-fit coat, dark apron, sleeves slightly rolled |
+
+**Multipliers by Skill Level:**
+
+| Skill Level | Non-Specialty Products | Specialty Products (Matcha, Croissant) |
+|---|---|---|
+| **Novel** | 1.0× | 1.4× |
+| **Intermediate** | 1.25× | 1.75× |
+| **Advanced** | 1.6× | 2.2× |
+
+---
+
+#### 🇮🇹 Italian
+**Specialties (Hidden):** Sandwich, Coffee
+**Possible Names — Male:** Marco, Luca | **Female:** Sofia, Giulia
+
+> **Hat note for designers:** The cappello da cuoco is NOT the tall stiff toque blanche. It is a rounded, soft, pleated fabric hat — more like a gathered pillowcase shape sitting loosely on the head. Reference: traditional Italian trattoria chef imagery.
+
+| Gender | Variant | Skin Tone | Hair | Facial Hair / Features | Accessories (randomizable) | Hat | Neckline |
+|---|---|---|---|---|---|---|---|
+| Male | **A — Classic Southern Italian** | Warm olive/medium tan | Short dark brown curly hair | Full thick Italian mustache, slightly curled ends | Thin gold chain above neckerchief / small gold cornicello pendant / none | Cappello da cuoco (floppy, pleated, worn slightly slouched) | White double-breasted coat, red neckerchief tied loosely |
+| Male | **B — Northern Italian** | Fair/light olive | Short straight dark hair, neat | Thinner groomed mustache with slight stubble | Simple silver chain above collar / small silver medallion / none | Cappello da cuoco, more upright | Same coat, red neckerchief |
+| Female | **A — Classic Southern Italian** | Warm olive/medium tan | Dark wavy hair pulled up under hat, loose strands framing face | — | Small gold hoops / coral drop earrings / gold knot studs | Cappello da cuoco (floppy, pleated, worn softly) | White coat with red trim at collar, red neckerchief |
+| Female | **B — Northern Italian** | Fair with warm undertone | Dark straight hair in low bun under hat | — | Simple silver studs / small pearl drops / thin silver hoops | Cappello da cuoco, slightly neater fit | Same coat and neckerchief, polished stance |
+
+**Multipliers by Skill Level:**
+
+| Skill Level | Non-Specialty Products | Specialty Products (Sandwich, Coffee) |
+|---|---|---|
+| **Novel** | 1.0× | 1.4× |
+| **Intermediate** | 1.25× | 1.75× |
+| **Advanced** | 1.6× | 2.2× |
+
+---
+
+#### 🇺🇸 American
+**Specialties (Hidden):** Bagel, Cookie
+**Possible Names — Male:** Jake, Tyler | **Female:** Madison, Ashley
+
+| Gender | Variant | Skin Tone | Hair | Facial Hair / Features | Accessories (randomizable) | Hat | Neckline |
+|---|---|---|---|---|---|---|---|
+| Male | **A — Classic All-American** | Fair/light, slight freckles | Short brown hair | Goatee, neat and trimmed close | None / small stud earring (one ear) / simple dog tag chain at neckline | Backwards baseball cap (white or khaki, no logo) | White chef coat worn open over plain white/grey t-shirt |
+| Male | **B — African American** | Medium-deep brown | Short natural hair or low fade | Goatee or full short beard | Small gold hoop (one or both ears) / gold chain at neckline / diamond stud | Backwards baseball cap (dark color) | Same casual coat, denim apron visible at neckline |
+| Male | **C — Latino-American** | Warm medium tan | Short dark hair, slightly wavy | Goatee | Small gold stud / thin gold chain at collar / none | Backwards cap | Same outfit, broad relaxed build |
+| Female | **A — Classic** | Fair/light | Brown or blonde hair in neat bun, a few face-framing pieces loose | — | Small studs / tiny turquoise drops / minimalist bar earrings | No hat — bun is the signature | White coat with rolled sleeves, casual denim apron |
+| Female | **B — African American** | Medium-deep brown | Natural hair in high puff bun or twisted updo | — | Gold hoops / large beaded hoops / cowrie shell drops | No hat | Same rolled-sleeve coat, denim apron |
+| Female | **C — Latina** | Warm medium tan | Dark hair in sleek bun | — | Small gold huggies / turquoise studs / red enamel drops | No hat | Same outfit, athletic build |
+
+**Multipliers by Skill Level:**
+
+| Skill Level | Non-Specialty Products | Specialty Products (Bagel, Cookie) |
+|---|---|---|
+| **Novel** | 1.0× | 1.4× |
+| **Intermediate** | 1.25× | 1.75× |
+| **Advanced** | 1.6× | 2.2× |
+
+---
+
+### Chef Spawn Rates by Round
+
+Spawn rates increase for higher-skill chefs as rounds progress, encouraging continued bidding investment. Male and female chefs share the same spawn rate within each nationality.
+
+| Skill Level | Round 1 | Round 2 | Round 3 | Round 4 | Round 5 |
+|---|---|---|---|---|---|
+| **Novel** | 65% | 55% | 40% | 20% | 5% |
+| **Intermediate** | 30% | 35% | 40% | 45% | 45% |
+| **Advanced** | 5% | 10% | 20% | 35% | 50% |
+
+---
+
 ### Open Questions Resolved ✅
 
 | Question | Answer |
