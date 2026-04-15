@@ -1,6 +1,6 @@
 # Game Design Proposal — Bakery Bash
 
-**Date:** April 1, 2026
+**Date:** April 1, 2026 · Updated April 8, 2026 (all-hands decisions)
 **Team:** Game Design (Dylan M. + Mia) · Frontend (AB + Kavin) · Backend (Daniel + Scott + Dylan B.)
 **Target Launch:** April 27 or May 1, 2026
 **Course:** MGSC 310 · Prof. Frenzel · Chapman University
@@ -11,9 +11,11 @@
 
 ## Concept
 
-Players run competing grab-and-go cafés in a shared plaza food court. Each round, they set prices for their products, decide how many staff to hire, and bid in auctions for scarce resources (advertisements, highly-rated chefs, etc.) on a predisposed budget given at the start of the game. A regression model running on the individual player's computer can be used to help them win. The player with the highest cumulative net revenue across all rounds wins.
+Players run competing grab-and-go cafés in a shared plaza food court. Each round, they set prices for their products, decide how many staff to hire, and bid in auctions for scarce resources (advertisements, highly-rated chefs, etc.) on a fixed budget given at the start of the game. A regression model running on the individual player's computer can be used to help them win. The player with the highest cumulative net revenue across all rounds wins.
 
-Players download their data as CSV after each round and build their own predictive models (Excel for MGSC 220, Python for MGSC 310) to inform future decisions. The game teaches regression modeling, price elasticity, resource optimization, and competitive strategy through direct experience.
+Players receive "company emails" between rounds containing sales proceeds, market updates, and news. They export their data as CSV, build predictive models externally (Excel for MGSC 220, Python for MGSC 310), and input decisions back through the UI. There is no in-game model building. The game teaches regression modeling, price elasticity, resource optimization, and competitive strategy through direct experience.
+
+> **Design principle:** Players do NOT see their remaining budget in the UI. They receive revenue reports and sales data each round but must track their own finances externally (Excel, paper, etc.). This is intentional — financial self-management is part of the challenge.
 
 ---
 
@@ -35,6 +37,7 @@ Revenue must be continuous (not bucketed or categorical) so students can run lin
 | 2. Bidding | ~2 min | Players do an advertisements bidding round (1 min) and head chefs bidding round (1 min). |
 | 3. Simulate | ~30 sec | Backend runs a regression model, computes revenue, allocates customers. Run a minigame for players to interact with here. |
 | 4. Review | ~1 min | Players see results: revenue, customer count, leaderboard update. |
+| 4.5. Company Email | — | Players receive an in-game "company email" with sales proceeds, market updates, and news. Data is exportable as CSV for external modeling. |
 | 5. Repeat | — | Next round begins. New data row appended to player's dataset. |
 
 ---
@@ -47,14 +50,14 @@ Three base decision inputs per round.
 |---|---|---|---|
 | Quantity | Stock quantity per product | Set quantity for each product | Players must balance the costs of stock input and the expected revenue |
 | Average Price | Average price of products | Set average price of store's products | Teaches price elasticity — too high loses customers, too low kills margin |
-| Staffing | Integer | Choose how many employees to hire (costs $/round) | Marginal returns — more staff = more throughput but higher costs |
+| Staffing | Integer | Choose how many employees to hire (costs $/round) | Marginal returns — more staff = more throughput but higher costs. **Staffing costs are dynamic** — prices increase each round as demand rises. If all specialists are taken by competitors, they become unavailable. Players who anticipate demand and hire early get rewarded with lower costs. |
 | Ad/Chef Bids | $ amount | Choose how much to spend on bidding | Competitive — shared customer pool means ad ROI depends on others' spend |
 
 ### Bidding Process
 
 Players have 1 minute to bid each round, sealed auction, highest bidder wins. Players strategize to maximize their expected value.
 
-**Advertisements:** Players bid across 4 different advertisements (TV, radio, newspaper, billboard), each with different optimal prices and varying levels of revenue yield.
+**Advertisements:** Players bid across 4 different advertisements (TV, radio, newspaper, billboard), each with different optimal prices and varying levels of revenue yield. **Ad auction winners get visual representation in the game** — e.g., if your bakery wins the billboard bid, other players see your bakery's ad on screen next round.
 
 **Chefs:** Players bid across chefs with different skill levels (RNG). Each skill level yields different levels of revenue output.
 
@@ -74,9 +77,9 @@ Players have 1 minute to bid each round, sealed auction, highest bidder wins. Pl
 
 **Secondary metric (tiebreaker):** Average customer satisfaction. Displayed but not the primary ranking criterion.
 
-**Two leaderboard views:**
-1. Student view — ranked list with your position highlighted
-2. Professor view — all players' data, aggregate class stats, model insights for the debrief
+**Two separate UIs:**
+1. **Student-facing UI** — simplified: login, decision inputs, leaderboard, company emails. No budget tracker, no model building tools.
+2. **Professor / Live Ops UI** — full visibility: market share, all player data, AI bot controls, dynamic pricing levers. Scott and Dylan B. will run the control room on game day.
 
 ---
 
@@ -201,19 +204,37 @@ revenue = 500
 
 ---
 
+## Starting Conditions (Confirmed — All-Hands April 8)
+
+Same starting point for everyone. Same base-level staff, same menu, same budget. No advantages at the start. Differentiation comes purely from decisions made during the game.
+
+## Budget Rules (Confirmed — All-Hands April 8)
+
+- Budget is set at a fixed amount (TBD — exact number to be finalized).
+- Players spend across products, marketing, and staffing.
+- **Overbidding is allowed** — players can exceed their budget but take on credit at a cost.
+- No in-game budget tracker. Players must manage their own finances externally.
+- No hand-holding on financial tracking.
+
 ## Open Questions
 
 1. **Customer allocation formula:** How exactly are customers split? Proportional to attractiveness score? Winner-take-most?
    → *Should be determined by customer satisfaction*
 
-2. **Starting conditions:** Does everyone start identical (same budget, same menu, same staff)? Or is there variation?
-   → *Everyone should start the same*
+2. ~~**Starting conditions:** Does everyone start identical (same budget, same menu, same staff)? Or is there variation?~~
+   → ✅ **Resolved:** Everyone starts the same. Same base-level staff, same menu, same budget. (All-hands April 8)
 
-3. **Budget replenishment:** Do players get new budget each round, or is it cumulative from revenue? If cumulative, early mistakes compound — is that intended?
-   → *Cumulative*
+3. ~~**Budget replenishment:** Do players get new budget each round, or is it cumulative from revenue? If cumulative, early mistakes compound — is that intended?~~
+   → ✅ **Resolved:** Cumulative. Overbidding allowed with credit at a cost. (All-hands April 8)
 
 4. **Which ONE feature from the cut list is highest priority if we have extra time?**
    → Recommend: 1 simple curveball event OR passive AI competitor, not both.
+
+5. **Exact starting budget amount?** — Needs to be finalized.
+
+6. **Credit cost rate?** — What interest/penalty applies when players overbid beyond their budget?
+
+7. **Staffing price escalation curve?** — How much do staffing costs increase per round? Linear, exponential?
 
 ---
 
