@@ -1,6 +1,6 @@
 # Game Design Proposal — Bakery Bash
 
-**Date:** April 1, 2026 · Updated April 8, 2026 (all-hands decisions)
+**Date:** April 1, 2026 · Updated April 8, 2026 (all-hands decisions) · Updated April 15, 2026 (Chef System)
 **Team:** Game Design (Dylan M. + Mia) · Frontend (AB + Kavin) · Backend (Daniel + Scott + Dylan B.)
 **Target Launch:** April 27 or May 1, 2026
 **Course:** MGSC 310 · Prof. Frenzel · Chapman University
@@ -59,7 +59,7 @@ Players have 1 minute to bid each round, sealed auction, highest bidder wins. Pl
 
 **Advertisements:** Players bid across 4 different advertisements (TV, radio, newspaper, billboard), each with different optimal prices and varying levels of revenue yield. **Ad auction winners get visual representation in the game** — e.g., if your bakery wins the billboard bid, other players see your bakery's ad on screen next round.
 
-**Chefs:** Players bid across chefs with different skill levels (RNG). Each skill level yields different levels of revenue output.
+**Chefs:** Players bid across chefs with different nationalities and skill levels. Each chef has a visible nationality and skill tier, but **hidden specialty products**. Their multiplier only affects their own individual output — no stacking across chefs. See [Chef System](#chef-system) below for full details.
 
 ### Menu Items
 
@@ -68,6 +68,130 @@ Players have 1 minute to bid each round, sealed auction, highest bidder wins. Pl
 **Option to add new menu item + quantity of stock each round.**
 
 **New item selection:** Sandwich, Latte, Matcha Latte — six products, six price inputs total.
+
+---
+
+## Chef System
+
+*Updated April 15, 2026*
+
+### Overview
+
+Chefs are biddable assets with a visible nationality and skill level, but **hidden specialty products**. Their multiplier only affects their own individual output — no stacking across chefs. Players must infer specialty alignment through observation and predictive modeling.
+
+---
+
+### Base Chef & Specialty Chef Cap
+
+**Base Chef (Starting State)**
+
+All players begin with a **base chef** at **1.0x output speed across all products** — no specialties, no bonuses. This is the baseline every player starts from, making the chef bidding system purely additive upside.
+
+```
+Base Chef: 1.0x speed on all 6 products (Croissant, Matcha, Coffee, Sandwich, Cookie, Bagel)
+```
+
+**Specialty Chef Cap: Maximum 3**
+
+Players can hold a maximum of **3 specialty chefs** at any time. If a player wins a bid on a 4th chef, they must **lay off one of their existing chefs** before or after acquiring the new one. Laid-off chefs are **returned to the auction pool** and can be bid on by other players in a subsequent round.
+
+**Full Chef Roster State at Any Time:**
+
+| Slot | Chef |
+|---|---|
+| Always present | Base Chef (1.0x, no specialties) |
+| Specialty Slot 1 | Bidded chef (or empty) |
+| Specialty Slot 2 | Bidded chef (or empty) |
+| Specialty Slot 3 | Bidded chef (or empty) |
+
+**Strategic implications of the cap:**
+- Players must actively manage their chef roster — not just acquire, but also cut
+- A laid-off high-skill chef re-entering the auction can shift the competitive dynamic significantly
+- Players may strategically lay off chefs to disrupt opponents (e.g. releasing a chef a competitor wants back)
+- Knowing opponents' roster compositions (based on who bid on what) becomes part of the predictive modeling
+
+---
+
+### Bidding
+
+Chefs enter the bidding pool with a **higher minimum bid floor** than standard items — reflecting their strategic value.
+
+| Skill Level | Proposed Minimum Bid |
+|---|---|
+| **Low** | ~2× baseline item floor |
+| **Medium** | ~3–4× baseline |
+| **High** | ~5–6× baseline |
+
+> Exact values should be tuned to the existing bid economy. The principle: chefs should feel like meaningful investments that players compete over.
+
+---
+
+### What Players Can See vs. What's Hidden
+
+| Attribute | Visible to Players? |
+|---|---|
+| Chef Nationality (French, Japanese, Italian, American) | ✅ Yes |
+| Skill Level (Low, Medium, High) | ✅ Yes |
+| Specialty Products | ❌ Hidden |
+| Output Multiplier Values | ❌ Hidden |
+
+This is the core tension: players know a French chef is *probably* good at Croissants and Coffee, but the game never confirms it. They must build that inference through their predictive model.
+
+---
+
+### Individual Chef Output Multipliers
+
+Each chef produces independently. Their multiplier applies only to **their own unit output per round**.
+
+| Skill Level | Non-Specialty Output | Specialty Output |
+|---|---|---|
+| **Low** | 1.0× | 1.4× |
+| **Medium** | 1.25× | 1.75× |
+| **High** | 1.6× | 2.2× |
+
+**Example:** A Medium French chef assigned to Croissant production outputs 1.75× units. That same chef assigned to Bagels outputs 1.25×. Players never see these numbers — they see the resulting throughput and satisfaction signals over time.
+
+---
+
+### Revenue Flow (Per Chef)
+
+```
+Individual Chef Base Output
+        × Skill Multiplier (applies to all products)
+        × Specialty Bonus (hidden — applies only to specialty products)
+        ↓
+That Chef's Unit Contribution to Product Throughput
+        ↓
+Product Throughput feeds Customer Satisfaction
+        ↓
+Satisfaction drives Foot Traffic
+        ↓
+Traffic × Price × Conversion = Revenue
+```
+
+---
+
+### Strategic Loop
+
+The hidden specialty system creates a **deduction game on top of the bidding game**:
+
+1. Player sees a High Japanese chef up for bid — bids aggressively expecting Matcha upside
+2. Player stocks up on Matcha inventory to align with that chef
+3. Over rounds, they observe higher throughput on Matcha → satisfaction rises → more traffic
+4. That data point reinforces (or corrects) their predictive model for future rounds
+
+Players who **misalign** chef purchases with inventory get penalized silently through weaker throughput — no explicit error, just worse outcomes that sharp players will notice.
+
+---
+
+### Open Questions Resolved ✅
+
+| Question | Answer |
+|---|---|
+| Chef cost/bidding? | Bid-based, higher minimum floor by skill tier |
+| Specialty visibility? | Hidden — nationality + skill level shown only |
+| Leveling up? | No — purchased at fixed skill level |
+| Multiplier stacking? | No stacking — each chef's multiplier is isolated to their own output |
 
 ---
 
