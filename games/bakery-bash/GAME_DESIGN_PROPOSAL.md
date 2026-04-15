@@ -153,6 +153,21 @@ Each chef produces independently. Their multiplier applies only to **their own u
 
 ---
 
+### Chef Nationalities & Specialties
+
+Each nationality has two hidden specialty products. Multipliers below show output per chef per round based on skill level.
+
+| Nationality | Specialties | Low Skill (Base / Specialty) | Medium Skill (Base / Specialty) | High Skill (Base / Specialty) |
+|---|---|---|---|---|
+| **French** | Croissant, Coffee | 1.0× / 1.4× | 1.25× / 1.75× | 1.6× / 2.2× |
+| **Japanese** | Matcha, Croissant | 1.0× / 1.4× | 1.25× / 1.75× | 1.6× / 2.2× |
+| **Italian** | Sandwich, Coffee | 1.0× / 1.4× | 1.25× / 1.75× | 1.6× / 2.2× |
+| **American** | Bagel, Cookie | 1.0× / 1.4× | 1.25× / 1.75× | 1.6× / 2.2× |
+
+> Specialties are never shown to players. Nationality is visible — players must infer specialty alignment through observed throughput over time.
+
+---
+
 ### Revenue Flow (Per Chef)
 
 ```
