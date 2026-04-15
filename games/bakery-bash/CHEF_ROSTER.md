@@ -36,11 +36,13 @@
 
 **Specialties (Hidden):** Croissant, Coffee
 
-| Variant | Skin Tone | Hair | Accessories | Hat | Outfit |
+| Variant | Skin Tone | Hair | Accessories (randomizable) | Hat | Outfit |
 |---|---|---|---|---|---|
-| **A — Classic Parisienne** | Fair, light pink undertone | Long brown hair in two braids, draped forward over shoulders | Small pearl stud earrings | Low toque blanche, slightly tilted | Fitted white chef coat with blue trim at collar and cuffs, pressed apron |
-| **B — Afro-French** | Deep brown (West African-French heritage) | Long box braids or thick natural twists, pulled loosely to one side | Gold hoop earrings | Low toque blanche or chef's beret | Same fitted coat with blue trim, confident posture |
-| **C — Maghrebi-French** | Warm medium tan | Dark wavy hair in two loose braids | Simple silver earrings | Low toque blanche | Fitted coat, blue trim, slight smile |
+| **A — Classic Parisienne** | Fair, light pink undertone | Long brown hair in two braids, draped forward over shoulders | Pearl stud earrings / small diamond studs / delicate gold drop earrings | Low toque blanche, slightly tilted | Fitted white chef coat with blue trim at collar and cuffs, pressed apron |
+| **B — Afro-French** | Deep brown (West African-French heritage) | Long box braids or thick natural twists, pulled loosely to one side | Gold hoop earrings / large statement hoops / beaded drop earrings in warm tones | Low toque blanche or chef's beret | Same fitted coat with blue trim, confident posture |
+| **C — Maghrebi-French** | Warm medium tan | Dark wavy hair in two loose braids | Silver crescent earrings / turquoise stud earrings / small silver hoop with charm | Low toque blanche | Fitted coat, blue trim, slight smile |
+
+> **Jewelry note:** Accessories within each variant are interchangeable — the generator can randomize which option is shown to increase character variety across spawns.
 
 **Archetype feel:** Precise, elegant, confident. Slight artistic flair in how the uniform is worn.
 
@@ -65,10 +67,12 @@
 
 **Specialties (Hidden):** Matcha, Croissant
 
-| Variant | Skin Tone | Hair | Accessories | Headwear | Outfit |
+| Variant | Skin Tone | Hair | Accessories (randomizable) | Headwear | Outfit |
 |---|---|---|---|---|---|
-| **A — Traditional** | Light/medium warm beige | Black hair with blunt straight-cut bangs, high ponytail | Small floral hair clip at base of ponytail | White hachimaki tied around the ponytail base, ends tucked neatly | Clean white chef coat, black apron with subtle embroidered edge |
-| **B — Modern Tokyo** | Light/medium warm beige | Black hair, wispy side-swept bangs, high ponytail | Minimalist stud earrings | White hachimaki as a thin headband across forehead | Slim-fit coat, dark apron, sleeves slightly rolled |
+| **A — Traditional** | Light/medium warm beige | Black hair with blunt straight-cut bangs, high ponytail | Small cherry blossom hair clip / red kanzashi pin / simple white floral clip at ponytail base | White hachimaki tied around the ponytail base, ends tucked neatly | Clean white chef coat, black apron with subtle embroidered edge |
+| **B — Modern Tokyo** | Light/medium warm beige | Black hair, wispy side-swept bangs, high ponytail | Tiny silver stud earrings / small pearl studs / minimalist geometric ear cuff | White hachimaki as a thin headband across forehead | Slim-fit coat, dark apron, sleeves slightly rolled |
+
+> **Jewelry note:** Accessories within each variant are interchangeable — the generator can randomize which option is shown to increase character variety across spawns.
 
 **Archetype feel:** Neat, gentle, highly composed. Precise movements implied in posture.
 
@@ -95,10 +99,12 @@
 
 **Specialties (Hidden):** Sandwich, Coffee
 
-| Variant | Skin Tone | Hair | Accessories | Hat | Outfit |
+| Variant | Skin Tone | Hair | Accessories (randomizable) | Hat | Outfit |
 |---|---|---|---|---|---|
-| **A — Classic Southern Italian** | Warm olive/medium tan | Dark wavy hair pulled up under hat, a few loose strands framing the face | Small gold earrings | Cappello da cuoco (floppy, pleated, worn softly) | White chef coat with subtle red trim at collar, red neckerchief tied loosely, short apron |
-| **B — Northern Italian** | Fair with warm undertone | Dark straight hair in a low bun under hat | Simple silver earrings | Cappello da cuoco, slightly neater fit | Same coat and neckerchief, more polished stance |
+| **A — Classic Southern Italian** | Warm olive/medium tan | Dark wavy hair pulled up under hat, a few loose strands framing the face | Small gold hoop earrings / coral drop earrings / gold knot studs | Cappello da cuoco (floppy, pleated, worn softly) | White chef coat with subtle red trim at collar, red neckerchief tied loosely, short apron |
+| **B — Northern Italian** | Fair with warm undertone | Dark straight hair in a low bun under hat | Simple silver studs / small pearl drops / thin silver hoop earrings | Cappello da cuoco, slightly neater fit | Same coat and neckerchief, more polished stance |
+
+> **Jewelry note:** Accessories within each variant are interchangeable — the generator can randomize which option is shown to increase character variety across spawns.
 
 **Archetype feel:** Expressive, warm, confident. A sense of pride in craft. Coat is tidy but worn with personality.
 
@@ -124,11 +130,13 @@
 
 **Specialties (Hidden):** Bagel, Cookie
 
-| Variant | Skin Tone | Hair | Accessories | Hat | Outfit |
+| Variant | Skin Tone | Hair | Accessories (randomizable) | Hat | Outfit |
 |---|---|---|---|---|---|
-| **A — Classic** | Fair/light | Brown or blonde hair pulled into a neat bun, a few face-framing pieces loose | Small stud earrings | No hat — bun is the signature | White chef coat with rolled-up sleeves, casual denim apron, friendly open expression |
-| **B — African American** | Medium-deep brown | Natural hair in a high puff bun or twisted updo | Hoop earrings | No hat | Same rolled-sleeve coat, denim apron, bright expression |
-| **C — Latina** | Warm medium tan | Dark hair in a sleek bun | Simple earrings | No hat | Same outfit, athletic build |
+| **A — Classic** | Fair/light | Brown or blonde hair pulled into a neat bun, a few face-framing pieces loose | Small stud earrings / tiny turquoise drops / minimalist bar earrings | No hat — bun is the signature | White chef coat with rolled-up sleeves, casual denim apron, friendly open expression |
+| **B — African American** | Medium-deep brown | Natural hair in a high puff bun or twisted updo | Gold hoop earrings / large beaded hoops / cowrie shell drop earrings | No hat | Same rolled-sleeve coat, denim apron, bright expression |
+| **C — Latina** | Warm medium tan | Dark hair in a sleek bun | Small gold huggies / turquoise stud earrings / red enamel drop earrings | No hat | Same outfit, athletic build |
+
+> **Jewelry note:** Accessories within each variant are interchangeable — the generator can randomize which option is shown to increase character variety across spawns.
 
 **Archetype feel:** Energetic, friendly, practical. Sleeves rolled up = ready to work. Denim apron signals a modern artisan bakery vibe rather than fine dining.
 
