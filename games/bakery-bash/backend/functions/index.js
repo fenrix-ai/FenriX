@@ -1274,7 +1274,16 @@ async function runRoundSimulation(gameId, roundId) {
           })
         )
       );
-  const batch = db.batch();
+  // Firestore limits batch writes to 500 operations.  Each player adds
+  // 3–4 ops (round result, player update, CSV row, and optionally an
+  // email doc).  For 150+ player sessions we must split across batches.
+  // The round/leaderboard/game-phase writes go in the final batch so
+  // that simulationStatus flips to "complete" only after all player
+  // data is persisted.
+  const BATCH_OP_LIMIT = 490; // leave headroom for the 3 fixed ops
+  let currentBatch = db.batch();
+  let opsInBatch = 0;
+  const batchQueue = [];
 
   for (const [index, result] of results.entries()) {
     const playerRef = gameRef.collection("players").doc(result.playerId);
@@ -1288,8 +1297,18 @@ async function runRoundSimulation(gameId, roundId) {
       .collection("emails")
       .doc(`round_${roundNumber + 1}_data`);
 
-    batch.set(playerRoundRef, result.result);
-    batch.update(playerRef, {
+    const opsForThisPlayer = isLastRound ? 3 : 4;
+
+    // If adding this player would exceed the limit, seal the current
+    // batch and start a new one.
+    if (opsInBatch + opsForThisPlayer > BATCH_OP_LIMIT) {
+      batchQueue.push(currentBatch);
+      currentBatch = db.batch();
+      opsInBatch = 0;
+    }
+
+    currentBatch.set(playerRoundRef, result.result);
+    currentBatch.update(playerRef, {
       budgetCurrent: FieldValue.increment(result.result.budgetDelta),
       cumulativeRevenue: FieldValue.increment(result.result.revenue),
       lastRoundResult: {
@@ -1302,18 +1321,22 @@ async function runRoundSimulation(gameId, roundId) {
         productsSold: result.result.productsSold,
       },
     });
-    batch.set(csvRowRef, {
+    currentBatch.set(csvRowRef, {
       playerId: result.playerId,
       round: roundNumber,
       row: result.csvRow,
     });
     // Only write the email doc if we built one (skipped on last round)
     if (!isLastRound && emailDocs[index]) {
-      batch.set(emailRef, emailDocs[index]);
+      currentBatch.set(emailRef, emailDocs[index]);
     }
+    opsInBatch += opsForThisPlayer;
   }
 
-  batch.set(
+  // Append the fixed writes (round aggregate, leaderboard, game phase)
+  // to the final batch.  simulationStatus becomes "complete" only after
+  // all player batches have been committed.
+  currentBatch.set(
     roundRef,
     {
       round: roundNumber,
@@ -1336,19 +1359,24 @@ async function runRoundSimulation(gameId, roundId) {
     },
     { merge: true }
   );
-  batch.set(gameRef.collection("leaderboard").doc("current"), {
+  currentBatch.set(gameRef.collection("leaderboard").doc("current"), {
     rankings,
     updatedAt: FieldValue.serverTimestamp(),
     round: roundNumber,
   });
-  batch.update(gameRef, {
+  currentBatch.update(gameRef, {
     phase: "results",
     phaseEndTime: phaseEndTimeFromNow(config, "results"),
     phaseStartedAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
+  batchQueue.push(currentBatch);
 
-  await batch.commit();
+  // Commit player-data batches first, then the final batch that
+  // flips simulationStatus to "complete" and advances the phase.
+  for (const batch of batchQueue) {
+    await batch.commit();
+  }
 }
 
 exports.onDecisionSubmitted = onDocumentCreated(
@@ -1752,15 +1780,6 @@ exports.joinGame = onCall(async (request) => {
         updatedAt: FieldValue.serverTimestamp(),
       });
       return;
-    }
-
-    const currentPlayerCount = numberOrDefault(gameSnap.get("totalPlayers"), 0);
-
-    if (currentPlayerCount >= 30) {
-      throw new HttpsError(
-        "resource-exhausted",
-        "This game has reached the maximum of 30 players."
-      );
     }
 
     transaction.set(playerRef, {
