@@ -790,7 +790,9 @@ Next round
 
 **Primary metric:** Cumulative net revenue across all rounds. One number, one leaderboard. Clear winner.
 
-**Secondary metric (tiebreaker):** Average customer satisfaction %. Displayed as a percentage on the results screen and leaderboard. Not the primary ranking criterion, but visible to all players as a signal of operational performance.
+**Tiebreaker:** Remaining budget at end of game. If two players have identical net revenue, the player with more budget left over wins. Budget remaining can be negative (if the player took on loan shark debt that exceeded their revenue). Excess budget is displayed on the conclusion screen but is **not added to net revenue** — it is purely a tiebreaker signal.
+
+> Customer satisfaction % is no longer the tiebreaker. It remains visible as a performance signal but does not affect final ranking.
 
 **CSV export includes per round:**
 - Revenue (this round + cumulative)
@@ -804,6 +806,54 @@ Next round
 **Two separate UIs:**
 1. **Student-facing UI** — simplified: login, decision inputs, leaderboard, company emails. No budget tracker, no model building tools.
 2. **Professor / Live Ops UI** — full visibility: market share, all player data, AI bot controls, dynamic pricing levers. Scott and Dylan B. will run the control room on game day.
+
+---
+
+## Conclusion Screen
+
+Displayed after Round 5 results are processed. This is the final state of the game — no further decisions can be made.
+
+### Winner Banner
+
+At the top of the screen, a dedicated winner announcement displays:
+- **Team name** of the winning bakery (largest net revenue; tiebreaker: remaining budget)
+- **Portrait avatars of that team's head chefs** (all specialty chefs + base chef), shown in a row with their names and nationalities
+- A visual flourish (confetti, trophy, or similar) to mark the win moment
+
+### Final Rankings Table
+
+All players listed in rank order (1st → last), each row showing:
+
+| Column | Description |
+|---|---|
+| Rank | 1st, 2nd, 3rd… |
+| Team Name | Player/team display name |
+| Total Revenue | Sum of revenue earned across all 5 rounds (before deductions) |
+| Total Interest Charged | Cumulative loan shark interest paid across all rounds (0 if never over budget) |
+| Net Revenue | Total Revenue − Total Interest − Total Principal Borrowed |
+| Budget Remaining | Budget left at end of game (can be negative). **Tiebreaker.** Not added to Net Revenue. |
+
+> **Budget Remaining** is calculated as: `Starting Budget + Cumulative Revenue Earned − Cumulative Spending`. It reflects whether the player ended the game with a surplus or deficit. Negative values indicate the player borrowed more than they recovered.
+
+> **Excess budget is not counted as revenue.** A player who hoarded budget does not get rewarded — the budget column only matters for breaking ties.
+
+### Per-Player Detail (Expandable)
+
+Players can expand their own row (or any row, for transparency) to see a round-by-round breakdown:
+
+| Round | Revenue | Amount Borrowed | Interest Charged | Net This Round |
+|---|---|---|---|---|
+| 1 | $X | $0 | $0 | $X |
+| 2 | $X | $Y | $Y × 10% | $X − $Y − $Y×0.10 |
+| … | … | … | … | … |
+| **Total** | **$X** | **$Y** | **$Z** | **Net Revenue** |
+
+### Display Rules
+
+- Conclusion screen is **read-only** — no decisions, no inputs.
+- All players see all other players' results (full transparency at game end).
+- Professor / Live Ops UI shows the same screen with an additional export button to download the full results CSV.
+- Chef portraits shown in the winner banner use the same avatar assets as the in-game chef cards (head/neckline portrait style).
 
 ---
 
