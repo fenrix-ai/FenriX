@@ -93,22 +93,58 @@ Base Chef: 1.0x speed on all 6 products (Croissant, Matcha, Coffee, Sandwich, Co
 
 **Specialty Chef Cap: Maximum 3**
 
-Players can hold a maximum of **3 specialty chefs** at any time. If a player wins a bid on a 4th chef, they must **lay off one of their existing chefs** before or after acquiring the new one. Laid-off chefs are **returned to the auction pool** and can be bid on by other players in a subsequent round.
+Players can hold a maximum of **3 specialty chefs** at any time. Specialty chefs are acquired through the auction. If a player wins a bid that would give them a 4th specialty chef, a **Chef Roster Management screen** is triggered immediately after the auction — the player must lay off one of their existing specialty chefs before proceeding. Laid-off chefs return to the auction pool for future rounds.
 
 **Full Chef Roster State at Any Time:**
 
-| Slot | Chef |
-|---|---|
-| Always present | Base Chef (1.0x, no specialties) |
-| Specialty Slot 1 | Bidded chef (or empty) |
-| Specialty Slot 2 | Bidded chef (or empty) |
-| Specialty Slot 3 | Bidded chef (or empty) |
+| Slot | Chef | How Acquired |
+|---|---|---|
+| Always present | Base Chef (1.0× on all products, no specialty) | Automatic — cannot be removed |
+| Specialty Slot 1 | Bidded specialty chef (or empty) | Won at auction |
+| Specialty Slot 2 | Bidded specialty chef (or empty) | Won at auction |
+| Specialty Slot 3 | Bidded specialty chef (or empty) | Won at auction |
+| Sous Chef slots (unlimited) | Generic output helpers | Hired directly — no auction |
 
 **Strategic implications of the cap:**
 - Players must actively manage their chef roster — not just acquire, but also cut
 - A laid-off high-skill chef re-entering the auction can shift the competitive dynamic significantly
 - Players may strategically lay off chefs to disrupt opponents (e.g. releasing a chef a competitor wants back)
 - Knowing opponents' roster compositions (based on who bid on what) becomes part of the predictive modeling
+
+---
+
+### Sous Chefs
+
+Sous chefs are **non-specialty helpers** that players can hire directly — no auction required. They are unlimited in number, but each additional sous chef costs progressively more, reflecting the management overhead of a larger kitchen team.
+
+**Sous chef output:**
+
+Sous chefs produce at **0.5× the base parameter of the highest-level specialty chef currently on the team**. They apply this output to all products equally — no specialty bonus.
+
+```
+Sous Chef Daily Output = 0.5 × (30 × Base Multiplier of Highest Specialty Chef)
+```
+
+| Highest Specialty Chef on Team | Their Base Multiplier | Sous Chef Output |
+|---|---|---|
+| None (base chef only) | 1.0× | 0.5 × 30 × 1.0 = **15 units/day** |
+| Novel | 1.0× | 0.5 × 30 × 1.0 = **15 units/day** |
+| Intermediate | 1.25× | 0.5 × 30 × 1.25 = **18.75 units/day** |
+| Advanced | 1.6× | 0.5 × 30 × 1.6 = **24 units/day** |
+
+> Sous chef output scales with the team's best specialty chef — incentivizing players to win higher-skill chefs at auction before hiring sous chefs, since better leadership lifts the whole team's baseline.
+
+**Escalating hire cost:**
+
+| Sous Chef # | Cost Multiplier (relative to base hire cost) |
+|---|---|
+| 1st | 1.0× (base cost) |
+| 2nd | 1.5× |
+| 3rd | 2.25× |
+| 4th | 3.0× |
+| 5th+ | +0.75× per additional chef |
+
+> Exact base cost should be tuned to the existing budget economy. The principle: a few sous chefs are affordable throughput insurance; stacking many becomes expensive and creates diminishing returns relative to winning better specialty chefs at auction.
 
 ---
 
