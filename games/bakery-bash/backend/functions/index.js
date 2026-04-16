@@ -349,6 +349,29 @@ function totalQuantityCost(quantities = {}, unitCostPerProduct) {
   }, 0) * unitCostPerProduct;
 }
 
+function decisionRoundCost(config, decision) {
+  const staffCount = Math.max(0, numberOrDefault(decision.staffCount, 0));
+  const adSpend = Math.max(0, numberOrDefault(decision.adSpend, 0));
+  const stockCost = totalQuantityCost(
+    objectOrDefault(decision.quantities, {}),
+    config.unitCostPerProduct
+  );
+  const adBid = objectOrDefault(decision.adBid, {});
+  const chefBid = objectOrDefault(decision.chefBid, {});
+  const adBidAmount = adTypeForDecision(decision)
+    ? Math.max(0, numberOrDefault(adBid.amount, 0))
+    : 0;
+  const chefBidAmount = Math.max(0, numberOrDefault(chefBid.amount, 0));
+
+  return (
+    staffCount * config.costPerStaffPerRound +
+    adSpend +
+    stockCost +
+    adBidAmount +
+    chefBidAmount
+  );
+}
+
 function computeRevenue(config, inputs) {
   const model = config.revenueModel;
   const noise = gaussianNoise(model.noiseMin, model.noiseMax);
@@ -447,38 +470,100 @@ function adTypeForDecision(decision) {
   return AD_TYPES.includes(adBid.adType) ? adBid.adType : null;
 }
 
+function submittedAtMillis(decision) {
+  const submittedAt = decision?.submittedAt;
+
+  if (submittedAt instanceof Timestamp) {
+    return submittedAt.toMillis();
+  }
+
+  if (submittedAt && typeof submittedAt.toMillis === "function") {
+    return submittedAt.toMillis();
+  }
+
+  if (submittedAt instanceof Date) {
+    return submittedAt.getTime();
+  }
+
+  return Number.POSITIVE_INFINITY;
+}
+
+function isWinningBid(amount, submittedAt, winner) {
+  if (amount <= 0) {
+    return false;
+  }
+
+  if (amount > winner.winningBid) {
+    return true;
+  }
+
+  return amount === winner.winningBid && submittedAt < winner.submittedAtMillis;
+}
+
 function resolveAuctions(playerInputs) {
   const adWinners = Object.fromEntries(
-    AD_TYPES.map((adType) => [adType, { winnerId: null, winningBid: 0 }])
+    AD_TYPES.map((adType) => [
+      adType,
+      {
+        winnerId: null,
+        winningBid: 0,
+        submittedAtMillis: Number.POSITIVE_INFINITY,
+      },
+    ])
   );
-  const chefWinner = { winnerId: null, winningBid: 0, skillLevel: 0 };
+  const chefWinner = {
+    winnerId: null,
+    winningBid: 0,
+    skillLevel: 0,
+    submittedAtMillis: Number.POSITIVE_INFINITY,
+  };
 
   for (const input of playerInputs) {
     const adBid = objectOrDefault(input.decision.adBid, {});
     const adType = adTypeForDecision(input.decision);
     const adAmount = Math.max(0, numberOrDefault(adBid.amount, 0));
+    const submittedAt = submittedAtMillis(input.decision);
 
-    if (adType && adAmount > adWinners[adType].winningBid) {
+    if (adType && isWinningBid(adAmount, submittedAt, adWinners[adType])) {
       adWinners[adType] = {
         winnerId: input.playerId,
         winningBid: adAmount,
+        submittedAtMillis: submittedAt,
       };
     }
 
     const chefBid = objectOrDefault(input.decision.chefBid, {});
     const chefAmount = Math.max(0, numberOrDefault(chefBid.amount, 0));
 
-    if (chefAmount > chefWinner.winningBid) {
+    if (isWinningBid(chefAmount, submittedAt, chefWinner)) {
       chefWinner.winnerId = input.playerId;
       chefWinner.winningBid = chefAmount;
       chefWinner.skillLevel = Math.max(
         0,
         Math.min(100, numberOrDefault(chefBid.skillLevel, 0))
       );
+      chefWinner.submittedAtMillis = submittedAt;
     }
   }
 
-  return { ads: adWinners, chef: chefWinner };
+  return {
+    ads: Object.fromEntries(
+      Object.entries(adWinners).map(([adType, winner]) => [
+        adType,
+        {
+          winnerId: winner.winnerId,
+          winningBid: winner.winningBid,
+          tieBreaker: "earliest_submission",
+        },
+      ])
+    ),
+    chef: {
+      winnerId: chefWinner.winnerId,
+      winningBid: chefWinner.winningBid,
+      skillLevel: chefWinner.skillLevel,
+      tieBreaker: "earliest_submission",
+    },
+  };
 }
 
 function roundNumberFromId(roundId) {
@@ -901,15 +986,23 @@ async function claimSimulationRun(gameId, roundId) {
 }
 
 async function markSimulationFailed(gameId, roundId, error) {
-  await db.collection("games").doc(gameId).collection("rounds").doc(roundId).set(
-    {
-      simulationStatus: "failed",
-      simulationError:
-        error instanceof Error ? error.message : "Unknown simulation error",
-      failedAt: FieldValue.serverTimestamp(),
-    },
-    { merge: true }
-  );
+  const gameRef = db.collection("games").doc(gameId);
+  const configSnap = await gameRef.collection("config").doc("params").get();
+  const config = mergeConfig(configSnap.exists ? configSnap.data() : {});
+  const failureUpdate = {
+    simulationStatus: "failed",
+    simulationError:
+      error instanceof Error ? error.message : "Unknown simulation error",
+    failedAt: FieldValue.serverTimestamp(),
+  };
+
+  await gameRef.collection("rounds").doc(roundId).set(failureUpdate, { merge: true });
+  await gameRef.update({
+    phase: "auction",
+    phaseEndTime: phaseEndTimeFromNow(config, "auction"),
+    phaseStartedAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  });
 }
 
 async function runRoundSimulation(gameId, roundId) {
@@ -1061,6 +1154,7 @@ async function runRoundSimulation(gameId, roundId) {
         creditBalanceBefore,
         creditBalanceAfter: creditBalanceBefore,
         totalCosts,
+        budgetDelta: revenue - totalCosts,
         budgetBefore,
         budgetAfter,
         computedAt: FieldValue.serverTimestamp(),
@@ -1109,7 +1203,7 @@ async function runRoundSimulation(gameId, roundId) {
 
     batch.set(playerRoundRef, result.result);
     batch.update(playerRef, {
-      budgetCurrent: result.result.budgetAfter,
+      budgetCurrent: FieldValue.increment(result.result.budgetDelta),
       cumulativeRevenue: FieldValue.increment(result.result.revenue),
       lastRoundResult: {
         round: roundNumber,
@@ -1323,9 +1417,10 @@ exports.submitDecision = onCall(async (request) => {
   let roundId;
 
   await db.runTransaction(async (transaction) => {
-    const [gameSnap, playerSnap] = await Promise.all([
+    const [gameSnap, playerSnap, configSnap] = await Promise.all([
       transaction.get(gameRef),
       transaction.get(playerRef),
+      transaction.get(gameRef.collection("config").doc("params")),
     ]);
 
     if (!gameSnap.exists) {
@@ -1372,6 +1467,17 @@ exports.submitDecision = onCall(async (request) => {
       );
     }
 
+    const config = mergeConfig(configSnap.exists ? configSnap.data() : {});
+    const budgetCurrent = numberOrDefault(playerSnap.get("budgetCurrent"), 0);
+    const maxRoundCost = decisionRoundCost(config, decision);
+
+    if (maxRoundCost > budgetCurrent) {
+      throw new HttpsError(
+        "failed-precondition",
+        `This decision costs $${maxRoundCost.toFixed(2)}, but your current budget is $${budgetCurrent.toFixed(2)}.`
+      );
+    }
+
     const decisionDoc = {
       round: currentRound,
       submittedAt: FieldValue.serverTimestamp(),
@@ -1383,7 +1489,8 @@ exports.submitDecision = onCall(async (request) => {
       adBid: decision.adBid,
       chefBid: decision.chefBid,
       numProducts: decision.numProducts,
-      budgetBefore: numberOrDefault(playerSnap.get("budgetCurrent"), 0),
+      budgetBefore: budgetCurrent,
+      maxRoundCost,
     };
 
     transaction.set(decisionRef, decisionDoc);

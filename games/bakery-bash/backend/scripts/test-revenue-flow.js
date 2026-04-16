@@ -1,5 +1,9 @@
 const { initializeApp: initializeAdminApp } = require("firebase-admin/app");
-const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+const {
+  getFirestore,
+  FieldValue,
+  Timestamp,
+} = require("firebase-admin/firestore");
 
 const PROJECT_ID = "bakery-bash-54d12";
 const GAME_ID = "revenue-flow-game";
@@ -175,6 +179,7 @@ async function main() {
     .doc(`games/${GAME_ID}/players/${PLAYER_A}/decisions/${ROUND_ID}`)
     .set(
       decision({
+        submittedAt: Timestamp.fromMillis(2000),
         staffCount: 3,
         adSpend: 100,
         adBid: { adType: "TV", amount: 50 },
@@ -185,7 +190,10 @@ async function main() {
     .doc(`games/${GAME_ID}/players/${PLAYER_B}/decisions/${ROUND_ID}`)
     .set(
       decision({
+        submittedAt: Timestamp.fromMillis(1000),
         staffCount: 2,
+        adBid: { adType: "TV", amount: 50 },
+        chefBid: { skillLevel: 80, amount: 100 },
       })
     );
 
@@ -211,21 +219,38 @@ async function main() {
     db.doc(`games/${GAME_ID}/players/${PLAYER_A}/emails/round_2_data`).get(),
   ]);
 
-  assertEqual(resultASnap.get("revenue"), 1345, "Player A revenue mismatch.");
-  assertEqual(resultASnap.get("budgetAfter"), 2915, "Player A budget mismatch.");
-  assertEqual(resultASnap.get("headchefSkill"), 80, "Player A chef skill mismatch.");
-  assertEqual(resultASnap.get("adTypeWon"), "TV", "Player A ad win mismatch.");
-  assertEqual(resultBSnap.get("revenue"), 635, "Player B revenue mismatch.");
-  assertEqual(resultBSnap.get("budgetAfter"), 2505, "Player B budget mismatch.");
-  assertEqual(playerASnap.get("budgetCurrent"), 2915, "Player A live budget mismatch.");
-  assertEqual(playerBSnap.get("budgetCurrent"), 2505, "Player B live budget mismatch.");
+  assertEqual(resultASnap.get("revenue"), 745, "Player A revenue mismatch.");
+  assertEqual(resultASnap.get("budgetAfter"), 2465, "Player A budget mismatch.");
+  assertEqual(resultASnap.get("headchefSkill"), 0, "Player A chef skill mismatch.");
+  assertEqual(resultASnap.get("adTypeWon"), null, "Player A ad win mismatch.");
+  assertEqual(resultBSnap.get("revenue"), 1235, "Player B revenue mismatch.");
+  assertEqual(resultBSnap.get("budgetAfter"), 2955, "Player B budget mismatch.");
+  assertEqual(resultBSnap.get("headchefSkill"), 80, "Player B chef skill mismatch.");
+  assertEqual(resultBSnap.get("adTypeWon"), "TV", "Player B ad win mismatch.");
+  assertEqual(playerASnap.get("budgetCurrent"), 2465, "Player A live budget mismatch.");
+  assertEqual(playerBSnap.get("budgetCurrent"), 2955, "Player B live budget mismatch.");
   assertEqual(roundSnap.get("simulationStatus"), "complete", "Round status mismatch.");
   assertEqual(
+    roundSnap.get("auctionResults.ads.TV.winnerId"),
+    PLAYER_B,
+    "Ad auction tie-breaker mismatch."
+  );
+  assertEqual(
+    roundSnap.get("auctionResults.chef.winnerId"),
+    PLAYER_B,
+    "Chef auction tie-breaker mismatch."
+  );
+  assertEqual(
+    roundSnap.get("auctionResults.ads.TV.tieBreaker"),
+    "earliest_submission",
+    "Ad auction tie-breaker label mismatch."
+  );
+  assertEqual(
     leaderboardSnap.data().rankings[0].playerId,
-    PLAYER_A,
+    PLAYER_B,
     "Leaderboard winner mismatch."
   );
-  assertEqual(csvSnap.get("row.revenue"), 1345, "CSV row revenue mismatch.");
+  assertEqual(csvSnap.get("row.revenue"), 745, "CSV row revenue mismatch.");
   assertEqual(emailSnap.get("type"), "round_data_csv", "Email type mismatch.");
   assertEqual(emailSnap.get("round"), 2, "Email target round mismatch.");
   const emailAttachment = emailSnap.data().attachments[0];
@@ -241,7 +266,7 @@ async function main() {
   );
 
   const emailCsv = emailAttachment.csvText;
-  if (!emailCsv.includes("day,revenue,num_products") || !emailCsv.includes("1,1345,3")) {
+  if (!emailCsv.includes("day,revenue,num_products") || !emailCsv.includes("1,745,3")) {
     throw new Error("Email CSV attachment did not include the expected round row.");
   }
 

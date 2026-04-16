@@ -156,6 +156,42 @@ async function main() {
     }
   }
 
+  try {
+    await submitDecision({
+      gameId: GAME_ID,
+      menu: {
+        croissant: true,
+        bagel: true,
+        latte: true,
+      },
+      productPrices: {
+        croissant: 5,
+        bagel: 6,
+        latte: 4,
+      },
+      quantities: {
+        croissant: 10,
+        bagel: 10,
+        latte: 10,
+      },
+      staffCount: 20,
+      adSpend: 1200,
+      adType: "tv",
+      chefBid: {
+        skillLevel: 50,
+        amount: 100,
+      },
+    });
+    throw new Error("Unaffordable decision unexpectedly succeeded.");
+  } catch (error) {
+    if (error.code !== "functions/failed-precondition") {
+      throw error;
+    }
+    if (!error.message.includes("current budget")) {
+      throw new Error(`Unexpected budget validation message: ${error.message}`);
+    }
+  }
+
   const result = await submitDecision({
     gameId: GAME_ID,
     round: 1,
