@@ -33,12 +33,15 @@ Revenue must be continuous (not bucketed or categorical) so students can run lin
 
 | Phase | Duration | What Happens |
 |---|---|---|
-| 1. Decide | ~5 min | Players set prices, adjust sous chef count, and add new menu items based on regression model (+ new data from each round). Timer counts down. |
-| 2. Bidding | ~2 min | Players do an advertisements bidding round (1 min) and head chefs bidding round (1 min). |
-| 3. Simulate | ~30 sec | Backend runs a regression model, computes revenue, allocates customers. Run a minigame for players to interact with here. |
-| 4. Review | ~1 min | Players see results: revenue, customer count, leaderboard update. |
-| 4.5. Company Email | — | Players receive an in-game "company email" with sales proceeds, market updates, and news. Data is exportable as CSV for external modeling. |
+| 1. Decide | ~5 min | Players set quantity per product, adjust sous chef count and assignments, and add new menu items. Timer counts down. Pricing is fixed — no price inputs. |
+| 2. Bidding | ~2 min | Ad auction (1 min) + Chef auction (1 min). |
+| 2.5. Roster Management | ~1 min | Players organize their chef roster post-auction. Mandatory if a player won a 4th specialty chef — must lay one off before advancing. Sous chef hiring also available here. |
+| 3. Simulate | ~30 sec | Backend computes throughput, satisfaction, foot traffic, and revenue. Minigame plays during processing. |
+| 4. Review | ~1 min | Players see results: revenue, satisfaction %, foot traffic, sell-out flags, leaderboard update. |
+| 4.5. Company Email | — | Market insight email delivered — hints at next round's trending products. Data exportable as CSV. |
 | 5. Repeat | — | Next round begins. New data row appended to player's dataset. |
+
+> **Total with roster management: ~9.5 min/round × 5 rounds + setup = ~52 min.** Schedule should account for the added roster step.
 
 ---
 
@@ -48,10 +51,22 @@ Three base decision inputs per round.
 
 | Decision | Input Type | What Player Does | Why It Matters |
 |---|---|---|---|
-| Quantity | Stock quantity per product | Set quantity for each product | Players must balance the costs of stock input and the expected revenue |
-| Average Price | Average price of products | Set average price of store's products | Teaches price elasticity — too high loses customers, too low kills margin |
-| Sous Chef Hiring | Integer | Choose how many sous chefs to hire (costs $/round, escalates with each additional hire) | Marginal returns — more sous chefs = more throughput but higher costs. **Sous chef costs are dynamic** — escalate with each additional hire per round. Players must weigh throughput gains against diminishing returns relative to bidding on higher-skill specialty chefs. |
-| Ad/Chef Bids | $ amount | Choose how much to spend on bidding | Competitive — shared customer pool means ad ROI depends on others' spend |
+| Quantity | Stock quantity per product | Set quantity for each product | Players must balance supply cost against expected demand — over-buy wastes budget, under-buy causes sell-outs |
+| Sous Chef Hiring | Integer | Choose how many sous chefs to hire and assign each to a product | Marginal returns — more sous chefs = more throughput, but costs escalate and excess sous chefs reduce Chef Satisfaction Score |
+| Ad/Chef Bids | $ amount | Choose how much to spend on bidding | Competitive — shared customer pool means ad and chef ROI depends on others' spend |
+
+> **Pricing is fixed per product for MVP.** Players do not set prices. This simplifies the decision space and keeps the regression model focused on throughput, staffing, and bidding variables. Per-product dynamic pricing is a post-MVP feature.
+
+**Fixed product prices (MVP):**
+
+| Product | Fixed Price |
+|---|---|
+| Coffee | $4.00 |
+| Croissant | $4.75 |
+| Bagel | $3.00 |
+| Cookie | $2.50 |
+| Sandwich | $8.75 |
+| Matcha | $6.25 |
 
 ### Bidding Process
 
@@ -174,6 +189,63 @@ Sous Chef Daily Output = 0.5 × (30 × Base Multiplier of Highest Specialty Chef
 | 5th+ | +0.75× per additional chef |
 
 > Exact base cost should be tuned to the existing budget economy. The principle: a few sous chefs are affordable throughput insurance; stacking many becomes expensive and creates diminishing returns relative to winning better specialty chefs at auction.
+
+**Sous chef product assignment:**
+
+Each sous chef must be assigned to a specific product each round. Their output is **0.5× the head chef's daily output on that same product**. Head chef = the highest-skill specialty chef currently on the team. The sous chef's output uses the head chef's full output value (including specialty bonus if the head chef specializes in that product).
+
+```
+Sous Chef Output on Product X =
+    0.5 × (Head Chef's Daily Output on Product X)
+
+Head Chef Output on Product X =
+    30 × Head Chef's Skill Multiplier
+    (× Specialty Multiplier if Product X is the head chef's specialty)
+```
+
+**Example:** Advanced French chef is the head chef. Assigned sous chef to Croissant (French specialty):
+- Head chef Croissant output = 30 × 2.2 = 66 units/day
+- Sous chef Croissant output = 66 × 0.5 = **33 units/day**
+
+Same sous chef assigned to Bagel (not French specialty):
+- Head chef Bagel output = 30 × 1.6 = 48 units/day
+- Sous chef Bagel output = 48 × 0.5 = **24 units/day**
+
+---
+
+### Chef Satisfaction Score
+
+Hiring too many sous chefs creates kitchen chaos — the "too many cooks" effect. A **Chef Satisfaction Score (0–100)** tracks kitchen cohesion and acts as a throughput multiplier on total daily output.
+
+**Threshold: 4 sous chefs.** At or below 4, the kitchen runs efficiently. Beyond 4, each additional sous chef reduces the score.
+
+```
+Chef Satisfaction Score = max(35, 100 − max(0, sous_chef_count − 4) × 16)
+```
+
+| Sous Chef Count | Chef Satisfaction Score | Kitchen State |
+|---|---|---|
+| 0–4 | 100 | Optimal — full efficiency |
+| 5 | 84 | Slightly crowded |
+| 6 | 68 | Coordination breaking down |
+| 7 | 52 | Noticeably chaotic |
+| 8+ | 35 (floor) | Severe disruption — marginal sous chefs are net-negative |
+
+**Effect on throughput:**
+
+```
+Effective Daily Output = Total Calculated Output × (Chef Satisfaction Score ÷ 100)
+```
+
+A kitchen with a score of 52 produces only 52% of its theoretical maximum throughput — meaning extra sous chefs can actively reduce production versus a leaner team.
+
+**Regression coefficient:**
+
+```
++ (3.5 × chef_satisfaction_score)
+```
+
+A kitchen at 100 contributes +350 to revenue. A kitchen at 35 (floor) contributes +122.50 — a $227.50 revenue penalty for a chaotic kitchen, on top of the throughput reduction.
 
 ---
 
@@ -765,16 +837,62 @@ Next round
 
 ## Competitive Dynamics
 
+### Foot Traffic Formula
+
+There is one unified foot traffic model. All factors below feed into a single **Foot Traffic Modifier** applied to each player's base traffic allocation.
+
+```
+Foot Traffic = Base Traffic Pool Share × (1 + Foot Traffic Modifier)
+
+Foot Traffic Modifier =
+    Satisfaction Modifier       (from aggregate satisfaction %)
+  + Product Variety Bonus
+  + Sous Chef Bonus             (up to threshold — see Chef Satisfaction below)
+  + Ad Type Bonus               (TBD — to be specified when ad system is finalized)
+  − Availability Penalty        (sell-outs reduce share via customer defection)
+```
+
+**Satisfaction Modifier** (primary driver — from the Satisfaction → Foot Traffic table):
+
+| Avg Satisfaction % | Modifier |
+|---|---|
+| 0–20% | −40% |
+| 21–45% | −20% |
+| 46–65% | ±0% |
+| 66–85% | +20% |
+| 86–100% | +40% |
+
+Premium bonus: +10% if Croissant or Matcha individually at Excellent (stackable, max +20%).
+
+**Product Variety Bonus:**
+
+| Products Offered | Bonus |
+|---|---|
+| 3 (base menu) | ±0% |
+| 4 | +5% |
+| 5 | +10% |
+| 6 | +15% |
+
+**Sous Chef Bonus** — applies only up to the optimal threshold (beyond threshold, Chef Satisfaction Score penalizes throughput instead — see below):
+
+| Sous Chefs Hired | Foot Traffic Bonus |
+|---|---|
+| 0 | ±0% |
+| 1 | +5% |
+| 2 | +10% |
+| 3 | +14% |
+| 4 (threshold) | +17% |
+| 5+ | No additional bonus — Chef Satisfaction penalty applies |
+
+**Availability Penalty:** Each sell-out event during the round reduces foot traffic by −8% (product-loyal customers defect to competitors). Stacks per product sold out.
+
+**Ad Type Bonus:** To be defined when the ad auction system is finalized.
+
 ### How Players Compete
 
-The shared customer pool is the core competitive mechanism. Each round, a finite number of customers are distributed across all cafés based on an attractiveness score. The score is a function of:
+The shared customer pool is zero-sum at the margin. Each player's base traffic share is proportional to their relative satisfaction score per product (see Competitive Foot Traffic Allocation). The foot traffic modifier above then scales each player's allocated share up or down based on their operational decisions.
 
-- **Pricing** — competitive prices attract more budget-conscious shoppers
-- **Product variety** — more menu items = broader appeal
-- **Sous chef count** — more sous chefs = faster service = less churn
-- **Ad spend** — directly increases foot traffic share
-
-This is zero-sum at the margin — players have to adopt different strategies to stand out.
+Players must differentiate — if multiple players pursue the same product strategy, foot traffic splits by satisfaction dominance rather than accumulating for both.
 
 ### Preventing Dominant Strategy
 
@@ -790,24 +908,54 @@ Three mechanisms:
 
 After each round, players receive a downloadable CSV of new rows. Players accumulate data over rounds and can download it as CSV/XLSX to build models in their own environment.
 
+**Decision inputs (what the player controls):**
+
 | Column | Type | Description |
 |---|---|---|
-| day | int | Round number (1, 2, 3…) |
+| round | int | Round number (1–5) |
+| num_products | int | Number of products on the menu that round |
+| sous_chef_count | int | Total sous chefs hired that round |
+| ad_type | char | Ad type won at auction (TV, Radio, Newspaper, Billboard, or None) |
+| specialty_chef_1_nationality | char | Nationality of specialty chef in slot 1 (or None) |
+| specialty_chef_1_skill | char | Skill tier of specialty chef in slot 1 (Novel / Intermediate / Advanced / None) |
+| specialty_chef_2_nationality | char | Nationality of specialty chef in slot 2 (or None) |
+| specialty_chef_2_skill | char | Skill tier of specialty chef in slot 2 |
+| specialty_chef_3_nationality | char | Nationality of specialty chef in slot 3 (or None) |
+| specialty_chef_3_skill | char | Skill tier of specialty chef in slot 3 |
+| croissant_qty_stocked | int | Units of Croissant purchased this round |
+| cookie_qty_stocked | int | Units of Cookie purchased this round |
+| bagel_qty_stocked | int | Units of Bagel purchased this round |
+| sandwich_qty_stocked | int | Units of Sandwich purchased this round (0 if not on menu) |
+| coffee_qty_stocked | int | Units of Coffee purchased this round (0 if not on menu) |
+| matcha_qty_stocked | int | Units of Matcha purchased this round (0 if not on menu) |
+
+**Output results (what the game returns):**
+
+| Column | Type | Description |
+|---|---|---|
 | revenue | float | TARGET VARIABLE — total revenue for the round ($) |
-| num_products | int | Number of products on your menu that round |
-| avg_price | float | Mean sell price across all menu items ($) |
-| sous_chef_count | int | Total sous chefs hired |
-| ad_spend | float | Dollars allocated to advertising |
-| customer_count | int | Customers who visited your café |
-| customer_satisfaction | float | Customer satisfaction score (0–100) |
-| headchef_skill | int | Chef skill level (0–100) |
-| croissant | char | Quantity sold |
-| cookie | char | Quantity sold |
-| bagel | char | Quantity sold |
-| sandwich | char | Quantity sold |
-| coffee | char | Quantity sold |
-| matcha | char | Quantity sold |
-| ad_type | char | Type of ad (TV, mall, etc.) |
+| foot_traffic | int | Number of customers who visited the bakery |
+| customer_count | int | Customers who made a purchase (foot_traffic minus walk-aways) |
+| aggregate_satisfaction_pct | float | Weighted average satisfaction across all products offered (0–100%) |
+| chef_satisfaction_score | int | Kitchen cohesion score (0–100) — penalizes excess sous chefs |
+| croissant_satisfaction_pct | float | Per-product satisfaction % (0–100%) |
+| cookie_satisfaction_pct | float | Per-product satisfaction % |
+| bagel_satisfaction_pct | float | Per-product satisfaction % |
+| sandwich_satisfaction_pct | float | Per-product satisfaction % (null if not offered) |
+| coffee_satisfaction_pct | float | Per-product satisfaction % (null if not offered) |
+| matcha_satisfaction_pct | float | Per-product satisfaction % (null if not offered) |
+| croissant_qty_sold | int | Units sold |
+| cookie_qty_sold | int | Units sold |
+| bagel_qty_sold | int | Units sold |
+| sandwich_qty_sold | int | Units sold (0 if not offered) |
+| coffee_qty_sold | int | Units sold (0 if not offered) |
+| matcha_qty_sold | int | Units sold (0 if not offered) |
+| sellout_croissant | bool | 1 if sold out mid-round, 0 otherwise |
+| sellout_cookie | bool | 1 if sold out mid-round |
+| sellout_bagel | bool | 1 if sold out mid-round |
+| sellout_sandwich | bool | 1 if sold out mid-round |
+| sellout_coffee | bool | 1 if sold out mid-round |
+| sellout_matcha | bool | 1 if sold out mid-round |
 
 ### Dataset Structure
 
@@ -846,17 +994,21 @@ Minimum set of features needed to play one complete game session. Everything bel
 
 The following features from the original design deck are cut from v1. They can be added incrementally after the core loop works and is stable. This is not a rejection of these ideas — it's a sequencing decision.
 
-| Feature | Why Cut from v1 | Add Back If Time? |
+| Feature | Status | Notes |
 |---|---|---|
-| 3 sealed-bid auctions | 2–3 days of BE + FE work; simplify to flat ad spend | Yes — high impact |
-| Employee poaching | Complex real-time flow; requires notifications, counter-offers | Maybe — Phase 2 |
-| Employee tiers & satisfaction | Replace with simple headcount; keeps model simpler | Maybe |
-| 6 curveball types | Each needs custom logic; start with 0, add 1–2 if time | Yes — 1 or 2 |
-| AI competitors (3 tiers) | Each tier needs heuristic logic; skip for v1 | Maybe — Passive only |
-| In-game chat + achievements | Non-essential; use Discord/Slack | No |
-| Supplier product drops | Adds complexity to menu system; use fixed products | No |
-| Equipment upgrade tiers | Simplify to binary or remove; reduces decisions | Maybe |
-| 12 products | Reduce to 5–6; fewer price inputs, simpler UI | Cosmetic — easy to add back |
+| Ad auction (sealed bid) | ✅ In v1 | 1-min sealed bid for TV, Radio, Newspaper, Billboard |
+| Chef auction (sealed bid) | ✅ In v1 | 1-min sealed bid with nationality/skill shown, specialty hidden |
+| Chef roster management | ✅ In v1 | Post-auction screen — lay-off flow, sous chef hiring |
+| Chef satisfaction / "too many cooks" | ✅ In v1 | Score (0–100), threshold at 4 sous chefs, throughput multiplier |
+| Fixed product pricing | ✅ In v1 (MVP simplification) | Per-product dynamic pricing is post-MVP |
+| Per-product dynamic pricing | Post-MVP | Add after core loop is stable — high strategic value |
+| Sous chef poaching | Post-MVP | Complex real-time flow; requires notifications, counter-offers |
+| 6 curveball / market events | Post-MVP | Each needs custom logic; start with 0, add 1–2 if time |
+| AI competitors (3 tiers) | Post-MVP | Each tier needs heuristic logic — passive AI only if time |
+| In-game chat + achievements | Not planned | Use Discord/Slack for communication |
+| Supplier product drops | Not planned | Fixed products for v1 |
+| Equipment upgrade tiers | Post-MVP | Consider after dynamic pricing is in |
+| 12 products | Post-MVP | Current 6 is sufficient for launch |
 
 ---
 
@@ -867,20 +1019,24 @@ Backend needs concrete coefficients to build the revenue engine. Placeholder mod
 ```
 revenue = 500
         + (30 × sous_chef_count)
-        − (15 × avg_price)
+        + (3.5 × chef_satisfaction_score)
+        + (8.0 × aggregate_satisfaction_pct)
         + (0.8 × ad_spend)
         + (50 × num_products)
+        + (foot_traffic × product_revenue_rate)
         + noise
 ```
 
-- Base revenue of $500/round just for being open
-- Each sous chef adds ~$30 of revenue (diminishing returns not modeled yet)
-- Higher avg prices reduce customer volume (price elasticity)
-- Ad spend has positive but sub-linear return
-- More menu items attract more customers
-- Noise term: random uniform ±$100 to prevent deterministic optimization
+- **Base revenue:** $500/round just for being open
+- **Sous chef count:** Each sous chef adds ~$30 — but this is offset by the chef satisfaction penalty once count exceeds 4
+- **Chef satisfaction score (0–100):** Kitchen efficiency multiplier — +$3.50 per point. A perfect kitchen adds $350; floor kitchen (35) adds $122.50
+- **Aggregate satisfaction %:** Each percentage point of customer satisfaction adds $8 to revenue — the primary driver of performance
+- **Ad spend:** Positive but sub-linear return (TBD — coefficient will adjust once ad types are finalized)
+- **Num products:** Each additional menu item (beyond base 3) adds ~$50 through broader appeal
+- **Foot traffic × product revenue rate:** Foot traffic count multiplied by per-product fixed price × sell-through rate — the core revenue mechanism
+- **Noise:** Random uniform ±$100 to prevent deterministic optimization
 
-> ⚠️ These are PLACEHOLDER coefficients. Backend will code against this structure and swap in final values.
+> ⚠️ These are PLACEHOLDER coefficients. Backend will code against this structure and swap in final values. `avg_price` has been removed — pricing is fixed per product for MVP.
 
 ---
 
@@ -891,10 +1047,9 @@ Same starting point for everyone. Same base-level sous chef count, same menu, sa
 ## Budget Rules (Confirmed — All-Hands April 8)
 
 - Budget is set at a fixed amount (TBD — exact number to be finalized).
-- Players spend across products, marketing, and sous chef hiring.
+- Players spend across products, sous chef hiring, and auction bids.
 - **Overbidding is allowed** — players can exceed their budget but take on credit at a cost.
-- No in-game budget tracker. Players must manage their own finances externally.
-- No hand-holding on financial tracking.
+- **No in-game budget tracker by design.** Players must track their own finances externally (Excel, paper, etc.). This is intentional — financial self-management is part of the challenge and mirrors real business operations. The game UI will never display remaining balance.
 
 ## Open Questions
 
