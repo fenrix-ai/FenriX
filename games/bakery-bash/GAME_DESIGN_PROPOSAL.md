@@ -11,13 +11,13 @@
 
 ## Concept
 
-Players run competing grab-and-go cafés in a shared plaza food court. Each round, they set prices for their products, decide how many sous chefs to hire, and bid in auctions for scarce resources (advertisements, highly-rated chefs, etc.) on a fixed budget given at the start of the game. A regression model running on the individual player's computer can be used to help them win. The player with the highest cumulative net revenue across all rounds wins.
+Players run competing grab-and-go cafés in a shared plaza food court. Each round, they decide how much stock to carry per product, how many sous chefs to hire, and how much to bid in auctions for scarce resources (advertisements, highly-rated chefs, etc.). Product prices and starting budget are pre-set — players do not control these. A regression model running on the individual player's computer can be used to help them win. The player with the highest cumulative net revenue across all rounds wins.
 
 > **Loan Shark Rule:** If a player's total spending in a round exceeds their available budget, the overage is treated as a loan from the loan shark. At the end of that round, the borrowed amount **plus 10% interest** on the borrowed amount is deducted from the player's revenue. Example: borrow $200 → revenue penalty = $200 (principal) + $20 (interest) = **$220 deducted**. Players are never blocked from overspending — but the cost is punishing and compounds risk.
 
 Players receive "company emails" between rounds containing sales proceeds, market updates, and news. They export their data as CSV, build predictive models externally (Excel for MGSC 220, Python for MGSC 310), and input decisions back through the UI. There is no in-game model building. The game teaches regression modeling, price elasticity, resource optimization, and competitive strategy through direct experience.
 
-> **Design principle:** Players do NOT see their remaining budget in the UI. They receive revenue reports and sales data each round but must track their own finances externally (Excel, paper, etc.). This is intentional — financial self-management is part of the challenge.
+> **Design principle:** Players do NOT see their remaining budget during active gameplay. They receive revenue reports and sales data each round but must track their own finances externally (Excel, paper, etc.). This is intentional — financial self-management is part of the challenge. **Exception:** Budget Remaining is revealed to all players on the Conclusion Screen at the end of Round 5.
 
 ---
 
@@ -39,11 +39,12 @@ Revenue must be continuous (not bucketed or categorical) so students can run lin
 | 2. Bidding | ~2 min | Ad auction (1 min) + Chef auction (1 min). |
 | 2.5. Roster Management | ~1 min | Players organize their chef roster post-auction. Mandatory if a player won a 4th specialty chef — must lay one off before advancing. Sous chef hiring also available here. |
 | 3. Simulate | ~30 sec | Backend computes throughput, satisfaction, foot traffic, and revenue. Minigame plays during processing. |
-| 4. Review | ~1 min | Players see results: revenue, satisfaction %, foot traffic, sell-out flags, leaderboard update. |
+| 4. Review | ~1 min | Players see results: net revenue, amount borrowed (if any), interest charged (if any), satisfaction %, customer count, sell-out flags, leaderboard update. |
 | 4.5. Company Email | — | Market insight email delivered — hints at next round's trending products. Data exportable as CSV. |
 | 5. Repeat | — | Next round begins. New data row appended to player's dataset. |
+| 6. Conclusion | ~2 min | After Round 5 only: Conclusion Screen displays final rankings, net revenue, loan shark charges, budget remaining, and winner banner with full chef roster. Read-only. |
 
-> **Total with roster management: ~9.5 min/round × 5 rounds + setup = ~52 min.** Schedule should account for the added roster step.
+> **Total with roster management and conclusion: ~9.5 min/round × 5 rounds + setup + conclusion = ~54 min.** Schedule should account for the added roster step and end-game screen.
 
 ---
 
@@ -772,7 +773,16 @@ At each bakery, customers resolve:
     ↓
 Sell-out events trigger mid-round defection flows
     ↓
-Revenue = Customer Count × Fixed Price per product
+Revenue (gross) = Σ (qty_sold_product × fixed_price_product) for each product on menu
+    (Only products offered and actually purchased by customers contribute.
+     Products not offered, not purchased, or fully sold out at sell-out point = $0 contribution.)
+    ↓
+If total spending this round > available budget:
+    borrowed = spending − available budget
+    loan_shark_deduction = borrowed × 1.10
+    Net Revenue = Gross Revenue − loan_shark_deduction
+Else:
+    Net Revenue = Gross Revenue
 Unsold supply = wasted (no carryover)
     ↓
 Per-product satisfaction % calculated and stored
@@ -817,7 +827,7 @@ Displayed after Round 5 results are processed. This is the final state of the ga
 
 At the top of the screen, a dedicated winner announcement displays:
 - **Team name** of the winning bakery (largest net revenue; tiebreaker: remaining budget)
-- **Portrait avatars of that team's head chefs** (all specialty chefs + base chef), shown in a row with their names and nationalities
+- **Portrait avatars of the winning team's full chef roster** (base chef + all specialty chefs currently on the team), shown in a row with their names and nationalities
 - A visual flourish (confetti, trophy, or similar) to mark the win moment
 
 ### Final Rankings Table
@@ -833,7 +843,7 @@ All players listed in rank order (1st → last), each row showing:
 | Net Revenue | Total Revenue − Total Interest − Total Principal Borrowed |
 | Budget Remaining | Budget left at end of game (can be negative). **Tiebreaker.** Not added to Net Revenue. |
 
-> **Budget Remaining** is calculated as: `Starting Budget + Cumulative Revenue Earned − Cumulative Spending`. It reflects whether the player ended the game with a surplus or deficit. Negative values indicate the player borrowed more than they recovered.
+> **Budget Remaining** is calculated as: `Starting Budget + Cumulative Net Revenue − Cumulative Spending`. Net Revenue = Gross Revenue − (borrowed amount × 1.10) per round. Starting Budget is not part of Net Revenue — it is tracked separately as the financial baseline. Budget Remaining reflects whether the player ended the game with a surplus or deficit after all rounds of spending and earning. Negative values indicate the player borrowed more than they recovered.
 
 > **Excess budget is not counted as revenue.** A player who hoarded budget does not get rewarded — the budget column only matters for breaking ties.
 
@@ -955,7 +965,9 @@ After each round, players receive a downloadable CSV of new rows. Players accumu
 
 | Column | Type | Description |
 |---|---|---|
-| revenue | float | TARGET VARIABLE — total revenue for the round ($) |
+| revenue | float | TARGET VARIABLE — net revenue for the round ($). Gross revenue minus loan shark deduction (principal + interest) if applicable. This is the actual amount added to the player's budget balance. |
+| amount_borrowed | float | Amount borrowed from the loan shark this round ($0 if spending did not exceed budget) |
+| interest_charged | float | Interest charged on borrowed amount this round (amount_borrowed × 10%; $0 if nothing borrowed) |
 | customer_count | int | Customers who visited and made a purchase |
 | returning_customers | int | Customers from prior round's brand loyalty bonus (not in regression — results screen only) |
 | aggregate_satisfaction_pct | float | Weighted average satisfaction across all products offered (0–100%). Weights: Coffee 1.5×, Matcha 1.3×, Croissant 1.2×, Sandwich/Cookie/Bagel 1.0×. |
@@ -1001,14 +1013,15 @@ Students can run a regression in Excel or Python using the set variables. Player
 Minimum set of features needed to play one complete game session. Everything below must work. Everything above the cut line is a bonus.
 
 - [ ] 1 — Player joins a game session (simple auth + lobby screen)
-- [ ] 2 — Player builds their bakery: set budget, current sous chef count, menu, prices
-- [ ] 3 — For each new round: player sets prices, sous chef count, and ad spend
+- [ ] 2 — Player builds their bakery: review pre-set starting budget, pre-set fixed prices, current sous chef count, and base menu (budget and prices are pre-disposed — not player inputs)
+- [ ] 3 — For each new round: player sets quantity per product, sous chef count, and ad/chef bid amounts
 - [ ] 4 — Player submits decisions before timer expires
 - [ ] 5 — Backend runs regression model → computes revenue + customer allocation
 - [ ] 6 — Player sees round results + leaderboard ranking
 - [ ] 7 — Player downloads their new data as CSV
 - [ ] 8 — Repeat for 5 rounds
 - [ ] 9 — Professor can start, advance, pause, and end the game
+- [ ] 10 — After Round 5, display Conclusion Screen: final rankings, net revenue, amount borrowed, interest charged, budget remaining (tiebreaker), and winner banner with full chef roster portraits
 
 ---
 
@@ -1070,7 +1083,7 @@ Same starting point for everyone. Same base-level sous chef count, same menu, sa
 - Budget is set at a fixed amount (TBD — exact number to be finalized).
 - Players spend across products, sous chef hiring, and auction bids.
 - **Overbidding is allowed** — players are never blocked from exceeding their budget.
-- **No in-game budget tracker by design.** Players must track their own finances externally (Excel, paper, etc.). This is intentional — financial self-management is part of the challenge and mirrors real business operations. The game UI will never display remaining balance.
+- **No in-game budget tracker during active play.** Players must track their own finances externally (Excel, paper, etc.). This is intentional — financial self-management is part of the challenge and mirrors real business operations. The game UI will never display remaining balance mid-round. Budget Remaining is revealed once, on the Conclusion Screen at the end of Round 5.
 
 ### Loan Shark Mechanic (Confirmed — April 15)
 
