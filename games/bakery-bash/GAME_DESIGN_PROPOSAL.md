@@ -92,7 +92,7 @@ Players have 1 minute to bid each round, sealed auction, highest bidder wins. Pl
 
 ### Overview
 
-Chefs are biddable assets with a visible nationality and skill level, but **hidden specialty products**. Their multiplier only affects their own individual output — no stacking across chefs. Players must infer specialty alignment through observation and predictive modeling.
+Chefs are biddable assets with a visible nationality and skill level, but **hidden specialty products**. Each chef's skill and specialty multipliers compound within that chef's own output only — there is no cross-chef compounding. Each chef contributes their own daily output independently, and all contributions are summed. Players must infer specialty alignment through observation and predictive modeling.
 
 ---
 
@@ -163,20 +163,7 @@ Sous chefs are **non-specialty helpers** that players can hire directly — no a
 
 **Sous chef output:**
 
-Sous chefs produce at **0.5× the base parameter of the highest-level specialty chef currently on the team**. They apply this output to all products equally — no specialty bonus.
-
-```
-Sous Chef Daily Output = 0.5 × (30 × Base Multiplier of Highest Specialty Chef)
-```
-
-| Highest Specialty Chef on Team | Their Base Multiplier | Sous Chef Output |
-|---|---|---|
-| None (base chef only) | 1.0× | 0.5 × 30 × 1.0 = **15 units/day** |
-| Novel | 1.0× | 0.5 × 30 × 1.0 = **15 units/day** |
-| Intermediate | 1.25× | 0.5 × 30 × 1.25 = **18.75 units/day** |
-| Advanced | 1.6× | 0.5 × 30 × 1.6 = **24 units/day** |
-
-> Sous chef output scales with the team's best specialty chef — incentivizing players to win higher-skill chefs at auction before hiring sous chefs, since better leadership lifts the whole team's baseline.
+Each sous chef must be assigned to a specific product each round. Their output is **0.5× the head chef's daily output on that assigned product**. Head chef = the highest-skill specialty chef currently on the team. The sous chef benefits from the head chef's full output on that product — including the specialty bonus if the product is the head chef's specialty.
 
 **Escalating hire cost:**
 
@@ -190,10 +177,6 @@ Sous Chef Daily Output = 0.5 × (30 × Base Multiplier of Highest Specialty Chef
 
 > Exact base cost should be tuned to the existing budget economy. The principle: a few sous chefs are affordable throughput insurance; stacking many becomes expensive and creates diminishing returns relative to winning better specialty chefs at auction.
 
-**Sous chef product assignment:**
-
-Each sous chef must be assigned to a specific product each round. Their output is **0.5× the head chef's daily output on that same product**. Head chef = the highest-skill specialty chef currently on the team. The sous chef's output uses the head chef's full output value (including specialty bonus if the head chef specializes in that product).
-
 ```
 Sous Chef Output on Product X =
     0.5 × (Head Chef's Daily Output on Product X)
@@ -203,13 +186,14 @@ Head Chef Output on Product X =
     (× Specialty Multiplier if Product X is the head chef's specialty)
 ```
 
-**Example:** Advanced French chef is the head chef. Assigned sous chef to Croissant (French specialty):
-- Head chef Croissant output = 30 × 2.2 = 66 units/day
-- Sous chef Croissant output = 66 × 0.5 = **33 units/day**
+**Example:** Advanced French chef is the head chef (specialty: Croissant, Coffee):
 
-Same sous chef assigned to Bagel (not French specialty):
-- Head chef Bagel output = 30 × 1.6 = 48 units/day
-- Sous chef Bagel output = 48 × 0.5 = **24 units/day**
+| Sous Chef Assignment | Head Chef Output | Sous Chef Output |
+|---|---|---|
+| Croissant (specialty) | 30 × 2.2 = 66 units/day | 66 × 0.5 = **33 units/day** |
+| Bagel (non-specialty) | 30 × 1.6 = 48 units/day | 48 × 0.5 = **24 units/day** |
+
+> Assigning a sous chef to a product the head chef specializes in yields higher sous chef output — incentivizing players to align sous chef assignments with their head chef's nationality.
 
 ---
 
@@ -231,21 +215,15 @@ Chef Satisfaction Score = max(35, 100 − max(0, sous_chef_count − 4) × 16)
 | 7 | 52 | Noticeably chaotic |
 | 8+ | 35 (floor) | Severe disruption — marginal sous chefs are net-negative |
 
-**Effect on throughput:**
+**Effect on throughput (sole penalty mechanism):**
 
 ```
 Effective Daily Output = Total Calculated Output × (Chef Satisfaction Score ÷ 100)
 ```
 
-A kitchen with a score of 52 produces only 52% of its theoretical maximum throughput — meaning extra sous chefs can actively reduce production versus a leaner team.
+A kitchen at score 52 produces only 52% of theoretical maximum throughput. Chef Satisfaction Score is the only penalty — there is no separate regression coefficient for it. The throughput reduction flows naturally into lower fill rates → lower satisfaction % → lower foot traffic → lower revenue. Players feel the penalty through their satisfaction % signal, not a direct revenue deduction.
 
-**Regression coefficient:**
-
-```
-+ (3.5 × chef_satisfaction_score)
-```
-
-A kitchen at 100 contributes +350 to revenue. A kitchen at 35 (floor) contributes +122.50 — a $227.50 revenue penalty for a chaotic kitchen, on top of the throughput reduction.
+> **Intentional design:** Hiring 5+ sous chefs is a net-negative decision in most scenarios. A player with 8 sous chefs runs at 35% efficiency — their extra production capacity from added sous chefs is more than wiped out by the throughput multiplier. This is by design to create a meaningful strategic ceiling on kitchen size.
 
 ---
 
@@ -616,15 +594,11 @@ Three pricing zones per product. Pricing above your satisfaction tier's ceiling 
 | **Sandwich** | $5.00 | $7.50–$10.00 | $10.50–$12.50 | $14.00 | Medium |
 | **Matcha** | $3.50 | $5.50–$7.00 | $7.50–$9.00 | $10.00 | Low |
 
-**Pricing rules:**
-- **Competitive range** — available at any satisfaction tier, no penalty
-- **Premium range** — requires Good or Excellent satisfaction; below that, demand drops 30%
-- **Floor pricing** — boosts demand by 15% regardless of satisfaction tier (the volume play)
+> **MVP note:** Pricing is fixed for v1. The price table above defines fixed sell prices and is referenced by the revenue formula as `product_revenue_rate`. The pricing zones and elasticity rules below are **post-MVP** — they apply once dynamic per-product pricing is enabled.
 
-**Elasticity in plain terms:**
-- **High (Coffee, Bagel, Cookie):** Every $0.50 above competitive range = ~8% demand drop. Underprice competitors to capture foot traffic volume.
-- **Medium (Croissant, Sandwich):** More forgiving. Excellent satisfaction can sustain premium pricing without traffic loss.
-- **Low (Matcha):** Premium-locked. Customers who want Matcha will pay. The entire value proposition is: satisfaction → premium price → highest margin per unit in the game.
+**Post-MVP pricing rules (for reference):**
+- Pricing above the ceiling for any product reduces that product's satisfaction % slightly each round it remains above ceiling
+- Floor pricing boosts demand by 15% regardless of satisfaction tier (the volume play)
 
 ---
 
@@ -644,35 +618,18 @@ Three pricing zones per product. Pricing above your satisfaction tier's ceiling 
 
 ---
 
-### Customer Archetypes
-
-Every customer who enters the shared foot traffic pool belongs to one of six archetypes. Each archetype has a **primary product preference**, a **secondary fallback product**, a **product loyalty disposition**, and a **price sensitivity**. These traits determine how they behave when a product is unavailable, poorly made, or sold out.
-
-| Archetype | Primary Product | Secondary Fallback | Product Loyalty | Price Sensitivity | Notes |
-|---|---|---|---|---|---|
-| **The Morning Regular** | Coffee | Bagel | Medium | High | Creature of habit. Comes daily. Will tolerate average Coffee but switches bakeries if it's consistently bad. |
-| **The Brunch Seeker** | Croissant | Coffee | High | Medium | Came specifically for a quality pastry. Will leave and find a better Croissant rather than settle. |
-| **The Wellness Shopper** | Matcha | — (leaves if unavailable) | Very High | Low | Niche, premium buyer. No substitute. If Matcha is sold out or Poor, they walk — full defection. |
-| **The Lunch Crowd** | Sandwich | Cookie | Medium | Medium | Time-pressured. Willing to pay for quality. Will grab a Cookie if Sandwich is sold out rather than leave empty-handed. |
-| **The Sweet Tooth** | Cookie | Croissant | Low | Medium | Impulse buyer. Easily swayed by variety. Most likely to convert to brand-loyal after repeated good experiences. |
-| **The Deal Hunter** | Bagel | Coffee | Low | Very High | Pure value-seeker. Will always go to whoever prices Bagels and Coffee lowest. Almost never brand-loyal. |
-
-> **Archetype distribution shifts by round.** The round preference profile (see below) determines which archetypes are more abundant that round — a Matcha-Trending round means more Wellness Shoppers enter the pool; a Coffee-Cold round reduces Morning Regulars.
-
----
-
 ### Round Preference Profiles
 
 Each round, the total demand for each product shifts based on a hidden **preference profile**. The profile is randomly generated per game session but is identical for all players — everyone faces the same market, but only players who read the signals correctly will align their supply and chefs.
 
 **Demand shift tiers:**
 
-| Tier | Demand Modifier | Archetype Effect |
+| Tier | Demand Modifier | Effect |
 |---|---|---|
-| **Trending** | +40% | More of the archetypes that prefer this product enter the pool |
-| **Warm** | +15% | Slight increase in related archetype volume |
+| **Trending** | +40% | More customers seeking this product enter the pool |
+| **Warm** | +15% | Slight increase in customer volume for this product |
 | **Neutral** | ±0% | Baseline |
-| **Cold** | −25% | Fewer related archetypes enter the pool; supply purchased for this product risks being wasted |
+| **Cold** | −25% | Fewer customers seeking this product; supply purchased for it risks being wasted |
 
 Each round: **2 products Trending, 2 Warm, 1 Neutral, 1 Cold.** No product stays Trending two consecutive rounds — forcing strategic rotation.
 
@@ -690,18 +647,39 @@ Each round: **2 products Trending, 2 Warm, 1 Neutral, 1 Cold.** No product stays
 
 ---
 
+### Base Traffic Pool
+
+Each round, a fixed pool of customers enters the game. The pool size is set by the base expected demand across all products, adjusted by the round preference multipliers.
+
+```
+Total Customer Pool (per round) =
+    Sum of (Base Demand × Round Modifier) for each product offered across all players
+
+Each Player's Base Traffic Share =
+    Total Customer Pool × (Player's Weighted Aggregate Satisfaction Score /
+                           Sum of All Players' Weighted Aggregate Satisfaction Scores)
+```
+
+**Weighted aggregate satisfaction** uses the product weights defined in the Satisfaction → Foot Traffic section (Coffee 1.5×, Matcha 1.3×, Croissant 1.2×, others 1.0×). Players not offering a product are excluded from that product's demand pool.
+
+The base traffic share is then scaled by the **Foot Traffic Modifier** (satisfaction tier, product variety, sous chef bonus, ad bonus, availability penalties) to produce each player's actual customer count for the round.
+
+---
+
 ### Competitive Foot Traffic Allocation (All Products)
 
-The customer pool for **every product** is shared across all players. Each player's share of product-seeking customers is proportional to their **relative satisfaction score** for that product. This applies equally to Coffee, Croissant, Matcha, Sandwich, Cookie, and Bagel.
+Within each product's demand pool, each player's share of customers seeking that product is proportional to their **relative satisfaction score** for that product. This applies equally to all 6 products. The per-product demand pool is capped by the base expected demand × round modifier — the competitive allocation determines how that capped pool is divided.
 
 ```
 Player's share of product X customers =
     Player's Satisfaction Score (product X)
     ──────────────────────────────────────────────────────
     Sum of all players' Satisfaction Scores (product X)
+
+Product X demand pool = Base Demand (product X) × Round Preference Modifier
 ```
 
-Players not offering a product receive zero share of that product's customers and are excluded from the denominator.
+Players not offering a product receive zero share and are excluded from the denominator.
 
 **Competitive splitting examples across all products:**
 
@@ -714,46 +692,33 @@ Players not offering a product receive zero share of that product's customers an
 | Sandwich | Poor (30) | Excellent (95) | Not offered | 30/125 = **24%** |
 | Cookie | Adequate (55) | Good (75) | Poor (30) | 55/160 = **34%** |
 
-> **Key insight:** Offering a product no one else offers (like Matcha) captures 100% of that archetype's customers. Entering a saturated product (e.g., three players all offering Good Bagels) means a 33% share cap regardless of effort. Dominant satisfaction scores shift share significantly — a 20-point lead in a two-player product contest yields ~55/45 split.
+> **Key insight:** Offering a product no one else offers captures 100% of that product's customers. Entering a saturated product (e.g., three players all offering Good Bagels) means a 33% share cap regardless of effort. Dominant satisfaction scores shift share significantly — a 20-point lead in a two-player product contest yields ~55/45 split.
 
 ---
 
 ### Customer Profile Behavior (Product-Loyal vs. Brand-Loyal)
 
-Each customer archetype has a baseline loyalty disposition, but **brand loyalty is individually earned** by each player over rounds.
-
-**Starting loyalty split (Round 1):**
-
-| Archetype | Starting Product-Loyal % | Starting Brand-Loyal % |
-|---|---|---|
-| The Morning Regular | 70% | 30% |
-| The Brunch Seeker | 85% | 15% |
-| The Wellness Shopper | 95% | 5% |
-| The Lunch Crowd | 75% | 25% |
-| The Sweet Tooth | 50% | 50% |
-| The Deal Hunter | 90% | 10% |
-
-**What each type does in each scenario:**
+Every customer is either **product-loyal** or **brand-loyal**. This is a backend behavior rule — it is not a tracked data variable, but it drives how the customer count resolves each round.
 
 | Scenario | Product-Loyal Customer | Brand-Loyal Customer |
 |---|---|---|
 | Product available, Good/Excellent satisfaction | Buys ✓ | Buys ✓ |
-| Product available, Poor/Critical satisfaction | 60% defect to best competitor offering that product | Buys anyway (habit) |
-| Product sold out | Defects immediately to competitor with best satisfaction for that product | Orders secondary fallback product instead |
-| No fallback available either | Leaves | Leaves |
+| Product available, Poor/Critical satisfaction | 60% defect to a competitor offering that product | Buys anyway (habit) |
+| Product sold out | Defects to a competitor (see Sell-Out rules) | Orders next available product on the menu instead |
+| Nothing available at all | Leaves — lost customer | Leaves — lost customer |
 
-**Brand loyalty grows per player over rounds:**
+**Brand loyalty as a returning customer mechanic:**
 
-| Condition | Brand Loyalty Change (next round) |
+Brand loyalty is earned by consistently delivering high satisfaction. It manifests as a **returning customer bonus** — a small guaranteed pool of customers in subsequent rounds who bypass competitive allocation and go directly to that bakery.
+
+| Prior Round Aggregate Satisfaction | Returning Customer Bonus (next round) |
 |---|---|
-| Avg satisfaction Excellent | +5% brand-loyal for all archetypes at your bakery |
-| Avg satisfaction Good | +2% |
-| Avg satisfaction Adequate | ±0% |
-| Avg satisfaction Poor | −5% |
-| Any product hits Critical | −10% |
-| Maximum brand loyalty cap | 50% of any archetype |
+| Excellent (86–100%) | +15% of prior round's customer count, guaranteed |
+| Good (66–85%) | +8% of prior round's customer count, guaranteed |
+| Adequate (46–65%) | No returning customer bonus |
+| Poor or Critical | Returning customer pool resets to 0 |
 
-> A player who consistently delivers Excellent satisfaction turns their repeat customers majority brand-loyal by Rounds 4–5. Brand-loyal customers are a compounding asset — they buffer revenue when demand shifts cold on your product or when you misread a round's trend.
+> Returning customers are added to the player's customer count before competitive allocation runs. This means a player who builds brand loyalty gains a compounding floor on revenue — even in a cold round where their product demand drops, loyal customers still show up. Brand loyalty is visible on the results screen as "Returning Customers" but is not included in the regression CSV.
 
 ---
 
@@ -767,13 +732,12 @@ Sell-out triggers when:
 ```
 
 **Consequences:**
-- **Product-loyal customers** arriving after sell-out → defect immediately to the highest-satisfaction competitor still offering that product. That competitor's foot traffic and revenue increases mid-round.
-- **Brand-loyal customers** arriving after sell-out → redirect to their secondary fallback on your menu. Revenue is lower, but they stay.
-- **Satisfaction score** for that product drops to Poor (30) for the remainder of the round.
-- **Brand loyalty penalty:** −5% for that product's archetype next round.
+- **Product-loyal customers** arriving after sell-out → defect to a randomly selected competitor still offering that product (weighted by their satisfaction score for that product). That competitor's customer count increases.
+- If **no competitor offers that product** (e.g., everyone sold out of Matcha) → customer is a **lost customer**. They leave without purchasing anywhere.
+- **Brand-loyal customers** arriving after sell-out → redirect to the next available product on your menu. Revenue is lower, but they stay.
+- **Satisfaction score** for that product drops to Poor (≤45%) for the remainder of the round.
+- **Returning customer bonus penalty:** If the sell-out causes aggregate satisfaction to drop below Good, the returning customer bonus for the next round is reduced accordingly.
 - **Sell-out flag** visible on the round results screen — a clear signal to both the player and competitors.
-
-**Sell-out is most dangerous for Wellness Shoppers (Matcha)** — they have no fallback and will fully defect, sending customers directly to any competitor offering Matcha, even at lower satisfaction.
 
 ---
 
@@ -783,32 +747,37 @@ Sell-out triggers when:
 Round Start
     ↓
 Demand profile generated (hidden — partial hint via market email)
-Effective demand = Base Demand × Round Preference Multiplier (per product)
-Archetype pool composition shifts accordingly
+Effective demand per product = Base Demand × Round Preference Modifier
     ↓
-Foot traffic allocated to each player
-(proportional to weighted satisfaction score, per product, across all 6 products)
+Returning customers from prior round added to each player's count first
+(bypasses competitive allocation — earned from prior round satisfaction)
     ↓
-At each bakery, customers arrive by archetype:
+Remaining customer pool allocated to each player
+(proportional to weighted aggregate satisfaction score)
+    ↓
+Per-product customer share split by relative satisfaction scores
+    ↓
+At each bakery, customers resolve:
     ├── Product-Loyal
     │       ├── Product available + Good/Excellent → Buys ✓
-    │       ├── Product Poor/Critical → 60% defect to best competitor
-    │       └── Product sold out → Defects immediately
+    │       ├── Product Poor/Critical → 60% defect to random weighted competitor
+    │       └── Product sold out → Defects to random weighted competitor (or lost if none)
     │
     └── Brand-Loyal
             ├── Product available → Buys ✓
             ├── Product Poor/Critical → Buys anyway
-            └── Product sold out → Orders secondary fallback; leaves only if nothing available
+            └── Product sold out → Orders next available product; lost if nothing available
     ↓
 Sell-out events trigger mid-round defection flows
     ↓
-Revenue = Customers Served × Price per product
+Revenue = Customer Count × Fixed Price per product
 Unsold supply = wasted (no carryover)
     ↓
 Per-product satisfaction % calculated and stored
-Aggregate satisfaction % (weighted average) calculated and stored
-Both displayed on results screen and written to CSV export
-Brand loyalty adjusted per archetype per player
+Aggregate satisfaction % (weighted average, using product weights) calculated and stored
+Chef Satisfaction Score calculated and applied as throughput multiplier
+All metrics written to CSV export and displayed on results screen
+Returning customer bonus for next round calculated from this round's aggregate satisfaction %
     ↓
 Next round
 ```
@@ -823,11 +792,12 @@ Next round
 
 **CSV export includes per round:**
 - Revenue (this round + cumulative)
-- Customer count served
+- Customer count (purchases made)
 - Per-product satisfaction % (one column per product)
-- Aggregate satisfaction % (weighted average)
-- Foot traffic count
+- Aggregate satisfaction % (weighted average — Coffee 1.5×, Matcha 1.3×, Croissant 1.2×, others 1.0×)
+- Chef satisfaction score
 - Sell-out flags per product
+- Returning customers (results screen only — not in regression CSV)
 
 **Two separate UIs:**
 1. **Student-facing UI** — simplified: login, decision inputs, leaderboard, company emails. No budget tracker, no model building tools.
@@ -934,9 +904,9 @@ After each round, players receive a downloadable CSV of new rows. Players accumu
 | Column | Type | Description |
 |---|---|---|
 | revenue | float | TARGET VARIABLE — total revenue for the round ($) |
-| foot_traffic | int | Number of customers who visited the bakery |
-| customer_count | int | Customers who made a purchase (foot_traffic minus walk-aways) |
-| aggregate_satisfaction_pct | float | Weighted average satisfaction across all products offered (0–100%) |
+| customer_count | int | Customers who visited and made a purchase |
+| returning_customers | int | Customers from prior round's brand loyalty bonus (not in regression — results screen only) |
+| aggregate_satisfaction_pct | float | Weighted average satisfaction across all products offered (0–100%). Weights: Coffee 1.5×, Matcha 1.3×, Croissant 1.2×, Sandwich/Cookie/Bagel 1.0×. |
 | chef_satisfaction_score | int | Kitchen cohesion score (0–100) — penalizes excess sous chefs |
 | croissant_satisfaction_pct | float | Per-product satisfaction % (0–100%) |
 | cookie_satisfaction_pct | float | Per-product satisfaction % |
@@ -1002,6 +972,7 @@ The following features from the original design deck are cut from v1. They can b
 | Chef satisfaction / "too many cooks" | ✅ In v1 | Score (0–100), threshold at 4 sous chefs, throughput multiplier |
 | Fixed product pricing | ✅ In v1 (MVP simplification) | Per-product dynamic pricing is post-MVP |
 | Per-product dynamic pricing | Post-MVP | Add after core loop is stable — high strategic value |
+| Named customer archetypes | Post-MVP | Six archetypes (Morning Regular, Brunch Seeker, Wellness Shopper, Lunch Crowd, Sweet Tooth, Deal Hunter) with per-product loyalty and price sensitivity — add once dynamic pricing is in place |
 | Sous chef poaching | Post-MVP | Complex real-time flow; requires notifications, counter-offers |
 | 6 curveball / market events | Post-MVP | Each needs custom logic; start with 0, add 1–2 if time |
 | AI competitors (3 tiers) | Post-MVP | Each tier needs heuristic logic — passive AI only if time |
@@ -1018,25 +989,23 @@ Backend needs concrete coefficients to build the revenue engine. Placeholder mod
 
 ```
 revenue = 500
-        + (30 × sous_chef_count)
-        + (3.5 × chef_satisfaction_score)
+        + (12 × sous_chef_count)
         + (8.0 × aggregate_satisfaction_pct)
         + (0.8 × ad_spend)
         + (50 × num_products)
-        + (foot_traffic × product_revenue_rate)
+        + (customer_count × product_revenue_rate)
         + noise
 ```
 
 - **Base revenue:** $500/round just for being open
-- **Sous chef count:** Each sous chef adds ~$30 — but this is offset by the chef satisfaction penalty once count exceeds 4
-- **Chef satisfaction score (0–100):** Kitchen efficiency multiplier — +$3.50 per point. A perfect kitchen adds $350; floor kitchen (35) adds $122.50
-- **Aggregate satisfaction %:** Each percentage point of customer satisfaction adds $8 to revenue — the primary driver of performance
+- **Sous chef count:** Each sous chef adds ~$12 direct revenue contribution. The sous chef coefficient is intentionally low — the real value of sous chefs is throughput, which flows through aggregate_satisfaction_pct. Hiring beyond the threshold (4) triggers the Chef Satisfaction throughput multiplier, which reduces satisfaction % and therefore that term dominates any gain from additional sous chefs.
+- **Aggregate satisfaction %:** Each percentage point adds $8 to revenue — the primary driver. This is where chef investment, supply alignment, and kitchen efficiency all converge.
 - **Ad spend:** Positive but sub-linear return (TBD — coefficient will adjust once ad types are finalized)
-- **Num products:** Each additional menu item (beyond base 3) adds ~$50 through broader appeal
-- **Foot traffic × product revenue rate:** Foot traffic count multiplied by per-product fixed price × sell-through rate — the core revenue mechanism
-- **Noise:** Random uniform ±$100 to prevent deterministic optimization
+- **Num products:** Each additional menu item adds ~$50 through broader appeal
+- **Customer count × product revenue rate:** `product_revenue_rate` = the fixed price of the product being sold. Since pricing is fixed per product, this term represents units sold × their fixed price. Products that are more expensive to sell (Sandwich $8.75, Matcha $6.25) also cost more to stock — the margin tradeoff is built into supply decisions.
+- **Noise:** Random uniform ±$100 to prevent deterministic optimization. Chef satisfaction penalty flows through throughput → satisfaction %, not as a separate regression term.
 
-> ⚠️ These are PLACEHOLDER coefficients. Backend will code against this structure and swap in final values. `avg_price` has been removed — pricing is fixed per product for MVP.
+> ⚠️ These are PLACEHOLDER coefficients. Backend will code against this structure and swap in final values. `avg_price` removed — pricing is fixed per product for MVP. `chef_satisfaction_score` removed from regression — its effect is captured entirely through the throughput multiplier → satisfaction % pathway.
 
 ---
 
@@ -1053,8 +1022,8 @@ Same starting point for everyone. Same base-level sous chef count, same menu, sa
 
 ## Open Questions
 
-1. **Customer allocation formula:** How exactly are customers split? Proportional to attractiveness score? Winner-take-most?
-   → *Should be determined by customer satisfaction*
+1. ~~**Customer allocation formula:** How exactly are customers split?~~
+   → ✅ **Resolved:** Proportional to weighted satisfaction score per product. See Base Traffic Pool and Competitive Foot Traffic Allocation sections.
 
 2. ~~**Starting conditions:** Does everyone start identical (same budget, same menu, same sous chef count)? Or is there variation?~~
    → ✅ **Resolved:** Everyone starts the same. Same base-level sous chef count, same menu, same budget. (All-hands April 8)
