@@ -492,6 +492,179 @@ Three pricing zones per product. Pricing above your satisfaction tier's ceiling 
 
 ---
 
+## Customer Behavior & Demand Variation System
+
+---
+
+### Customer Archetypes
+
+Every customer who enters the shared foot traffic pool belongs to one of six archetypes. Each archetype has a **primary product preference**, a **secondary fallback product**, a **product loyalty disposition**, and a **price sensitivity**. These traits determine how they behave when a product is unavailable, poorly made, or sold out.
+
+| Archetype | Primary Product | Secondary Fallback | Product Loyalty | Price Sensitivity | Notes |
+|---|---|---|---|---|---|
+| **The Morning Regular** | Coffee | Bagel | Medium | High | Creature of habit. Comes daily. Will tolerate average Coffee but switches bakeries if it's consistently bad. |
+| **The Brunch Seeker** | Croissant | Coffee | High | Medium | Came specifically for a quality pastry. Will leave and find a better Croissant rather than settle. |
+| **The Wellness Shopper** | Matcha | — (leaves if unavailable) | Very High | Low | Niche, premium buyer. No substitute. If Matcha is sold out or Poor, they walk — full defection. |
+| **The Lunch Crowd** | Sandwich | Cookie | Medium | Medium | Time-pressured. Willing to pay for quality. Will grab a Cookie if Sandwich is sold out rather than leave empty-handed. |
+| **The Sweet Tooth** | Cookie | Croissant | Low | Medium | Impulse buyer. Easily swayed by variety. Most likely to convert to brand-loyal after repeated good experiences. |
+| **The Deal Hunter** | Bagel | Coffee | Low | Very High | Pure value-seeker. Will always go to whoever prices Bagels and Coffee lowest. Almost never brand-loyal. |
+
+> **Archetype distribution shifts by round.** The round preference profile (see below) determines which archetypes are more abundant that round — a Matcha-Trending round means more Wellness Shoppers enter the pool; a Coffee-Cold round reduces Morning Regulars.
+
+---
+
+### Round Preference Profiles
+
+Each round, the total demand for each product shifts based on a hidden **preference profile**. The profile is randomly generated per game session but is identical for all players — everyone faces the same market, but only players who read the signals correctly will align their supply and chefs.
+
+**Demand shift tiers:**
+
+| Tier | Demand Modifier | Archetype Effect |
+|---|---|---|
+| **Trending** | +40% | More of the archetypes that prefer this product enter the pool |
+| **Warm** | +15% | Slight increase in related archetype volume |
+| **Neutral** | ±0% | Baseline |
+| **Cold** | −25% | Fewer related archetypes enter the pool; supply purchased for this product risks being wasted |
+
+Each round: **2 products Trending, 2 Warm, 1 Neutral, 1 Cold.** No product stays Trending two consecutive rounds — forcing strategic rotation.
+
+**Example 5-round demand profile (randomized at game start, same for all players):**
+
+| Round | Trending (+40%) | Warm (+15%) | Neutral | Cold (−25%) |
+|---|---|---|---|---|
+| 1 | Coffee, Bagel | Croissant, Cookie | Sandwich | Matcha |
+| 2 | Croissant, Matcha | Coffee, Sandwich | Cookie | Bagel |
+| 3 | Sandwich, Cookie | Bagel, Matcha | Coffee | Croissant |
+| 4 | Matcha, Coffee | Croissant, Cookie | Bagel | Sandwich |
+| 5 | Croissant, Cookie | Matcha, Bagel | Coffee | Sandwich |
+
+**Signal reveal:** At the start of each round, players receive a **market insight email** with a vague hint (e.g., *"Food critics have been spotlighting artisan breakfast staples this week"* → hints at Croissant/Bagel trending). Exact modifiers are never shown — players must infer from the hint and prior round outcomes.
+
+---
+
+### Competitive Foot Traffic Allocation (All Products)
+
+The customer pool for **every product** is shared across all players. Each player's share of product-seeking customers is proportional to their **relative satisfaction score** for that product. This applies equally to Coffee, Croissant, Matcha, Sandwich, Cookie, and Bagel.
+
+```
+Player's share of product X customers =
+    Player's Satisfaction Score (product X)
+    ──────────────────────────────────────────────────────
+    Sum of all players' Satisfaction Scores (product X)
+```
+
+Players not offering a product receive zero share of that product's customers and are excluded from the denominator.
+
+**Competitive splitting examples across all products:**
+
+| Product | Player A | Player B | Player C | A's Share |
+|---|---|---|---|---|
+| Coffee | Excellent (95) | Good (75) | Poor (30) | 95/200 = **48%** |
+| Croissant | Excellent (95) | Excellent (95) | Not offered | 95/190 = **50%** |
+| Matcha | Excellent (95) | Not offered | Not offered | 95/95 = **100%** |
+| Bagel | Good (75) | Good (75) | Good (75) | 75/225 = **33%** |
+| Sandwich | Poor (30) | Excellent (95) | Not offered | 30/125 = **24%** |
+| Cookie | Adequate (55) | Good (75) | Poor (30) | 55/160 = **34%** |
+
+> **Key insight:** Offering a product no one else offers (like Matcha) captures 100% of that archetype's customers. Entering a saturated product (e.g., three players all offering Good Bagels) means a 33% share cap regardless of effort. Dominant satisfaction scores shift share significantly — a 20-point lead in a two-player product contest yields ~55/45 split.
+
+---
+
+### Customer Profile Behavior (Product-Loyal vs. Brand-Loyal)
+
+Each customer archetype has a baseline loyalty disposition, but **brand loyalty is individually earned** by each player over rounds.
+
+**Starting loyalty split (Round 1):**
+
+| Archetype | Starting Product-Loyal % | Starting Brand-Loyal % |
+|---|---|---|
+| The Morning Regular | 70% | 30% |
+| The Brunch Seeker | 85% | 15% |
+| The Wellness Shopper | 95% | 5% |
+| The Lunch Crowd | 75% | 25% |
+| The Sweet Tooth | 50% | 50% |
+| The Deal Hunter | 90% | 10% |
+
+**What each type does in each scenario:**
+
+| Scenario | Product-Loyal Customer | Brand-Loyal Customer |
+|---|---|---|
+| Product available, Good/Excellent satisfaction | Buys ✓ | Buys ✓ |
+| Product available, Poor/Critical satisfaction | 60% defect to best competitor offering that product | Buys anyway (habit) |
+| Product sold out | Defects immediately to competitor with best satisfaction for that product | Orders secondary fallback product instead |
+| No fallback available either | Leaves | Leaves |
+
+**Brand loyalty grows per player over rounds:**
+
+| Condition | Brand Loyalty Change (next round) |
+|---|---|
+| Avg satisfaction Excellent | +5% brand-loyal for all archetypes at your bakery |
+| Avg satisfaction Good | +2% |
+| Avg satisfaction Adequate | ±0% |
+| Avg satisfaction Poor | −5% |
+| Any product hits Critical | −10% |
+| Maximum brand loyalty cap | 50% of any archetype |
+
+> A player who consistently delivers Excellent satisfaction turns their repeat customers majority brand-loyal by Rounds 4–5. Brand-loyal customers are a compounding asset — they buffer revenue when demand shifts cold on your product or when you misread a round's trend.
+
+---
+
+### Sell-Out Mechanic
+
+When a player's supply for a product is exhausted mid-round:
+
+```
+Sell-out triggers when:
+    Cumulative demand served for product X = Units of product X purchased
+```
+
+**Consequences:**
+- **Product-loyal customers** arriving after sell-out → defect immediately to the highest-satisfaction competitor still offering that product. That competitor's foot traffic and revenue increases mid-round.
+- **Brand-loyal customers** arriving after sell-out → redirect to their secondary fallback on your menu. Revenue is lower, but they stay.
+- **Satisfaction score** for that product drops to Poor (30) for the remainder of the round.
+- **Brand loyalty penalty:** −5% for that product's archetype next round.
+- **Sell-out flag** visible on the round results screen — a clear signal to both the player and competitors.
+
+**Sell-out is most dangerous for Wellness Shoppers (Matcha)** — they have no fallback and will fully defect, sending customers directly to any competitor offering Matcha, even at lower satisfaction.
+
+---
+
+### Full Customer Flow Per Round
+
+```
+Round Start
+    ↓
+Demand profile generated (hidden — partial hint via market email)
+Effective demand = Base Demand × Round Preference Multiplier (per product)
+Archetype pool composition shifts accordingly
+    ↓
+Foot traffic allocated to each player
+(proportional to weighted satisfaction score, per product, across all 6 products)
+    ↓
+At each bakery, customers arrive by archetype:
+    ├── Product-Loyal
+    │       ├── Product available + Good/Excellent → Buys ✓
+    │       ├── Product Poor/Critical → 60% defect to best competitor
+    │       └── Product sold out → Defects immediately
+    │
+    └── Brand-Loyal
+            ├── Product available → Buys ✓
+            ├── Product Poor/Critical → Buys anyway
+            └── Product sold out → Orders secondary fallback; leaves only if nothing available
+    ↓
+Sell-out events trigger mid-round defection flows
+    ↓
+Revenue = Customers Served × Price per product
+Unsold supply = wasted (no carryover)
+    ↓
+Satisfaction scores updated
+Brand loyalty adjusted per archetype per player
+    ↓
+Next round
+```
+
+---
+
 ## Scoring System
 
 **Primary metric:** Cumulative net revenue across all rounds. One number, one leaderboard. Clear winner.
