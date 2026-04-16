@@ -11,7 +11,7 @@
 
 ## Concept
 
-Players run competing grab-and-go cafés in a shared plaza food court. Each round, they set prices for their products, decide how many staff to hire, and bid in auctions for scarce resources (advertisements, highly-rated chefs, etc.) on a fixed budget given at the start of the game. A regression model running on the individual player's computer can be used to help them win. The player with the highest cumulative net revenue across all rounds wins.
+Players run competing grab-and-go cafés in a shared plaza food court. Each round, they set prices for their products, decide how many sous chefs to hire, and bid in auctions for scarce resources (advertisements, highly-rated chefs, etc.) on a fixed budget given at the start of the game. A regression model running on the individual player's computer can be used to help them win. The player with the highest cumulative net revenue across all rounds wins.
 
 Players receive "company emails" between rounds containing sales proceeds, market updates, and news. They export their data as CSV, build predictive models externally (Excel for MGSC 220, Python for MGSC 310), and input decisions back through the UI. There is no in-game model building. The game teaches regression modeling, price elasticity, resource optimization, and competitive strategy through direct experience.
 
@@ -33,7 +33,7 @@ Revenue must be continuous (not bucketed or categorical) so students can run lin
 
 | Phase | Duration | What Happens |
 |---|---|---|
-| 1. Decide | ~5 min | Players set prices, adjust staffing, and add new menu items based on regression model (+ new data from each round). Timer counts down. |
+| 1. Decide | ~5 min | Players set prices, adjust sous chef count, and add new menu items based on regression model (+ new data from each round). Timer counts down. |
 | 2. Bidding | ~2 min | Players do an advertisements bidding round (1 min) and head chefs bidding round (1 min). |
 | 3. Simulate | ~30 sec | Backend runs a regression model, computes revenue, allocates customers. Run a minigame for players to interact with here. |
 | 4. Review | ~1 min | Players see results: revenue, customer count, leaderboard update. |
@@ -50,7 +50,7 @@ Three base decision inputs per round.
 |---|---|---|---|
 | Quantity | Stock quantity per product | Set quantity for each product | Players must balance the costs of stock input and the expected revenue |
 | Average Price | Average price of products | Set average price of store's products | Teaches price elasticity — too high loses customers, too low kills margin |
-| Staffing | Integer | Choose how many employees to hire (costs $/round) | Marginal returns — more staff = more throughput but higher costs. **Staffing costs are dynamic** — prices increase each round as demand rises. If all specialists are taken by competitors, they become unavailable. Players who anticipate demand and hire early get rewarded with lower costs. |
+| Sous Chef Hiring | Integer | Choose how many sous chefs to hire (costs $/round, escalates with each additional hire) | Marginal returns — more sous chefs = more throughput but higher costs. **Sous chef costs are dynamic** — escalate with each additional hire per round. Players must weigh throughput gains against diminishing returns relative to bidding on higher-skill specialty chefs. |
 | Ad/Chef Bids | $ amount | Choose how much to spend on bidding | Competitive — shared customer pool means ad ROI depends on others' spend |
 
 ### Bidding Process
@@ -67,7 +67,7 @@ Players have 1 minute to bid each round, sealed auction, highest bidder wins. Pl
 
 **Option to add new menu item + quantity of stock each round.**
 
-**New item selection:** Sandwich, Latte, Matcha Latte — six products, six price inputs total.
+**New item selection:** Sandwich, Coffee, Matcha — six products, six price inputs total.
 
 ---
 
@@ -771,7 +771,7 @@ The shared customer pool is the core competitive mechanism. Each round, a finite
 
 - **Pricing** — competitive prices attract more budget-conscious shoppers
 - **Product variety** — more menu items = broader appeal
-- **Staff count** — more staff = faster service = less churn
+- **Sous chef count** — more sous chefs = faster service = less churn
 - **Ad spend** — directly increases foot traffic share
 
 This is zero-sum at the margin — players have to adopt different strategies to stand out.
@@ -796,7 +796,7 @@ After each round, players receive a downloadable CSV of new rows. Players accumu
 | revenue | float | TARGET VARIABLE — total revenue for the round ($) |
 | num_products | int | Number of products on your menu that round |
 | avg_price | float | Mean sell price across all menu items ($) |
-| staff_count | int | Total employees hired |
+| sous_chef_count | int | Total sous chefs hired |
 | ad_spend | float | Dollars allocated to advertising |
 | customer_count | int | Customers who visited your café |
 | customer_satisfaction | float | Customer satisfaction score (0–100) |
@@ -805,8 +805,8 @@ After each round, players receive a downloadable CSV of new rows. Players accumu
 | cookie | char | Quantity sold |
 | bagel | char | Quantity sold |
 | sandwich | char | Quantity sold |
-| latte | char | Quantity sold |
-| matcha_latte | char | Quantity sold |
+| coffee | char | Quantity sold |
+| matcha | char | Quantity sold |
 | ad_type | char | Type of ad (TV, mall, etc.) |
 
 ### Dataset Structure
@@ -831,8 +831,8 @@ Students can run a regression in Excel or Python using the set variables. Player
 Minimum set of features needed to play one complete game session. Everything below must work. Everything above the cut line is a bonus.
 
 - [ ] 1 — Player joins a game session (simple auth + lobby screen)
-- [ ] 2 — Player builds their bakery: set budget, current staff, menu, prices
-- [ ] 3 — For each new round: player sets prices, staff count, and ad spend
+- [ ] 2 — Player builds their bakery: set budget, current sous chef count, menu, prices
+- [ ] 3 — For each new round: player sets prices, sous chef count, and ad spend
 - [ ] 4 — Player submits decisions before timer expires
 - [ ] 5 — Backend runs regression model → computes revenue + customer allocation
 - [ ] 6 — Player sees round results + leaderboard ranking
@@ -866,7 +866,7 @@ Backend needs concrete coefficients to build the revenue engine. Placeholder mod
 
 ```
 revenue = 500
-        + (30 × staff_count)
+        + (30 × sous_chef_count)
         − (15 × avg_price)
         + (0.8 × ad_spend)
         + (50 × num_products)
@@ -874,7 +874,7 @@ revenue = 500
 ```
 
 - Base revenue of $500/round just for being open
-- Each employee adds ~$30 of revenue (diminishing returns not modeled yet)
+- Each sous chef adds ~$30 of revenue (diminishing returns not modeled yet)
 - Higher avg prices reduce customer volume (price elasticity)
 - Ad spend has positive but sub-linear return
 - More menu items attract more customers
@@ -886,12 +886,12 @@ revenue = 500
 
 ## Starting Conditions (Confirmed — All-Hands April 8)
 
-Same starting point for everyone. Same base-level staff, same menu, same budget. No advantages at the start. Differentiation comes purely from decisions made during the game.
+Same starting point for everyone. Same base-level sous chef count, same menu, same budget. No advantages at the start. Differentiation comes purely from decisions made during the game.
 
 ## Budget Rules (Confirmed — All-Hands April 8)
 
 - Budget is set at a fixed amount (TBD — exact number to be finalized).
-- Players spend across products, marketing, and staffing.
+- Players spend across products, marketing, and sous chef hiring.
 - **Overbidding is allowed** — players can exceed their budget but take on credit at a cost.
 - No in-game budget tracker. Players must manage their own finances externally.
 - No hand-holding on financial tracking.
@@ -901,8 +901,8 @@ Same starting point for everyone. Same base-level staff, same menu, same budget.
 1. **Customer allocation formula:** How exactly are customers split? Proportional to attractiveness score? Winner-take-most?
    → *Should be determined by customer satisfaction*
 
-2. ~~**Starting conditions:** Does everyone start identical (same budget, same menu, same staff)? Or is there variation?~~
-   → ✅ **Resolved:** Everyone starts the same. Same base-level staff, same menu, same budget. (All-hands April 8)
+2. ~~**Starting conditions:** Does everyone start identical (same budget, same menu, same sous chef count)? Or is there variation?~~
+   → ✅ **Resolved:** Everyone starts the same. Same base-level sous chef count, same menu, same budget. (All-hands April 8)
 
 3. ~~**Budget replenishment:** Do players get new budget each round, or is it cumulative from revenue? If cumulative, early mistakes compound — is that intended?~~
    → ✅ **Resolved:** Cumulative. Overbidding allowed with credit at a cost. (All-hands April 8)
@@ -914,7 +914,7 @@ Same starting point for everyone. Same base-level staff, same menu, same budget.
 
 6. **Credit cost rate?** — What interest/penalty applies when players overbid beyond their budget?
 
-7. **Staffing price escalation curve?** — How much do staffing costs increase per round? Linear, exponential?
+7. ~~**Staffing price escalation curve?**~~ → ✅ **Resolved:** Sous chef cost escalates per additional hire per round: 1.0×, 1.5×, 2.25×, 3.0×, +0.75× per additional. See Sous Chef section.
 
 ---
 
