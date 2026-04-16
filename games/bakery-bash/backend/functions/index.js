@@ -900,6 +900,18 @@ async function claimSimulationRun(gameId, roundId) {
   return shouldRun;
 }
 
+async function markSimulationFailed(gameId, roundId, error) {
+  await db.collection("games").doc(gameId).collection("rounds").doc(roundId).set(
+    {
+      simulationStatus: "failed",
+      simulationError:
+        error instanceof Error ? error.message : "Unknown simulation error",
+      failedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
+
 async function runRoundSimulation(gameId, roundId) {
   const gameRef = db.collection("games").doc(gameId);
   const configRef = gameRef.collection("config").doc("params");
@@ -1180,15 +1192,7 @@ exports.onDecisionSubmitted = onDocumentCreated(
       logger.info("Revenue simulation complete.", { gameId, roundId });
     } catch (error) {
       logger.error("Revenue simulation failed.", { gameId, roundId, error });
-      await db.collection("games").doc(gameId).collection("rounds").doc(roundId).set(
-        {
-          simulationStatus: "failed",
-          simulationError:
-            error instanceof Error ? error.message : "Unknown simulation error",
-          failedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
+      await markSimulationFailed(gameId, roundId, error);
       throw error;
     }
   }
@@ -1235,7 +1239,7 @@ exports.advanceGamePhase = onCall(async (request) => {
 
   let nextPhase;
   let currentRound;
-  let shouldRunSimulation = false;
+  let shouldClaimSimulation = false;
 
   await db.runTransaction(async (transaction) => {
     const gameSnap = await transaction.get(gameRef);
@@ -1262,14 +1266,31 @@ exports.advanceGamePhase = onCall(async (request) => {
       update.endedAt = FieldValue.serverTimestamp();
     }
 
-    transaction.update(gameRef, update);
     nextPhase = next.phase;
     currentRound = next.round;
-    shouldRunSimulation = next.phase === "open_for_business";
+
+    if (next.phase === "open_for_business") {
+      shouldClaimSimulation = true;
+      return;
+    }
+
+    transaction.update(gameRef, update);
   });
 
-  if (shouldRunSimulation) {
-    await runRoundSimulation(gameId, `round_${currentRound}`);
+  if (shouldClaimSimulation) {
+    const roundId = `round_${currentRound}`;
+    const shouldRunSimulation = await claimSimulationRun(gameId, roundId);
+
+    if (shouldRunSimulation) {
+      try {
+        await runRoundSimulation(gameId, roundId);
+        logger.info("Revenue simulation complete.", { gameId, roundId });
+      } catch (error) {
+        logger.error("Revenue simulation failed.", { gameId, roundId, error });
+        await markSimulationFailed(gameId, roundId, error);
+        throw error;
+      }
+    }
   }
 
   const updatedGameSnap = await gameRef.get();
