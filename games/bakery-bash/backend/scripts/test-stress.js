@@ -497,7 +497,7 @@ async function suiteSubmitDecision() {
     const playerAuth = await signInAnonymously(auth);
     // Give player only $100 budget
     await addPlayerDirectly(gameRef, playerAuth.user.uid, "Broke Baker", 100);
-    // staffCount=20 × $50 = $1000 alone
+    // staffCount=20 × $50 = $1000 alone — way over $100
     await expectError(submitDecision, validDecision(gameId, { staffCount: 20 }), "failed-precondition");
   });
 

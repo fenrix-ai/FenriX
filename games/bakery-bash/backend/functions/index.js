@@ -177,9 +177,17 @@ function normalizeAdType(value) {
 }
 
 function integerInRange(value, fieldName, { min = 0, max = Number.MAX_SAFE_INTEGER }) {
+  if (value === null || value === undefined) {
+    throw new HttpsError(
+      "invalid-argument",
+      `${fieldName} is required.`
+    );
+  }
+
   const numberValue = Number(value);
 
-  if (!Number.isInteger(numberValue) || numberValue < min || numberValue > max) {
+  if (!Number.isFinite(numberValue) || !Number.isInteger(numberValue) ||
+      numberValue < min || numberValue > max) {
     throw new HttpsError(
       "invalid-argument",
       `${fieldName} must be an integer from ${min} to ${max}.`
@@ -190,6 +198,10 @@ function integerInRange(value, fieldName, { min = 0, max = Number.MAX_SAFE_INTEG
 }
 
 function nonNegativeNumber(value, fieldName) {
+  if (value === null || value === undefined) {
+    return 0; // Default to 0 for optional numeric fields
+  }
+
   const numberValue = Number(value);
 
   if (!Number.isFinite(numberValue) || numberValue < 0) {
@@ -413,21 +425,45 @@ function allocateCustomers(totalCustomers, playerInputs) {
     return new Map();
   }
 
+  let allocations;
+
   if (totalScore <= 0) {
     const evenShare = Math.floor(totalCustomers / playerInputs.length);
-    return new Map(
-      playerInputs.map((playerInput) => [playerInput.playerId, evenShare])
-    );
-  }
-
-  return new Map(
-    playerInputs.map((playerInput) => [
-      playerInput.playerId,
-      Math.floor(
+    allocations = playerInputs.map((playerInput) => ({
+      playerId: playerInput.playerId,
+      count: evenShare,
+      score: 0,
+    }));
+  } else {
+    allocations = playerInputs.map((playerInput) => ({
+      playerId: playerInput.playerId,
+      count: Math.floor(
         (playerInput.attractivenessScore / totalScore) * totalCustomers
       ),
-    ])
-  );
+      score: playerInput.attractivenessScore,
+    }));
+  }
+
+  // Distribute remainder customers (lost to Math.floor) to the player(s)
+  // with the highest attractiveness score, one at a time.
+  const allocated = allocations.reduce((sum, a) => sum + a.count, 0);
+  let remainder = totalCustomers - allocated;
+
+  if (remainder > 0) {
+    // Sort descending by score, then by current count (ascending) for fairness
+    const sorted = allocations.slice().sort((a, b) =>
+      b.score - a.score || a.count - b.count
+    );
+    let idx = 0;
+
+    while (remainder > 0) {
+      sorted[idx % sorted.length].count += 1;
+      remainder -= 1;
+      idx += 1;
+    }
+  }
+
+  return new Map(allocations.map((a) => [a.playerId, a.count]));
 }
 
 function customerSatisfaction(decision, customerCount, avgPrice, numProducts) {
@@ -540,13 +576,17 @@ function resolveAuctions(playerInputs) {
     if (isWinningBid(chefAmount, submittedAt, chefWinner)) {
       chefWinner.winnerId = input.playerId;
       chefWinner.winningBid = chefAmount;
-      chefWinner.skillLevel = Math.max(
-        0,
-        Math.min(100, numberOrDefault(chefBid.skillLevel, 0))
-      );
+      // skillLevel is generated server-side below, NOT taken from the bid.
       chefWinner.submittedAtMillis = submittedAt;
     }
   }
+
+  // Server-side chef skill randomization (spec requirement).
+  // The player bids a dollar amount to hire the chef; the actual skill
+  // level the winner receives is randomised by the server (0–100).
+  const chefSkillLevel = chefWinner.winnerId !== null
+    ? Math.floor(Math.random() * 101) // 0–100 inclusive
+    : 0;
 
   return {
     ads: Object.fromEntries(
@@ -562,7 +602,7 @@ function resolveAuctions(playerInputs) {
     chef: {
       winnerId: chefWinner.winnerId,
       winningBid: chefWinner.winningBid,
-      skillLevel: chefWinner.skillLevel,
+      skillLevel: chefSkillLevel,
       tieBreaker: "earliest_submission",
     },
   };
@@ -618,7 +658,14 @@ function normalizeMenuPayload(data) {
         );
       }
 
-      menu[normalized] = selected === true;
+      // If an alias (e.g. "matcha-latte") already set the canonical key to
+      // true, a later entry for the canonical key ("matchaLatte": false)
+      // must not override it.  Take the boolean OR so aliases work correctly.
+      if (selected === true) {
+        menu[normalized] = true;
+      } else if (!menu[normalized]) {
+        menu[normalized] = false;
+      }
     }
   } else {
     throw new HttpsError(
@@ -893,13 +940,12 @@ async function claimSimulationRun(gameId, roundId) {
     const game = gameSnap.data();
     const phase = game.phase;
 
-    if (
-      phase !== "closing_hours" &&
-      phase !== "auction" &&
-      phase !== "open_for_business" &&
-      phase !== "decide" &&
-      phase !== "bid"
-    ) {
+    // Only run the simulation when the game has reached open_for_business.
+    // Previous versions allowed triggering from closing_hours/auction, which
+    // caused the simulation to skip the auction phase entirely when all
+    // players submitted early.  The professor must manually advance through
+    // closing_hours → auction → open_for_business before the sim fires.
+    if (phase !== "open_for_business") {
       logger.info("Decision submitted outside simulation-ready phase.", {
         gameId,
         roundId,
@@ -1013,6 +1059,9 @@ async function markSimulationFailed(gameId, roundId, error) {
     phaseEndTime: phaseEndTimeFromNow(config, "closing_hours"),
     phaseStartedAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
+    // Reset submitted count so the dashboard no longer shows a stale
+    // "X/Y submitted" after the rollback to closing_hours.
+    submittedCount: 0,
   });
 }
 
@@ -1093,9 +1142,9 @@ async function runRoundSimulation(gameId, roundId) {
       config.unitCostPerProduct
     );
     const creditCost = 0;
-    // adSpend is NOT added separately — adWinningBid is the actual cost
-    // the player pays if they win the ad auction. Adding adSpend on top
-    // would double-charge them (adSpend = the bid amount).
+    // Only charge the ACTUAL auction cost: winners pay their bid, losers
+    // pay nothing.  adSpend is NOT added separately — adWinningBid already
+    // represents the ad expenditure for the winner.
     const totalCosts =
       staffingCost + stockCost + adWinningBid + chefWinningBid + creditCost;
     const budgetBefore = numberOrDefault(player.budgetCurrent, 0);
@@ -1110,7 +1159,8 @@ async function runRoundSimulation(gameId, roundId) {
         adBonus,
       })
     );
-    const budgetAfter = Math.round(budgetBefore + revenue - totalCosts);
+    const budgetDelta = revenue - totalCosts;
+    const budgetAfter = Math.round(budgetBefore + budgetDelta);
     const satisfaction = Number(
       customerSatisfaction(
         decision,
@@ -1168,7 +1218,7 @@ async function runRoundSimulation(gameId, roundId) {
         creditBalanceBefore,
         creditBalanceAfter: creditBalanceBefore,
         totalCosts,
-        budgetDelta: revenue - totalCosts,
+        budgetDelta,
         budgetBefore,
         budgetAfter,
         computedAt: FieldValue.serverTimestamp(),
@@ -1329,6 +1379,15 @@ exports.startGame = onCall(async (request) => {
     );
   }
 
+  const totalPlayers = numberOrDefault(gameSnap.get("totalPlayers"), 0);
+
+  if (totalPlayers < 1) {
+    throw new HttpsError(
+      "failed-precondition",
+      "At least one player must join before starting the game."
+    );
+  }
+
   const configSnap = await gameRef.collection("config").doc("params").get();
   const config = mergeConfig(configSnap.exists ? configSnap.data() : {});
   const phaseEndTime = phaseEndTimeFromNow(config, "closing_hours");
@@ -1366,6 +1425,23 @@ exports.advanceGamePhase = onCall(async (request) => {
     const game = gameSnap.data();
     const config = mergeConfig(configSnap.exists ? configSnap.data() : {});
     const next = nextPhaseFor(game);
+
+    // Guard: if advancing from open_for_business to results, the simulation
+    // must have completed first.  This prevents a professor double-click from
+    // pushing past the simulation before it finishes.
+    if (next.phase === "results") {
+      const roundRef = gameRef.collection("rounds").doc(`round_${game.currentRound}`);
+      const roundSnap = await transaction.get(roundRef);
+      const simStatus = roundSnap.exists ? roundSnap.get("simulationStatus") : null;
+
+      if (simStatus !== "complete") {
+        throw new HttpsError(
+          "failed-precondition",
+          `Cannot advance to results — simulation is ${simStatus || "not started"}.`
+        );
+      }
+    }
+
     const update = {
       phase: next.phase,
       currentRound: next.round,
@@ -1494,7 +1570,11 @@ exports.submitDecision = onCall(async (request) => {
     const config = mergeConfig(configSnap.exists ? configSnap.data() : {});
     const budgetCurrent = numberOrDefault(playerSnap.get("budgetCurrent"), 0);
 
-    // Compute individual cost components to match DecisionDocument schema
+    // Compute individual cost components.
+    // Budget check uses the MAXIMUM possible cost (assumes player wins all
+    // bids).  This is a sealed-bid reserve: funds are held at submit time
+    // and released after the auction if the player loses.  The simulation
+    // only charges actual winners.
     const staffingCost = decision.staffCount * config.costPerStaffPerRound;
     const creditCost = 0; // Pending Game Design sign-off (Open Q #6)
     const stockCost = totalQuantityCost(
@@ -1505,12 +1585,16 @@ exports.submitDecision = onCall(async (request) => {
       ? Math.max(0, numberOrDefault(decision.adBid.amount, 0))
       : 0;
     const chefBidAmount = Math.max(0, numberOrDefault(decision.chefBid.amount, 0));
-    const totalCosts = staffingCost + stockCost + adBidAmount + chefBidAmount + creditCost;
+    // guaranteedCosts = costs that are always charged regardless of auction outcome
+    const guaranteedCosts = staffingCost + stockCost + creditCost;
+    // maxBidReserve = total held if player wins every bid (worst-case budget hit)
+    const maxBidReserve = adBidAmount + chefBidAmount;
+    const totalCostsMax = guaranteedCosts + maxBidReserve;
 
-    if (totalCosts > budgetCurrent) {
+    if (totalCostsMax > budgetCurrent) {
       throw new HttpsError(
         "failed-precondition",
-        `This decision costs $${totalCosts.toFixed(2)}, but your current budget is $${budgetCurrent.toFixed(2)}.`
+        `This decision costs up to $${totalCostsMax.toFixed(2)} (including bids), but your current budget is $${budgetCurrent.toFixed(2)}.`
       );
     }
 
@@ -1526,10 +1610,15 @@ exports.submitDecision = onCall(async (request) => {
       chefBid: decision.chefBid,
       numProducts: decision.numProducts,
       budgetBefore: budgetCurrent,
-      // Match DecisionDocument schema fields (staffingCost, creditCost, totalCosts)
       staffingCost,
       creditCost,
-      totalCosts,
+      stockCost,
+      adBidAmount,
+      chefBidAmount,
+      // guaranteedCosts excludes bids; totalCostsMax includes all bids.
+      // Actual post-auction cost may be lower if player loses bids.
+      guaranteedCosts,
+      totalCostsMax,
     };
 
     transaction.set(decisionRef, decisionDoc);
