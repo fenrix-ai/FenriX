@@ -113,6 +113,35 @@ Players can hold a maximum of **3 specialty chefs** at any time. Specialty chefs
 
 ---
 
+### Chef Roster Management UI
+
+After each auction phase, players are shown a **Chef Roster screen** where they organize their kitchen team. If a player wins a bid that would push them over 3 specialty chefs, this screen is mandatory — they cannot advance until the roster is resolved.
+
+**Screen layout:**
+- **Base Chef card** — always present, greyed out, cannot be removed
+- **Specialty Slots 1–3** — filled chef portrait cards, or empty slot placeholders
+- **Overflow slot** — newly won chef displayed here if no open specialty slot exists, highlighted to indicate action required
+- **Sous Chef panel** — always visible alongside the specialty roster:
+  - Current sous chef count
+  - Next hire cost
+  - "+ Hire Sous Chef" button (deducts from budget immediately)
+  - Sous chef output rate shown based on current highest specialty chef on team
+
+**Lay-off flow:**
+- Player selects any specialty chef card and taps "Lay Off"
+- Confirmation prompt: *"Release [Chef Name] back to the auction pool?"*
+- On confirm: chef is removed from roster, returned to auction pool for future rounds
+- Player cannot advance to the next phase until specialty slots ≤ 3
+
+**Chef card display (what players see on each card):**
+- Chef portrait (nationality/gender/variant)
+- Nationality flag
+- Skill level (Novel / Intermediate / Advanced)
+- Name
+- Specialty products: **not shown**
+
+---
+
 ### Sous Chefs
 
 Sous chefs are **non-specialty helpers** that players can hire directly — no auction required. They are unlimited in number, but each additional sous chef costs progressively more, reflecting the management overhead of a larger kitchen team.
@@ -378,18 +407,6 @@ Each chef is randomly generated using the framework below. Specialty products ar
 | **Novel** | 1.0× | 1.4× |
 | **Intermediate** | 1.25× | 1.75× |
 | **Advanced** | 1.6× | 2.2× |
-
----
-
-### Chef Spawn Rates by Round
-
-Spawn rates increase for higher-skill chefs as rounds progress, encouraging continued bidding investment. Male and female chefs share the same spawn rate within each nationality.
-
-| Skill Level | Round 1 | Round 2 | Round 3 | Round 4 | Round 5 |
-|---|---|---|---|---|---|
-| **Novel** | 65% | 55% | 40% | 20% | 5% |
-| **Intermediate** | 30% | 35% | 40% | 45% | 45% |
-| **Advanced** | 5% | 10% | 20% | 35% | 50% |
 
 ---
 

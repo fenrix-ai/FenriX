@@ -58,7 +58,7 @@
 
 ### 4. Phase 2: Bidding (`/game/bid`)
 
-Three sequential steps:
+Two sequential 1-minute auctions, followed by a roster management step:
 
 **Ad Auction (1 min)**
 - Cards for each ad type: TV, Radio, Newspaper, Billboard
@@ -67,25 +67,14 @@ Three sequential steps:
 - Submit button
 
 **Chef Auction (1 min)**
-- Cards for each chef — nationality and skill level visible, specialty hidden
-- Current roster shown (up to 3 specialty slots + sous chef count)
+- Cards for each chef (nationality and skill level shown, specialty hidden)
 - Bid input per card
 - Submit button
 - If timer expires without submit: treated as $0 bid
 
-**Chef Roster Management (post-auction — triggered if player now holds > 3 specialty chefs)**
-- Full current roster displayed as portrait-style chef cards:
-  - Base Chef (permanent, greyed out — cannot be removed)
-  - Specialty Slots 1–3 (filled or empty)
-  - Newly won chef shown in an overflow slot, highlighted
-- Player must drag or select one specialty chef to **Lay Off** before proceeding
-- Laid-off chef card shows a confirmation prompt ("Release [Name] back to the pool?")
-- Cannot advance to next phase until roster is resolved (≤ 3 specialty chefs)
-- Sous chef panel — always visible alongside roster:
-  - Current sous chef count
-  - Next hire cost displayed
-  - "+ Hire Sous Chef" button (deducts from budget immediately)
-  - Sous chef output rate shown based on current highest specialty chef on team
+**Chef Roster Management (post-auction)**
+- Triggered after auction resolves
+- See Chef System → Chef Roster Management UI in GAME_DESIGN_PROPOSAL.md for full spec
 
 ---
 
