@@ -123,10 +123,13 @@ const DEFAULT_PENDING_DECISION = {
     latte: false,
     matchaLatte: false,
   },
+  // Non-zero default prices so that no-show players receive a realistic
+  // price penalty in the revenue formula instead of $0 (which would give
+  // them higher revenue than players who actually set mid-range prices).
   productPrices: {
-    croissant: 0,
-    cookie: 0,
-    bagel: 0,
+    croissant: 5,
+    cookie: 4,
+    bagel: 3,
     sandwich: 0,
     latte: 0,
     matchaLatte: 0,
@@ -138,6 +141,14 @@ const DEFAULT_PENDING_DECISION = {
     sandwich: 0,
     latte: 0,
     matchaLatte: 0,
+  },
+  adBid: {
+    adType: null,
+    amount: 0,
+  },
+  chefBid: {
+    skillLevel: 0,
+    amount: 0,
   },
 };
 
@@ -1071,6 +1082,10 @@ async function runRoundSimulation(gameId, roundId) {
   const roundRef = gameRef.collection("rounds").doc(roundId);
   const roundNumber = roundNumberFromId(roundId);
 
+  if (!Number.isInteger(roundNumber)) {
+    throw new Error(`Invalid roundId format: ${roundId}`);
+  }
+
   const [gameSnap, configSnap, playersSnap] = await Promise.all([
     gameRef.get(),
     configRef.get(),
@@ -1480,9 +1495,16 @@ exports.advanceGamePhase = onCall(async (request) => {
         await runRoundSimulation(gameId, roundId);
         logger.info("Revenue simulation complete.", { gameId, roundId });
       } catch (error) {
-        logger.error("Revenue simulation failed.", { gameId, roundId, error });
+        logger.error("Revenue simulation failed — rolling back to closing_hours.", {
+          gameId,
+          roundId,
+          error,
+        });
         await markSimulationFailed(gameId, roundId, error);
-        throw error;
+        // Do NOT re-throw: markSimulationFailed already rolled the game back
+        // to closing_hours.  Returning the rolled-back phase (below) lets the
+        // professor UI update correctly instead of showing a raw error while
+        // the game is actually in a different phase.
       }
     }
   }
@@ -1730,6 +1752,15 @@ exports.joinGame = onCall(async (request) => {
         updatedAt: FieldValue.serverTimestamp(),
       });
       return;
+    }
+
+    const currentPlayerCount = numberOrDefault(gameSnap.get("totalPlayers"), 0);
+
+    if (currentPlayerCount >= 30) {
+      throw new HttpsError(
+        "resource-exhausted",
+        "This game has reached the maximum of 30 players."
+      );
     }
 
     transaction.set(playerRef, {
