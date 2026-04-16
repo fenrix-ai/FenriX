@@ -370,6 +370,25 @@ Spawn rates increase for higher-skill chefs as rounds progress, encouraging cont
 
 ## Customer Satisfaction & Foot Traffic System
 
+### How the System Works
+
+**Customer Satisfaction Rate** and **Foot Traffic** are the two core output metrics. They are driven by the following factors:
+
+```
+Customer Satisfaction Rate (displayed as % to players, included in CSV) is determined by:
+    1. Speed of production — higher chef throughput/multipliers → more units produced
+       → higher fill rate → higher satisfaction
+    2. Product availability — if a product sells out mid-round, satisfaction drops
+       and product-loyal customers leave for a competitor
+
+Foot Traffic is determined by:
+    1. Customer satisfaction rate — higher satisfaction attracts more customers
+    2. Product availability — sold-out products trigger immediate customer defection
+    3. Speed of production — indirectly, through its effect on satisfaction
+```
+
+> **Satisfaction % is visible to players on the results screen and exported in the CSV.** It is the primary signal players use to evaluate their chef and supply decisions. A player who sees their Coffee satisfaction at 43% knows immediately they need a stronger chef or more supply — without the game ever explaining why.
+
 The strategic loop forces players to align three things: **chef specialty → supply quantity → price point**. Misalignment in any one dimension silently penalizes revenue.
 
 ---
@@ -402,15 +421,19 @@ The strategic loop forces players to align three things: **chef specialty → su
 
 ### Throughput → Satisfaction Tiers
 
-Satisfaction is driven by **fill rate** = actual throughput (capped by supply purchased) ÷ base expected demand.
+Satisfaction is driven by **fill rate** = actual throughput (capped by supply purchased) ÷ base expected demand. The result is expressed as a **satisfaction percentage (0–100%)** shown to players on the results screen and in the CSV export. Each product has its own satisfaction %; the aggregate satisfaction % shown on the UI is the weighted average across all products offered.
 
-| Fill Rate | Satisfaction Tier | Score (0–100) |
+**Per-product satisfaction:**
+
+| Fill Rate | Satisfaction Tier | Satisfaction % |
 |---|---|---|
-| < 50% | Critical | 10 |
-| 50–69% | Poor | 30 |
-| 70–84% | Adequate | 55 |
-| 85–99% | Good | 75 |
-| 100%+ | Excellent | 95 |
+| < 50% | Critical | 0–20% |
+| 50–69% | Poor | 21–45% |
+| 70–84% | Adequate | 46–65% |
+| 85–99% | Good | 66–85% |
+| 100%+ | Excellent | 86–100% |
+
+**Sell-out mid-round:** If a product sells out before the round ends, its satisfaction % drops to the Poor tier (≤45%) for the remainder of the round — regardless of how much had already been served.
 
 > **Supply cap:** A player with an Advanced Italian chef capable of 66 Coffee units/day who only bought 40 units of supply hits 40/70 = 57% → Poor. The chef investment is wasted. Players must purchase supply quantity that matches their chef's throughput potential.
 
@@ -657,7 +680,9 @@ Sell-out events trigger mid-round defection flows
 Revenue = Customers Served × Price per product
 Unsold supply = wasted (no carryover)
     ↓
-Satisfaction scores updated
+Per-product satisfaction % calculated and stored
+Aggregate satisfaction % (weighted average) calculated and stored
+Both displayed on results screen and written to CSV export
 Brand loyalty adjusted per archetype per player
     ↓
 Next round
@@ -669,7 +694,15 @@ Next round
 
 **Primary metric:** Cumulative net revenue across all rounds. One number, one leaderboard. Clear winner.
 
-**Secondary metric (tiebreaker):** Average customer satisfaction. Displayed but not the primary ranking criterion.
+**Secondary metric (tiebreaker):** Average customer satisfaction %. Displayed as a percentage on the results screen and leaderboard. Not the primary ranking criterion, but visible to all players as a signal of operational performance.
+
+**CSV export includes per round:**
+- Revenue (this round + cumulative)
+- Customer count served
+- Per-product satisfaction % (one column per product)
+- Aggregate satisfaction % (weighted average)
+- Foot traffic count
+- Sell-out flags per product
 
 **Two separate UIs:**
 1. **Student-facing UI** — simplified: login, decision inputs, leaderboard, company emails. No budget tracker, no model building tools.
