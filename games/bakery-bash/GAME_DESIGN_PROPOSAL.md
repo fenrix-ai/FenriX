@@ -1,6 +1,6 @@
 # Game Design Proposal — Bakery Bash
 
-**Date:** April 1, 2026 · Updated April 8, 2026 (all-hands decisions) · Updated April 15, 2026 (Chef System)
+**Date:** April 1, 2026 · Updated April 8, 2026 (all-hands decisions) · Updated April 15, 2026 (Chef System, Loan Shark mechanic)
 **Team:** Game Design (Dylan M. + Mia) · Frontend (AB + Kavin) · Backend (Daniel + Scott + Dylan B.)
 **Target Launch:** April 27 or May 1, 2026
 **Course:** MGSC 310 · Prof. Frenzel · Chapman University
@@ -12,6 +12,8 @@
 ## Concept
 
 Players run competing grab-and-go cafés in a shared plaza food court. Each round, they set prices for their products, decide how many sous chefs to hire, and bid in auctions for scarce resources (advertisements, highly-rated chefs, etc.) on a fixed budget given at the start of the game. A regression model running on the individual player's computer can be used to help them win. The player with the highest cumulative net revenue across all rounds wins.
+
+> **Loan Shark Rule:** If a player's total spending in a round exceeds their available budget, the overage is treated as a loan from the loan shark. At the end of that round, the borrowed amount **plus 10% interest** on the borrowed amount is deducted from the player's revenue. Example: borrow $200 → revenue penalty = $200 (principal) + $20 (interest) = **$220 deducted**. Players are never blocked from overspending — but the cost is punishing and compounds risk.
 
 Players receive "company emails" between rounds containing sales proceeds, market updates, and news. They export their data as CSV, build predictive models externally (Excel for MGSC 220, Python for MGSC 310), and input decisions back through the UI. There is no in-game model building. The game teaches regression modeling, price elasticity, resource optimization, and competitive strategy through direct experience.
 
@@ -1017,8 +1019,28 @@ Same starting point for everyone. Same base-level sous chef count, same menu, sa
 
 - Budget is set at a fixed amount (TBD — exact number to be finalized).
 - Players spend across products, sous chef hiring, and auction bids.
-- **Overbidding is allowed** — players can exceed their budget but take on credit at a cost.
+- **Overbidding is allowed** — players are never blocked from exceeding their budget.
 - **No in-game budget tracker by design.** Players must track their own finances externally (Excel, paper, etc.). This is intentional — financial self-management is part of the challenge and mirrors real business operations. The game UI will never display remaining balance.
+
+### Loan Shark Mechanic (Confirmed — April 15)
+
+When a player's total round spending exceeds their available budget, the shortfall is treated as a loan from the loan shark.
+
+**Penalty applied at end of round:**
+
+```
+Revenue deduction = borrowed amount + (10% × borrowed amount)
+                  = borrowed amount × 1.10
+```
+
+- **Principal** (full borrowed amount) is deducted from revenue.
+- **Interest** (10% of the borrowed amount) is deducted on top of principal.
+- The penalty is applied before cumulative revenue is updated.
+- Players are **not warned** mid-round — the deduction appears in the post-round revenue report.
+
+**Example:** Player has $500 remaining budget but spends $700. Borrowed = $200. End-of-round deduction = $200 + $20 = **$220**.
+
+> This resolves Open Question #6 (credit cost rate). Overspending is an option, not a safety net — the 10% interest makes it a net-negative strategy unless the incremental revenue from the overspend outpaces the penalty.
 
 ## Open Questions
 
@@ -1036,7 +1058,8 @@ Same starting point for everyone. Same base-level sous chef count, same menu, sa
 
 5. **Exact starting budget amount?** — Needs to be finalized.
 
-6. **Credit cost rate?** — What interest/penalty applies when players overbid beyond their budget?
+6. ~~**Credit cost rate?** — What interest/penalty applies when players overbid beyond their budget?~~
+   → ✅ **Resolved:** Loan shark mechanic — borrowed amount × 1.10 deducted from end-of-round revenue (principal + 10% interest). (April 15)
 
 7. ~~**Staffing price escalation curve?**~~ → ✅ **Resolved:** Sous chef cost escalates per additional hire per round: 1.0×, 1.5×, 2.25×, 3.0×, +0.75× per additional. See Sous Chef section.
 
