@@ -368,6 +368,130 @@ Spawn rates increase for higher-skill chefs as rounds progress, encouraging cont
 
 ---
 
+## Customer Satisfaction & Foot Traffic System
+
+The strategic loop forces players to align three things: **chef specialty → supply quantity → price point**. Misalignment in any one dimension silently penalizes revenue.
+
+---
+
+### Base Expected Daily Demand (Per Player)
+
+| Product | Base Demand | Notes |
+|---|---|---|
+| **Coffee** | 70 units | High-volume daily staple — hardest to satisfy with base chef alone |
+| **Croissant** | 60 units | Medium-volume, quality-sensitive |
+| **Bagel** | 55 units | Medium-volume, price-sensitive |
+| **Cookie** | 50 units | Impulse purchase |
+| **Sandwich** | 45 units | Lower volume, highest margin ceiling |
+| **Matcha** | 25 units | Niche/premium — few customers want it, but they pay significantly more |
+
+**Base chef alone (30 units/day) fill rates:**
+
+| Product | Fill Rate | Satisfaction | Strategic Signal |
+|---|---|---|---|
+| Coffee | 43% | Critical | Forces chef investment |
+| Croissant | 50% | Poor | Forces chef investment |
+| Bagel | 55% | Poor | Forces chef investment |
+| Cookie | 60% | Poor | Forces chef investment |
+| Sandwich | 67% | Adequate | Accessible without chef, but capped |
+| Matcha | 120% | Excellent | Base chef meets demand — but a Japanese chef unlocks premium pricing |
+
+> **The Matcha trap:** Players who skip a Japanese chef think they're fine because satisfaction reads Excellent at base. But a Japanese chef on Matcha with premium pricing is the highest revenue-per-unit play in the game — the gap between "fine" and "winning" on Matcha is invisible until a sharp player discovers it.
+
+---
+
+### Throughput → Satisfaction Tiers
+
+Satisfaction is driven by **fill rate** = actual throughput (capped by supply purchased) ÷ base expected demand.
+
+| Fill Rate | Satisfaction Tier | Score (0–100) |
+|---|---|---|
+| < 50% | Critical | 10 |
+| 50–69% | Poor | 30 |
+| 70–84% | Adequate | 55 |
+| 85–99% | Good | 75 |
+| 100%+ | Excellent | 95 |
+
+> **Supply cap:** A player with an Advanced Italian chef capable of 66 Coffee units/day who only bought 40 units of supply hits 40/70 = 57% → Poor. The chef investment is wasted. Players must purchase supply quantity that matches their chef's throughput potential.
+
+**Recommended supply targets by chef tier:**
+
+| Chef Tier | Daily Throughput (specialty product) | Recommended Supply |
+|---|---|---|
+| Base only | 30 | 30 (accept Poor/Critical on most products) |
+| Base + Novel specialty | 72 | 70–75 |
+| Base + Intermediate specialty | 82.5 | 80–85 |
+| Base + Advanced specialty | 96 | 90–100 |
+| Base + Advanced + Intermediate (same product) | 148.5 | ~100 (demand cap — surplus is waste) |
+
+---
+
+### Satisfaction → Foot Traffic
+
+Foot traffic is driven by **aggregate satisfaction** — a weighted average across all products offered. Products not offered are excluded from the calculation.
+
+**Product weights:**
+
+| Product | Satisfaction Weight | Reason |
+|---|---|---|
+| Coffee | 1.5 | Expected at every café — low satisfaction here hurts overall perception most |
+| Matcha | 1.3 | Premium differentiator — Excellent Matcha signals "destination café" |
+| Croissant | 1.2 | Quality signal — customers notice when it's done well |
+| Sandwich | 1.0 | Standard |
+| Cookie | 1.0 | Standard |
+| Bagel | 1.0 | Standard |
+
+**Foot traffic modifier by aggregate satisfaction:**
+
+| Avg Satisfaction Score | Tier | Foot Traffic Modifier |
+|---|---|---|
+| 0–20 | Critical | −40% |
+| 21–45 | Poor | −20% |
+| 46–65 | Adequate | ±0% (baseline) |
+| 66–80 | Good | +20% |
+| 81–100 | Excellent | +40% |
+
+**Premium product bonus:** If Croissant or Matcha individually reaches Excellent, add +10% foot traffic each (stackable). Maximum possible modifier = **+60%**.
+
+---
+
+### Price Points Per Product
+
+Three pricing zones per product. Pricing above your satisfaction tier's ceiling costs foot traffic.
+
+| Product | Floor | Competitive Range | Premium Range | Ceiling | Elasticity |
+|---|---|---|---|---|---|
+| **Coffee** | $2.00 | $3.00–$4.50 | $5.00–$6.00 | $6.50 | High |
+| **Croissant** | $2.50 | $4.00–$5.50 | $6.00–$7.00 | $8.00 | Medium |
+| **Bagel** | $1.50 | $2.50–$3.50 | $4.00–$5.00 | $5.50 | High |
+| **Cookie** | $1.00 | $2.00–$3.00 | $3.50–$4.50 | $5.00 | High |
+| **Sandwich** | $5.00 | $7.50–$10.00 | $10.50–$12.50 | $14.00 | Medium |
+| **Matcha** | $3.50 | $5.50–$7.00 | $7.50–$9.00 | $10.00 | Low |
+
+**Pricing rules:**
+- **Competitive range** — available at any satisfaction tier, no penalty
+- **Premium range** — requires Good or Excellent satisfaction; below that, demand drops 30%
+- **Floor pricing** — boosts demand by 15% regardless of satisfaction tier (the volume play)
+
+**Elasticity in plain terms:**
+- **High (Coffee, Bagel, Cookie):** Every $0.50 above competitive range = ~8% demand drop. Underprice competitors to capture foot traffic volume.
+- **Medium (Croissant, Sandwich):** More forgiving. Excellent satisfaction can sustain premium pricing without traffic loss.
+- **Low (Matcha):** Premium-locked. Customers who want Matcha will pay. The entire value proposition is: satisfaction → premium price → highest margin per unit in the game.
+
+---
+
+### Strategic Archetypes
+
+| Strategy | Chef Investment | Supply Focus | Pricing | Risk |
+|---|---|---|---|---|
+| **Volume play** | Novel across multiple products | Moderate, spread across all products | Floor–Competitive | Low margin; traffic-dependent |
+| **Coffee monopoly** | Advanced Italian or French | Max Coffee supply | Premium Coffee | Misses premium product foot traffic bonuses |
+| **Matcha specialist** | Advanced Japanese | Max Matcha supply | Premium Matcha | Low volume; vulnerable if competitors dominate Coffee satisfaction |
+| **Croissant double-down** | French + Japanese (both specialize Croissant) | Heavy Croissant supply | Premium Croissant | Expensive — two high bids required; leaves other products underfunded |
+| **Balanced coverage** | 1 Intermediate + 1 Novel across different specialties | Even spread | Competitive across board | No ceiling, but consistent — hard to beat a focused specialist at their peak |
+
+---
+
 ## Scoring System
 
 **Primary metric:** Cumulative net revenue across all rounds. One number, one leaderboard. Clear winner.
