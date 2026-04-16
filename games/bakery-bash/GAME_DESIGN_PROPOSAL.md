@@ -216,7 +216,7 @@ Chef Satisfaction Score = max(35, 100 − max(0, sous_chef_count − 4) × 16)
 | 5 | 84 | Slightly crowded |
 | 6 | 68 | Coordination breaking down |
 | 7 | 52 | Noticeably chaotic |
-| 8+ | 35 (floor) | Severe disruption — marginal sous chefs are net-negative |
+| 9+ | 35 (floor) | Severe disruption — marginal sous chefs are net-negative |
 
 **Effect on throughput (sole penalty mechanism):**
 
