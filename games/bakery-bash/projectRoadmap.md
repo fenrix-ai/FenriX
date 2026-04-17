@@ -71,12 +71,68 @@ These are confirmed in the repo. Do not redo them. If a bug is found, file a new
 - [x] **FE-DONE-10** First-pass game types (`app/src/types/game.ts`), round header, sidebar, tabs (Menu / Staff / Auction).
 
 > ⚠️ **Note:** The existing frontend phase files are first-pass scaffolds. They are NOT aligned with the April 15 proposal (no chef system, no loan shark, no roster phase, no conclusion screen, no hidden-budget enforcement). See MVP tasks below for the rework.
+>
+> ⚠️ **Note:** The existing backend schema (`firestore-schema.js`) and `submitDecision` Cloud Function are based on the **pre-April-8 design**. Phase names, product keys (`latte`/`matchaLatte`), per-player pricing, and single-shot bids all conflict with the proposal. See **Phase 0 — Schema & Code Migration** below. Do that phase first.
 
 ---
 
 # 🚧 MVP — Must Ship (P0)
 
 MVP definition (from proposal): one complete 5-round session end-to-end with auth, decisions, bidding, chef roster, simulation, results, CSV export, and a final Conclusion Screen. Professor can start/advance/pause/end.
+
+---
+
+## Phase 0 — Schema & Code Migration (P0, DO THESE FIRST)
+
+The existing `firestore-schema.js`, `submitDecision`, and parts of the frontend are based on the **pre-April-8 design** and conflict with the April 15 proposal. These must be resolved before Phase A — otherwise every new task will collide with stale field names, phase names, and data shapes.
+
+- [ ] **MIG-01** — Product key rename: `latte` → `coffee`, `matchaLatte` → `matcha`
+  - **Goal:** All Firestore keys, TypeScript types, Cloud Function logic, seed data, and frontend references use `coffee` and `matcha` (per proposal's 6-product catalog).
+  - **Files:** `backend/firestore-schema.js`, `backend/functions/index.js`, `backend/seed/local-game.json`, `backend/test/*`, `app/src/types/game.ts`, any component referencing the old keys.
+  - **Acceptance:** Repo-wide grep for `latte` and `matchaLatte` returns zero results outside this migration task's commit message. Rule tests + auth-flow test still green.
+  - **Depends on:** none.
+
+- [ ] **MIG-02** — Retire old `PlayerDocument` / `DecisionDocument` / `RoundResultDocument` shapes
+  - **Goal:** Remove `productPrices`, `headchefSkill`, `attractivenessWeights`, `creditBalance`, `creditCost`, `staffCount` (single integer), and the single-shot `adBid`/`chefBid` shapes from `firestore-schema.js`. Replace with the new shapes per `BACKEND.md`: `specialtyChefs[]`, `sousChefCount`, `sousChefAssignments`, multi-type `adBids`, per-chef `chefBids`, `amountBorrowed`, `interestCharged`, `revenueGross`, `revenueNet`, per-product satisfaction %, chef satisfaction score, sellout flags.
+  - **Files:** `backend/firestore-schema.js`.
+  - **Acceptance:** Schema file matches the Firestore Schema section of `BACKEND.md` 1:1. No `productPrices` or `headchefSkill` references remain anywhere.
+  - **Depends on:** MIG-01.
+
+- [ ] **MIG-03** — Phase name migration in `submitDecision` and state machine
+  - **Goal:** Replace phase checks for `"closing_hours"` / `"decide"` / `"auction"` / `"open_for_business"` / `"results"` with the new state machine labels: `round_N_decide` for decision submit, `round_N_bid_ad` + `round_N_bid_chef` for bid submit, `round_N_roster` for roster actions. `submitDecision` must only accept writes when phase matches `round_${round}_decide`.
+  - **Files:** `backend/functions/index.js`.
+  - **Acceptance:** Calling `submitDecision` during any non-`*_decide` phase returns `failed-precondition`. Existing `test:auth-flow` passes against the new phase names.
+  - **Depends on:** MIG-02.
+
+- [ ] **MIG-04** — Drop pricing input path
+  - **Goal:** `submitDecision` no longer accepts `productPrices` in the payload. `validateDecisionInput` rejects requests containing it. Pricing is fetched server-side from `config/params.productPrices` wherever needed.
+  - **Files:** `backend/functions/index.js`.
+  - **Acceptance:** Old payload including `productPrices` returns `invalid-argument`. Simulator reads prices from config.
+  - **Depends on:** MIG-02.
+
+- [ ] **MIG-05** — Split decisions from bids at the callable level
+  - **Goal:** `submitDecision` now only accepts `{ quantities, sousChefCount, sousChefAssignments, menu, round }`. A new `submitBids` callable (BE-09) handles ads + chefs. Old combined payload is rejected.
+  - **Files:** `backend/functions/index.js`.
+  - **Acceptance:** Legacy combined payload fails; two-step decide-then-bid path works end-to-end in emulator.
+  - **Depends on:** MIG-03.
+
+- [ ] **MIG-06** — Remove/replace tab-based UI and standalone AuctionPage
+  - **Goal:** Delete or refactor `components/game/tabs/{AuctionTab,StaffTab,MenuTab}.tsx` and `pages/AuctionPage.tsx` (333 lines) — none of these match the phase-based flow from the proposal. Update `App.tsx` routing to remove `/auction`. Sous chef hiring moves into `<SousChefPanel>`; menu choice moves into `DecidePhase`; auction logic moves into `BidPhase`.
+  - **Files:** `app/src/pages/AuctionPage.tsx` (delete), `app/src/components/game/tabs/*.tsx` (delete), `app/src/components/game/GameSidebar.tsx` (remove tab nav if obsolete), `app/src/App.tsx`.
+  - **Acceptance:** No route at `/auction`, no tab components imported anywhere. `GamePage` routes purely on game-doc `phase`.
+  - **Depends on:** FE-07, FE-08 (the replacement phases must land before the old UI is deleted, or delete and re-stub — either order is OK but tracking it explicitly).
+
+- [ ] **MIG-07** — Clarify sous chef phase authority
+  - **Goal:** Decide — is `sousChefCount` submitted in `decide` phase only, `roster` phase only, or both? Both FRONTEND.md and the proposal show `<SousChefPanel>` on both screens. Resolve with Game Design, then update both specs to match. Proposed default: **hires in `decide` are provisional; hires in `roster` are final; simulator reads the value from the last-submitted roster write.**
+  - **Files:** `BACKEND.md`, `FRONTEND.md`, `GAME_DESIGN_PROPOSAL.md` (if needed).
+  - **Acceptance:** One authoritative sentence in each spec. Matching implementation in BE-09/BE-11 callable contracts.
+  - **Depends on:** none (unblocks BE-09, BE-11, FE-07, FE-09).
+
+- [ ] **MIG-08** — Bakery name assignment flow
+  - **Goal:** Clarify whether `displayName` == "bakery name" or whether bakery name is a separate field. Proposed: on join, player enters one name used as both `displayName` and the team/bakery label. Lobby shows it; leaderboard and winner banner reuse it. If randomly generated names are desired, generator lives in `joinGame`.
+  - **Files:** `BACKEND.md` (schema note), `FRONTEND.md` (lobby copy), `backend/functions/index.js` (joinGame if generator is added).
+  - **Acceptance:** Each spec has one sentence describing the bakery-name source. Lobby renders the correct field.
+  - **Depends on:** none.
 
 ---
 
@@ -88,7 +144,13 @@ Everything else depends on these writes. Do these first.
   - **Goal:** Every game doc has a `config/params` subdoc with productPrices, productBaseDemand, productWeights, revenueCoefficients, adBonus, sousChefBaseCost, phaseDurations, startingBudget ($2000 default), playerCap (30), unitCosts ($1 flat), loanSharkInterestRate (0.10).
   - **Files:** `backend/functions/index.js` (new `createGame` onCall), `backend/firestore-schema.js`, `backend/seed/local-game.json`.
   - **Acceptance:** Create a game via the new callable → inspect emulator UI → all config values present and match the Defaults Table in `BACKEND.md`.
-  - **Depends on:** none.
+  - **Depends on:** MIG-02.
+
+- [ ] **SPEC-01** — Reconcile placeholder ad bonus values with proposal
+  - **Goal:** Proposal lists ad bonus values as "TBD". BACKEND.md picked defaults (TV $200, Billboard $150, Radio $100, Newspaper $75). Either (a) Game Design signs off on the defaults and moves them into the proposal, or (b) the defaults are re-tuned. Also resolve OQ-03 (ad bonus enters revenue as flat add vs flows through traffic).
+  - **Files:** `GAME_DESIGN_PROPOSAL.md`, `BACKEND.md`.
+  - **Acceptance:** Proposal has a concrete ad bonus table. BACKEND.md points at it, not at its own defaults.
+  - **Depends on:** none (unblocks BE-10, BE-13).
 
 - [ ] **BE-02** — `createGame` onCall (professor-only)
   - **Goal:** Professor callable that generates a 6-char joinCode (A–Z, 2–9), writes initial game doc in `lobby` phase, writes `config/params`, writes the full 5-round preference profile (see BE-03), and returns `{ gameId, joinCode }`.
@@ -252,7 +314,7 @@ All existing frontend phase files need to be aligned to the April 15 proposal. *
   - **Goal:** Three modes: `"bid"` (with bid input + minimum floor), `"roster"` (with lay-off button), `"won"` (display only). Every mode shows portrait (use variant code from `catalog/chefs`), nationality flag emoji, skill tier badge, name. **Never shows specialty or multipliers.** Includes a regression test confirming no `data-testid="chef-specialty"` ever appears.
   - **Files:** `app/src/components/game/ChefCard.tsx` (new), `app/src/components/game/__tests__/ChefCard.test.tsx`.
   - **Acceptance:** Unit test passes. Storybook-style harness renders all 3 modes × 4 nationalities × 3 skills.
-  - **Depends on:** FE-01, BE-04.
+  - **Depends on:** FE-01, BE-04, ART-25 (uses `portraitPath` from catalog).
 
 - [ ] **FE-05** — `<SousChefPanel>` component
   - **Goal:** Displays current count, per-product assignment dropdowns (one per offered menu item), computed "Next hire $X" from escalation curve. Warning copy at count >4 ("Kitchen Satisfaction: 84"), at >8 ("Severe disruption: 35"). Never blocks hiring.
@@ -331,6 +393,38 @@ All existing frontend phase files need to be aligned to the April 15 proposal. *
   - **Files:** `app/src/components/game/RoundHeader.tsx`, `app/src/components/game/SubmissionLock.tsx` (new).
   - **Acceptance:** Timer counts down; submission lock updates live as other players submit.
   - **Depends on:** FE-01.
+
+---
+
+## Phase H — Art & Asset Pipeline (P0)
+
+24 chef portrait variants are required by `CHEF_ROSTER.md` (head + neckline only, avatar-style). Zero exist today — `assets/svg/characters/` contains only three walk spritesheets. Without these, `<ChefCard>` and the Conclusion winner banner render placeholders.
+
+- [ ] **ART-01** — Define asset spec sheet
+  - **Goal:** One doc (`assets/CHEF_PORTRAIT_SPEC.md`) locking down: canvas size (recommend 512×512), export format (SVG preferred, PNG fallback), file-naming convention `chef_{nationality}_{gender}_{variant}.svg` (e.g. `chef_french_male_A.svg`), transparent background, consistent neckline crop. Generator code references these exact filenames.
+  - **Files:** `games/bakery-bash/assets/CHEF_PORTRAIT_SPEC.md` (new).
+  - **Depends on:** none.
+
+- [ ] **ART-02..ART-05** — French portraits (6 total): `male_A`, `male_B`, `male_C`, `female_A`, `female_B`, `female_C`
+- [ ] **ART-06..ART-09** — Japanese portraits (4 total): `male_A`, `male_B`, `female_A`, `female_B`
+- [ ] **ART-10..ART-13** — Italian portraits (4 total): `male_A`, `male_B`, `female_A`, `female_B`
+- [ ] **ART-14..ART-19** — American portraits (6 total): `male_A`, `male_B`, `male_C`, `female_A`, `female_B`, `female_C`
+- [ ] **ART-20** — Base chef portrait (nationality-neutral, greyscale — per roster rules "cannot be removed, greyed out")
+- [ ] **ART-21** — Placeholder "empty specialty slot" SVG for roster UI
+- [ ] **ART-22** — Trophy + confetti assets for Conclusion winner banner
+- [ ] **ART-23** — Four ad-surface backplates: TV frame, radio/speaker icon, newspaper page, billboard — used by `<AdWinnerBanner>`
+- [ ] **ART-24** — Loan shark mascot SVG for `<LoanSharkCallout>` banner (stylized shark or cash-grabber icon)
+
+  For each portrait task:
+  - **Goal:** Deliver one SVG matching `CHEF_ROSTER.md`'s variant description (skin tone, hair, facial features, hat, neckline per the variant row).
+  - **Files:** `games/bakery-bash/assets/svg/characters/chef_{…}.svg`.
+  - **Acceptance:** File exists at the spec'd path, opens in browser without errors, neckline crop matches spec, rendered inside `<ChefCard>` looks on-brand alongside siblings.
+  - **Depends on:** ART-01.
+
+- [ ] **ART-25** — Register all portrait paths in `catalog/chefs`
+  - **Goal:** Once all variants exist, write a `portraitPath` field per variant into the `catalog/chefs` seed so the chef generator (BE-08) can emit the correct filename on spawn.
+  - **Files:** `backend/scripts/seed-catalogs.js`.
+  - **Depends on:** ART-02..ART-24, BE-04.
 
 ---
 
