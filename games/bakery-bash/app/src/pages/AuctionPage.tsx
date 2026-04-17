@@ -1,8 +1,11 @@
 import { useState, useCallback } from "react";
+import { doc, updateDoc } from "firebase/firestore";
 import { PageShell } from "../components/ui/PageShell";
 import { RoundHeader } from "../components/game/RoundHeader";
 import { useGame, useGameDispatch } from "../contexts/GameContext";
+import { db } from "../lib/firebase";
 import type {
+  AdTypeBackend,
   ChefListing,
   ChefNationality,
   ChefGender,
@@ -111,14 +114,17 @@ function generateChefPool(round: number): ChefListing[] {
 }
 
 export function AuctionPage() {
-  const { currentRound, auctionTab, timeRemaining } = useGame();
+  const { gameId, player, currentRound, auctionTab, timeRemaining } = useGame();
   const dispatch = useGameDispatch();
+  const playerId = player?.id ?? null;
 
   const [chefPool] = useState<ChefListing[]>(() =>
     generateChefPool(currentRound)
   );
   const [chefBids, setChefBids] = useState<Record<string, number>>({});
   const [adBids, setAdBids] = useState<Record<string, number>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const setActiveTab = useCallback(
     (tab: "chefs" | "ads") => {
@@ -135,10 +141,65 @@ export function AuctionPage() {
     setAdBids((prev) => ({ ...prev, [ad]: Math.max(0, value) }));
   }, []);
 
-  // TODO(backend): Send chefBids/adBids to the server before transitioning.
-  // Currently bids are local state and get discarded on phase change.
-  const handleSubmitBids = () => {
-    dispatch({ type: "SET_PHASE", payload: "simulate" });
+  // Persist the player's bids to /games/{gameId}/players/{playerId}.pendingBids.
+  // Security rules permit writes only to {displayName, pendingDecision, pendingBids},
+  // and the backend snapshots bids into immutable round records when bidding closes.
+  // Bid model on the wire (per backend/firestore-schema.js):
+  //   adBid:   { adType: "TV"|"Radio"|"Newspaper"|"Billboard"|null, amount: number }
+  //   chefBid: { skillLevel: number, amount: number }
+  // For now we collapse the per-card UI into the highest single bid for each
+  // category — the backend treats this as the player's submitted bid.
+  const handleSubmitBids = async () => {
+    if (!gameId || !playerId) {
+      setSubmitError("You're not connected to a game yet.");
+      return;
+    }
+    if (submitting) return;
+    setSubmitError(null);
+    setSubmitting(true);
+
+    const adBidEntry = Object.entries(adBids).reduce<{
+      adType: AdTypeBackend | null;
+      amount: number;
+    }>(
+      (best, [adType, amount]) =>
+        amount > best.amount
+          ? { adType: adType as AdTypeBackend, amount }
+          : best,
+      { adType: null, amount: 0 }
+    );
+
+    const chefBidEntry = Object.entries(chefBids).reduce<{
+      skillLevel: number;
+      amount: number;
+    }>(
+      (best, [chefId, amount]) => {
+        if (amount <= best.amount) return best;
+        const chef = chefPool.find((c) => c.id === chefId);
+        const skillLevel = chef
+          ? Math.round((chef.multiplier - 1) * 100)
+          : 0;
+        return { skillLevel, amount };
+      },
+      { skillLevel: 0, amount: 0 }
+    );
+
+    const pendingBids = {
+      adBid: adBidEntry,
+      chefBid: chefBidEntry,
+    };
+
+    try {
+      const playerRef = doc(db, "games", gameId, "players", playerId);
+      await updateDoc(playerRef, { pendingBids });
+      dispatch({ type: "UPDATE_PENDING_BIDS", payload: pendingBids });
+      dispatch({ type: "SET_PHASE", payload: "simulating" });
+    } catch (err) {
+      console.error("Failed to submit bids", err);
+      setSubmitError("Couldn't submit your bids. Try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const isDev = !import.meta.env.PROD;
@@ -285,11 +346,17 @@ export function AuctionPage() {
         )}
       </div>
 
+      {submitError && (
+        <p className="auction-page__error" role="alert">
+          {submitError}
+        </p>
+      )}
       <button
         className="btn btn--primary auction-page__submit"
         onClick={handleSubmitBids}
+        disabled={submitting || !gameId || !playerId}
       >
-        Submit Bids
+        {submitting ? "Submitting…" : "Submit Bids"}
       </button>
     </PageShell>
   );

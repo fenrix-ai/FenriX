@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { useGame, useGameDispatch } from "../../contexts/GameContext";
 import type { GamePhase } from "../../types/game";
 
-const PHASES: GamePhase[] = ["decide", "simulate", "results"];
+const PHASES: GamePhase[] = ["decide", "simulating", "results_ready"];
 
 export function DevNav() {
   const { phase, auctionTab } = useGame();
@@ -18,8 +18,7 @@ export function DevNav() {
     }
   };
 
-  const auctionTabLabel =
-    phase === "auction" ? "auction (active)" : "auction";
+  const bidLabel = phase === "bid" ? "bid (active)" : "bid";
 
   return (
     <nav className="dev-nav">
@@ -33,14 +32,14 @@ export function DevNav() {
       ))}
       <Link
         to="/auction"
-        className={phase === "auction" ? "dev-nav__link--active" : ""}
-        onClick={() => dispatch({ type: "SET_PHASE", payload: "auction" })}
+        className={phase === "bid" ? "dev-nav__link--active" : ""}
+        onClick={() => dispatch({ type: "SET_PHASE", payload: "bid" })}
       >
-        {auctionTabLabel}
+        {bidLabel}
       </Link>
       <Link to="/leaderboard">Board</Link>
       <Link to="/professor">Prof</Link>
-      {phase === "auction" && (
+      {phase === "bid" && (
         <span className="dev-nav__phase-indicator">
           auction tab: {auctionTab === "chefs" ? "Chef Hiring" : "Advertisements"}
         </span>

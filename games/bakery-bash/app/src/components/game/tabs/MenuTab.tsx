@@ -1,32 +1,49 @@
-import { useState } from "react";
-import type { MenuItemId } from "../../../types/game";
+import type { MenuItemId, ProductKey } from "../../../types/game";
+import { useGame, useGameDispatch } from "../../../contexts/GameContext";
 
 interface MenuEntry {
   id: MenuItemId;
+  productKey: ProductKey;
   name: string;
   basePrice: number;
   unlocked: boolean;
 }
 
 const MENU_ITEMS: MenuEntry[] = [
-  { id: "croissant", name: "Croissant", basePrice: 3.5, unlocked: true },
-  { id: "cookie", name: "Cookie", basePrice: 2.0, unlocked: true },
-  { id: "bagel", name: "Bagel", basePrice: 4.0, unlocked: true },
-  { id: "sandwich", name: "Sandwich", basePrice: 7.0, unlocked: false },
-  { id: "latte", name: "Latte", basePrice: 5.0, unlocked: false },
-  { id: "matcha-latte", name: "Matcha Latte", basePrice: 6.0, unlocked: false },
+  { id: "croissant", productKey: "croissant", name: "Croissant", basePrice: 3.5, unlocked: true },
+  { id: "cookie", productKey: "cookie", name: "Cookie", basePrice: 2.0, unlocked: true },
+  { id: "bagel", productKey: "bagel", name: "Bagel", basePrice: 4.0, unlocked: true },
+  { id: "sandwich", productKey: "sandwich", name: "Sandwich", basePrice: 7.0, unlocked: false },
+  { id: "latte", productKey: "latte", name: "Latte", basePrice: 5.0, unlocked: false },
+  { id: "matcha-latte", productKey: "matchaLatte", name: "Matcha Latte", basePrice: 6.0, unlocked: false },
 ];
 
 export function MenuTab() {
-  const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const { pendingDecision } = useGame();
+  const dispatch = useGameDispatch();
 
-  const setQty = (id: string, value: number) => {
-    setQuantities((prev) => ({ ...prev, [id]: Math.max(0, value) }));
+  const setQty = (productKey: ProductKey, value: number) => {
+    const next = Math.max(0, value);
+    dispatch({
+      type: "UPDATE_PENDING_DECISION",
+      payload: {
+        quantities: { ...pendingDecision.quantities, [productKey]: next },
+        // Persist the menu item's price so the backend has it on submit.
+        productPrices: {
+          ...pendingDecision.productPrices,
+          [productKey]:
+            pendingDecision.productPrices[productKey] ||
+            MENU_ITEMS.find((item) => item.productKey === productKey)
+              ?.basePrice ||
+            0,
+        },
+      },
+    });
   };
 
   const totalCost = MENU_ITEMS.reduce((sum, item) => {
     if (!item.unlocked) return sum;
-    const qty = quantities[item.id] ?? 0;
+    const qty = pendingDecision.quantities[item.productKey] ?? 0;
     return sum + item.basePrice * qty;
   }, 0);
 
@@ -56,9 +73,9 @@ export function MenuTab() {
                 placeholder="0"
                 min={0}
                 step={1}
-                value={quantities[item.id] ?? ""}
+                value={pendingDecision.quantities[item.productKey] || ""}
                 onChange={(e) =>
-                  setQty(item.id, parseInt(e.target.value) || 0)
+                  setQty(item.productKey, parseInt(e.target.value) || 0)
                 }
               />
             ) : (
