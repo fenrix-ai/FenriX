@@ -8,6 +8,7 @@ import type {
   ChefGender,
   SkillLevel,
   AuctionTab,
+  AdType,
 } from "../types/game";
 
 const NATIONALITIES: ChefNationality[] = [
@@ -42,20 +43,39 @@ const SKILL_CONFIG: Record<
   high: { label: "High", multiplier: 2.0, cssClass: "auction-chef--high" },
 };
 
-const AD_TYPES = [
-  { id: "TV", icon: "/assets/ads/tv.svg", desc: "Reaches the most customers" },
-  { id: "Radio", icon: "/assets/ads/radio.svg", desc: "Good local reach" },
+const AD_TYPES: ReadonlyArray<{
+  id: AdType;
+  label: string;
+  icon: string;
+  desc: string;
+}> = [
   {
-    id: "Newspaper",
+    id: "tv",
+    label: "TV",
+    icon: "/assets/ads/tv.svg",
+    desc: "Reaches the most customers",
+  },
+  {
+    id: "radio",
+    label: "Radio",
+    icon: "/assets/ads/radio.svg",
+    desc: "Good local reach",
+  },
+  {
+    id: "newspaper",
+    label: "Newspaper",
     icon: "/assets/ads/newspaper.svg",
     desc: "Steady, reliable audience",
   },
   {
-    id: "Billboard",
+    id: "billboard",
+    label: "Billboard",
     icon: "/assets/ads/billboard.svg",
     desc: "Constant neighborhood presence",
   },
-] as const;
+];
+
+const TAB_DURATION_SECONDS = 60;
 
 const POOL_SIZE = 6;
 
@@ -117,7 +137,8 @@ export function AuctionPage() {
     generateChefPool(currentRound)
   );
   const [chefBids, setChefBids] = useState<Record<string, number>>({});
-  const [adBids, setAdBids] = useState<Record<string, number>>({});
+  const [adBids, setAdBids] = useState<Partial<Record<AdType, number>>>({});
+  const [remaining, setRemaining] = useState<number>(TAB_DURATION_SECONDS);
 
   const setActiveTab = useCallback(
     (tab: AuctionTab) => {
@@ -135,15 +156,42 @@ export function AuctionPage() {
     setChefBids((prev) => ({ ...prev, [id]: Math.max(0, value) }));
   }, []);
 
-  const setAdBid = useCallback((ad: string, value: number) => {
+  const setAdBid = useCallback((ad: AdType, value: number) => {
     setAdBids((prev) => ({ ...prev, [ad]: Math.max(0, value) }));
   }, []);
 
-  const handleSubmitBids = () => {
+  const handleSubmitBids = useCallback(() => {
     dispatch({ type: "SET_PHASE", payload: "simulate" });
-  };
+  }, [dispatch]);
 
   const isDev = !import.meta.env.PROD;
+
+  useEffect(() => {
+    setRemaining(TAB_DURATION_SECONDS);
+  }, [activeTab]);
+
+  useEffect(() => {
+    const tick = setInterval(() => {
+      setRemaining((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(tick);
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (remaining > 0) return;
+    if (activeTab === "chefs") {
+      setActiveTab("ads");
+    } else {
+      handleSubmitBids();
+    }
+  }, [remaining, activeTab, setActiveTab, handleSubmitBids]);
+
+  const timerMinutes = Math.floor(remaining / 60);
+  const timerSeconds = remaining % 60;
+  const timerDisplay = `${timerMinutes}:${timerSeconds
+    .toString()
+    .padStart(2, "0")}`;
+  const timerUrgent = remaining <= 10;
 
   return (
     <PageShell className="game-page auction-page">
@@ -168,7 +216,13 @@ export function AuctionPage() {
             Advertisements
           </button>
         </div>
-        <div className="auction-page__timer">1:00</div>
+        <div
+          className={`auction-page__timer${
+            timerUrgent ? " auction-page__timer--urgent" : ""
+          }`}
+        >
+          {timerDisplay}
+        </div>
       </div>
 
       <div className="auction-page__content">
@@ -237,11 +291,11 @@ export function AuctionPage() {
                 <div key={ad.id} className="auction-ad">
                   <img
                     src={ad.icon}
-                    alt={ad.id}
+                    alt={ad.label}
                     className="auction-ad__icon"
                   />
                   <div className="auction-ad__info">
-                    <span className="auction-ad__name">{ad.id}</span>
+                    <span className="auction-ad__name">{ad.label}</span>
                     <span className="auction-ad__desc">{ad.desc}</span>
                   </div>
                   <div className="auction-ad__top-bid">
@@ -257,7 +311,7 @@ export function AuctionPage() {
                       min={0}
                       value={adBids[ad.id] ?? ""}
                       onChange={(e) =>
-                        setAdBid(ad.id, parseInt(e.target.value) || 0)
+                        setAdBid(ad.id, parseInt(e.target.value, 10) || 0)
                       }
                     />
                   </div>
