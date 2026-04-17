@@ -394,8 +394,11 @@ function runSimulation(players, roundPreferences, config) {
     // budgetAfter: start with current budget, subtract spending, add net revenue.
     // When borrowing occurs, the loan covers the shortfall up-front so
     // post-spend budget floors at 0; then net revenue lands on top.
+    // Final budget is floored at 0 — the loan shark deduction can eat into
+    // revenue but we never show a negative balance to the player. A 0 budget
+    // means the player starts the next round fully dependent on borrowing.
     const budgetAfterSpend = Math.max(0, budgetCurrent - totalSpent);
-    const budgetAfter = Math.round(budgetAfterSpend + revenueNet);
+    const budgetAfter = Math.max(0, Math.round(budgetAfterSpend + revenueNet));
 
     // --- Returning customers earned (for NEXT round) ---
     const returningCustomersEarned = computeReturningCustomersEarned(

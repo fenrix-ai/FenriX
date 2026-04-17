@@ -68,6 +68,10 @@ const {
   runSimulation,
 } = require('./simulation');
 
+const {
+  buildCsvString,
+} = require('./csv-export');
+
 // The following modules are part of the full backend surface. They are
 // required only where needed so that missing optional helpers do not break
 // the lobby / decision / bid flows.
@@ -94,18 +98,21 @@ try {
   };
 }
 
-let marketInsightModule = null;
-try {
-  marketInsightModule = require('./market-insight');
-} catch (_) {
-  marketInsightModule = {
-    buildMarketInsightEmail: ({ round }) => ({
+// market-insight functionality lives in round-preferences.js.
+// We wrap it in the interface index.js expects: buildMarketInsightEmail({ round, preferences, config })
+const marketInsightModule = {
+  buildMarketInsightEmail: ({ round, preferences }) => {
+    if (roundPreferencesModule && roundPreferencesModule.generateMarketInsightEmail) {
+      return roundPreferencesModule.generateMarketInsightEmail(preferences || {});
+    }
+    return {
       round,
       subject: `Round ${round} market insight`,
       body: 'Market insight is unavailable this round.',
-    }),
-  };
-}
+      from: 'The Plaza Times',
+    };
+  },
+};
 
 let conclusionModule = null;
 try {
@@ -726,6 +733,15 @@ async function runSimulationAndPersist(gameRef, round, config) {
       updatedAt: FieldValue.serverTimestamp(),
     });
 
+    // Extract perProductSold and selloutFlags as flat objects for easy
+    // frontend consumption (avoids nested digging into perProductSatisfaction).
+    const perProductSold = {};
+    const selloutFlags = {};
+    for (const [product, pps] of Object.entries(r.perProductSatisfaction || {})) {
+      perProductSold[product] = (pps && pps.qtySold) || 0;
+      selloutFlags[product] = !!(pps && pps.sellout);
+    }
+
     batch.set(playerRoundRef, {
       round,
       playerId: r.playerId,
@@ -742,6 +758,8 @@ async function runSimulationAndPersist(gameRef, round, config) {
       aggregateSatisfactionPct: r.aggregateSatisfactionPct,
       chefSatisfactionScore: r.chefSatisfactionScore,
       perProductSatisfaction: r.perProductSatisfaction,
+      perProductSold,
+      selloutFlags,
       returningCustomersEarned: r.returningCustomersEarned,
       computedAt: FieldValue.serverTimestamp(),
     });
@@ -1166,6 +1184,107 @@ exports.getConclusion = onCall(async (request) => {
     throw new HttpsError('failed-precondition', 'Conclusion not yet available.');
   }
   return { gameId, conclusion: snap.data() };
+});
+
+// ===========================================================================
+// exportPlayerCsv — player downloads their own round-by-round CSV
+// ===========================================================================
+
+exports.exportPlayerCsv = onCall(async (request) => {
+  const auth = requireAuth(request, 'Sign in to export your data.');
+  const gameId = cleanGameId((request.data || {}).gameId);
+  const gameRef = gameDoc(gameId);
+
+  // Verify player belongs to this game.
+  const playerSnap = await gameRef.collection('players').doc(auth.uid).get();
+  if (!playerSnap.exists) {
+    throw new HttpsError('not-found', 'Player not found in this game.');
+  }
+
+  // Read all CSV row documents for this player, sorted by round.
+  const csvSnap = await gameRef
+    .collection('csvRows')
+    .doc(auth.uid)
+    .collection('rounds')
+    .orderBy('round', 'asc')
+    .get();
+
+  if (csvSnap.empty) {
+    throw new HttpsError('failed-precondition', 'No round data available yet.');
+  }
+
+  const rows = csvSnap.docs.map((doc) => doc.data().row).filter(Boolean);
+  const csvString = buildCsvString(rows, false);
+
+  return {
+    gameId,
+    playerId: auth.uid,
+    csv: csvString,
+    roundCount: rows.length,
+  };
+});
+
+// ===========================================================================
+// exportProfessorCsv — professor downloads class-wide CSV with player names
+// ===========================================================================
+
+exports.exportProfessorCsv = onCall(async (request) => {
+  const auth = requireAuth(request, 'Sign in to export class data.');
+  const gameId = cleanGameId((request.data || {}).gameId);
+  const gameRef = gameDoc(gameId);
+
+  // Verify caller is the professor.
+  const gameSnap = await gameRef.get();
+  if (!gameSnap.exists) throw new HttpsError('not-found', 'Game not found.');
+  if (gameSnap.get('professorUid') !== auth.uid && gameSnap.get('professorId') !== auth.uid) {
+    throw new HttpsError('permission-denied', 'Only the professor can export class data.');
+  }
+
+  // Read all players.
+  const playersSnap = await gameRef.collection('players').get();
+  const allRows = [];
+
+  // For each player, read all their CSV rows.
+  for (const playerDoc of playersSnap.docs) {
+    const p = playerDoc.data() || {};
+    const csvSnap = await gameRef
+      .collection('csvRows')
+      .doc(playerDoc.id)
+      .collection('rounds')
+      .orderBy('round', 'asc')
+      .get();
+
+    for (const rowDoc of csvSnap.docs) {
+      const row = rowDoc.data().row;
+      if (row) {
+        // Attach player identity columns for professor export.
+        row.player_id = playerDoc.id;
+        row.bakery_name = p.bakeryName || '';
+        row.display_name = p.displayName || '';
+        allRows.push(row);
+      }
+    }
+  }
+
+  if (allRows.length === 0) {
+    throw new HttpsError('failed-precondition', 'No round data available yet.');
+  }
+
+  // Sort by player then round for clean output.
+  allRows.sort((a, b) => {
+    if (a.player_id < b.player_id) return -1;
+    if (a.player_id > b.player_id) return 1;
+    return (a.round || 0) - (b.round || 0);
+  });
+
+  const csvString = buildCsvString(allRows, true);
+
+  return {
+    gameId,
+    csv: csvString,
+    playerCount: playersSnap.size,
+    rowCount: allRows.length,
+  };
 });
 
 // ===========================================================================

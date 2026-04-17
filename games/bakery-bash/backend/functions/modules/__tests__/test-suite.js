@@ -1330,7 +1330,23 @@ describe('Regression Tests', () => {
     }
   });
 
-  it('REG-013: mergeConfig deep merge of nested objects', () => {
+  it('REG-013: budget never goes negative (floor at 0)', () => {
+    // Player with tiny budget, massive spending, and negative net revenue
+    const players = [{
+      playerId: 'broke', displayName: 'Broke', bakeryName: 'Bankrupt Bakery',
+      budgetCurrent: 50, specialtyChefs: [], returningCustomersPending: 0,
+      decision: {
+        menu: { croissant: true, cookie: true, bagel: true, sandwich: true, coffee: true, matcha: true },
+        quantities: { croissant: 200, cookie: 200, bagel: 200, sandwich: 200, coffee: 200, matcha: 200 },
+        sousChefCount: 4, sousChefAssignments: { croissant: 2, cookie: 1, bagel: 1 },
+      },
+      auctionResults: { adWon: 'TV', adBidPaid: 500, chefBidPaid: 500 },
+    }];
+    const results = simulation.runSimulation(players, {}, cfg);
+    ok(results[0].budgetAfter >= 0, `budget should be >= 0, got ${results[0].budgetAfter}`);
+  });
+
+  it('REG-014: mergeConfig deep merge of nested objects', () => {
     const c = config.mergeConfig({
       returningCustomerBonuses: { excellent: 0.25 },
     });
