@@ -48,7 +48,7 @@ const {
   numberOrDefault,
   objectOrDefault,
   cleanString,
-} = require('./config');
+} = require('./modules/config');
 
 const {
   parsePhase,
@@ -58,26 +58,26 @@ const {
   canSubmitDecision,
   canSubmitBids,
   isGameActive,
-} = require('./phases');
+} = require('./modules/phases');
 
 const {
   generateChefPool,
-} = require('./chef-system');
+} = require('./modules/chef-system');
 
 const {
   runSimulation,
-} = require('./simulation');
+} = require('./modules/simulation');
 
 const {
   buildCsvString,
-} = require('./csv-export');
+} = require('./modules/csv-export');
 
 // The following modules are part of the full backend surface. They are
 // required only where needed so that missing optional helpers do not break
 // the lobby / decision / bid flows.
 let decisionValidation = null;
 try {
-  decisionValidation = require('./decision-validation');
+  decisionValidation = require('./modules/decision-validation');
 } catch (_) {
   // Fallback: validators must exist by launch, but the file structure here
   // allows index.js to be loadable even before they're authored.
@@ -90,7 +90,7 @@ try {
 
 let roundPreferencesModule = null;
 try {
-  roundPreferencesModule = require('./round-preferences');
+  roundPreferencesModule = require('./modules/round-preferences');
 } catch (_) {
   roundPreferencesModule = {
     generateRoundPreferences: (totalRounds) =>
@@ -116,7 +116,7 @@ const marketInsightModule = {
 
 let conclusionModule = null;
 try {
-  conclusionModule = require('./conclusion');
+  conclusionModule = require('./modules/conclusion');
 } catch (_) {
   conclusionModule = {
     computeConclusion: (results) => ({ rankings: results }),
@@ -914,12 +914,7 @@ exports.submitDecision = onCall(async (request) => {
     const config = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
 
     // Validate using the decision-validation module (pure).
-    const validated = decisionValidation.validateDecision({
-      data,
-      player: pSnap.data(),
-      game,
-      config,
-    });
+    const validated = decisionValidation.validateDecision(data, currentRound, config);
 
     roundId = `round_${currentRound}`;
     const decisionRef = playerRef.collection('decisions').doc(roundId);
@@ -992,8 +987,8 @@ exports.submitBids = onCall(async (request) => {
 
     const validated =
       bidType === 'ad'
-        ? decisionValidation.validateAdBids({ data, player: pSnap.data(), game, config })
-        : decisionValidation.validateChefBids({ data, player: pSnap.data(), game, config });
+        ? decisionValidation.validateAdBids(data)
+        : decisionValidation.validateChefBids(data, game.chefPool || []);
 
     const bidsRef = playerRef.collection('bids').doc(`round_${round}`);
     const existing = await transaction.get(bidsRef);
