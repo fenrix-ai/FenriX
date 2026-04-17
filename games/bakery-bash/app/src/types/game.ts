@@ -1,4 +1,4 @@
-export type GamePhase = "lobby" | "decide" | "bid" | "auction" | "simulate" | "results";
+export type GamePhase = "lobby" | "email" | "decide" | "bid" | "auction" | "simulate" | "results";
 
 export type ChefNationality = "american" | "french" | "italian" | "japanese";
 export type ChefGender = "m" | "f";

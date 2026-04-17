@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { PageShell } from "../components/ui/PageShell";
 import { RoundHeader } from "../components/game/RoundHeader";
 import { useGame, useGameDispatch } from "../contexts/GameContext";
@@ -7,8 +7,6 @@ import type {
   ChefNationality,
   ChefGender,
   SkillLevel,
-  AuctionTab,
-  AdType,
 } from "../types/game";
 
 const NATIONALITIES: ChefNationality[] = [
@@ -43,39 +41,20 @@ const SKILL_CONFIG: Record<
   high: { label: "High", multiplier: 2.0, cssClass: "auction-chef--high" },
 };
 
-const AD_TYPES: ReadonlyArray<{
-  id: AdType;
-  label: string;
-  icon: string;
-  desc: string;
-}> = [
+const AD_TYPES = [
+  { id: "TV", icon: "/assets/ads/tv.svg", desc: "Reaches the most customers" },
+  { id: "Radio", icon: "/assets/ads/radio.svg", desc: "Good local reach" },
   {
-    id: "tv",
-    label: "TV",
-    icon: "/assets/ads/tv.svg",
-    desc: "Reaches the most customers",
-  },
-  {
-    id: "radio",
-    label: "Radio",
-    icon: "/assets/ads/radio.svg",
-    desc: "Good local reach",
-  },
-  {
-    id: "newspaper",
-    label: "Newspaper",
+    id: "Newspaper",
     icon: "/assets/ads/newspaper.svg",
     desc: "Steady, reliable audience",
   },
   {
-    id: "billboard",
-    label: "Billboard",
+    id: "Billboard",
     icon: "/assets/ads/billboard.svg",
     desc: "Constant neighborhood presence",
   },
-];
-
-const TAB_DURATION_SECONDS = 60;
+] as const;
 
 const POOL_SIZE = 6;
 
@@ -89,6 +68,9 @@ function rollSkill(round: number): SkillLevel {
   return roll < 0.2 ? "low" : roll < 0.6 ? "medium" : "high";
 }
 
+// TODO(backend): Replace with server-provided chef pool so all players
+// in a round see the same chefs. Currently uses unseeded Math.random(),
+// which means each client generates a different pool independently.
 function generateChefPool(round: number): ChefListing[] {
   const pool: ChefListing[] = [];
 
@@ -129,69 +111,50 @@ function generateChefPool(round: number): ChefListing[] {
 }
 
 export function AuctionPage() {
-  const { currentRound } = useGame();
+  const { currentRound, auctionTab, timeRemaining } = useGame();
   const dispatch = useGameDispatch();
 
-  const [activeTab, setActiveTabLocal] = useState<AuctionTab>("chefs");
   const [chefPool] = useState<ChefListing[]>(() =>
     generateChefPool(currentRound)
   );
   const [chefBids, setChefBids] = useState<Record<string, number>>({});
-  const [adBids, setAdBids] = useState<Partial<Record<AdType, number>>>({});
-  const [remaining, setRemaining] = useState<number>(TAB_DURATION_SECONDS);
+  const [adBids, setAdBids] = useState<Record<string, number>>({});
 
   const setActiveTab = useCallback(
-    (tab: AuctionTab) => {
-      setActiveTabLocal(tab);
+    (tab: "chefs" | "ads") => {
       dispatch({ type: "SET_AUCTION_TAB", payload: tab });
     },
     [dispatch]
   );
 
-  useEffect(() => {
-    dispatch({ type: "SET_AUCTION_TAB", payload: "chefs" });
-  }, [dispatch]);
-
   const setChefBid = useCallback((id: string, value: number) => {
     setChefBids((prev) => ({ ...prev, [id]: Math.max(0, value) }));
   }, []);
 
-  const setAdBid = useCallback((ad: AdType, value: number) => {
+  const setAdBid = useCallback((ad: string, value: number) => {
     setAdBids((prev) => ({ ...prev, [ad]: Math.max(0, value) }));
   }, []);
 
-  const handleSubmitBids = useCallback(() => {
+  // TODO(backend): Send chefBids/adBids to the server before transitioning.
+  // Currently bids are local state and get discarded on phase change.
+  const handleSubmitBids = () => {
     dispatch({ type: "SET_PHASE", payload: "simulate" });
-  }, [dispatch]);
+  };
 
   const isDev = !import.meta.env.PROD;
 
-  useEffect(() => {
-    setRemaining(TAB_DURATION_SECONDS);
-  }, [activeTab]);
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  };
 
-  useEffect(() => {
-    const tick = setInterval(() => {
-      setRemaining((prev) => Math.max(0, prev - 1));
-    }, 1000);
-    return () => clearInterval(tick);
-  }, [activeTab]);
-
-  useEffect(() => {
-    if (remaining > 0) return;
-    if (activeTab === "chefs") {
-      setActiveTab("ads");
-    } else {
-      handleSubmitBids();
-    }
-  }, [remaining, activeTab, setActiveTab, handleSubmitBids]);
-
-  const timerMinutes = Math.floor(remaining / 60);
-  const timerSeconds = remaining % 60;
-  const timerDisplay = `${timerMinutes}:${timerSeconds
-    .toString()
-    .padStart(2, "0")}`;
-  const timerUrgent = remaining <= 10;
+  // TODO(backend): In production, tab switching is driven by the server timer.
+  // The server sets timeRemaining and switches auctionTab via Firestore when
+  // the chef hiring window expires. Tabs are clickable in dev for testing only.
+  const timerDisplay =
+    timeRemaining !== null ? formatTime(timeRemaining) : "1:00";
+  const isUrgent = timeRemaining !== null && timeRemaining <= 10;
 
   return (
     <PageShell className="game-page auction-page">
@@ -201,24 +164,24 @@ export function AuctionPage() {
         <div className="auction-page__tabs">
           <button
             className={`auction-page__tab ${
-              activeTab === "chefs" ? "auction-page__tab--active" : ""
-            } ${activeTab !== "chefs" ? "auction-page__tab--locked" : ""}`}
+              auctionTab === "chefs" ? "auction-page__tab--active" : ""
+            } ${auctionTab !== "chefs" ? "auction-page__tab--locked" : ""}`}
             onClick={isDev ? () => setActiveTab("chefs") : undefined}
           >
             Chef Hiring
           </button>
           <button
             className={`auction-page__tab ${
-              activeTab === "ads" ? "auction-page__tab--active" : ""
-            } ${activeTab !== "ads" ? "auction-page__tab--locked" : ""}`}
+              auctionTab === "ads" ? "auction-page__tab--active" : ""
+            } ${auctionTab !== "ads" ? "auction-page__tab--locked" : ""}`}
             onClick={isDev ? () => setActiveTab("ads") : undefined}
           >
             Advertisements
           </button>
         </div>
         <div
-          className={`auction-page__timer${
-            timerUrgent ? " auction-page__timer--urgent" : ""
+          className={`auction-page__timer ${
+            isUrgent ? "auction-page__timer--urgent" : ""
           }`}
         >
           {timerDisplay}
@@ -226,7 +189,7 @@ export function AuctionPage() {
       </div>
 
       <div className="auction-page__content">
-        {activeTab === "chefs" && (
+        {auctionTab === "chefs" && (
           <div className="auction-chefs">
             <p className="auction-page__hint">
               Bid on chefs to boost your bakery's output.
@@ -280,7 +243,7 @@ export function AuctionPage() {
           </div>
         )}
 
-        {activeTab === "ads" && (
+        {auctionTab === "ads" && (
           <div className="auction-ads">
             <p className="auction-page__hint">
               Bid on advertisement slots to attract more customers to your
@@ -291,11 +254,11 @@ export function AuctionPage() {
                 <div key={ad.id} className="auction-ad">
                   <img
                     src={ad.icon}
-                    alt={ad.label}
+                    alt={ad.id}
                     className="auction-ad__icon"
                   />
                   <div className="auction-ad__info">
-                    <span className="auction-ad__name">{ad.label}</span>
+                    <span className="auction-ad__name">{ad.id}</span>
                     <span className="auction-ad__desc">{ad.desc}</span>
                   </div>
                   <div className="auction-ad__top-bid">
@@ -311,7 +274,7 @@ export function AuctionPage() {
                       min={0}
                       value={adBids[ad.id] ?? ""}
                       onChange={(e) =>
-                        setAdBid(ad.id, parseInt(e.target.value, 10) || 0)
+                        setAdBid(ad.id, parseInt(e.target.value) || 0)
                       }
                     />
                   </div>

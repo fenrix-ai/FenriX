@@ -42,6 +42,17 @@
 
   --shadow-pixel: 4px 4px 0 var(--outline);
   --shadow-pixel-sm: 2px 2px 0 var(--outline);
+
+  /* Skill-level colors */
+  --skill-low: #c0392b;
+  --skill-low-dark: #922b21;
+  --skill-low-glow: #e74c3c44;
+  --skill-medium: #b8860b;
+  --skill-medium-dark: #8b6508;
+  --skill-medium-glow: #daa52044;
+  --skill-high: #5ea05e;
+  --skill-high-dark: #3e7a3e;
+  --skill-high-glow: #7bc97b44;
 }
 
 html {
@@ -834,18 +845,18 @@ h3 { font-size: 0.7rem; }
 }
 
 .auction-chef--low {
-  border-color: #c0392b;
-  box-shadow: inset 0 0 0 1px #e74c3c44;
+  border-color: var(--skill-low);
+  box-shadow: inset 0 0 0 1px var(--skill-low-glow);
 }
 
 .auction-chef--medium {
-  border-color: #b8860b;
-  box-shadow: inset 0 0 0 1px #daa52044;
+  border-color: var(--skill-medium);
+  box-shadow: inset 0 0 0 1px var(--skill-medium-glow);
 }
 
 .auction-chef--high {
-  border-color: #5ea05e;
-  box-shadow: inset 0 0 0 1px #7bc97b44;
+  border-color: var(--skill-high);
+  box-shadow: inset 0 0 0 1px var(--skill-high-glow);
 }
 
 .auction-chef__portrait {
@@ -876,21 +887,21 @@ h3 { font-size: 0.7rem; }
 }
 
 .auction-chef__skill-tag--low {
-  background: #c0392b;
+  background: var(--skill-low);
   color: #fff;
-  border-color: #922b21;
+  border-color: var(--skill-low-dark);
 }
 
 .auction-chef__skill-tag--medium {
-  background: #b8860b;
+  background: var(--skill-medium);
   color: #fff;
-  border-color: #8b6508;
+  border-color: var(--skill-medium-dark);
 }
 
 .auction-chef__skill-tag--high {
-  background: #5ea05e;
+  background: var(--skill-high);
   color: #fff;
-  border-color: #3e7a3e;
+  border-color: var(--skill-high-dark);
 }
 
 .auction-chef__info {
