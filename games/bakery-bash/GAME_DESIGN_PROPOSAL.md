@@ -1078,9 +1078,9 @@ revenue = 500
 
 Same starting point for everyone. Same base-level sous chef count, same menu, same budget. No advantages at the start. Differentiation comes purely from decisions made during the game.
 
-## Budget Rules (Confirmed — All-Hands April 8)
+## Budget Rules (Confirmed — All-Hands April 8; Starting amount locked April 17)
 
-- Budget is set at a fixed amount (TBD — exact number to be finalized).
+- **Starting budget: $500,000 per player** — framed in-game as seed capital from an investor. Every player starts with the same amount. (Locked April 17, projectRoadmap.md DEC-01.)
 - Players spend across products, sous chef hiring, and auction bids.
 - **Overbidding is allowed** — players are never blocked from exceeding their budget.
 - **No in-game budget tracker during active play.** Players must track their own finances externally (Excel, paper, etc.). This is intentional — financial self-management is part of the challenge and mirrors real business operations. The game UI will never display remaining balance mid-round. Budget Remaining is revealed once, on the Conclusion Screen at the end of Round 5.
@@ -1119,7 +1119,7 @@ Revenue deduction = borrowed amount + (10% × borrowed amount)
 4. **Which ONE feature from the cut list is highest priority if we have extra time?**
    → Recommend: 1 simple curveball event OR passive AI competitor, not both.
 
-5. **Exact starting budget amount?** — Needs to be finalized.
+5. ~~**Exact starting budget amount?**~~ → ✅ **$500,000** per player, framed as seed capital from an investor. (April 17)
 
 6. ~~**Credit cost rate?** — What interest/penalty applies when players overbid beyond their budget?~~
    → ✅ **Resolved:** Loan shark mechanic — borrowed amount × 1.10 deducted from end-of-round revenue (principal + 10% interest). (April 15)

@@ -400,32 +400,49 @@ config/insightTemplates  → market email phrase library
 
 ## Open Questions
 
-1. **Timer enforcement:** Backend-enforced timers or professor advances manually? **Recommend manual for MVP**, with `phaseEndsAt` shown in the UI as a soft deadline.
-2. **Player cap:** Max players per session? Default 30. Tunable via `config/params.playerCap`.
+1. ~~**Timer enforcement:**~~ → ✅ **Professor-manual advance** (DEC-07). `phaseEndsAt` is a UI-only soft deadline.
+2. ~~**Player cap:**~~ → ✅ **20 per game for launch** (DEC-12). Schema must support 50.
 3. ~~**Disconnection handling:**~~ → ✅ Use last submitted values; if no prior submission, default to zeros. After 2 consecutive missed phases, mark `disconnected: true` (visible in professor panel).
 4. ~~**Customer split:** Proportional vs winner-take-most?~~ → ✅ **Proportional, weighted by per-product satisfaction**, per the proposal's two-stage model.
-5. **Revenue coefficient final tuning:** Coefficients in the formula are placeholders. Game Design will balance after first end-to-end playtest.
+5. **Revenue coefficient final tuning:** Coefficients in the formula are placeholders. Tune after INT-06 playtest. Flat terms will need ~250× scale-up to feel meaningful on a $500k budget — DEC-13 acknowledges this.
 6. ~~**Credit/overdraft cost rate?**~~ → ✅ **Loan shark: borrowed × 1.10 deducted from end-of-round revenue.** No mid-round warnings.
 7. ~~**Dynamic staffing escalation curve?**~~ → ✅ **Sous chef cost: 1.0×, 1.5×, 2.25×, 3.0×, +0.75× per additional, applied per-hire-per-round.**
-8. **Roster phase always-on vs only-on-overflow:** Currently spec'd as always-shown for ~1 min, mandatory only when specialty chefs > 3. Confirm with Game Design.
-9. **Starting budget:** Default $2,000 (placeholder). Game Design to finalize.
-10. **Ad bonus values vs revenue formula:** The revenue formula has a `0.8 × ad_spend` term and a separate ad-bonus persistence. Need clarity on whether ad bonus enters revenue as a flat add or only flows through customer attraction → satisfaction → revenue. **Recommend: flat add to revenue (simpler regression target), with foot-traffic effects deferred to post-MVP.**
+8. ~~**Roster phase always-on vs only-on-overflow:**~~ → ✅ **Always shown ~1 min** (DEC-05), mandatory only when specialty chefs > 3.
+9. ~~**Starting budget:**~~ → ✅ **$500,000** "investor capital" (DEC-01).
+10. ~~**Ad bonus values vs revenue formula path:**~~ → ✅ **Flat add to revenue** (DEC-03). Values: TV $50k / BB $37.5k / Radio $25k / Newspaper $18.75k (DEC-04).
+11. ~~**Sous chef hire phase authority:**~~ → ✅ **Decide phase only** (DEC-02). Roster phase displays them read-only.
 
 ---
 
-## Defaults Table (until Game Design finalizes)
+## Defaults Table (LOCKED — April 17, 2026)
 
-| Variable | Default |
-|---|---|
-| Starting budget | $2,000 |
-| Sous chef base cost | $50 |
-| Sous chef cost curve | 1.0×, 1.5×, 2.25×, 3.0×, +0.75× per additional |
-| Loan shark interest rate | 10% (× borrowed amount) |
-| Customer pool basis | per-product `baseDemand × roundModifier` |
-| Unit cost per product | $1 flat |
-| Ad bonus values | TV +$200, Billboard +$150, Radio +$100, Newspaper +$75 |
-| Player cap | 30 |
-| Round count | 5 |
-| Specialty chef cap | 3 |
-| Chef Satisfaction floor | 35 |
-| Returning customer threshold | Excellent: +15%, Good: +8%, else 0 |
+These values are finalized per `projectRoadmap.md` DEC-01..DEC-18. Any change requires design-review sign-off.
+
+| Variable | Locked Value | Source |
+|---|---|---|
+| Starting budget | **$500,000** ("investor capital" narrative) | DEC-01 |
+| Sous chef base cost | **$12,500** | DEC-14 |
+| Sous chef cost curve | 1.0×, 1.5×, 2.25×, 3.0×, +0.75× per additional | Proposal |
+| Chef minimum bid — Novel | **$25,000** | DEC-15 |
+| Chef minimum bid — Intermediate | **$43,750** | DEC-15 |
+| Chef minimum bid — Advanced | **$68,750** | DEC-15 |
+| Loan shark interest rate | 10% | DEC-16 |
+| Customer pool basis | per-product `baseDemand × roundModifier` | Proposal |
+| Unit cost per product (supply) | **$1 flat** (NOT scaled — preserves margin given fixed sell prices) | DEC-18 |
+| Product sell prices | Proposal values (Coffee $4, Croissant $4.75, Bagel $3, Cookie $2.50, Sandwich $8.75, Matcha $6.25) | DEC-17 |
+| Ad bonus — TV | **$50,000** | DEC-04 |
+| Ad bonus — Billboard | **$37,500** | DEC-04 |
+| Ad bonus — Radio | **$25,000** | DEC-04 |
+| Ad bonus — Newspaper | **$18,750** | DEC-04 |
+| Ad bonus path into revenue | Flat add to revenue (not via foot traffic) | DEC-03 |
+| Player cap | **20 per game** for launch; schema must support **50** | DEC-12 |
+| Round count | 5 | Proposal |
+| Specialty chef cap | 3 | Proposal |
+| Chef Satisfaction floor | 35 | Proposal |
+| Returning customer threshold | Excellent: +15%, Good: +8%, else 0 | Proposal |
+| Sous chef hire phase | Decide phase only; Roster phase shows read-only | DEC-02 |
+| Roster phase cadence | Always shown ~1 min; mandatory if specialty chefs > 3 | DEC-05 |
+| Timer enforcement | Professor-manual advance; `phaseEndsAt` is UI-only | DEC-07 |
+| Market email delivery | Full-screen route `/game/email` | DEC-08 |
+
+> **Margin note:** Sell prices + unit supply cost are NOT scaled with the starting budget. The "big money" is operational (staffing, chef bids, ads). Supply costs stay trivial so margins on sales remain positive. Revenue-formula flat coefficients (base $500, agg-sat ×$8, etc.) are placeholder — they'll need ~250× scale-up during INT-06 tuning to make sales-driven revenue competitive with staffing spend.

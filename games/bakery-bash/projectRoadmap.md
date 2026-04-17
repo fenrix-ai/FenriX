@@ -141,9 +141,9 @@ The existing `firestore-schema.js`, `submitDecision`, and parts of the frontend 
 Everything else depends on these writes. Do these first.
 
 - [ ] **BE-01** — Seed `games/{gameId}/config/params` on game create
-  - **Goal:** Every game doc has a `config/params` subdoc with productPrices, productBaseDemand, productWeights, revenueCoefficients, adBonus, sousChefBaseCost, phaseDurations, startingBudget ($2000 default), playerCap (30), unitCosts ($1 flat), loanSharkInterestRate (0.10).
+  - **Goal:** Every game doc has a `config/params` subdoc using the values locked in the Decisions Table: `startingBudget: 500000`, `playerCap: 20` (schema must accept up to 50), `sousChefBaseCost: 12500`, `unitCosts: $1/item flat`, `loanSharkInterestRate: 0.10`, `adBonus: { tv: 50000, billboard: 37500, radio: 25000, newspaper: 18750 }`, `chefBidFloors: { novel: 25000, intermediate: 43750, advanced: 68750 }`, `productPrices` and `productBaseDemand` from proposal (unscaled), `productWeights` from proposal, `revenueCoefficients` as placeholders (flagged for INT-06 tuning), `phaseDurations` from BACKEND.md.
   - **Files:** `backend/functions/index.js` (new `createGame` onCall), `backend/firestore-schema.js`, `backend/seed/local-game.json`.
-  - **Acceptance:** Create a game via the new callable → inspect emulator UI → all config values present and match the Defaults Table in `BACKEND.md`.
+  - **Acceptance:** Create a game via the new callable → inspect emulator UI → every value in DEC-01..DEC-18 is present and correct.
   - **Depends on:** MIG-02.
 
 - [ ] **SPEC-01** — Reconcile placeholder ad bonus values with proposal
@@ -508,19 +508,37 @@ Ordered roughly by strategic value per proposal's "Deferred from Design Deck" ta
 - [ ] **POST-12** — Coefficient auto-tuning via gameplay telemetry
   - Use actual class outcomes to re-fit revenue coefficients. Offline Python notebook → write new values to `config/params.revenueCoefficients`.
 
+- [ ] **POST-13** — Simulate-phase minigame
+  - Interactive mini-game during the `simulating` phase (tap falling croissants or similar). Cosmetic only — no mechanical effect on revenue. Deferred from MVP per DEC-09 but committed.
+
 ---
 
-## Open Design Questions (from BACKEND.md / FRONTEND.md)
+## Locked Decisions (April 17, 2026 — Dylan M.)
 
-Not tasks, but must be resolved before the tasks that depend on them. Track answers here as they land.
+All resolved. Any change requires a design-review revisit.
 
-- [ ] **OQ-01** Exact starting budget amount — default $2000 in use.
-- [ ] **OQ-02** Timer enforcement: backend-auto vs professor-manual — defaulting to professor-manual for MVP.
-- [ ] **OQ-03** Ad bonus: flat revenue add vs flow through foot traffic — default flat add for MVP simplicity.
-- [ ] **OQ-04** Minigame spec — tap falling croissants is current working assumption.
-- [ ] **OQ-05** Email phase as full route vs modal overlay — spec'd as route.
-- [ ] **OQ-06** Roster phase always-on vs only-on-overflow — spec'd as always-on for ~1 min, mandatory on overflow.
-- [ ] **OQ-07** Mobile support target — responsive to 375px.
+| Ref | Decision | Locked Value |
+|---|---|---|
+| DEC-01 | **Starting budget** | **$500,000** per player ("from an investor" — narrative framing) |
+| DEC-02 | Sous chef hiring — which phase submits? | **Decide phase only.** Roster screen displays them read-only. |
+| DEC-03 | Ad bonus — path into revenue | **Flat add to revenue** (not foot-traffic flow) |
+| DEC-04 | Ad bonus values (scaled 250× from original defaults) | TV **$50,000** / Billboard **$37,500** / Radio **$25,000** / Newspaper **$18,750** |
+| DEC-05 | Roster phase cadence | **Always show ~1 min** every round, even without overflow |
+| DEC-06 | Bakery / team name | **Player types one name at join** (used as both displayName + bakery label) |
+| DEC-07 | Phase timer | **Professor clicks advance.** Timer is UI-only soft deadline. |
+| DEC-08 | Market insight email | **Full-screen route** `/game/email` |
+| DEC-09 | Simulate-phase minigame | **Skip for MVP.** Added as post-MVP (POST-13). |
+| DEC-10 | Post-MVP scope commitment | **Ship all proposal-deferred features** (POST-01..POST-07) after launch. Post-MVP is committed, not aspirational. |
+| DEC-11 | Mobile support | **Desktop-only for MVP.** Responsive polish is post-MVP. |
+| DEC-12 | Player cap | **20 per game for launch**, but schema + load tests must support **50** from day one. |
+| DEC-13 | Revenue formula coefficients | **Ship as placeholders**, tune after INT-06. Flat terms will need ~250× scale-up to feel meaningful on a $500k budget — that's a tuning task, not a blocker. |
+| DEC-14 | Sous chef base cost | **$12,500** (scaled 250× from old $50 default) |
+| DEC-15 | Chef auction minimum bid floors | Novel **$25,000** / Intermediate **$43,750** / Advanced **$68,750** (scaled 250×) |
+| DEC-16 | Loan shark interest | **10%** (unchanged — it's a rate, not an absolute) |
+| DEC-17 | Product sell prices | **Unchanged from proposal** (Coffee $4, Croissant $4.75, Bagel $3, Cookie $2.50, Sandwich $8.75, Matcha $6.25) |
+| DEC-18 | Unit supply cost per item | **Unchanged at $1/item** — NOT scaled. Required to keep sell-price margins positive given DEC-17. |
+
+> **Economic framing (from DEC-01 + DEC-17 + DEC-18):** Players have $500k in investor capital. Supply stock is cheap ($1/unit); sell prices are small ($4–$8.75). The real spend is **staffing + chef auctions + ad bids** — those consume 6-figure chunks of the budget. Revenue from sales alone won't repay investor capital; winning means maximizing net revenue through smart satisfaction + foot traffic decisions. The leaderboard ranks "who grew the investor's money most."
 
 ---
 

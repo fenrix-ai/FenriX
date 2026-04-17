@@ -289,7 +289,12 @@ This catches accidental budget leaks in PRs.
 
 1. ~~**Auction UX:** Can a player bid on multiple ad types or just one?~~ → ✅ **Multiple bids allowed; wins at most one ad and gets routed to next-highest if would-double-win.**
 2. ~~**Budget display:** Real-time deductions as inputs change, or only shown on submit?~~ → ✅ **Hidden entirely during play. Revealed once on Conclusion Screen as the tiebreaker.**
-3. **Minigame spec:** What exactly is the Phase 3 minigame? Tap-falling-croissants is the working assumption — confirm or replace.
-4. **Mobile support:** Desktop-only or do students play on phones? Default plan is responsive down to 375px width.
-5. **Email phase as full route vs modal overlay:** Currently spec'd as `/game/email` route — could also be an overlay on top of `/game/decide`. UX call.
-6. **Roster screen for non-overflow case:** When the player has ≤3 specialty chefs, is the roster screen still shown (optional review) or skipped entirely? Proposal implies always-shown for ~1 min — confirm.
+3. ~~**Minigame spec:**~~ → ✅ **Skipped for MVP** (DEC-09). Simulate phase shows a cute loading animation only. Interactive minigame is post-MVP (POST-13).
+4. ~~**Mobile support:**~~ → ✅ **Desktop-only for MVP** (DEC-11). Responsive polish is post-MVP.
+5. ~~**Email phase as full route vs modal overlay:**~~ → ✅ **Full-screen route `/game/email`** (DEC-08).
+6. ~~**Roster screen for non-overflow case:**~~ → ✅ **Always shown ~1 min** every round (DEC-05), mandatory when specialty chefs > 3.
+7. ~~**Sous chef panel authority:**~~ → ✅ **Hire only on Decide screen** (DEC-02). Roster `<SousChefPanel>` is read-only — shows current count and assignments but does not submit changes.
+8. ~~**Bakery name:**~~ → ✅ **Single `displayName` typed at join** (DEC-06) — used as both player name and bakery label everywhere.
+9. ~~**Player cap UX:**~~ → ✅ **Show "Game full" at 20** (DEC-12); layout must still render cleanly with up to 50 players for post-MVP.
+
+> **Locked defaults reference:** All game-balance numbers (starting budget $500,000, chef bid floors, ad bonuses, sous chef cost) are locked in [projectRoadmap.md](./projectRoadmap.md) Decisions Table (DEC-01..DEC-18). The frontend reads these from `config/params` — never hardcode.
