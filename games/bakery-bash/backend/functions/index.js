@@ -339,6 +339,8 @@ async function resolveAndApplyChefAuction(gameRef, round, config) {
 
   // Write winning chefs to each player's specialtyChefs and set
   // pendingRosterAction if they exceed the cap.
+  // Uses FieldValue.arrayUnion so the write is atomic and idempotent —
+  // safe on retry without duplicating chefs (addresses PR #19 review).
   const specialtyChefCap = numberOrDefault(config.specialtyChefCap, 3);
   const batch = db.batch();
   let opsCount = 0;
@@ -346,16 +348,15 @@ async function resolveAndApplyChefAuction(gameRef, round, config) {
   for (const [playerId, wonChefs] of winners) {
     const playerRef = gameRef.collection('players').doc(playerId);
     const pSnap = playersSnap.docs.find((d) => d.id === playerId);
-    const existing = pSnap
+    const existingCount = pSnap
       ? (Array.isArray((pSnap.data() || {}).specialtyChefs)
-          ? pSnap.data().specialtyChefs
-          : [])
-      : [];
+          ? pSnap.data().specialtyChefs.length
+          : 0)
+      : 0;
 
-    const updated = existing.concat(wonChefs);
     batch.update(playerRef, {
-      specialtyChefs: updated,
-      pendingRosterAction: updated.length > specialtyChefCap,
+      specialtyChefs: FieldValue.arrayUnion(...wonChefs),
+      pendingRosterAction: (existingCount + wonChefs.length) > specialtyChefCap,
       updatedAt: FieldValue.serverTimestamp(),
     });
     opsCount++;
