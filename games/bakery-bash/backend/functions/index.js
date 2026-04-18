@@ -469,6 +469,7 @@ exports.joinGame = onCall(async (request) => {
   }
   const gameRef = gameSnap.docs[0].ref;
   const playerRef = gameRef.collection('players').doc(auth.uid);
+  const rosterRef = gameRef.collection('roster').doc(auth.uid);
 
   let playerId = auth.uid;
 
@@ -495,6 +496,12 @@ exports.joinGame = onCall(async (request) => {
         bakeryName,
         updatedAt: FieldValue.serverTimestamp(),
       });
+      transaction.set(rosterRef, {
+        uid: auth.uid,
+        displayName,
+        bakeryName,
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
       return;
     }
 
@@ -513,6 +520,14 @@ exports.joinGame = onCall(async (request) => {
       pendingBids: { ad: null, chef: null },
       pendingRosterAction: false,
       lastRoundResult: null,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    transaction.set(rosterRef, {
+      uid: auth.uid,
+      displayName,
+      bakeryName,
+      joinedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
 

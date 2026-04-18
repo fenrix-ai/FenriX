@@ -382,7 +382,7 @@ const AggregateRoundDocument = {
 };
 
 // ─────────────────────────────────────────────────────────────
-// /games/{gameId}/leaderboard/current
+// /games/{gameId}/leaderboard/latest
 // Rewritten by Cloud Function at the end of each round.
 // ─────────────────────────────────────────────────────────────
 const LeaderboardDocument = {
@@ -469,7 +469,8 @@ const PlayerEmailDocument = {
 // /games/{gameId}/players/{playerId}/rounds/{roundId}     ← RoundResultDocument
 // /games/{gameId}/players/{playerId}/emails/{emailId}     ← PlayerEmailDocument
 // /games/{gameId}/rounds/{roundId}         ← AggregateRoundDocument
-// /games/{gameId}/leaderboard/current      ← LeaderboardDocument
+// /games/{gameId}/leaderboard/latest       ← LeaderboardDocument
+// /games/{gameId}/roster/{playerId}        ← RosterMemberDocument (public-safe)
 // /games/{gameId}/csvRows/{playerId}/rounds/{roundId}  ← CsvRowsDocument
 //
 // ─────────────────────────────────────────────────────────────
