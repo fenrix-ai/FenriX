@@ -19,6 +19,7 @@
   --golden: #E8A849;
   --honey: #F5C96A;
   --sage: #7A9E7E;
+  --lime: #A8C47C;
   --berry: #B54B6C;
   --outline: #1c1a1a;
 
@@ -360,11 +361,16 @@ h3 { font-size: 0.7rem; }
 
 .page-shell.game-page--wide {
   max-width: none;
+  /* Lock the decide-phase layout to viewport height so the dashboard can
+     flex:1 / min-height:0 and the Submit button is always on screen. */
+  height: 100dvh;
+  min-height: 0;
+  padding: 1rem 1.25rem;
 }
 
 .game-page__dashboard {
   display: grid;
-  grid-template-columns: 1fr 260px;
+  grid-template-columns: 1fr 280px;
   gap: 1rem;
   flex: 1;
   min-height: 0;
@@ -372,34 +378,37 @@ h3 { font-size: 0.7rem; }
 
 .game-page__submit {
   width: 100%;
-  margin-top: 1.25rem;
+  margin-top: 0.75rem;
+  flex-shrink: 0;
 }
 
-/* ─── Bakery View ────────────────────────────────────────── */
+.game-page__submit-error {
+  margin-top: 0.5rem;
+  color: var(--berry);
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  text-align: center;
+}
+
+/* ─── Bakery View (station grid) ─────────────────────────── */
 
 .bakery-view {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-}
-
-.bakery-view__storefront {
-  background: var(--cream);
-  border: var(--border);
-  box-shadow: var(--shadow-pixel);
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  gap: 0.75rem;
+  min-height: 0;
 }
 
 .bakery-view__sign {
   background: var(--espresso);
   color: var(--cream);
-  padding: 1rem 1.25rem;
+  padding: 0.6rem 1rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  border: var(--border);
+  box-shadow: var(--shadow-pixel-sm);
+  flex-shrink: 0;
 }
 
 .bakery-view__name {
@@ -414,58 +423,235 @@ h3 { font-size: 0.7rem; }
   color: var(--dough);
 }
 
-.bakery-view__window {
+.bakery-view__stations {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
   flex: 1;
+  min-height: 0;
+}
+
+/* ─── Station Card ───────────────────────────────────────── */
+
+.station-card {
+  background: var(--cream);
+  border: var(--border);
+  box-shadow: var(--shadow-pixel);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.station-card__header {
+  background: var(--dough);
+  border-bottom: var(--border);
+  padding: 0.65rem 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.station-card__heading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.station-card__title {
+  font-family: var(--font-pixel);
+  font-size: 0.7rem;
+  color: var(--espresso);
+  text-transform: uppercase;
+}
+
+.station-card__subtitle {
+  font-family: var(--font-pixel);
+  font-size: 0.42rem;
+  color: var(--dark-roast);
+}
+
+.station-card__badge {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  flex-shrink: 0;
+}
+
+.station-card__badge-sprite {
+  width: 22px;
+  height: 22px;
+  image-rendering: pixelated;
+}
+
+.station-card__badge-overflow {
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  color: var(--espresso);
+  margin-left: 0.15rem;
+}
+
+.station-card__badge-empty {
+  font-family: var(--font-pixel);
+  font-size: 0.42rem;
+  color: var(--dark-roast);
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.station-card__products {
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* ─── Product Tile ───────────────────────────────────────── */
+
+.product-tile {
+  display: grid;
+  grid-template-columns: 48px 1fr auto;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.55rem 0.65rem;
+  border: 2px solid var(--dough);
+  background: var(--flour);
+}
+
+.product-tile--locked {
+  opacity: 0.65;
+  background: var(--cream);
+}
+
+.product-tile__image {
+  width: 48px;
+  height: 48px;
+  image-rendering: pixelated;
+  filter: drop-shadow(2px 2px 0 var(--dough));
+}
+
+.product-tile__info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.product-tile__name {
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--espresso);
+}
+
+.product-tile__price {
+  font-family: var(--font-pixel);
+  font-size: 0.45rem;
+  color: var(--sage);
+}
+
+.product-tile__controls {
+  display: flex;
+  align-items: stretch;
+  gap: 0.4rem;
+}
+
+.product-tile__stepper {
+  display: flex;
+  align-items: center;
+  border: var(--border-light);
+  background: var(--cream);
+}
+
+.product-tile__remove {
+  font-family: var(--font-pixel);
+  font-size: 0.6rem;
+  width: 28px;
+  border: var(--border-light);
+  background: var(--cream);
+  color: var(--berry);
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 2rem;
-  background:
-    linear-gradient(180deg, var(--flour) 0%, var(--cream) 100%);
 }
 
-.bakery-view__display {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
+.product-tile__remove:hover {
+  background: var(--berry);
+  color: var(--flour);
 }
 
-.bakery-view__shelf {
-  display: flex;
-  gap: 2rem;
-  justify-content: center;
+.product-tile__remove:focus-visible {
+  outline: none;
+  border-color: var(--berry);
 }
 
-.bakery-view__shelf-item {
-  width: 64px;
-  height: 64px;
-  image-rendering: pixelated;
-  filter: drop-shadow(2px 2px 0 var(--dough));
-  transition: transform 0.15s;
-}
-
-.bakery-view__shelf-item:hover {
-  transform: scale(1.15);
-}
-
-.bakery-view__floor {
-  background: var(--dough);
-  padding: 0.75rem;
-  border-top: var(--border);
-}
-
-.bakery-view__counter {
-  height: 8px;
-  background: var(--espresso);
-  border-radius: 0;
-}
-
-.bakery-view__hint {
+.product-tile__step-btn {
   font-family: var(--font-pixel);
-  font-size: 0.45rem;
-  color: var(--dark-roast);
-  line-height: 1.8;
+  font-size: 0.7rem;
+  width: 28px;
+  height: 32px;
+  border: none;
+  background: var(--flour);
+  color: var(--espresso);
+  cursor: pointer;
+}
+
+.product-tile__step-btn:hover:not(:disabled) {
+  background: var(--dough);
+}
+
+.product-tile__step-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.product-tile__step-value {
+  width: 40px;
+  height: 32px;
+  font-family: var(--font-body);
+  font-size: 0.95rem;
   text-align: center;
+  border: none;
+  border-left: 2px solid var(--dough);
+  border-right: 2px solid var(--dough);
+  background: var(--cream);
+  -moz-appearance: textfield;
+}
+
+.product-tile__step-value::-webkit-outer-spin-button,
+.product-tile__step-value::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.product-tile__step-value:focus {
+  outline: 2px solid var(--caramel);
+  outline-offset: -2px;
+}
+
+.product-tile__add {
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  padding: 0.45rem 0.7rem;
+  border: var(--border-light);
+  background: var(--honey);
+  color: var(--espresso);
+  cursor: pointer;
+  text-transform: uppercase;
+}
+
+.product-tile__add:hover:not(:disabled) {
+  background: var(--golden);
+}
+
+.product-tile__add:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 
 /* ─── Game Sidebar (Tabbed) ──────────────────────────────── */
@@ -539,78 +725,6 @@ h3 { font-size: 0.7rem; }
   margin-bottom: 1rem;
 }
 
-/* ─── Menu Tab ───────────────────────────────────────────── */
-
-.menu-tab__list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
-}
-
-.menu-tab__item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.5rem 0.65rem;
-  border: 2px solid var(--dough);
-  background: var(--flour);
-}
-
-.menu-tab__item--locked {
-  opacity: 0.5;
-}
-
-.menu-tab__item-info {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-}
-
-.menu-tab__item-name {
-  font-weight: 700;
-  font-size: 0.85rem;
-}
-
-.menu-tab__item-price {
-  font-family: var(--font-pixel);
-  font-size: 0.45rem;
-  color: var(--sage);
-}
-
-.menu-tab__qty-input {
-  width: 60px;
-  padding: 0.3rem 0.4rem;
-  border: var(--border);
-  font-family: var(--font-body);
-  font-size: 0.9rem;
-  text-align: center;
-  background: var(--cream);
-}
-
-.menu-tab__qty-input:focus {
-  outline: none;
-  border-color: var(--caramel);
-}
-
-.menu-tab__locked-badge {
-  font-family: var(--font-pixel);
-  font-size: 0.45rem;
-  color: var(--dark-roast);
-  background: var(--dough);
-  padding: 0.2rem 0.5rem;
-  border: 2px solid var(--dark-roast);
-}
-
-.menu-tab__total {
-  font-family: var(--font-pixel);
-  font-size: 0.5rem;
-  text-align: right;
-  padding: 0.5rem 0;
-  border-top: 2px solid var(--dough);
-  color: var(--espresso);
-}
-
 /* ─── Staff Tab ──────────────────────────────────────────── */
 
 .staff-tab__control {
@@ -675,6 +789,196 @@ h3 { font-size: 0.7rem; }
   color: var(--espresso);
   padding: 0.5rem 0;
   border-top: 2px solid var(--dough);
+}
+
+/* Station stepper card (three sous-chef stations + maintenance guy). */
+.staff-tab__stations {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.staff-tab__station {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.65rem 0.75rem;
+  background: var(--flour);
+  border: 2px solid var(--dough);
+}
+
+.staff-tab__station-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.staff-tab__station-label {
+  font-family: var(--font-pixel);
+  font-size: 0.6rem;
+  color: var(--espresso);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.staff-tab__station-sublabel {
+  font-family: var(--font-pixel);
+  font-size: 0.42rem;
+  color: var(--dark-roast);
+}
+
+.staff-tab__station-cost {
+  font-family: var(--font-pixel);
+  font-size: 0.45rem;
+  color: var(--dark-roast);
+  margin-top: 0.1rem;
+}
+
+.staff-tab__station-cost strong {
+  color: var(--espresso);
+}
+
+.staff-tab__station-cost-sep {
+  color: var(--dough);
+}
+
+.staff-tab__warning {
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  color: var(--berry);
+  background: color-mix(in srgb, var(--berry) 15%, var(--cream));
+  border: 2px solid var(--berry);
+  padding: 0.5rem 0.65rem;
+  margin-bottom: 0.75rem;
+  line-height: 1.4;
+}
+
+.staff-tab__maintenance {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.staff-tab__tasks {
+  list-style: none;
+  padding: 0.5rem 0.75rem;
+  background: var(--cream);
+  border: 2px solid var(--dough);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.staff-tab__task-row {
+  display: flex;
+}
+
+.staff-tab__task-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  color: var(--dark-roast);
+}
+
+.staff-tab__task-select {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  padding: 0.3rem 0.4rem;
+  border: 2px solid var(--dough);
+  background: var(--cream);
+  color: var(--espresso);
+  cursor: pointer;
+}
+
+.staff-tab__task-select:focus {
+  outline: none;
+  border-color: var(--caramel);
+}
+
+.staff-tab__grand-total {
+  font-family: var(--font-pixel);
+  font-size: 0.55rem;
+  text-align: right;
+  padding: 0.6rem 0;
+  border-top: 2px solid var(--dough);
+  color: var(--dark-roast);
+}
+
+.staff-tab__grand-total strong {
+  color: var(--espresso);
+  font-size: 0.7rem;
+}
+
+/* ─── Status Tab (maintenance bars) ──────────────────────── */
+
+.status-tab__bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.status-tab__bar-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.status-tab__bar-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.status-tab__bar-label {
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  color: var(--espresso);
+  text-transform: uppercase;
+}
+
+.status-tab__bar-warn {
+  color: var(--berry);
+  margin-right: 0.1rem;
+}
+
+.status-tab__bar-pct {
+  font-family: var(--font-pixel);
+  font-size: 0.7rem;
+  /* Color is set inline by healthColor() so it tracks the bar fill. */
+  text-shadow: 1px 1px 0 var(--outline);
+  transition: color 0.2s ease;
+}
+
+.status-tab__bar-track {
+  height: 10px;
+  background: var(--dough);
+  border: 2px solid var(--outline);
+  overflow: hidden;
+  position: relative;
+}
+
+.status-tab__bar-fill {
+  height: 100%;
+  transition: width 0.25s ease, background 0.2s ease;
+  /* Background set inline by healthColor(). */
+}
+
+.status-tab__bar-tier {
+  font-family: var(--font-pixel);
+  font-size: 0.42rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  align-self: flex-end;
+  /* Color is set inline by healthColor(). */
 }
 
 /* ─── Auction Tab ────────────────────────────────────────── */
@@ -1275,6 +1579,12 @@ h3 { font-size: 0.7rem; }
 }
 
 /* ─── Responsive ─────────────────────────────────────────── */
+
+@media (max-width: 960px) {
+  .bakery-view__stations {
+    grid-template-columns: 1fr;
+  }
+}
 
 @media (max-width: 580px) {
   .game-page__dashboard {

@@ -1,28 +1,321 @@
-import { useGame } from "../contexts/GameContext";
+import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { doc, onSnapshot, type DocumentData } from "firebase/firestore";
+import { httpsCallable, type FunctionsError } from "firebase/functions";
+import { useGame, useGameDispatch } from "../contexts/GameContext";
 import { RoundHeader } from "../components/game/RoundHeader";
 import { BakeryView } from "../components/game/BakeryView";
 import { GameSidebar } from "../components/game/GameSidebar";
 import { PageShell } from "../components/ui/PageShell";
 import { SimulatePhase } from "./phases/SimulatePhase";
 import { ResultsPhase } from "./phases/ResultsPhase";
+import { db, functions } from "../lib/firebase";
+import {
+  PRODUCT_STATION,
+  parseGamePhase,
+  totalSousChefs,
+  type GameConfigParams,
+  type MaintenanceBars,
+  type MaintenanceTask,
+  type PendingDecisionDraft,
+  type ProductKey,
+  type StaffCounts,
+  type StationId,
+} from "../types/game";
+
+interface SubmitDecisionResponse {
+  gameId: string;
+  playerId: string;
+  roundId: string;
+  submitted: boolean;
+}
+
+/**
+ * Map `staffCounts` → per-product `sousChefAssignments`.
+ *
+ * Rationale: the current backend validator reads `sousChefAssignments` keyed
+ * by product and rejects entries for products not on the menu. We translate
+ * each station's sous-chef count onto the products that station owns and
+ * that the player has on the menu. If no products from a given station are
+ * offered, we push those chefs onto any offered fallback (croissant is
+ * always on the base menu) so the sum reconciles with `sousChefCount`.
+ *
+ * This shim is transitional: once BE-1..BE-10 land and the backend consumes
+ * the new `staffCounts` field directly, the per-product legacy assignment
+ * will be ignored server-side.
+ */
+function deriveSousChefAssignments(
+  staffCounts: StaffCounts,
+  menu: Record<ProductKey, boolean>,
+): Record<string, number> {
+  const productsByStation: Record<StationId, ProductKey[]> = {
+    bakery: [],
+    deli: [],
+    barista: [],
+  };
+  (Object.keys(PRODUCT_STATION) as ProductKey[]).forEach((p) => {
+    if (menu[p]) productsByStation[PRODUCT_STATION[p]].push(p);
+  });
+
+  const assignments: Record<string, number> = {};
+  const addToProduct = (p: ProductKey, n: number) => {
+    if (n <= 0) return;
+    assignments[p] = (assignments[p] ?? 0) + n;
+  };
+
+  const assignStation = (station: StationId, count: number) => {
+    if (count <= 0) return;
+    const available = productsByStation[station];
+    if (available.length === 0) {
+      // No products offered from this station's menu — fall back to
+      // croissant (always on the base menu) so the sum reconciles.
+      addToProduct("croissant", count);
+      return;
+    }
+    // Spread evenly; any remainder goes on the first slot.
+    const per = Math.floor(count / available.length);
+    let leftover = count - per * available.length;
+    for (const prod of available) {
+      const extra = leftover > 0 ? 1 : 0;
+      addToProduct(prod, per + extra);
+      if (leftover > 0) leftover -= 1;
+    }
+  };
+
+  assignStation("bakery", staffCounts.bakerySousChefs);
+  assignStation("deli", staffCounts.deliSousChefs);
+  assignStation("barista", staffCounts.baristaSousChefs);
+
+  return assignments;
+}
+
+function humanizeFunctionError(err: unknown, fallback: string): string {
+  if (err && typeof err === "object" && "code" in err) {
+    const fnErr = err as FunctionsError;
+    if (fnErr.message) return fnErr.message;
+  }
+  return fallback;
+}
 
 export function GamePage() {
-  const { phase } = useGame();
+  const {
+    gameId,
+    playerId,
+    phase,
+    currentRound,
+    pendingDecision,
+    decisionSubmitted,
+  } = useGame();
+  const dispatch = useGameDispatch();
+  const navigate = useNavigate();
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  if (phase === "simulating") {
-    return (
-      <PageShell className="game-page">
-        <RoundHeader />
-        <SimulatePhase />
-      </PageShell>
+  // --- Listener: /games/{gameId} — drives phase + round from backend. ---
+  useEffect(() => {
+    if (!gameId) return;
+    const gameRef = doc(db, "games", gameId);
+    const unsubscribe = onSnapshot(
+      gameRef,
+      (snap) => {
+        if (!snap.exists()) return;
+        const data = snap.data() as DocumentData;
+        const nextPhase = data.phase;
+        if (typeof nextPhase === "string") {
+          dispatch({ type: "SET_PHASE", payload: nextPhase });
+        }
+        const nextRound =
+          typeof data.currentRound === "number"
+            ? data.currentRound
+            : typeof data.round === "number"
+            ? data.round
+            : null;
+        if (nextRound !== null) {
+          dispatch({ type: "SET_ROUND", payload: nextRound });
+        }
+      },
+      (err) => {
+        console.error("games/{gameId} listener error:", err);
+      }
     );
-  }
+    return unsubscribe;
+  }, [gameId, dispatch]);
 
-  if (phase === "results_ready") {
+  // --- Listener: /games/{gameId}/config/params — drives dynamic config. ---
+  useEffect(() => {
+    if (!gameId) return;
+    const configRef = doc(db, "games", gameId, "config", "params");
+    const unsubscribe = onSnapshot(
+      configRef,
+      (snap) => {
+        if (!snap.exists()) {
+          dispatch({ type: "SET_CONFIG", payload: null });
+          return;
+        }
+        dispatch({
+          type: "SET_CONFIG",
+          payload: snap.data() as GameConfigParams,
+        });
+      },
+      (err) => {
+        console.error("games/{gameId}/config/params listener error:", err);
+      }
+    );
+    return unsubscribe;
+  }, [gameId, dispatch]);
+
+  // --- Listener: /games/{gameId}/players/{playerId} — maintenance/chef stats. ---
+  // Cloud Functions write `maintenanceBars` and `chefSatisfactionScores` onto
+  // the player doc as they evolve. We mirror them into GameContext so the
+  // sidebar status bars and results-phase warnings stay live. These fields
+  // are absent until BE-1..BE-10 ship — the listener is a no-op in that case.
+  useEffect(() => {
+    if (!gameId || !playerId) return;
+    const playerRef = doc(db, "games", gameId, "players", playerId);
+    const unsubscribe = onSnapshot(
+      playerRef,
+      (snap) => {
+        if (!snap.exists()) return;
+        const data = snap.data() as DocumentData;
+        const bars = data.maintenanceBars as Partial<MaintenanceBars> | undefined;
+        if (
+          bars &&
+          typeof bars.cleanliness === "number" &&
+          typeof bars.ovenHealth === "number" &&
+          typeof bars.slicerHealth === "number" &&
+          typeof bars.espressoHealth === "number"
+        ) {
+          dispatch({
+            type: "SET_MAINTENANCE_BARS",
+            payload: bars as MaintenanceBars,
+          });
+        }
+        const scores = data.chefSatisfactionScores;
+        if (scores && typeof scores === "object") {
+          dispatch({
+            type: "SET_CHEF_SATISFACTION",
+            payload: scores as Record<string, number>,
+          });
+        }
+      },
+      (err) => {
+        console.error(
+          "games/{gameId}/players/{playerId} listener error:",
+          err,
+        );
+      },
+    );
+    return unsubscribe;
+  }, [gameId, playerId, dispatch]);
+
+  const parsed = parseGamePhase(phase, currentRound);
+  const basePhase = parsed.base;
+
+  // Redirect into the dedicated auction page when backend says so. This is
+  // phase-driven (not a manual navigation after submit).
+  useEffect(() => {
+    if (basePhase === "bid_ad" || basePhase === "bid_chef") {
+      navigate("/auction");
+    }
+  }, [basePhase, navigate]);
+
+  const handleSubmit = useCallback(async () => {
+    if (!gameId) {
+      setSubmitError("Not connected to a game yet.");
+      return;
+    }
+    if (basePhase !== "decide") {
+      setSubmitError("Decisions can only be submitted during the decide phase.");
+      return;
+    }
+
+    setSubmitError(null);
+    setSubmitting(true);
+    try {
+      // The callable accepts both the legacy `sousChef*` fields (read today)
+      // and the new `staffCounts`/`maintenanceTasks` fields (which the
+      // validator ignores until BE-1..BE-10 ship). Shipping both means the
+      // backend can cut over with no coordinated frontend release.
+      type SubmitPayload = { gameId: string } & PendingDecisionDraft;
+      const submitDecision = httpsCallable<SubmitPayload, SubmitDecisionResponse>(
+        functions,
+        "submitDecision",
+      );
+
+      // Derive the legacy shape from the station-based counts so the current
+      // backend validator accepts our submission. Sous-chef totals sum across
+      // the 3 stations (maintenance guys are their own role, not sous chefs).
+      const sousChefCount = totalSousChefs(pendingDecision.staffCounts);
+      const sanitizedAssignments = deriveSousChefAssignments(
+        pendingDecision.staffCounts,
+        pendingDecision.menu,
+      );
+      const assignedSum = Object.values(sanitizedAssignments).reduce(
+        (s, n) => s + n,
+        0,
+      );
+      if (sousChefCount > 0 && assignedSum !== sousChefCount) {
+        // Safety net — shouldn't happen, but `deriveSousChefAssignments`
+        // preserves the total so the validator's equality check passes.
+        console.warn(
+          "Derived sousChefAssignments sum (%d) ≠ sousChefCount (%d); falling back to croissant.",
+          assignedSum,
+          sousChefCount,
+        );
+        sanitizedAssignments.croissant =
+          (sanitizedAssignments.croissant ?? 0) + (sousChefCount - assignedSum);
+      }
+
+      // Trim maintenance tasks to the current maintenance-guy count; the
+      // StaffTab keeps them in sync, but a mid-edit state could produce a
+      // mismatch, so clamp defensively.
+      const maintenanceTasks: MaintenanceTask[] =
+        pendingDecision.maintenanceTasks.slice(
+          0,
+          pendingDecision.staffCounts.maintenanceGuys,
+        );
+
+      await submitDecision({
+        gameId,
+        menu: pendingDecision.menu,
+        quantities: pendingDecision.quantities,
+        sousChefCount,
+        sousChefAssignments:
+          sanitizedAssignments as PendingDecisionDraft["sousChefAssignments"],
+        staffCounts: pendingDecision.staffCounts,
+        maintenanceTasks,
+      });
+      dispatch({ type: "SET_DECISION_SUBMITTED", payload: true });
+      // Do NOT dispatch SET_PHASE — the backend phase listener owns transitions.
+    } catch (err) {
+      setSubmitError(
+        humanizeFunctionError(
+          err,
+          "Could not submit decisions. Please try again.",
+        ),
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }, [gameId, basePhase, pendingDecision, dispatch]);
+
+  const isDecisionPhase = basePhase === "decide";
+  const isSimulating = basePhase === "simulating";
+  const isResultsReady = basePhase === "results_ready";
+
+  if (!isDecisionPhase) {
     return (
       <PageShell className="game-page">
         <RoundHeader />
-        <ResultsPhase />
+        <div className="game-page__content">
+          {isSimulating ? (
+            <SimulatePhase />
+          ) : isResultsReady ? (
+            <ResultsPhase />
+          ) : (
+            <ResultsPhase />
+          )}
+        </div>
       </PageShell>
     );
   }
@@ -34,6 +327,22 @@ export function GamePage() {
         <BakeryView />
         <GameSidebar />
       </div>
+      {submitError && (
+        <p className="game-page__submit-error" role="alert">
+          {submitError}
+        </p>
+      )}
+      <button
+        className="btn btn--primary game-page__submit"
+        onClick={handleSubmit}
+        disabled={submitting || decisionSubmitted || !gameId}
+      >
+        {submitting
+          ? "Submitting…"
+          : decisionSubmitted
+          ? "Submitted — waiting for other players…"
+          : "Submit Decisions"}
+      </button>
     </PageShell>
   );
 }

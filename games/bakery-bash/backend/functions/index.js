@@ -885,7 +885,7 @@ async function runSimulationAndPersist(gameRef, round, config) {
         0
       ),
       consecutiveMissedRounds: playerInput.consecutiveMissedRounds || 0,
-      ...(playerInput.disconnected ? { disconnected: true } : {}),
+      disconnected: playerInput.disconnected === true,
       lastRoundResult: {
         round,
         revenueGross: r.revenueGross,
@@ -1133,6 +1133,8 @@ exports.submitDecision = onCall(async (request) => {
         sousChefCount: validated.sousChefCount || 0,
         sousChefAssignments: validated.sousChefAssignments || {},
       },
+      consecutiveMissedRounds: 0,
+      disconnected: false,
       updatedAt: FieldValue.serverTimestamp(),
     });
 
