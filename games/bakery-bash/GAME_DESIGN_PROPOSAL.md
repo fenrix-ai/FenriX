@@ -253,12 +253,18 @@ A kitchen at score 52 produces only 52% of theoretical maximum throughput. Chef 
 - Cleanliness above 70%: +5 points/round per specialty chef
 - Cleanliness above 90%: +10 points/round per specialty chef
 - Keeping sous chef count ≤ 4: +3 points/round per specialty chef (orderly kitchen signal)
+- All station machines above 70% health: +3 points/round per specialty chef (well-maintained workspace)
+- The specialty chef's own station machine above 90% health: additional +5 points/round (their primary tool is in excellent condition)
 
 **What accelerates satisfaction loss:**
 - Cleanliness below 30%: additional −5 points/round per specialty chef
 - Sous chef count ≥ 7: additional −5 points/round per specialty chef (chaotic kitchen)
+- Any station machine below 40% health: −5 points/round per specialty chef (degraded working conditions)
+- The specialty chef's own station machine below 20% health: additional −8 points/round (their primary tool is nearly broken)
 
-> **Strategic implication:** A player who neglects their Maintenance Guys and lets cleanliness fall below 30% risks losing their highest-skill specialty chefs fastest — precisely the chefs they paid the most to acquire. This creates a direct economic link between janitorial investment and chef retention.
+> **Machine-to-chef station mapping for satisfaction:** A French chef (specialty: Croissant, Coffee) is tied to the Bakery Station (Oven) and the Barista Station (Espresso Machine). A Japanese chef (Matcha, Croissant) is tied to both the Barista Station and Bakery Station. An Italian chef (Sandwich, Coffee) is tied to the Deli and Barista Station. An American chef (Bagel, Cookie) is tied to the Deli and Bakery Station. The "own station machine" penalty/bonus uses the machine health of whichever of the chef's stations is in the worst condition.
+
+> **Strategic implication:** A player who neglects maintenance risks losing their highest-skill specialty chefs through two compounding channels — a dirty kitchen accelerates satisfaction decay, and broken machines at the chef's station stack an additional penalty on top. An Advanced chef working at a Barista Station with a broken Espresso Machine (< 20% health) and a dirty kitchen (< 30% cleanliness) loses up to −20 (base decay) − 5 (dirty) − 8 (broken primary machine) = **−33 points per round** — departing in roughly 3 rounds from full satisfaction.
 
 ---
 
@@ -1694,27 +1700,57 @@ const chef_satisfaction_score = Math.min(100, Math.max(35, 100 - overcrowding_pe
 
 At the end of each round, for each specialty chef on the player's roster:
 
+**Station mapping per chef nationality (used for machine health bonuses/penalties):**
+```js
+const CHEF_STATIONS = {
+  french:   ['bakery', 'barista'],   // Croissant (Oven), Coffee (Espresso Machine)
+  japanese: ['barista', 'bakery'],   // Matcha (Espresso Machine), Croissant (Oven)
+  italian:  ['deli', 'barista'],     // Sandwich (Meat Slicer), Coffee (Espresso Machine)
+  american: ['deli', 'bakery'],      // Bagel (Meat Slicer), Cookie (Oven)
+};
+const STATION_HEALTH = {
+  bakery:  oven_health_pct,
+  deli:    slicer_health_pct,
+  barista: espresso_health_pct,
+};
+// Primary station = worst-health station among the chef's stations
+const chef_stations = CHEF_STATIONS[chef.nationality];
+const primary_station_health = Math.min(...chef_stations.map(s => STATION_HEALTH[s]));
+const any_machine_below_40 = Object.values(STATION_HEALTH).some(h => h < 40);
+```
+
 **1. Apply decay:**
 ```js
 const decay_rates = { novel: 8, intermediate: 14, advanced: 20 };
 const base_decay = decay_rates[chef.skill_level];
 
-// Additional decay from dirty kitchen
-const dirty_penalty = cleanliness_pct < 30 ? 5 : 0;
-const chaos_penalty = sous_chef_total >= 7 ? 5 : 0;
+const dirty_penalty         = cleanliness_pct < 30        ? 5 : 0;
+const chaos_penalty         = sous_chef_total >= 7         ? 5 : 0;
+const broken_machine_penalty= any_machine_below_40         ? 5 : 0;
+const primary_broken_penalty= primary_station_health < 20  ? 8 : 0;
 
-new_satisfaction = current_satisfaction - base_decay - dirty_penalty - chaos_penalty;
+new_satisfaction = current_satisfaction
+  - base_decay
+  - dirty_penalty
+  - chaos_penalty
+  - broken_machine_penalty
+  - primary_broken_penalty;
 ```
 
-**2. Apply cleanliness recovery bonus:**
+**2. Apply recovery bonuses:**
 ```js
-let satisfaction_recovery = 0;
-if (cleanliness_pct > 90) satisfaction_recovery = 10;
-else if (cleanliness_pct > 70) satisfaction_recovery = 5;
+const cleanliness_recovery = cleanliness_pct > 90 ? 10
+                           : cleanliness_pct > 70 ? 5 : 0;
+const orderly_bonus        = sous_chef_total <= 4  ? 3 : 0;
+const machines_ok_bonus    = Object.values(STATION_HEALTH).every(h => h > 70) ? 3 : 0;
+const primary_excellent    = primary_station_health > 90 ? 5 : 0;
 
-const orderly_bonus = sous_chef_total <= 4 ? 3 : 0;
+new_satisfaction = new_satisfaction
+  + cleanliness_recovery
+  + orderly_bonus
+  + machines_ok_bonus
+  + primary_excellent;
 
-new_satisfaction = new_satisfaction + satisfaction_recovery + orderly_bonus;
 new_satisfaction = Math.max(0, Math.min(100, new_satisfaction));
 ```
 
