@@ -5,7 +5,7 @@ import {
   type ReactNode,
   type Dispatch,
 } from "react";
-import type { GameState, GamePhase, Player, RoundResult, AuctionTab } from "../types/game";
+import type { GameState, GamePhase, Player, RoundResult } from "../types/game";
 
 const initialState: GameState = {
   gameId: null,
@@ -17,7 +17,6 @@ const initialState: GameState = {
   players: [],
   roundResults: [],
   timeRemaining: null,
-  auctionTab: "chefs",
 };
 
 type GameAction =
@@ -28,7 +27,6 @@ type GameAction =
   | { type: "ADD_RESULT"; payload: RoundResult }
   | { type: "SET_TIMER"; payload: number | null }
   | { type: "UPDATE_PLAYER"; payload: Partial<Player> }
-  | { type: "SET_AUCTION_TAB"; payload: AuctionTab }
   | { type: "RESET" };
 
 function gameReducer(state: GameState, action: GameAction): GameState {
@@ -69,9 +67,6 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         ...state,
         player: state.player ? { ...state.player, ...action.payload } : null,
       };
-
-    case "SET_AUCTION_TAB":
-      return { ...state, auctionTab: action.payload };
 
     case "RESET":
       return initialState;

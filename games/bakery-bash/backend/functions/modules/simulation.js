@@ -413,6 +413,7 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
 
     // --- CSV row (flat) ---
     const csvRow = buildCsvRow({
+      round,
       decision,
       specialtyChefs: p.specialtyChefs,
       perProductSatisfaction,

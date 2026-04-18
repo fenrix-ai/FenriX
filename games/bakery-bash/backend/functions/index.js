@@ -72,8 +72,10 @@ const {
 // required only where needed so that missing optional helpers do not break
 // the lobby / decision / bid flows.
 let decisionValidation = null;
+let ValidationError = null;
 try {
   decisionValidation = require('./modules/decision-validation');
+  ValidationError = decisionValidation.ValidationError || null;
 } catch (loadErr) {
   logger.error('decision-validation module failed to load — using passthrough fallback.', {
     error: loadErr && loadErr.message,
@@ -624,6 +626,10 @@ exports.advanceGamePhase = onCall(async (request) => {
     const currentPhaseString = game.phase;
     const currentRound = numberOrDefault(game.currentRound || game.round, 0);
 
+    if (currentPhaseString === 'game_over') {
+      throw new HttpsError('failed-precondition', 'The game is already over.');
+    }
+
     // Guard against double-advance: if the caller specified which phase they
     // expect us to advance FROM, verify it still matches. On a Firestore
     // transaction retry the phase may have already moved.
@@ -796,13 +802,18 @@ async function runSimulationAndPersist(gameRef, round, config) {
   );
 
   // Assemble per-player input for the pure simulation engine.
+  // Also compute disconnection state: track consecutive missed decide phases.
+  // After 2 consecutive misses the player is marked disconnected: true.
   const players = playerDocs.map((pd, i) => {
     const p = pd.data() || {};
     const dSnap = decisionSnaps[i];
-    const decision = dSnap.exists ? dSnap.data() : (p.pendingDecision || {});
+    const missed = !dSnap.exists;
+    const decision = missed ? {} : dSnap.data();
     const ar = auctionByPlayer.get(pd.id) || {
       adWon: null, adBidPaid: 0, chefsWon: [], chefBidPaid: 0,
     };
+    const prevMissed = numberOrDefault(p.consecutiveMissedRounds, 0);
+    const consecutiveMissedRounds = missed ? prevMissed + 1 : 0;
     return {
       playerId: pd.id,
       displayName: p.displayName || 'Player',
@@ -810,13 +821,15 @@ async function runSimulationAndPersist(gameRef, round, config) {
       decision: {
         menu: (decision && decision.menu) || {},
         quantities: (decision && decision.quantities) || {},
-        sousChefCount: numberOrDefault(decision && decision.sousChefCount, p.sousChefCount || 0),
+        sousChefCount: missed ? 0 : numberOrDefault(decision && decision.sousChefCount, p.sousChefCount || 0),
         sousChefAssignments: (decision && decision.sousChefAssignments) || {},
       },
       specialtyChefs: Array.isArray(p.specialtyChefs) ? p.specialtyChefs : [],
       budgetCurrent: numberOrDefault(p.budgetCurrent, 0),
       returningCustomersPending: numberOrDefault(p.returningCustomersPending, 0),
       auctionResults: ar,
+      consecutiveMissedRounds,
+      disconnected: consecutiveMissedRounds >= 2,
     };
   });
 
@@ -862,6 +875,7 @@ async function runSimulationAndPersist(gameRef, round, config) {
       opsInBatch = 0;
     }
 
+    const playerInput = players.find((pl) => pl.playerId === r.playerId) || {};
     batch.update(playerRef, {
       budgetCurrent: r.budgetAfter,
       cumulativeRevenue: FieldValue.increment(r.revenueNet),
@@ -870,6 +884,8 @@ async function runSimulationAndPersist(gameRef, round, config) {
         (r.csvRow && r.csvRow.sous_chef_count),
         0
       ),
+      consecutiveMissedRounds: playerInput.consecutiveMissedRounds || 0,
+      ...(playerInput.disconnected ? { disconnected: true } : {}),
       lastRoundResult: {
         round,
         revenueGross: r.revenueGross,
@@ -1081,7 +1097,15 @@ exports.submitDecision = onCall(async (request) => {
     const config = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
 
     // Validate using the decision-validation module (pure).
-    const validated = decisionValidation.validateDecision(data, currentRound, config);
+    let validated;
+    try {
+      validated = decisionValidation.validateDecision(data, currentRound, config);
+    } catch (err) {
+      if (ValidationError && err instanceof ValidationError) {
+        throw new HttpsError('invalid-argument', err.message);
+      }
+      throw err;
+    }
 
     roundId = `round_${currentRound}`;
     const decisionRef = playerRef.collection('decisions').doc(roundId);
@@ -1156,15 +1180,22 @@ exports.submitBids = onCall(async (request) => {
     const config = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
 
     let validated;
-    if (bidType === 'ad') {
-      validated = decisionValidation.validateAdBids(data);
-    } else {
-      // CRIT-07 fix: chefPool lives on rounds/{round} doc, NOT on game root.
-      const roundSnap = await transaction.get(
-        gameRef.collection('rounds').doc(`round_${round}`)
-      );
-      const chefPool = (roundSnap.exists && roundSnap.data().chefPool) || [];
-      validated = decisionValidation.validateChefBids(data, chefPool);
+    try {
+      if (bidType === 'ad') {
+        validated = decisionValidation.validateAdBids(data);
+      } else {
+        // CRIT-07 fix: chefPool lives on rounds/{round} doc, NOT on game root.
+        const roundSnap = await transaction.get(
+          gameRef.collection('rounds').doc(`round_${round}`)
+        );
+        const chefPool = (roundSnap.exists && roundSnap.data().chefPool) || [];
+        validated = decisionValidation.validateChefBids(data, chefPool);
+      }
+    } catch (err) {
+      if (ValidationError && err instanceof ValidationError) {
+        throw new HttpsError('invalid-argument', err.message);
+      }
+      throw err;
     }
 
     const bidsRef = playerRef.collection('bids').doc(`round_${round}`);

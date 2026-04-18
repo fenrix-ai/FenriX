@@ -12,7 +12,7 @@ const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getFunctions, connectFunctionsEmulator } = require("firebase/functions");
 const { initializeApp: initializeClientApp } = require("firebase/app");
-const { getAuth, connectAuthEmulator, signInAnonymously } = require("firebase/auth");
+const { getAuth, connectAuthEmulator, signInAnonymously, signOut } = require("firebase/auth");
 const { httpsCallable } = require("firebase/functions");
 
 // ─── Config ───────────────────────────────────────────────────
@@ -74,7 +74,8 @@ async function expectError(callableFn, data, expectedCode, testName) {
 }
 
 function randomCode() {
-  return Math.random().toString(36).substring(2, 8).toUpperCase().replace(/[^A-Z0-9]/g, "X").substring(0, 6);
+  const ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({length: 6}, () => ALPHA[Math.floor(Math.random() * ALPHA.length)]).join('');
 }
 
 async function createTestGame(options = {}) {
@@ -192,20 +193,26 @@ async function suiteJoinGame() {
 
   const joinGame = httpsCallable(functions, "joinGame");
 
-  await test("Reject empty joinCode", async () => {
-    await expectError(joinGame, { joinCode: "", displayName: "Test" }, "invalid-argument");
+  // Auth is checked before input validation (correct security order), so
+  // unauthenticated callers always receive unauthenticated, not invalid-argument.
+  await test("Reject empty joinCode (unauthenticated)", async () => {
+    await signOut(auth);
+    await expectError(joinGame, { joinCode: "", displayName: "Test" }, "unauthenticated");
   });
 
-  await test("Reject joinCode too short (3 chars)", async () => {
-    await expectError(joinGame, { joinCode: "ABC", displayName: "Test" }, "invalid-argument");
+  await test("Reject joinCode too short (3 chars) (unauthenticated)", async () => {
+    await signOut(auth);
+    await expectError(joinGame, { joinCode: "ABC", displayName: "Test" }, "unauthenticated");
   });
 
-  await test("Reject joinCode too long (10 chars)", async () => {
-    await expectError(joinGame, { joinCode: "ABCDEFGHIJ", displayName: "Test" }, "invalid-argument");
+  await test("Reject joinCode too long (10 chars) (unauthenticated)", async () => {
+    await signOut(auth);
+    await expectError(joinGame, { joinCode: "ABCDEFGHIJ", displayName: "Test" }, "unauthenticated");
   });
 
-  await test("Reject joinCode with special chars", async () => {
-    await expectError(joinGame, { joinCode: "AB@#$%", displayName: "Test" }, "invalid-argument");
+  await test("Reject joinCode with special chars (unauthenticated)", async () => {
+    await signOut(auth);
+    await expectError(joinGame, { joinCode: "AB@#$%", displayName: "Test" }, "unauthenticated");
   });
 
   await test("Reject displayName too short (1 char)", async () => {
@@ -270,7 +277,12 @@ async function suiteStartGame() {
   const startGame = httpsCallable(functions, "startGame");
 
   await test("Reject start from non-professor player", async () => {
-    const { gameId } = await createTestGame();
+    const { gameId, gameRef } = await createTestGame({ withPlayers: 1 });
+    // Add a dummy player so totalPlayers > 0 (avoids failed-precondition masking permission-denied)
+    await gameRef.collection("players").doc("dummy-player").set({ uid: "dummy-player", budgetCurrent: 500000 });
+    await gameRef.update({ totalPlayers: 1 });
+    // Sign out professor, sign in as a different anonymous user
+    await signOut(auth);
     await signInAnonymously(auth);
     await expectError(startGame, { gameId }, "permission-denied");
   });

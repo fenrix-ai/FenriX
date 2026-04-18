@@ -35,18 +35,34 @@ function assertPhaseEndTime(value, message) {
 
 async function seedLobbyGame(db, professorId) {
   await db.doc(`games/${GAME_ID}`).set({
-    joinCode: "PHASE1",
+    joinCode: "PHASE2",
     phase: "lobby",
     currentRound: 1,
     totalRounds: 5,
     phaseEndTime: null,
     submittedCount: 0,
-    totalPlayers: 0,
+    totalPlayers: 1,
     paused: false,
     professorId,
     createdAt: null,
     startedAt: null,
     endedAt: null,
+  });
+
+  await db.doc(`games/${GAME_ID}/players/test-player-1`).set({
+    uid: 'test-player-1',
+    playerId: 'test-player-1',
+    displayName: 'Test Bakery',
+    bakeryName: "Test Bakery",
+    budgetCurrent: 500000,
+    cumulativeRevenue: 0,
+    specialtyChefs: [],
+    sousChefCount: 0,
+    returningCustomersPending: 0,
+    pendingDecision: { submitted: false },
+    pendingBids: { ad: null, chef: null },
+    pendingRosterAction: false,
+    lastRoundResult: null,
   });
 
   await db.doc(`games/${GAME_ID}/config/params`).set({
@@ -91,14 +107,14 @@ async function main() {
 
   const startResult = await startGame({ gameId: GAME_ID });
   assertEqual(startResult.data.phase, "round_1_email", "Start phase mismatch.");
-  assertEqual(startResult.data.currentRound, 1, "Start round mismatch.");
+  assertEqual(startResult.data.round, 1, "Start round mismatch.");
 
   let gameSnap = await db.doc(`games/${GAME_ID}`).get();
   assertEqual(gameSnap.get("phase"), "round_1_email", "Stored start phase mismatch.");
 
   const decideResult = await advanceGamePhase({ gameId: GAME_ID });
   assertEqual(decideResult.data.phase, "round_1_decide", "Decide phase mismatch.");
-  assertEqual(decideResult.data.currentRound, 1, "Decide round mismatch.");
+  assertEqual(decideResult.data.round, 1, "Decide round mismatch.");
 
   gameSnap = await db.doc(`games/${GAME_ID}`).get();
   assertEqual(gameSnap.get("phase"), "round_1_decide", "Stored decide phase mismatch.");

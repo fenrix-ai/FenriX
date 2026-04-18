@@ -100,7 +100,7 @@ function decision(overrides = {}) {
 
 async function seedGame(db) {
   await db.doc(`games/${GAME_ID}`).set({
-    joinCode: "REV001",
+    joinCode: "REV223",
     phase: "round_1_decide",
     round: 1,
     currentRound: 1,

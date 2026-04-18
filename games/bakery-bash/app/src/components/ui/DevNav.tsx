@@ -2,49 +2,28 @@ import { Link } from "react-router-dom";
 import { useGame, useGameDispatch } from "../../contexts/GameContext";
 import type { GamePhase } from "../../types/game";
 
-const PHASES: GamePhase[] = ["decide", "simulate", "results"];
-
 export function DevNav() {
-  const { phase, auctionTab } = useGame();
+  const { phase } = useGame();
   const dispatch = useGameDispatch();
 
   if (import.meta.env.PROD) return null;
 
   const setPhase = (p: GamePhase) => {
-    if (p === "decide") {
-      dispatch({ type: "ADVANCE_ROUND" });
-    } else {
-      dispatch({ type: "SET_PHASE", payload: p });
-    }
+    dispatch({ type: "SET_PHASE", payload: p });
   };
-
-  const auctionTabLabel =
-    phase === "auction" ? "auction (active)" : "auction";
 
   return (
     <nav className="dev-nav">
       <span className="dev-nav__label">DEV</span>
       <Link to="/">Landing</Link>
       <Link to="/lobby">Lobby</Link>
-      {PHASES.map((p) => (
-        <Link key={p} to="/game" onClick={() => setPhase(p)}>
-          {p}
-        </Link>
-      ))}
-      <Link
-        to="/auction"
-        className={phase === "auction" ? "dev-nav__link--active" : ""}
-        onClick={() => dispatch({ type: "SET_PHASE", payload: "auction" })}
-      >
-        {auctionTabLabel}
-      </Link>
+      <Link to="/game" onClick={() => setPhase("round_1_decide")}>decide</Link>
+      <Link to="/game" onClick={() => setPhase("round_1_bid_ad")}>bid</Link>
+      <Link to="/game" onClick={() => setPhase("round_1_roster")}>roster</Link>
+      <Link to="/game" onClick={() => setPhase("simulating")}>simulate</Link>
+      <Link to="/game" onClick={() => setPhase("results_ready")}>results</Link>
       <Link to="/leaderboard">Board</Link>
       <Link to="/professor">Prof</Link>
-      {phase === "auction" && (
-        <span className="dev-nav__phase-indicator">
-          auction tab: {auctionTab === "chefs" ? "Chef Hiring" : "Advertisements"}
-        </span>
-      )}
     </nav>
   );
 }

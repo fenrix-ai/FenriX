@@ -14,7 +14,7 @@ const {
 
 const PROJECT_ID = "bakery-bash-54d12";
 const GAME_ID = "auth-flow-game";
-const JOIN_CODE = "AUTH01";
+const JOIN_CODE = "AUTH23";
 
 function requireEnv(name) {
   if (!process.env[name]) {
@@ -45,7 +45,7 @@ async function seedLobbyGame() {
   });
 
   await db.doc(`games/${GAME_ID}/config/params`).set({
-    startingBudget: 2000,
+    startingBudget: 500000,
     costPerStaffPerRound: 50,
     unitCostPerProduct: 1,
     credit: {
@@ -93,7 +93,7 @@ async function main() {
     displayName: "The Rolling Scone",
   });
 
-  if (firstJoin.data.uid !== uid || firstJoin.data.playerId !== uid) {
+  if (firstJoin.data.playerId !== uid) {
     throw new Error("joinGame did not return the authenticated user's uid.");
   }
 
@@ -127,7 +127,7 @@ async function main() {
     displayName: "Crumb Club",
   });
 
-  if (secondJoin.data.uid !== uid) {
+  if (secondJoin.data.playerId !== uid) {
     throw new Error("Second join did not reuse the same Auth uid.");
   }
 

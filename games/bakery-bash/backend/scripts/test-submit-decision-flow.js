@@ -29,7 +29,7 @@ function assertEqual(actual, expected, message) {
 
 async function seedGame(db, playerId) {
   await db.doc(`games/${GAME_ID}`).set({
-    joinCode: "SUBMIT",
+    joinCode: "SUBM2T",
     phase: "round_1_decide",
     round: 1,
     currentRound: 1,

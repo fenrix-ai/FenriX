@@ -66,7 +66,8 @@ async function test(name, fn) {
 }
 
 function randomCode() {
-  return Math.random().toString(36).substring(2, 8).toUpperCase().replace(/[^A-Z0-9]/g, "X").substring(0, 6);
+  const ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({length: 6}, () => ALPHA[Math.floor(Math.random() * ALPHA.length)]).join('');
 }
 
 // ─── Game Setup ───────────────────────────────────────────────

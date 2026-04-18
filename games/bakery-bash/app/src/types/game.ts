@@ -1,4 +1,13 @@
-export type GamePhase = "lobby" | "decide" | "bid" | "auction" | "simulate" | "results";
+export type GamePhase =
+  | "lobby"
+  | `round_${number}_email`
+  | `round_${number}_decide`
+  | `round_${number}_bid_ad`
+  | `round_${number}_bid_chef`
+  | `round_${number}_roster`
+  | "simulating"
+  | "results_ready"
+  | "game_over";
 
 export type ChefNationality = "american" | "french" | "italian" | "japanese";
 export type ChefGender = "m" | "f";
@@ -13,15 +22,13 @@ export interface ChefListing {
   multiplier: number;
 }
 
-export type AuctionTab = "chefs" | "ads";
-
 export type MenuItemId =
+  | "coffee"
+  | "matcha"
   | "croissant"
   | "cookie"
   | "bagel"
-  | "sandwich"
-  | "latte"
-  | "matcha-latte";
+  | "sandwich";
 
 export type AdType = "tv" | "radio" | "newspaper" | "billboard";
 
@@ -35,7 +42,9 @@ export interface MenuItem {
 
 export interface PlayerDecisions {
   quantities: Record<MenuItemId, number>;
-  staffCount: number;
+  menu: Record<MenuItemId, boolean>;
+  sousChefCount: number;
+  sousChefAssignments: Record<MenuItemId, string>;
   adBids: Record<AdType, number>;
   chefBids: Record<string, number>;
 }
@@ -69,5 +78,4 @@ export interface GameState {
   players: Player[];
   roundResults: RoundResult[];
   timeRemaining: number | null;
-  auctionTab: AuctionTab;
 }

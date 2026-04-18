@@ -1,6 +1,4 @@
-import { useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { useGame, useGameDispatch } from "../contexts/GameContext";
+import { useGame } from "../contexts/GameContext";
 import { RoundHeader } from "../components/game/RoundHeader";
 import { BakeryView } from "../components/game/BakeryView";
 import { GameSidebar } from "../components/game/GameSidebar";
@@ -10,32 +8,21 @@ import { ResultsPhase } from "./phases/ResultsPhase";
 
 export function GamePage() {
   const { phase } = useGame();
-  const dispatch = useGameDispatch();
-  const navigate = useNavigate();
 
-  useEffect(() => {
-    if (phase === "auction") {
-      navigate("/auction");
-    }
-  }, [phase, navigate]);
-
-  const isDecisionPhase = phase === "decide" || phase === "bid";
-
-  const handleSubmit = () => {
-    if (phase === "decide") {
-      dispatch({ type: "SET_PHASE", payload: "bid" });
-    } else if (phase === "bid") {
-      dispatch({ type: "SET_PHASE", payload: "simulate" });
-    }
-  };
-
-  if (!isDecisionPhase) {
+  if (phase === "simulating") {
     return (
       <PageShell className="game-page">
         <RoundHeader />
-        <div className="game-page__content">
-          {phase === "simulate" ? <SimulatePhase /> : <ResultsPhase />}
-        </div>
+        <SimulatePhase />
+      </PageShell>
+    );
+  }
+
+  if (phase === "results_ready") {
+    return (
+      <PageShell className="game-page">
+        <RoundHeader />
+        <ResultsPhase />
       </PageShell>
     );
   }
@@ -47,12 +34,6 @@ export function GamePage() {
         <BakeryView />
         <GameSidebar />
       </div>
-      <button
-        className="btn btn--primary game-page__submit"
-        onClick={handleSubmit}
-      >
-        Submit Decisions
-      </button>
     </PageShell>
   );
 }
