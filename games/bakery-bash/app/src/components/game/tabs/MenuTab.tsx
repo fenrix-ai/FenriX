@@ -72,17 +72,30 @@ export function MenuTab() {
                 </span>
               </div>
               {isOnMenu ? (
-                <input
-                  type="number"
-                  className="menu-tab__qty-input"
-                  placeholder="0"
-                  min={0}
-                  step={1}
-                  value={pendingDecision.quantities[product] ?? 0}
-                  onChange={(e) =>
-                    setQty(product, parseInt(e.target.value, 10) || 0)
-                  }
-                />
+                <div className="menu-tab__qty-group">
+                  <input
+                    type="number"
+                    className="menu-tab__qty-input"
+                    placeholder="0"
+                    min={0}
+                    step={1}
+                    value={pendingDecision.quantities[product] ?? 0}
+                    onChange={(e) =>
+                      setQty(product, parseInt(e.target.value, 10) || 0)
+                    }
+                  />
+                  {!isBase && (
+                    <button
+                      type="button"
+                      className="menu-tab__remove-btn"
+                      onClick={() => toggleMenu(product, false)}
+                      aria-label={`Remove ${display.name} from menu`}
+                      title={`Remove ${display.name} from menu`}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
               ) : (
                 <label className="menu-tab__unlock">
                   <input
