@@ -1,69 +1,323 @@
+import { useMemo } from "react";
 import { useGame, useGameDispatch } from "../../../contexts/GameContext";
+import {
+  MAINTENANCE_TASKS,
+  totalSousChefs,
+  type MaintenanceTask,
+  type StaffCounts,
+} from "../../../types/game";
 
 /**
- * Default cost per sous chef per round when the backend config has not yet
- * been resolved. Mirrors `DEFAULT_GAME_CONFIG.sousChefBaseCost` in
+ * Default per-hire base cost when Firestore `config/params` has not yet
+ * resolved. Mirrors `DEFAULT_GAME_CONFIG.sousChefBaseCost` in
  * `backend/functions/modules/config.js`.
  */
-const DEFAULT_SOUS_CHEF_BASE_COST = 50;
-const MAX_SOUS_CHEF_COUNT = 20;
+const DEFAULT_BASE_COST = 50;
+
+/**
+ * Escalation multipliers for the first four hires per role (indices 0–3).
+ * For hires beyond the 4th, we linearly extend the curve by +0.75 multiplier
+ * per additional hire. Matches the game-design-proposal curve:
+ *   [$50, $75, $112.50, $150, $187.50, $225, …] at a $50 base.
+ */
+const ESCALATION_MULTIPLIERS = [1.0, 1.5, 2.25, 3.0];
+const ESCALATION_DELTA_AFTER = 0.75;
+
+/** Cost of the Nth hire (N = currentCount, so 0 = first hire). */
+function getHireCost(base: number, currentCount: number): number {
+  if (currentCount < ESCALATION_MULTIPLIERS.length) {
+    return base * ESCALATION_MULTIPLIERS[currentCount];
+  }
+  const last = ESCALATION_MULTIPLIERS[ESCALATION_MULTIPLIERS.length - 1];
+  const extra = currentCount - (ESCALATION_MULTIPLIERS.length - 1);
+  return base * (last + ESCALATION_DELTA_AFTER * extra);
+}
+
+/** Sum of all hire costs from 0 → count-1 for a given role. */
+function totalRoleCost(base: number, count: number): number {
+  let total = 0;
+  for (let i = 0; i < count; i++) total += getHireCost(base, i);
+  return total;
+}
+
+const BAR_WARNING_THRESHOLD = 30;
+const OVERCROWDING_THRESHOLD = 4;
+const MAX_PER_ROLE = 20;
+
+const MAINTENANCE_TASK_LABELS: Record<MaintenanceTask, string> = {
+  clean: "Clean Store",
+  repair_oven: "Repair Oven (Bakery)",
+  repair_slicer: "Repair Meat Slicer (Deli)",
+  repair_espresso: "Repair Espresso Machine (Barista)",
+};
+
+interface BarProps {
+  label: string;
+  value: number;
+}
+function StatusBar({ label, value }: BarProps) {
+  const warn = value <= BAR_WARNING_THRESHOLD;
+  const clamped = Math.max(0, Math.min(100, value));
+  return (
+    <div
+      className={`staff-tab__bar-row ${
+        warn ? "staff-tab__bar-row--warn" : ""
+      }`}
+    >
+      <span className="staff-tab__bar-label">
+        {warn && <span aria-hidden>⚠</span>} {label}
+      </span>
+      <div className="staff-tab__bar-track" aria-hidden>
+        <div
+          className="staff-tab__bar-fill"
+          style={{
+            width: `${clamped}%`,
+            background: warn ? "var(--berry)" : "var(--sage)",
+          }}
+        />
+      </div>
+      <span className="staff-tab__bar-pct">{Math.round(clamped)}%</span>
+    </div>
+  );
+}
+
+interface StepperProps {
+  title: string;
+  subtitle: string;
+  count: number;
+  nextCost: number;
+  roleTotal: number;
+  onDecrement: () => void;
+  onIncrement: () => void;
+  incrementDisabled?: boolean;
+}
+function RoleStepper({
+  title,
+  subtitle,
+  count,
+  nextCost,
+  roleTotal,
+  onDecrement,
+  onIncrement,
+  incrementDisabled,
+}: StepperProps) {
+  return (
+    <div className="staff-tab__station">
+      <div className="staff-tab__station-header">
+        <span className="staff-tab__station-label">{title}</span>
+        <span className="staff-tab__station-sublabel">{subtitle}</span>
+      </div>
+      <div className="staff-tab__stepper">
+        <button
+          type="button"
+          className="staff-tab__stepper-btn"
+          onClick={onDecrement}
+          disabled={count <= 0}
+          aria-label={`Remove one from ${title}`}
+        >
+          −
+        </button>
+        <span className="staff-tab__stepper-value">{count}</span>
+        <button
+          type="button"
+          className="staff-tab__stepper-btn"
+          onClick={onIncrement}
+          disabled={incrementDisabled}
+          aria-label={`Add one to ${title}`}
+        >
+          +
+        </button>
+      </div>
+      <div className="staff-tab__station-cost">
+        Next hire: <strong>${nextCost.toFixed(0)}</strong>
+        <span className="staff-tab__station-cost-sep"> · </span>
+        Total: <strong>${roleTotal.toFixed(0)}</strong>
+      </div>
+    </div>
+  );
+}
 
 export function StaffTab() {
-  const { config, pendingDecision } = useGame();
+  const { config, maintenanceBars, pendingDecision } = useGame();
   const dispatch = useGameDispatch();
 
-  // Canonical backend field is `sousChefBaseCost`. Fall back to the legacy
-  // `costPerStaffPerRound` (present in the old seed doc) before defaulting to
-  // 50 so we stay correct through the seed/config rename.
-  const costPerStaff =
+  const sousBase =
     config?.sousChefBaseCost ??
     config?.costPerStaffPerRound ??
-    DEFAULT_SOUS_CHEF_BASE_COST;
+    DEFAULT_BASE_COST;
+  const maintBase =
+    config?.maintenanceBaseCost ?? sousBase ?? DEFAULT_BASE_COST;
 
-  const staffCount = pendingDecision.sousChefCount;
+  const staffCounts = pendingDecision.staffCounts;
+  const maintenanceTasks = pendingDecision.maintenanceTasks;
 
-  const setStaffCount = (next: number) => {
-    const clamped = Math.max(0, Math.min(MAX_SOUS_CHEF_COUNT, next));
+  const setCount = (role: keyof StaffCounts, next: number) => {
+    const clamped = Math.max(0, Math.min(MAX_PER_ROLE, Math.floor(next) || 0));
+    const prev = staffCounts[role];
+    if (clamped === prev) return;
+
+    // If maintenance guy count changed, keep `maintenanceTasks` length in sync.
+    let tasks = maintenanceTasks;
+    if (role === "maintenanceGuys") {
+      if (clamped > prev) {
+        tasks = [
+          ...maintenanceTasks,
+          ...Array<MaintenanceTask>(clamped - prev).fill("clean"),
+        ];
+      } else {
+        tasks = maintenanceTasks.slice(0, clamped);
+      }
+    }
+
     dispatch({
       type: "UPDATE_PENDING_DECISION",
-      payload: { sousChefCount: clamped },
+      payload: {
+        staffCounts: { [role]: clamped } as Partial<StaffCounts>,
+        maintenanceTasks: tasks,
+      },
     });
   };
 
+  const setTask = (index: number, task: MaintenanceTask) => {
+    const next = maintenanceTasks.slice();
+    next[index] = task;
+    dispatch({
+      type: "UPDATE_PENDING_DECISION",
+      payload: { maintenanceTasks: next },
+    });
+  };
+
+  const grandTotal = useMemo(() => {
+    return (
+      totalRoleCost(sousBase, staffCounts.bakerySousChefs) +
+      totalRoleCost(sousBase, staffCounts.deliSousChefs) +
+      totalRoleCost(sousBase, staffCounts.baristaSousChefs) +
+      totalRoleCost(maintBase, staffCounts.maintenanceGuys)
+    );
+  }, [sousBase, maintBase, staffCounts]);
+
+  const sousChefTotal = totalSousChefs(staffCounts);
+  const overcrowded = sousChefTotal > OVERCROWDING_THRESHOLD;
+
   return (
     <div className="staff-tab">
-      <h3 className="sidebar-tab__title">Sous Chefs</h3>
+      <h3 className="sidebar-tab__title">Kitchen Staff</h3>
       <p className="sidebar-tab__hint">
-        Hire sous chefs to boost output. More than 4 starts to hurt kitchen
+        Hire sous chefs per station and maintenance guys to keep the kitchen
+        running. More than {OVERCROWDING_THRESHOLD} sous chefs hurts kitchen
         coordination.
       </p>
 
-      <div className="staff-tab__control">
-        <label className="staff-tab__label">Number of Sous Chefs</label>
-        <div className="staff-tab__stepper">
-          <button
-            className="staff-tab__stepper-btn"
-            onClick={() => setStaffCount(staffCount - 1)}
-            disabled={staffCount <= 0}
-          >
-            −
-          </button>
-          <span className="staff-tab__stepper-value">{staffCount}</span>
-          <button
-            className="staff-tab__stepper-btn"
-            onClick={() => setStaffCount(staffCount + 1)}
-            disabled={staffCount >= MAX_SOUS_CHEF_COUNT}
-          >
-            +
-          </button>
-        </div>
+      {/* 1. Maintenance status bars (read-only) */}
+      <div className="staff-tab__bars" aria-label="Maintenance status">
+        <StatusBar label="Cleanliness" value={maintenanceBars.cleanliness} />
+        <StatusBar label="Oven Health" value={maintenanceBars.ovenHealth} />
+        <StatusBar
+          label="Meat Slicer Health"
+          value={maintenanceBars.slicerHealth}
+        />
+        <StatusBar
+          label="Espresso Machine"
+          value={maintenanceBars.espressoHealth}
+        />
       </div>
 
-      <div className="staff-tab__cost">
-        Cost: <strong>${(staffCount * costPerStaff).toLocaleString()}</strong>
-        <span className="staff-tab__cost-rate">
-          {" "}(${costPerStaff.toLocaleString()} each)
-        </span>
+      {/* 2. Three sous chef station steppers */}
+      <div className="staff-tab__stations">
+        <RoleStepper
+          title="Bakery Station"
+          subtitle="Croissant · Cookie"
+          count={staffCounts.bakerySousChefs}
+          nextCost={getHireCost(sousBase, staffCounts.bakerySousChefs)}
+          roleTotal={totalRoleCost(sousBase, staffCounts.bakerySousChefs)}
+          onDecrement={() =>
+            setCount("bakerySousChefs", staffCounts.bakerySousChefs - 1)
+          }
+          onIncrement={() =>
+            setCount("bakerySousChefs", staffCounts.bakerySousChefs + 1)
+          }
+        />
+        <RoleStepper
+          title="Deli"
+          subtitle="Bagel · Sandwich"
+          count={staffCounts.deliSousChefs}
+          nextCost={getHireCost(sousBase, staffCounts.deliSousChefs)}
+          roleTotal={totalRoleCost(sousBase, staffCounts.deliSousChefs)}
+          onDecrement={() =>
+            setCount("deliSousChefs", staffCounts.deliSousChefs - 1)
+          }
+          onIncrement={() =>
+            setCount("deliSousChefs", staffCounts.deliSousChefs + 1)
+          }
+        />
+        <RoleStepper
+          title="Barista Station"
+          subtitle="Coffee · Matcha"
+          count={staffCounts.baristaSousChefs}
+          nextCost={getHireCost(sousBase, staffCounts.baristaSousChefs)}
+          roleTotal={totalRoleCost(sousBase, staffCounts.baristaSousChefs)}
+          onDecrement={() =>
+            setCount("baristaSousChefs", staffCounts.baristaSousChefs - 1)
+          }
+          onIncrement={() =>
+            setCount("baristaSousChefs", staffCounts.baristaSousChefs + 1)
+          }
+        />
+      </div>
+
+      {overcrowded && (
+        <p className="staff-tab__warning" role="alert">
+          ⚠ Overcrowding: {sousChefTotal} sous chefs — coordination penalty
+          applies beyond {OVERCROWDING_THRESHOLD}.
+        </p>
+      )}
+
+      {/* 3. Maintenance Guy stepper + per-guy task assignment */}
+      <div className="staff-tab__maintenance">
+        <RoleStepper
+          title="Maintenance Guy"
+          subtitle="Cleans & repairs"
+          count={staffCounts.maintenanceGuys}
+          nextCost={getHireCost(maintBase, staffCounts.maintenanceGuys)}
+          roleTotal={totalRoleCost(maintBase, staffCounts.maintenanceGuys)}
+          onDecrement={() =>
+            setCount("maintenanceGuys", staffCounts.maintenanceGuys - 1)
+          }
+          onIncrement={() =>
+            setCount("maintenanceGuys", staffCounts.maintenanceGuys + 1)
+          }
+        />
+
+        {staffCounts.maintenanceGuys > 0 && (
+          <ul className="staff-tab__tasks">
+            {maintenanceTasks.map((task, i) => (
+              <li key={i} className="staff-tab__task-row">
+                <label className="staff-tab__task-label">
+                  Guy #{i + 1}
+                  <select
+                    className="staff-tab__task-select"
+                    value={task}
+                    onChange={(e) =>
+                      setTask(i, e.target.value as MaintenanceTask)
+                    }
+                  >
+                    {MAINTENANCE_TASKS.map((t) => (
+                      <option key={t} value={t}>
+                        {MAINTENANCE_TASK_LABELS[t]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* 4. Grand total */}
+      <div className="staff-tab__grand-total">
+        Total staffing cost this round:{" "}
+        <strong>${grandTotal.toLocaleString()}</strong>
       </div>
     </div>
   );

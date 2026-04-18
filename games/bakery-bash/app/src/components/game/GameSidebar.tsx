@@ -1,32 +1,18 @@
-import { useState } from "react";
-import { MenuTab } from "./tabs/MenuTab";
 import { StaffTab } from "./tabs/StaffTab";
 
-const TABS = ["Menu", "Staff"] as const;
-type Tab = (typeof TABS)[number];
-
+/**
+ * Right-hand control panel for the decide phase.
+ *
+ * Product quantities live directly on the main `BakeryView` (station-grid
+ * layout), so the sidebar is dedicated to staffing + maintenance. No tab UI
+ * is needed — just render the staff controls. Keeping the `.game-sidebar`
+ * wrapper preserves the existing dashboard grid sizing in `global.css`.
+ */
 export function GameSidebar() {
-  const [activeTab, setActiveTab] = useState<Tab>("Menu");
-
   return (
     <aside className="game-sidebar">
-      <nav className="game-sidebar__tabs">
-        {TABS.map((tab) => (
-          <button
-            key={tab}
-            className={`game-sidebar__tab ${
-              activeTab === tab ? "game-sidebar__tab--active" : ""
-            }`}
-            onClick={() => setActiveTab(tab)}
-          >
-            {tab}
-          </button>
-        ))}
-      </nav>
-
       <div className="game-sidebar__panel">
-        {activeTab === "Menu" && <MenuTab />}
-        {activeTab === "Staff" && <StaffTab />}
+        <StaffTab />
       </div>
     </aside>
   );
