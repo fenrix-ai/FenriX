@@ -1,12 +1,27 @@
-export type GamePhase = "lobby" | "decide" | "bid" | "simulate" | "results" | "email";
+export type GamePhase =
+  | "lobby"
+  | "email"
+  | "decide"
+  | "bid"
+  | "simulating"
+  | "results_ready"
+  | "game_over";
 
 export type MenuItemId =
   | "croissant"
   | "cookie"
   | "bagel"
   | "sandwich"
-  | "latte"
-  | "matcha-latte";
+  | "coffee"
+  | "matcha";
+
+export type StationId = "bakery" | "deli" | "barista";
+
+export type MaintenanceTask =
+  | "clean"
+  | "repair_oven"
+  | "repair_slicer"
+  | "repair_espresso";
 
 export type AdType = "tv" | "radio" | "newspaper" | "billboard";
 
@@ -18,9 +33,24 @@ export interface MenuItem {
   quantity: number;
 }
 
+export interface StaffCounts {
+  bakerySousChefs: number;
+  deliSousChefs: number;
+  baristaSousChefs: number;
+  maintenanceGuys: number;
+}
+
+export interface MaintenanceBars {
+  cleanliness: number;
+  ovenHealth: number;
+  slicerHealth: number;
+  espressoHealth: number;
+}
+
 export interface PlayerDecisions {
   quantities: Record<MenuItemId, number>;
-  staffCount: number;
+  staffCounts: StaffCounts;
+  maintenanceTasks: MaintenanceTask[];
   adBids: Record<AdType, number>;
   chefBids: Record<string, number>;
 }
@@ -30,6 +60,9 @@ export interface RoundResult {
   revenue: number;
   customerCount: number;
   customerSatisfaction: number;
+  chefSatisfactionScore: number;
+  maintenanceBars: MaintenanceBars;
+  chefDepartures: string[];
   auctionResults: {
     adWon: AdType | null;
     chefWon: string | null;
@@ -54,4 +87,6 @@ export interface GameState {
   players: Player[];
   roundResults: RoundResult[];
   timeRemaining: number | null;
+  maintenanceBars: MaintenanceBars;
+  chefSatisfactionScores: Record<string, number>;
 }

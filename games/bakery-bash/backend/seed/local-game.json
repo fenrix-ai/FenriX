@@ -22,7 +22,6 @@
       "path": "games/demo-lobby/config/params",
       "data": {
         "startingBudget": 2000,
-        "costPerStaffPerRound": 50,
         "unitCostPerProduct": 1,
         "credit": {
           "overdraftEnabled": false,
@@ -30,8 +29,27 @@
           "chargeTiming": null
         },
         "staffingCost": {
-          "baseCostPerStaff": 50,
-          "escalationCurve": null
+          "sousChefBaseCost": 50,
+          "maintenanceBaseCost": 50,
+          "escalationCurve": [1.0, 1.5, 2.25, 3.0]
+        },
+        "maintenance": {
+          "operationalHoursPerRound": 8,
+          "restoreRatePerHour": 15,
+          "dirtinessDropPerCustomer": 3,
+          "machineHealthDropPerOrder": 2,
+          "chefDepartureThreshold": 30,
+          "chefSatisfactionDecay": {
+            "novel": 8,
+            "intermediate": 14,
+            "advanced": 20
+          },
+          "machineHealthMultipliers": {
+            "optimal": 1.00,
+            "worn": 0.85,
+            "degraded": 0.65,
+            "broken": 0.50
+          }
         },
         "revenueModel": {
           "base": 500,
@@ -54,34 +72,37 @@
         "budgetCurrent": 2000,
         "creditBalance": 0,
         "cumulativeRevenue": 0,
+        "cleanliness_pct": 100,
+        "oven_health_pct": 100,
+        "slicer_health_pct": 100,
+        "espresso_health_pct": 100,
+        "chefSatisfactionScores": {},
         "pendingDecision": {
           "submitted": false,
           "submittedAt": null,
-          "staffCount": 3,
+          "staffCounts": {
+            "bakerySousChefs": 0,
+            "deliSousChefs": 0,
+            "baristaSousChefs": 0,
+            "maintenanceGuys": 0
+          },
+          "maintenanceTasks": [],
           "adSpend": 0,
           "menu": {
             "croissant": true,
             "cookie": true,
             "bagel": true,
             "sandwich": false,
-            "latte": false,
-            "matchaLatte": false
-          },
-          "productPrices": {
-            "croissant": 0,
-            "cookie": 0,
-            "bagel": 0,
-            "sandwich": 0,
-            "latte": 0,
-            "matchaLatte": 0
+            "coffee": false,
+            "matcha": false
           },
           "quantities": {
             "croissant": 0,
             "cookie": 0,
             "bagel": 0,
             "sandwich": 0,
-            "latte": 0,
-            "matchaLatte": 0
+            "coffee": 0,
+            "matcha": 0
           }
         },
         "pendingBids": {
@@ -99,15 +120,17 @@
           "revenue": 0,
           "customerCount": 0,
           "customerSatisfaction": 0,
+          "chefSatisfactionScore": 100,
           "headchefSkill": 0,
           "adTypeWon": null,
+          "chefDepartures": [],
           "productsSold": {
             "croissant": 0,
             "cookie": 0,
             "bagel": 0,
             "sandwich": 0,
-            "latte": 0,
-            "matchaLatte": 0
+            "coffee": 0,
+            "matcha": 0
           }
         }
       }
@@ -121,34 +144,37 @@
         "budgetCurrent": 2000,
         "creditBalance": 0,
         "cumulativeRevenue": 0,
+        "cleanliness_pct": 100,
+        "oven_health_pct": 100,
+        "slicer_health_pct": 100,
+        "espresso_health_pct": 100,
+        "chefSatisfactionScores": {},
         "pendingDecision": {
           "submitted": false,
           "submittedAt": null,
-          "staffCount": 3,
+          "staffCounts": {
+            "bakerySousChefs": 0,
+            "deliSousChefs": 0,
+            "baristaSousChefs": 0,
+            "maintenanceGuys": 0
+          },
+          "maintenanceTasks": [],
           "adSpend": 0,
           "menu": {
             "croissant": true,
             "cookie": true,
             "bagel": true,
             "sandwich": false,
-            "latte": false,
-            "matchaLatte": false
-          },
-          "productPrices": {
-            "croissant": 0,
-            "cookie": 0,
-            "bagel": 0,
-            "sandwich": 0,
-            "latte": 0,
-            "matchaLatte": 0
+            "coffee": false,
+            "matcha": false
           },
           "quantities": {
             "croissant": 0,
             "cookie": 0,
             "bagel": 0,
             "sandwich": 0,
-            "latte": 0,
-            "matchaLatte": 0
+            "coffee": 0,
+            "matcha": 0
           }
         },
         "pendingBids": {
@@ -166,15 +192,17 @@
           "revenue": 0,
           "customerCount": 0,
           "customerSatisfaction": 0,
+          "chefSatisfactionScore": 100,
           "headchefSkill": 0,
           "adTypeWon": null,
+          "chefDepartures": [],
           "productsSold": {
             "croissant": 0,
             "cookie": 0,
             "bagel": 0,
             "sandwich": 0,
-            "latte": 0,
-            "matchaLatte": 0
+            "coffee": 0,
+            "matcha": 0
           }
         }
       }

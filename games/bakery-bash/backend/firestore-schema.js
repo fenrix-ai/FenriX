@@ -12,6 +12,11 @@
 
 /**
  * @typedef {"lobby" | "email" | "decide" | "bid" | "simulating" | "results_ready" | "game_over"} GamePhase
+ *
+ * Station → Products → Machine mapping:
+ *   bakery   → croissant, cookie   → oven
+ *   deli     → bagel, sandwich     → slicer
+ *   barista  → coffee, matcha      → espresso
  */
 
 // ─────────────────────────────────────────────────────────────
@@ -65,11 +70,33 @@ const GameConfigDocument = {
     chargeTiming: null,            // "immediate" | "per_round" | "game_end" | null
   },
 
-  // Dynamic staffing cost is pending Game Design sign-off.
-  // Until escalationCurve is finalized, use costPerStaffPerRound as a flat fallback.
+  // Staffing cost escalation — applies per role independently
+  // (bakerySousChefs, deliSousChefs, baristaSousChefs, maintenanceGuys each have their own count)
   staffingCost: {
-    baseCostPerStaff: 50,          // number ($)
-    escalationCurve: null,         // object | null — Open Q #7
+    sousChefBaseCost: 50,          // number ($) — base cost for 1st sous chef at any station
+    maintenanceBaseCost: 50,       // number ($) — base cost for 1st maintenance guy
+    // Escalation multipliers: [1.0, 1.5, 2.25, 3.0, +0.75x per additional]
+    escalationCurve: [1.0, 1.5, 2.25, 3.0],
+  },
+
+  // Maintenance system parameters
+  maintenance: {
+    operationalHoursPerRound: 8,         // number — hours café is open each round
+    restoreRatePerHour: 15,              // number (%) — each maintenance guy restores +15%/hr on their assigned task
+    dirtinessDropPerCustomer: 3,         // number (%) — cleanliness drops 3% per customer who enters
+    machineHealthDropPerOrder: 2,        // number (%) — machine health drops 2% per order from that station
+    chefDepartureThreshold: 30,          // number (%) — specialty chef leaves if satisfaction ≤ this
+    chefSatisfactionDecay: {
+      novel: 8,                          // number — points lost per round for Novel skill chefs
+      intermediate: 14,                  // number — points lost per round for Intermediate skill chefs
+      advanced: 20,                      // number — points lost per round for Advanced skill chefs
+    },
+    machineHealthMultipliers: {
+      optimal:   1.00,                   // health >= 71%
+      worn:      0.85,                   // health 41–70% → −15% throughput
+      degraded:  0.65,                   // health 11–40% → −35% throughput
+      broken:    0.50,                   // health 0–10%  → −50% throughput
+    },
   },
 
   // Revenue regression coefficients
@@ -130,14 +157,34 @@ const PlayerDocument = {
   creditBalance: 0,               // number ($) — amount currently financed through overdraft/credit
   cumulativeRevenue: 0,           // number ($) — sum of all round revenues (for leaderboard)
 
+  // Maintenance state — persists between rounds, updated by simulation Cloud Function
+  cleanliness_pct: 100,           // number (0–100) — store cleanliness; drops 3% per customer
+  oven_health_pct: 100,           // number (0–100) — Bakery Station machine; drops 2% per Croissant/Cookie order
+  slicer_health_pct: 100,         // number (0–100) — Deli machine; drops 2% per Bagel/Sandwich order
+  espresso_health_pct: 100,       // number (0–100) — Barista Station machine; drops 2% per Coffee/Matcha order
+
+  // Per-specialty-chef satisfaction scores (keyed by chefId, set on acquisition)
+  // Decays each round by skill level; chef leaves voluntarily if score ≤ 30
+  chefSatisfactionScores: {},     // Record<chefId: string, score: number (0–100)>
+
   // Current round's working draft (live editable state before submit)
   // On submit, backend snapshots this into /decisions/{roundId} as the immutable historical record
   pendingDecision: {
     submitted: false,             // boolean
     submittedAt: null,            // Timestamp | null
 
-    // Pricing & staffing
-    staffCount: 3,                // number (integer)
+    // Station-based sous chef counts (replaces flat staffCount)
+    staffCounts: {
+      bakerySousChefs: 0,         // number — sous chefs assigned to Bakery Station (Croissant, Cookie)
+      deliSousChefs: 0,           // number — sous chefs assigned to Deli (Bagel, Sandwich)
+      baristaSousChefs: 0,        // number — sous chefs assigned to Barista Station (Coffee, Matcha)
+      maintenanceGuys: 0,         // number — maintenance staff
+    },
+
+    // Task assignment per maintenance guy (array length must equal maintenanceGuys count)
+    // Values: "clean" | "repair_oven" | "repair_slicer" | "repair_espresso"
+    maintenanceTasks: [],         // string[]
+
     adSpend: 0,                   // number ($)
 
     // Active menu items (true = on menu this round)
@@ -146,18 +193,8 @@ const PlayerDocument = {
       cookie: true,
       bagel: true,
       sandwich: false,
-      latte: false,
-      matchaLatte: false,
-    },
-
-    // Per-product prices (backend computes avgPrice from active menu items)
-    productPrices: {
-      croissant: 0,
-      cookie: 0,
-      bagel: 0,
-      sandwich: 0,
-      latte: 0,
-      matchaLatte: 0,
+      coffee: false,
+      matcha: false,
     },
 
     // Per-product quantity ordered (units)
@@ -166,8 +203,8 @@ const PlayerDocument = {
       cookie: 0,
       bagel: 0,
       sandwich: 0,
-      latte: 0,
-      matchaLatte: 0,
+      coffee: 0,
+      matcha: 0,
     },
   },
 
@@ -192,15 +229,18 @@ const PlayerDocument = {
     revenue: 0,
     customerCount: 0,
     customerSatisfaction: 0,
+    chefSatisfactionScore: 0,
     headchefSkill: 0,
     adTypeWon: null,
+    // Chefs whose personal satisfaction dropped to ≤30% and left voluntarily this round
+    chefDepartures: [],           // string[] — array of chef display names
     productsSold: {
       croissant: 0,
       cookie: 0,
       bagel: 0,
       sandwich: 0,
-      latte: 0,
-      matchaLatte: 0,
+      coffee: 0,
+      matcha: 0,
     },
   },
 };
@@ -214,7 +254,17 @@ const DecisionDocument = {
   round: 1,                       // number
   submittedAt: null,              // Timestamp
 
-  staffCount: 3,                  // number
+  // Station-based sous chef counts
+  staffCounts: {
+    bakerySousChefs: 0,           // number
+    deliSousChefs: 0,             // number
+    baristaSousChefs: 0,          // number
+    maintenanceGuys: 0,           // number
+  },
+
+  // Task assignment per maintenance guy
+  maintenanceTasks: [],           // string[] — "clean" | "repair_oven" | "repair_slicer" | "repair_espresso"
+
   adSpend: 0,                     // number ($)
 
   menu: {
@@ -222,18 +272,8 @@ const DecisionDocument = {
     cookie: true,
     bagel: true,
     sandwich: false,
-    latte: false,
-    matchaLatte: false,
-  },
-
-  // Per-product prices (backend computes avgPrice from active menu items)
-  productPrices: {
-    croissant: 0,
-    cookie: 0,
-    bagel: 0,
-    sandwich: 0,
-    latte: 0,
-    matchaLatte: 0,
+    coffee: false,
+    matcha: false,
   },
 
   quantities: {
@@ -241,8 +281,8 @@ const DecisionDocument = {
     cookie: 0,
     bagel: 0,
     sandwich: 0,
-    latte: 0,
-    matchaLatte: 0,
+    coffee: 0,
+    matcha: 0,
   },
 
   adBid: {
@@ -257,9 +297,9 @@ const DecisionDocument = {
 
   // Derived server-side
   numProducts: 3,                 // number — count of active menu items
-  staffingCost: 0,                // number ($) — dynamic curve once Open Q #7 is resolved
-  creditCost: 0,                  // number ($) — overdraft/credit fee once Open Q #6 is resolved
-  totalCosts: 0,                  // number ($) — staffing + inventory costs + credit costs
+  staffingCost: 0,                // number ($) — sum of escalating costs for all staff roles
+  creditCost: 0,                  // number ($) — loan shark interest if applicable
+  totalCosts: 0,                  // number ($) — staffing + inventory + credit costs
   budgetBefore: 2000,             // number ($) — snapshot before deductions
 };
 
@@ -288,43 +328,51 @@ const RoundResultDocument = {
     cookie: 0,
     bagel: 0,
     sandwich: 0,
-    latte: 0,
-    matchaLatte: 0,
+    coffee: 0,
+    matcha: 0,
   },
 
-  // Inputs + derived values echoed back (makes CSV export trivial — all data in one doc)
+  // Maintenance state at end of round (after decay + restoration applied)
+  cleanliness_pct: 100,           // number (0–100)
+  oven_health_pct: 100,           // number (0–100)
+  slicer_health_pct: 100,         // number (0–100)
+  espresso_health_pct: 100,       // number (0–100)
+
+  // Chef satisfaction scores at end of round + departure events
+  chefSatisfactionScore: 0,       // number (0–100) — kitchen-wide score (throughput multiplier)
+  chefDepartures: [],             // string[] — names of specialty chefs who left this round
+
+  // Inputs echoed back for CSV export / auditing
   avgPrice: 0,
 
-  // Player inputs echoed back for CSV export / auditing
-  productPrices: {
-    croissant: 0,
-    cookie: 0,
-    bagel: 0,
-    sandwich: 0,
-    latte: 0,
-    matchaLatte: 0,
-  },
   menu: {
     croissant: true,
     cookie: true,
     bagel: true,
     sandwich: false,
-    latte: false,
-    matchaLatte: false,
+    coffee: false,
+    matcha: false,
   },
   quantitySubmitted: {
     croissant: 0,
     cookie: 0,
     bagel: 0,
     sandwich: 0,
-    latte: 0,
-    matchaLatte: 0,
+    coffee: 0,
+    matcha: 0,
   },
 
-  staffCount: 0,
+  // Station-based staff counts echoed back
+  staffCounts: {
+    bakerySousChefs: 0,
+    deliSousChefs: 0,
+    baristaSousChefs: 0,
+    maintenanceGuys: 0,
+  },
+  maintenanceTasks: [],           // string[]
+
   adSpend: 0,
   numProducts: 0,
-  totalCosts: 0,
 
   // Budget ledger
   revenueGross: 0,
@@ -404,24 +452,38 @@ const LeaderboardDocument = {
 // ─────────────────────────────────────────────────────────────
 const CsvRowsDocument = {
   playerId: "uid_abc",
-  round: 1,                     // number — round number
+  round: 1,                          // number — round number
   row: {
-    day: 1,                     // number — round number
-    revenue: 0,                 // number ($)
-    num_products: 3,            // number
-    avg_price: 5.0,             // number ($)
-    staff_count: 3,             // number
-    ad_spend: 0,                // number ($)
-    customer_count: 0,          // number
-    customer_satisfaction: 0,   // number (0–100)
-    headchef_skill: 0,          // number (0–100)
-    croissant: 0,               // number — units sold
+    day: 1,                          // number — round number
+    revenue: 0,                      // number ($) — net revenue (after loan shark deduction if applicable)
+    num_products: 3,                 // number
+    avg_price: 5.0,                  // number ($)
+
+    // Station-based sous chef counts (replaces flat staff_count)
+    bakery_sous_chef_count: 0,       // number — Bakery Station (Croissant, Cookie)
+    deli_sous_chef_count: 0,         // number — Deli (Bagel, Sandwich)
+    barista_sous_chef_count: 0,      // number — Barista Station (Coffee, Matcha)
+    maintenance_guy_count: 0,        // number — Maintenance staff
+
+    ad_spend: 0,                     // number ($)
+    customer_count: 0,               // number
+    customer_satisfaction: 0,        // number (0–100)
+    chef_satisfaction_score: 0,      // number (0–100) — kitchen-wide throughput multiplier score
+    headchef_skill: 0,               // number (0–100)
+
+    // Maintenance state (averages across the round)
+    avg_cleanliness_pct: 0,          // number (0–100)
+    avg_machine_health_pct: 0,       // number (0–100) — average of oven, slicer, espresso health
+
+    // Units sold per product
+    croissant: 0,
     cookie: 0,
     bagel: 0,
     sandwich: 0,
-    latte: 0,
-    matcha_latte: 0,
-    ad_type: "none",           // string — ad type won this round, or "none"
+    coffee: 0,
+    matcha: 0,
+
+    ad_type: "none",                 // string — ad type won this round, or "none"
   },
 };
 

@@ -5,7 +5,20 @@ import {
   type ReactNode,
   type Dispatch,
 } from "react";
-import type { GameState, GamePhase, Player, RoundResult } from "../types/game";
+import type {
+  GameState,
+  GamePhase,
+  Player,
+  RoundResult,
+  MaintenanceBars,
+} from "../types/game";
+
+const initialMaintenanceBars: MaintenanceBars = {
+  cleanliness: 100,
+  ovenHealth: 100,
+  slicerHealth: 100,
+  espressoHealth: 100,
+};
 
 const initialState: GameState = {
   gameId: null,
@@ -17,6 +30,8 @@ const initialState: GameState = {
   players: [],
   roundResults: [],
   timeRemaining: null,
+  maintenanceBars: initialMaintenanceBars,
+  chefSatisfactionScores: {},
 };
 
 type GameAction =
@@ -27,6 +42,8 @@ type GameAction =
   | { type: "ADD_RESULT"; payload: RoundResult }
   | { type: "SET_TIMER"; payload: number | null }
   | { type: "UPDATE_PLAYER"; payload: Partial<Player> }
+  | { type: "SET_MAINTENANCE_BARS"; payload: MaintenanceBars }
+  | { type: "SET_CHEF_SATISFACTION"; payload: Record<string, number> }
   | { type: "RESET" };
 
 function gameReducer(state: GameState, action: GameAction): GameState {
@@ -57,6 +74,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       return {
         ...state,
         roundResults: [...state.roundResults, action.payload],
+        maintenanceBars: action.payload.maintenanceBars,
       };
 
     case "SET_TIMER":
@@ -67,6 +85,12 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         ...state,
         player: state.player ? { ...state.player, ...action.payload } : null,
       };
+
+    case "SET_MAINTENANCE_BARS":
+      return { ...state, maintenanceBars: action.payload };
+
+    case "SET_CHEF_SATISFACTION":
+      return { ...state, chefSatisfactionScores: action.payload };
 
     case "RESET":
       return initialState;

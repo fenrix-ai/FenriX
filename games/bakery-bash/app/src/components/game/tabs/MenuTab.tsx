@@ -6,15 +6,16 @@ interface MenuEntry {
   name: string;
   basePrice: number;
   unlocked: boolean;
+  station: string;
 }
 
 const MENU_ITEMS: MenuEntry[] = [
-  { id: "croissant", name: "Croissant", basePrice: 3.5, unlocked: true },
-  { id: "cookie", name: "Cookie", basePrice: 2.0, unlocked: true },
-  { id: "bagel", name: "Bagel", basePrice: 4.0, unlocked: true },
-  { id: "sandwich", name: "Sandwich", basePrice: 7.0, unlocked: false },
-  { id: "latte", name: "Latte", basePrice: 5.0, unlocked: false },
-  { id: "matcha-latte", name: "Matcha Latte", basePrice: 6.0, unlocked: false },
+  { id: "croissant", name: "Croissant", basePrice: 4.75, unlocked: true,  station: "Bakery Station" },
+  { id: "cookie",    name: "Cookie",    basePrice: 2.50, unlocked: true,  station: "Bakery Station" },
+  { id: "bagel",     name: "Bagel",     basePrice: 3.00, unlocked: true,  station: "Deli" },
+  { id: "sandwich",  name: "Sandwich",  basePrice: 8.75, unlocked: false, station: "Deli" },
+  { id: "coffee",    name: "Coffee",    basePrice: 4.00, unlocked: false, station: "Barista Station" },
+  { id: "matcha",    name: "Matcha",    basePrice: 6.25, unlocked: false, station: "Barista Station" },
 ];
 
 export function MenuTab() {
