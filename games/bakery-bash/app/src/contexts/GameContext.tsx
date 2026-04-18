@@ -9,17 +9,22 @@ import {
   PRODUCT_KEYS,
   BASE_MENU,
   AD_TYPES,
+  DEFAULT_MAINTENANCE_BARS,
+  DEFAULT_STAFF_COUNTS,
   type AdType,
   type AuctionTab,
   type GameConfigParams,
   type GamePhaseString,
   type GameState,
+  type MaintenanceBars,
+  type MaintenanceTask,
   type PendingAdBidsDraft,
   type PendingChefBidsDraft,
   type PendingDecisionDraft,
   type Player,
   type ProductKey,
   type RoundResult,
+  type StaffCounts,
 } from "../types/game";
 
 function buildDefaultDecisionDraft(): PendingDecisionDraft {
@@ -40,6 +45,8 @@ function buildDefaultDecisionDraft(): PendingDecisionDraft {
     quantities,
     sousChefCount: 0,
     sousChefAssignments,
+    staffCounts: { ...DEFAULT_STAFF_COUNTS },
+    maintenanceTasks: [],
   };
 }
 
@@ -73,6 +80,8 @@ const initialState: GameState = {
   decisionSubmitted: false,
   adBidsSubmitted: false,
   chefBidsSubmitted: false,
+  maintenanceBars: { ...DEFAULT_MAINTENANCE_BARS },
+  chefSatisfactionScores: {},
 };
 
 type GameAction =
@@ -101,6 +110,8 @@ type GameAction =
         menu?: Partial<Record<ProductKey, boolean>>;
         quantities?: Partial<Record<ProductKey, number>>;
         sousChefAssignments?: Partial<Record<ProductKey, number>>;
+        staffCounts?: Partial<StaffCounts>;
+        maintenanceTasks?: MaintenanceTask[];
       };
     }
   | {
@@ -115,6 +126,8 @@ type GameAction =
   | { type: "SET_DECISION_SUBMITTED"; payload: boolean }
   | { type: "SET_AD_BIDS_SUBMITTED"; payload: boolean }
   | { type: "SET_CHEF_BIDS_SUBMITTED"; payload: boolean }
+  | { type: "SET_MAINTENANCE_BARS"; payload: MaintenanceBars }
+  | { type: "SET_CHEF_SATISFACTION"; payload: Record<string, number> }
   | { type: "RESET" };
 
 function gameReducer(state: GameState, action: GameAction): GameState {
@@ -159,11 +172,22 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         phase: "decide",
       };
 
-    case "ADD_RESULT":
+    case "ADD_RESULT": {
+      const result = action.payload;
       return {
         ...state,
-        roundResults: [...state.roundResults, action.payload],
+        roundResults: [...state.roundResults, result],
+        // Mirror maintenance bars / chef satisfaction from the result payload
+        // when the backend includes them. Leave existing state in place if the
+        // fields are absent (pre-BE-1..BE-10 rollout).
+        maintenanceBars: result.maintenanceBars
+          ? { ...result.maintenanceBars }
+          : state.maintenanceBars,
+        chefSatisfactionScores: result.chefSatisfactionScores
+          ? { ...result.chefSatisfactionScores }
+          : state.chefSatisfactionScores,
       };
+    }
 
     case "SET_TIMER":
       return { ...state, timeRemaining: action.payload };
@@ -200,6 +224,16 @@ function gameReducer(state: GameState, action: GameAction): GameState {
               ...action.payload.sousChefAssignments,
             }
           : state.pendingDecision.sousChefAssignments,
+        staffCounts: action.payload.staffCounts
+          ? {
+              ...state.pendingDecision.staffCounts,
+              ...action.payload.staffCounts,
+            }
+          : state.pendingDecision.staffCounts,
+        maintenanceTasks:
+          action.payload.maintenanceTasks !== undefined
+            ? action.payload.maintenanceTasks
+            : state.pendingDecision.maintenanceTasks,
       };
       return { ...state, pendingDecision: next };
     }
@@ -241,6 +275,12 @@ function gameReducer(state: GameState, action: GameAction): GameState {
 
     case "SET_CHEF_BIDS_SUBMITTED":
       return { ...state, chefBidsSubmitted: action.payload };
+
+    case "SET_MAINTENANCE_BARS":
+      return { ...state, maintenanceBars: { ...action.payload } };
+
+    case "SET_CHEF_SATISFACTION":
+      return { ...state, chefSatisfactionScores: { ...action.payload } };
 
     case "RESET":
       return initialState;

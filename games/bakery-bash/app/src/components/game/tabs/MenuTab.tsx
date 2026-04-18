@@ -2,13 +2,16 @@ import { useGame, useGameDispatch } from "../../../contexts/GameContext";
 import {
   BASE_MENU,
   PRODUCT_KEYS,
+  PRODUCT_STATION,
   type ProductKey,
+  type StationId,
 } from "../../../types/game";
 
 /**
  * Product display metadata. Prices are fixed per FRONTEND.md rule #2 — no
  * price inputs, read-only labels only. Matches backend
- * `config.js::PRODUCT_CATALOG`.
+ * `config.js::PRODUCT_CATALOG`. Station is display-only and never submitted
+ * (the backend derives it from the product key).
  */
 const PRODUCT_DISPLAY: Record<ProductKey, { name: string; price: number }> = {
   croissant: { name: "Croissant", price: 4.75 },
@@ -17,6 +20,12 @@ const PRODUCT_DISPLAY: Record<ProductKey, { name: string; price: number }> = {
   sandwich: { name: "Sandwich", price: 8.75 },
   coffee: { name: "Coffee", price: 4.0 },
   matcha: { name: "Matcha", price: 6.25 },
+};
+
+const STATION_LABEL: Record<StationId, string> = {
+  bakery: "Bakery Station",
+  deli: "Deli",
+  barista: "Barista Station",
 };
 
 export function MenuTab() {
@@ -67,6 +76,9 @@ export function MenuTab() {
             >
               <div className="menu-tab__item-info">
                 <span className="menu-tab__item-name">{display.name}</span>
+                <span className="menu-tab__item-station">
+                  {STATION_LABEL[PRODUCT_STATION[product]]}
+                </span>
                 <span className="menu-tab__item-price">
                   ${display.price.toFixed(2)}
                 </span>

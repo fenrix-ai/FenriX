@@ -139,6 +139,80 @@ export const OPTIONAL_MENU: ProductKey[] = ["sandwich", "coffee", "matcha"];
 export type MenuItemId = ProductKey;
 
 // ---------------------------------------------------------------------------
+// Stations + maintenance (game-design-proposal integration)
+// ---------------------------------------------------------------------------
+
+/**
+ * Kitchen station identifiers. Each station owns a subset of products and one
+ * piece of equipment whose health contributes to the per-station modifier.
+ *
+ *   bakery  → croissant + cookie, Oven
+ *   deli    → bagel + sandwich,   Meat Slicer
+ *   barista → coffee + matcha,    Espresso Machine
+ */
+export type StationId = "bakery" | "deli" | "barista";
+
+/** Product → station mapping (mirrors backend `config.PRODUCT_CATALOG`). */
+export const PRODUCT_STATION: Record<ProductKey, StationId> = {
+  croissant: "bakery",
+  cookie: "bakery",
+  bagel: "deli",
+  sandwich: "deli",
+  coffee: "barista",
+  matcha: "barista",
+};
+
+/**
+ * Assignable tasks for a Maintenance Guy. `clean` restores cleanliness; the
+ * three `repair_*` options restore the machine attached to the named station.
+ * Array length in `PendingDecisionDraft.maintenanceTasks` must equal
+ * `staffCounts.maintenanceGuys`.
+ */
+export type MaintenanceTask =
+  | "clean"
+  | "repair_oven"
+  | "repair_slicer"
+  | "repair_espresso";
+
+export const MAINTENANCE_TASKS: MaintenanceTask[] = [
+  "clean",
+  "repair_oven",
+  "repair_slicer",
+  "repair_espresso",
+];
+
+/**
+ * All four maintenance bars, each 0–100. Cloud Functions own these writes;
+ * the client only reads / renders them.
+ */
+export interface MaintenanceBars {
+  cleanliness: number;
+  ovenHealth: number;
+  slicerHealth: number;
+  espressoHealth: number;
+}
+
+/**
+ * Per-station sous chef counts + one maintenance guy bucket. This replaces
+ * the single flat `sousChefCount` once the backend migrates to station-based
+ * staffing. Both shapes are shipped in the decision payload during the
+ * transition (see `PendingDecisionDraft`).
+ */
+export interface StaffCounts {
+  bakerySousChefs: number;
+  deliSousChefs: number;
+  baristaSousChefs: number;
+  maintenanceGuys: number;
+}
+
+/** Sum of sous chef fields only (excludes maintenance guys). */
+export function totalSousChefs(counts: StaffCounts): number {
+  return (
+    counts.bakerySousChefs + counts.deliSousChefs + counts.baristaSousChefs
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Ad + chef types
 // ---------------------------------------------------------------------------
 
@@ -181,13 +255,26 @@ export interface MenuItem {
 
 /**
  * Shape passed to the `submitDecision` Cloud Function. Mirrors
- * backend `decision-validation.js::validateDecision` input.
+ * backend `decision-validation.js::validateDecision` input, plus the new
+ * station-based staffing fields from the game-design-proposal.
+ *
+ * Dual-write note: the backend validator (pre BE-1..BE-10) only reads
+ * `sousChefCount` + `sousChefAssignments` and silently drops unknown keys.
+ * We also send `staffCounts` + `maintenanceTasks` so the backend can start
+ * consuming them the moment the maintenance overhaul lands, with no
+ * coordinated frontend release required.
  */
 export interface PendingDecisionDraft {
   menu: Record<ProductKey, boolean>;
   quantities: Record<ProductKey, number>;
+  /** Legacy flat count — derived from the sous-chef fields of `staffCounts`. */
   sousChefCount: number;
+  /** Legacy per-product assignments — derived by spreading station counts. */
   sousChefAssignments: Record<ProductKey, number>;
+  /** Station-based sous chef counts + maintenance guys. */
+  staffCounts: StaffCounts;
+  /** One task per maintenance guy; length must equal `staffCounts.maintenanceGuys`. */
+  maintenanceTasks: MaintenanceTask[];
 }
 
 /** Shape passed as `adBids` to `submitBids({ bidType: "ad" })`. */
@@ -207,6 +294,8 @@ export type PendingChefBidsDraft = Record<string, number>;
 export interface GameConfigParams {
   // Canonical (backend config.js)
   sousChefBaseCost?: number;
+  /** Per-hire base cost for Maintenance Guys. Defaults to the sous chef cost. */
+  maintenanceBaseCost?: number;
   startingBudget?: number;
   unitCostPerProduct?: number;
   phaseDurations?: Record<string, number>;
@@ -216,6 +305,12 @@ export interface GameConfigParams {
   costPerStaffPerRound?: number;
 }
 
+/**
+ * Round-result shape. The maintenance / chef-satisfaction fields are marked
+ * optional because they are only emitted by the backend once BE-1..BE-10
+ * (maintenance system + chef satisfaction overhaul) ship. Consumers must
+ * render gracefully when they are missing.
+ */
 export interface RoundResult {
   round: number;
   revenue: number;
@@ -225,6 +320,18 @@ export interface RoundResult {
     adWon: AdType | null;
     chefWon: string | null;
   };
+  /** Aggregate chef-satisfaction 0–100 (average across specialty chefs). */
+  chefSatisfactionScore?: number;
+  /** Per-chef satisfaction map `{ chefId: 0-100 }`. */
+  chefSatisfactionScores?: Record<string, number>;
+  /** Maintenance bar snapshot at the end of this round. */
+  maintenanceBars?: MaintenanceBars;
+  /** Chef ids that voluntarily left this round (satisfaction ≤ 30%). */
+  chefDepartures?: string[];
+  /** Optional display names matched to `chefDepartures` ids, in order. */
+  chefDepartureNames?: string[];
+  /** Station-based staff counts the player submitted for this round. */
+  staffCounts?: StaffCounts;
 }
 
 export interface Player {
@@ -258,4 +365,30 @@ export interface GameState {
   adBidsSubmitted: boolean;
   /** Local flag — true after a successful `submitBids` (chef) this round. */
   chefBidsSubmitted: boolean;
+  /**
+   * Live maintenance bars — owned by Cloud Functions, mirrored here via a
+   * Firestore listener. Defaults to 100% for all bars before the first round.
+   */
+  maintenanceBars: MaintenanceBars;
+  /**
+   * Per-specialty-chef satisfaction 0–100. Written by Cloud Functions during
+   * simulation; renders the low-satisfaction warnings on the results screen.
+   */
+  chefSatisfactionScores: Record<string, number>;
 }
+
+/** Default maintenance bars (all 100%) used on game start / context reset. */
+export const DEFAULT_MAINTENANCE_BARS: MaintenanceBars = {
+  cleanliness: 100,
+  ovenHealth: 100,
+  slicerHealth: 100,
+  espressoHealth: 100,
+};
+
+/** Default per-station staff counts (all zero). */
+export const DEFAULT_STAFF_COUNTS: StaffCounts = {
+  bakerySousChefs: 0,
+  deliSousChefs: 0,
+  baristaSousChefs: 0,
+  maintenanceGuys: 0,
+};
