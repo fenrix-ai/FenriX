@@ -40,7 +40,6 @@ function totalRoleCost(base: number, count: number): number {
   return total;
 }
 
-const BAR_WARNING_THRESHOLD = 30;
 const OVERCROWDING_THRESHOLD = 4;
 const MAX_PER_ROLE = 20;
 
@@ -50,36 +49,6 @@ const MAINTENANCE_TASK_LABELS: Record<MaintenanceTask, string> = {
   repair_slicer: "Repair Meat Slicer (Deli)",
   repair_espresso: "Repair Espresso Machine (Barista)",
 };
-
-interface BarProps {
-  label: string;
-  value: number;
-}
-function StatusBar({ label, value }: BarProps) {
-  const warn = value <= BAR_WARNING_THRESHOLD;
-  const clamped = Math.max(0, Math.min(100, value));
-  return (
-    <div
-      className={`staff-tab__bar-row ${
-        warn ? "staff-tab__bar-row--warn" : ""
-      }`}
-    >
-      <span className="staff-tab__bar-label">
-        {warn && <span aria-hidden>⚠</span>} {label}
-      </span>
-      <div className="staff-tab__bar-track" aria-hidden>
-        <div
-          className="staff-tab__bar-fill"
-          style={{
-            width: `${clamped}%`,
-            background: warn ? "var(--berry)" : "var(--sage)",
-          }}
-        />
-      </div>
-      <span className="staff-tab__bar-pct">{Math.round(clamped)}%</span>
-    </div>
-  );
-}
 
 interface StepperProps {
   title: string;
@@ -138,7 +107,7 @@ function RoleStepper({
 }
 
 export function StaffTab() {
-  const { config, maintenanceBars, pendingDecision } = useGame();
+  const { config, pendingDecision } = useGame();
   const dispatch = useGameDispatch();
 
   const sousBase =
@@ -201,28 +170,14 @@ export function StaffTab() {
 
   return (
     <div className="staff-tab">
-      <h3 className="sidebar-tab__title">Kitchen Staff</h3>
+      <h3 className="sidebar-tab__title">Hire Staff</h3>
       <p className="sidebar-tab__hint">
         Hire sous chefs per station and maintenance guys to keep the kitchen
         running. More than {OVERCROWDING_THRESHOLD} sous chefs hurts kitchen
-        coordination.
+        coordination. Check the <strong>Status</strong> tab for machine health.
       </p>
 
-      {/* 1. Maintenance status bars (read-only) */}
-      <div className="staff-tab__bars" aria-label="Maintenance status">
-        <StatusBar label="Cleanliness" value={maintenanceBars.cleanliness} />
-        <StatusBar label="Oven Health" value={maintenanceBars.ovenHealth} />
-        <StatusBar
-          label="Meat Slicer Health"
-          value={maintenanceBars.slicerHealth}
-        />
-        <StatusBar
-          label="Espresso Machine"
-          value={maintenanceBars.espressoHealth}
-        />
-      </div>
-
-      {/* 2. Three sous chef station steppers */}
+      {/* Three sous chef station steppers */}
       <div className="staff-tab__stations">
         <RoleStepper
           title="Bakery Station"
@@ -272,7 +227,7 @@ export function StaffTab() {
         </p>
       )}
 
-      {/* 3. Maintenance Guy stepper + per-guy task assignment */}
+      {/* Maintenance Guy stepper + per-guy task assignment */}
       <div className="staff-tab__maintenance">
         <RoleStepper
           title="Maintenance Guy"
@@ -314,7 +269,7 @@ export function StaffTab() {
         )}
       </div>
 
-      {/* 4. Grand total */}
+      {/* Grand total */}
       <div className="staff-tab__grand-total">
         Total staffing cost this round:{" "}
         <strong>${grandTotal.toLocaleString()}</strong>
