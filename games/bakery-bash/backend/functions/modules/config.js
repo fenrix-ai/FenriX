@@ -134,7 +134,7 @@ const SATISFACTION_TIERS = [
 
 const DEFAULT_GAME_CONFIG = {
   startingBudget: 500000,
-  sousChefBaseCost: 50,
+  sousChefBaseCost: 12500,
   unitCostPerProduct: 1,
 
   revenueCoefficients: {

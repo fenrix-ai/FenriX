@@ -40,9 +40,6 @@ const db = getFirestore();
 // ---------------------------------------------------------------------------
 
 const {
-  PRODUCT_CATALOG,
-  PRODUCT_KEYS,
-  AD_TYPES,
   DEFAULT_GAME_CONFIG,
   mergeConfig,
   numberOrDefault,
@@ -52,12 +49,10 @@ const {
 
 const {
   parsePhase,
-  formatPhase,
   getNextPhase,
   getPhaseDuration,
   canSubmitDecision,
   canSubmitBids,
-  isGameActive,
 } = require('./modules/phases');
 
 const {
@@ -718,12 +713,24 @@ exports.advanceGamePhase = onCall(async (request) => {
       // Run simulation and persist results; then transition to results_ready.
       await runSimulationAndPersist(gameRef, round, config);
 
-      // Transition to results_ready once the sim is done.
-      await gameRef.update({
-        phase: 'results_ready',
-        phaseStartedAt: FieldValue.serverTimestamp(),
-        phaseEndsAt: phaseEndsAtFromNow('results_ready', config),
-        updatedAt: FieldValue.serverTimestamp(),
+      // RACE-2 fix: wrap the simulating→results_ready transition in a
+      // transaction that verifies phase is still 'simulating'. This prevents
+      // a concurrent advanceGamePhase from corrupting the state, and makes
+      // the transition retryable if the process crashes mid-way.
+      await db.runTransaction(async (tx) => {
+        const gSnap = await tx.get(gameRef);
+        if (!gSnap.exists || gSnap.get('phase') !== 'simulating') {
+          logger.warn('simulating→results_ready aborted: phase changed.', {
+            gameId, currentPhase: gSnap.exists ? gSnap.get('phase') : 'deleted',
+          });
+          return;
+        }
+        tx.update(gameRef, {
+          phase: 'results_ready',
+          phaseStartedAt: FieldValue.serverTimestamp(),
+          phaseEndsAt: phaseEndsAtFromNow('results_ready', config),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
       });
     }
 
@@ -835,7 +842,6 @@ async function runSimulationAndPersist(gameRef, round, config) {
   //   2. set  players/{uid}/rounds/{round}
   //   3. set  csvRows/{uid}/rounds/{round}
   const OPS_PER_PLAYER = 3;
-  const PLAYERS_PER_BATCH = Math.floor(BATCH_OP_LIMIT / OPS_PER_PLAYER);
 
   let batch = db.batch();
   let opsInBatch = 0;
@@ -993,25 +999,31 @@ async function persistConclusion(gameRef, totalRounds, config) {
       chunk.map(async (pd) => {
         const p = pd.data() || {};
         const roundsSnap = await pd.ref.collection('rounds').get();
-        let totalRevenue = 0;
+        // LOGIC-2 fix: sum revenueNet (already post-loan-shark) to be
+        // consistent with per-round leaderboard. Keep gross/borrowed/interest
+        // for the conclusion breakdown display.
+        let totalRevenueNet = 0;
+        let totalRevenueGross = 0;
         let totalBorrowed = 0;
         let totalInterest = 0;
         for (const rd of roundsSnap.docs) {
           const rr = rd.data() || {};
-          totalRevenue += numberOrDefault(rr.revenueGross, 0);
+          totalRevenueNet += numberOrDefault(rr.revenueNet, 0);
+          totalRevenueGross += numberOrDefault(rr.revenueGross, 0);
           totalBorrowed += numberOrDefault(rr.amountBorrowed, 0);
           totalInterest += numberOrDefault(rr.interestCharged, 0);
         }
-        const netRevenue = totalRevenue - totalInterest - totalBorrowed;
+        const netRevenue = totalRevenueNet;
         return {
           playerId: pd.id,
           displayName: p.displayName || 'Player',
           bakeryName: p.bakeryName || '',
-          totalRevenue,
+          totalRevenue: totalRevenueGross,
           totalBorrowed,
           totalInterest,
           netRevenue,
           budgetRemaining: numberOrDefault(p.budgetCurrent, 0),
+          specialtyChefs: Array.isArray(p.specialtyChefs) ? p.specialtyChefs : [],
         };
       })
     );
@@ -1084,10 +1096,13 @@ exports.submitDecision = onCall(async (request) => {
       ...validated,
     });
 
+    // BUG-1 fix: FieldValue.serverTimestamp() is invalid inside a nested
+    // map — Firestore only allows sentinels at top-level fields. Use
+    // Timestamp.now() for the nested submittedAt.
     transaction.update(playerRef, {
       pendingDecision: {
         submitted: true,
-        submittedAt: FieldValue.serverTimestamp(),
+        submittedAt: Timestamp.now(),
         round: currentRound,
         menu: validated.menu || {},
         quantities: validated.quantities || {},
@@ -1188,9 +1203,11 @@ exports.layoffChef = onCall(async (request) => {
   const playerRef = gameRef.collection('players').doc(uid);
 
   await db.runTransaction(async (transaction) => {
-    const [gSnap, pSnap] = await Promise.all([
+    // LOGIC-1 fix: read config to get specialtyChefCap instead of hardcoding 3.
+    const [gSnap, pSnap, cfgSnap] = await Promise.all([
       transaction.get(gameRef),
       transaction.get(playerRef),
+      transaction.get(gameRef.collection('config').doc('params')),
     ]);
     if (!gSnap.exists) throw new HttpsError('not-found', 'Game not found.');
     if (!pSnap.exists) throw new HttpsError('failed-precondition', 'Player not in this game.');
@@ -1200,6 +1217,9 @@ exports.layoffChef = onCall(async (request) => {
     if (phase !== 'roster') {
       throw new HttpsError('failed-precondition', 'Chefs can only be laid off during the roster phase.');
     }
+
+    const config = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
+    const specialtyChefCap = numberOrDefault(config.specialtyChefCap, 3);
 
     const player = pSnap.data();
     const specialtyChefs = Array.isArray(player.specialtyChefs) ? player.specialtyChefs : [];
@@ -1226,7 +1246,7 @@ exports.layoffChef = onCall(async (request) => {
 
     transaction.update(playerRef, {
       specialtyChefs: remaining,
-      pendingRosterAction: remaining.length > 3,
+      pendingRosterAction: remaining.length > specialtyChefCap,
       updatedAt: FieldValue.serverTimestamp(),
     });
   });
@@ -1249,9 +1269,11 @@ exports.continueFromRoster = onCall(async (request) => {
 
   await db.runTransaction(async (transaction) => {
     // MED-05 fix: read game doc to validate phase is 'roster'.
-    const [gSnap, pSnap] = await Promise.all([
+    // LOGIC-1 fix: read config for specialtyChefCap instead of hardcoding 3.
+    const [gSnap, pSnap, cfgSnap] = await Promise.all([
       transaction.get(gameRef),
       transaction.get(playerRef),
+      transaction.get(gameRef.collection('config').doc('params')),
     ]);
     if (!gSnap.exists) throw new HttpsError('not-found', 'Game not found.');
     if (!pSnap.exists) throw new HttpsError('failed-precondition', 'Player not in this game.');
@@ -1262,10 +1284,14 @@ exports.continueFromRoster = onCall(async (request) => {
       throw new HttpsError('failed-precondition', 'Roster actions are only allowed during the roster phase.');
     }
 
+    const config = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
+    const specialtyChefCap = numberOrDefault(config.specialtyChefCap, 3);
+
     const player = pSnap.data();
     const count = Array.isArray(player.specialtyChefs) ? player.specialtyChefs.length : 0;
-    if (count > 3) {
-      throw new HttpsError('failed-precondition', 'Lay off chefs until you have at most 3.');
+    if (count > specialtyChefCap) {
+      throw new HttpsError('failed-precondition',
+        `Lay off chefs until you have at most ${specialtyChefCap}.`);
     }
 
     transaction.update(playerRef, {
@@ -1318,39 +1344,51 @@ exports.endGame = onCall(async (request) => {
   const gameId = cleanGameId((request.data || {}).gameId);
   const gameRef = gameDoc(gameId);
 
-  const snap = await gameRef.get();
-  if (!snap.exists) throw new HttpsError('not-found', 'Game not found.');
-  if (snap.get('professorUid') !== auth.uid && snap.get('professorId') !== auth.uid) {
-    throw new HttpsError('permission-denied', 'Only the professor can end this game.');
-  }
+  // RACE-1 fix: wrap permission check + phase guard + phase write in a
+  // transaction to prevent double-end from concurrent professor clicks.
+  let config = null;
+  let totalRounds = 5;
+  let alreadyEnded = false;
 
-  const config = await loadGameConfig(gameRef);
-  const totalRounds = numberOrDefault(snap.get('totalRounds'), config.totalRounds);
+  await db.runTransaction(async (transaction) => {
+    const [gSnap, cfgSnap] = await Promise.all([
+      transaction.get(gameRef),
+      transaction.get(gameRef.collection('config').doc('params')),
+    ]);
+    if (!gSnap.exists) throw new HttpsError('not-found', 'Game not found.');
+    if (gSnap.get('professorUid') !== auth.uid && gSnap.get('professorId') !== auth.uid) {
+      throw new HttpsError('permission-denied', 'Only the professor can end this game.');
+    }
 
-  // HIGH-12 fix: if game is already game_over but conclusion is missing
-  // (crash between phase write and conclusion), allow retry of conclusion.
-  if (snap.get('phase') === 'game_over') {
+    config = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
+    totalRounds = numberOrDefault(gSnap.get('totalRounds'), config.totalRounds);
+
+    if (gSnap.get('phase') === 'game_over') {
+      alreadyEnded = true;
+      return; // skip write; handle conclusion check outside transaction
+    }
+
+    transaction.update(gameRef, {
+      phase: 'game_over',
+      phaseEndsAt: null,
+      endedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+
+  // If game was already game_over, check if conclusion exists.
+  if (alreadyEnded) {
     const conclusionSnap = await gameRef.collection('conclusion').doc('final').get();
     if (conclusionSnap.exists) {
       return { gameId, phase: 'game_over', alreadyEnded: true };
     }
-    // Conclusion missing — fall through to recompute it.
     logger.warn('endGame: game_over but no conclusion — recomputing.', { gameId });
     await persistConclusion(gameRef, totalRounds, config);
     return { gameId, phase: 'game_over', conclusionRecomputed: true };
   }
 
-  // Compute conclusion BEFORE writing game_over phase, so a crash between
-  // the two leaves the game in its previous phase (retryable), not stuck
-  // in game_over with no conclusion.
+  // Compute conclusion after transaction (expensive, side-effect).
   await persistConclusion(gameRef, totalRounds, config);
-
-  await gameRef.update({
-    phase: 'game_over',
-    phaseEndsAt: null,
-    endedAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
-  });
 
   return { gameId, phase: 'game_over' };
 });

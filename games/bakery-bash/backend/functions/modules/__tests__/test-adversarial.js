@@ -78,6 +78,11 @@ function assertNonNegative(val, msg) {
   assert(val >= 0, `${msg || 'Value'} ${val} should be non-negative`);
 }
 
+// Budget can go negative per spec — just verify it's a real number.
+function assertFiniteBudget(val, msg) {
+  assert(Number.isFinite(val), `${msg || 'Budget'} ${val} should be finite`);
+}
+
 // ============================================================================
 // TASK 1: ADVERSARIAL INPUT FUZZING
 // ============================================================================
@@ -1259,7 +1264,7 @@ test('runSimulation: player with no decision → defaults applied', () => {
   assertNoThrow(() => {
     const results = simulation.runSimulation(players, prefs, defaultCfg);
     assert(results.length === 1, 'one player result');
-    assertNonNegative(results[0].budgetAfter, 'budgetAfter non-negative');
+    assertFiniteBudget(results[0].budgetAfter, 'budgetAfter finite');
   }, 'player with no decision should not crash');
 }, 'HIGH');
 
@@ -1283,7 +1288,7 @@ test('runSimulation: player with malformed decision strings', () => {
   assertNoThrow(() => {
     const results = simulation.runSimulation(players, prefs, defaultCfg);
     assert(results.length === 1, 'malformed decision still produces result');
-    assertNonNegative(results[0].budgetAfter, 'malformed decision: budgetAfter non-negative');
+    assertFiniteBudget(results[0].budgetAfter, 'malformed decision: budgetAfter finite');
   }, 'malformed decision strings should not crash simulation');
 }, 'HIGH');
 
@@ -1301,7 +1306,7 @@ test('runSimulation: NaN budget player → budgetAfter non-negative', () => {
   const prefs = { modifiers: { coffee: 1.0, croissant: 1.0, bagel: 1.0, cookie: 1.0, sandwich: 1.0, matcha: 1.0 } };
   assertNoThrow(() => {
     const results = simulation.runSimulation(players, prefs, defaultCfg);
-    assertNonNegative(results[0].budgetAfter, 'NaN budget → budgetAfter non-negative');
+    assertFiniteBudget(results[0].budgetAfter, 'NaN budget → budgetAfter finite');
   }, 'NaN budget should not crash');
 }, 'HIGH');
 
@@ -1348,7 +1353,7 @@ test('runSimulation: 10000-element arrays (overflow test)', () => {
     const results = simulation.runSimulation(bigArray, prefs, defaultCfg);
     assert(results.length === 50, '50 players → 50 results');
     for (const r of results) {
-      assertNonNegative(r.budgetAfter, `${r.playerId} budgetAfter non-negative`);
+      assertFiniteBudget(r.budgetAfter, `${r.playerId} budgetAfter finite`);
       assertFinite(r.revenueGross, `${r.playerId} revenueGross finite`);
     }
   }, '50 player simulation should not crash');
@@ -1458,11 +1463,11 @@ function runBalanceTest(label, cfg, numPlayers = 5, severity = 'HIGH') {
     makeTypicalPlayer(`p${i}`, cfg)
   );
 
-  test(`[${label}] No player goes negative budget`, () => {
+  test(`[${label}] All player budgets are finite (can be negative per spec)`, () => {
     const results = simulation.runSimulation(players, standardPrefs, cfg);
     for (const r of results) {
-      if (r.budgetAfter < 0) {
-        throw new Error(`Player ${r.playerId} budgetAfter is negative: ${r.budgetAfter} — budget floor not applied`);
+      if (!Number.isFinite(r.budgetAfter)) {
+        throw new Error(`Player ${r.playerId} budgetAfter is non-finite: ${r.budgetAfter}`);
       }
     }
   }, severity);
@@ -1548,7 +1553,7 @@ test('[Config A] Starting budget with no spending → budget increases after fir
   player.auctionResults = {};
   const results = simulation.runSimulation([player], standardPrefs, configA);
   const r = results[0];
-  assertNonNegative(r.budgetAfter, 'no-op player budgetAfter non-negative');
+  assertFiniteBudget(r.budgetAfter, 'no-op player budgetAfter finite');
   // Revenue should still include base + noise even with no products
   assertFinite(r.revenueGross, 'no-op player revenueGross finite');
 }, 'MEDIUM');
@@ -1565,7 +1570,7 @@ test('[Config B] Player with budget 3000 cannot spend more without borrowing', (
   // Should have borrowed
   assert(r.amountBorrowed > 0, `Config B overspend should trigger borrowing, borrowed: ${r.amountBorrowed}`);
   // Budget should still be non-negative
-  assertNonNegative(r.budgetAfter, 'Config B overspend: budgetAfter non-negative');
+  assertFiniteBudget(r.budgetAfter, 'Config B overspend: budgetAfter finite');
 }, 'HIGH');
 
 test('[Config C] Generous config: player budget grows substantially after round', () => {
@@ -1573,7 +1578,7 @@ test('[Config C] Generous config: player budget grows substantially after round'
   player.decision.quantities = { croissant: 200, bagel: 150, cookie: 100, sandwich: 0, coffee: 0, matcha: 0 };
   const results = simulation.runSimulation([player], standardPrefs, configC);
   const r = results[0];
-  assertNonNegative(r.budgetAfter, 'Config C: budgetAfter non-negative');
+  assertFiniteBudget(r.budgetAfter, 'Config C: budgetAfter finite');
   // With generous config (high base revenue, low costs), budget should go up
   // Not guaranteed due to noise, but should not be catastrophically low
   assert(r.revenueGross > 0, 'Config C: revenueGross positive');
@@ -1598,8 +1603,9 @@ test('[Balance] Satisfaction range 0-100 for all fill rates', () => {
   }
 }, 'HIGH');
 
-test('[Balance] Budget floor is 0 — simulation.js applies Math.max(0, ...)', () => {
-  // Player with very low budget and high spending: loan shark + bad revenue
+test('[Balance] Budget CAN go negative (spec allows it) — no Math.max(0) clamp', () => {
+  // Player with very low budget and high spending: loan shark + bad revenue.
+  // Spec says budgets CAN go negative; verify we don’t clamp.
   const player = makeTypicalPlayer('p_broke', configA);
   player.budgetCurrent = 1;
   // Overspend massively
@@ -1609,7 +1615,9 @@ test('[Balance] Budget floor is 0 — simulation.js applies Math.max(0, ...)', (
   player.auctionResults = { adBidPaid: 5000, chefBidPaid: 2000 };
   const results = simulation.runSimulation([player], standardPrefs, configA);
   const r = results[0];
-  assertNonNegative(r.budgetAfter, `Budget floor not 0 for bankrupt player: ${r.budgetAfter}`);
+  assertFiniteBudget(r.budgetAfter, 'bankrupt player budgetAfter should be finite (can be negative)');
+  // With massive overspending, budget should go negative
+  assert(r.budgetAfter < 0, `Expected negative budget for massively overspending player, got ${r.budgetAfter}`);
 }, 'CRITICAL');
 
 test('[Balance] Chef satisfaction floor applied at 35', () => {

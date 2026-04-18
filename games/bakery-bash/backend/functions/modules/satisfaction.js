@@ -245,7 +245,8 @@ function getFootTrafficModifier(
  * @returns {number} number of returning customers (not rounded — caller rounds if needed)
  */
 function getReturningCustomerBonus(aggregateSatisfactionPct, priorRoundCustomerCount, config) {
-  const { excellent, good } = config.returningCustomerBonuses;
+  const bonuses = (config && config.returningCustomerBonuses) || { excellent: 0.15, good: 0.08 };
+  const { excellent, good } = bonuses;
   const count = Math.max(0, Number(priorRoundCustomerCount) || 0);
   if (aggregateSatisfactionPct >= 86) return count * excellent;
   if (aggregateSatisfactionPct >= 66) return count * good;

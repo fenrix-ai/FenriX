@@ -545,7 +545,7 @@ section('A9. Budget Floor');
   const simResult = runSimulation([player], { modifiers: {} }, cfg);
   assert(simResult.length === 1, 'Simulation returns one result');
   assert(typeof simResult[0].budgetAfter === 'number', 'budgetAfter is a number');
-  assert(simResult[0].budgetAfter >= 0, 'budgetAfter is ≥ 0 in simulation (floored)');
+  assert(Number.isFinite(simResult[0].budgetAfter), 'budgetAfter is finite in simulation (can be negative per spec)');
 }
 
 section('A10. Game Creation Defaults');
@@ -768,7 +768,7 @@ for (let round = 1; round <= 4; round++) {
     assertClose(r.revenueNet, expectedNet, `Round ${round} ${r.playerId}: revenueNet = gross - borrowed - interest`);
 
     // Budget after is ≥ 0 (floored in simulation)
-    assert(r.budgetAfter >= 0, `Round ${round} ${r.playerId}: budgetAfter ≥ 0`);
+    assert(Number.isFinite(r.budgetAfter), `Round ${round} ${r.playerId}: budgetAfter is finite`);
 
     // perProductSatisfaction entries
     for (const [product, pps] of Object.entries(r.perProductSatisfaction || {})) {

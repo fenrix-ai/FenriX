@@ -86,7 +86,10 @@ function skillRank(tier) {
  * @returns {Array<object>} chef pool
  */
 function generateChefPool(round, config) {
-  const { min, max } = config.chefPoolSize;
+  const cfg = config || {};
+  const poolSize$ = (cfg.chefPoolSize && cfg.chefPoolSize.min != null)
+    ? cfg.chefPoolSize : { min: 3, max: 6 };
+  const { min, max } = poolSize$;
   const poolSize = Math.floor(Math.random() * (max - min + 1)) + min;
 
   // Clamp round into the spawn-rate table range.
@@ -102,7 +105,9 @@ function generateChefPool(round, config) {
     const name = pick(CHEF_NATIONALITIES[nationality].names[gender]);
     const skillTier = sampleSkillTier(rates);
     const specialties = CHEF_NATIONALITIES[nationality].specialties.slice();
-    const minBidFloor = MIN_BID_FLOOR_MULTIPLIERS[skillTier] * config.sousChefBaseCost;
+    const baseCost = (cfg.sousChefBaseCost != null && Number.isFinite(cfg.sousChefBaseCost))
+      ? cfg.sousChefBaseCost : 12500;
+    const minBidFloor = MIN_BID_FLOOR_MULTIPLIERS[skillTier] * baseCost;
 
     pool.push({
       id: makeId(),
@@ -227,10 +232,14 @@ function calculateTotalProductOutput(product, specialtyChefs, sousChefAssignment
  * @returns {number} satisfaction score in [floor, 100]
  */
 function calculateChefSatisfactionScore(sousChefCount, config) {
+  const cfg = config || {};
   const n = Number.isFinite(sousChefCount) ? Math.max(0, sousChefCount) : 0;
-  const over = Math.max(0, n - config.chefSatisfactionThreshold);
-  const raw = 100 - over * config.chefSatisfactionDecay;
-  return Math.max(config.chefSatisfactionFloor, raw);
+  const threshold = Number.isFinite(cfg.chefSatisfactionThreshold) ? cfg.chefSatisfactionThreshold : 4;
+  const decay = Number.isFinite(cfg.chefSatisfactionDecay) ? cfg.chefSatisfactionDecay : 16;
+  const floor = Number.isFinite(cfg.chefSatisfactionFloor) ? cfg.chefSatisfactionFloor : 35;
+  const over = Math.max(0, n - threshold);
+  const raw = 100 - over * decay;
+  return Math.max(floor, raw);
 }
 
 // ---------------------------------------------------------------------------
@@ -279,7 +288,9 @@ function getSousChefCost(currentCount, config) {
   } else {
     multiplier = 3.0 + 0.75 * (n - 3);
   }
-  return multiplier * config.sousChefBaseCost;
+  const baseCost = (config && Number.isFinite(config.sousChefBaseCost))
+    ? config.sousChefBaseCost : 12500;
+  return multiplier * baseCost;
 }
 
 // ---------------------------------------------------------------------------

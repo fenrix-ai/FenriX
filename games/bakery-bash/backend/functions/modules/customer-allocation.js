@@ -35,7 +35,7 @@ const satisfaction = require('./satisfaction');
  * @returns {Object<string, number>} product → totalDemandPool (rounded).
  */
 function calculateBaseTrafficPool(allPlayersPerProductSatisfaction, roundPreferences, cfg = config) {
-  const catalog = config.PRODUCT_CATALOG;
+  const catalog = (cfg && cfg.PRODUCT_CATALOG) || config.PRODUCT_CATALOG;
   // roundPreferences can be { modifiers: { product: number } } or flat { product: number }
   const modifiers = (roundPreferences && roundPreferences.modifiers)
     ? roundPreferences.modifiers

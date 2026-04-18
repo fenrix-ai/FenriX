@@ -398,12 +398,11 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
     const loanSharkDeduction = loanResult.loanSharkDeduction;
     const revenueNet = revenueGross - loanSharkDeduction;
 
-    // HIGH-07 fix: use the canonical updateBudget formula from loan-shark.js
-    // instead of the incorrect inline version that discarded starting budget
-    // when borrowing occurred.
-    const budgetAfter = Math.max(0, Math.round(
+    // HIGH-07 fix: use the canonical updateBudget formula from loan-shark.js.
+    // Spec says budgets CAN go negative — do NOT clamp at zero.
+    const budgetAfter = Math.round(
       updateBudget(budgetCurrent, revenueNet, totalSpent)
-    ));
+    );
 
     // --- Returning customers earned (for NEXT round) ---
     const returningCustomersEarned = computeReturningCustomersEarned(
