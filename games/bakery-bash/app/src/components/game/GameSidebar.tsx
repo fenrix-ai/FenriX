@@ -1,18 +1,42 @@
+import { useState } from "react";
 import { StaffTab } from "./tabs/StaffTab";
+import { StatusTab } from "./tabs/StatusTab";
 
 /**
- * Right-hand control panel for the decide phase.
+ * Right-hand control panel for the decide phase. Two tabs:
  *
- * Product quantities live directly on the main `BakeryView` (station-grid
- * layout), so the sidebar is dedicated to staffing + maintenance. No tab UI
- * is needed — just render the staff controls. Keeping the `.game-sidebar`
- * wrapper preserves the existing dashboard grid sizing in `global.css`.
+ *  - **Hire** (default): per-station sous-chef steppers, maintenance guys +
+ *    task assignments, escalating hire cost display.
+ *  - **Status**: read-only health/cleanliness bars. Product quantities live
+ *    on the main BakeryView (station grid), not here.
  */
+const TABS = ["Hire", "Status"] as const;
+type Tab = (typeof TABS)[number];
+
 export function GameSidebar() {
+  const [activeTab, setActiveTab] = useState<Tab>("Hire");
+
   return (
     <aside className="game-sidebar">
-      <div className="game-sidebar__panel">
-        <StaffTab />
+      <nav className="game-sidebar__tabs" role="tablist">
+        {TABS.map((tab) => (
+          <button
+            key={tab}
+            role="tab"
+            aria-selected={activeTab === tab}
+            className={`game-sidebar__tab ${
+              activeTab === tab ? "game-sidebar__tab--active" : ""
+            }`}
+            onClick={() => setActiveTab(tab)}
+          >
+            {tab}
+          </button>
+        ))}
+      </nav>
+
+      <div className="game-sidebar__panel" role="tabpanel">
+        {activeTab === "Hire" && <StaffTab />}
+        {activeTab === "Status" && <StatusTab />}
       </div>
     </aside>
   );
