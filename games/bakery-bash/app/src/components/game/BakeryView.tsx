@@ -130,33 +130,50 @@ function ProductTile({
         <span className="product-tile__price">${d.price.toFixed(2)}</span>
       </div>
       {isOnMenu ? (
-        <div className="product-tile__stepper" role="group" aria-label={`${d.name} quantity`}>
-          <button
-            type="button"
-            className="product-tile__step-btn"
-            onClick={() => onQtyChange(Math.max(0, qty - 1))}
-            disabled={qty <= 0}
-            aria-label={`Decrease ${d.name}`}
-          >
-            −
-          </button>
-          <input
-            type="number"
-            className="product-tile__step-value"
-            min={0}
-            step={1}
-            value={qty}
-            onChange={(e) => onQtyChange(parseInt(e.target.value, 10) || 0)}
+        <div className="product-tile__controls">
+          <div
+            className="product-tile__stepper"
+            role="group"
             aria-label={`${d.name} quantity`}
-          />
-          <button
-            type="button"
-            className="product-tile__step-btn"
-            onClick={() => onQtyChange(qty + 1)}
-            aria-label={`Increase ${d.name}`}
           >
-            +
-          </button>
+            <button
+              type="button"
+              className="product-tile__step-btn"
+              onClick={() => onQtyChange(Math.max(0, qty - 1))}
+              disabled={qty <= 0}
+              aria-label={`Decrease ${d.name}`}
+            >
+              −
+            </button>
+            <input
+              type="number"
+              className="product-tile__step-value"
+              min={0}
+              step={1}
+              value={qty}
+              onChange={(e) => onQtyChange(parseInt(e.target.value, 10) || 0)}
+              aria-label={`${d.name} quantity`}
+            />
+            <button
+              type="button"
+              className="product-tile__step-btn"
+              onClick={() => onQtyChange(qty + 1)}
+              aria-label={`Increase ${d.name}`}
+            >
+              +
+            </button>
+          </div>
+          {!isBase && (
+            <button
+              type="button"
+              className="product-tile__remove"
+              onClick={() => onToggle(false)}
+              aria-label={`Remove ${d.name} from menu`}
+              title={`Remove ${d.name} from menu`}
+            >
+              ✕
+            </button>
+          )}
         </div>
       ) : (
         <button

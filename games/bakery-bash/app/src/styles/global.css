@@ -553,11 +553,40 @@ h3 { font-size: 0.7rem; }
   color: var(--sage);
 }
 
+.product-tile__controls {
+  display: flex;
+  align-items: stretch;
+  gap: 0.4rem;
+}
+
 .product-tile__stepper {
   display: flex;
   align-items: center;
   border: var(--border-light);
   background: var(--cream);
+}
+
+.product-tile__remove {
+  font-family: var(--font-pixel);
+  font-size: 0.6rem;
+  width: 28px;
+  border: var(--border-light);
+  background: var(--cream);
+  color: var(--berry);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.product-tile__remove:hover {
+  background: var(--berry);
+  color: var(--flour);
+}
+
+.product-tile__remove:focus-visible {
+  outline: none;
+  border-color: var(--berry);
 }
 
 .product-tile__step-btn {
