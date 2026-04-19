@@ -3,6 +3,7 @@ import { doc, onSnapshot, type DocumentData } from "firebase/firestore";
 import { useGame } from "../contexts/GameContext";
 import { db } from "../lib/firebase";
 import { formatMoney } from "../lib/cost";
+import { readNumber } from "../lib/utils";
 import { PageShell } from "../components/ui/PageShell";
 
 /**
@@ -36,13 +37,6 @@ interface LeaderboardDocument {
   round: number;
   rankings: LeaderboardRanking[];
   updatedAt: { toDate?: () => Date } | null;
-}
-
-function readNumber(...candidates: unknown[]): number | undefined {
-  for (const c of candidates) {
-    if (typeof c === "number" && Number.isFinite(c)) return c;
-  }
-  return undefined;
 }
 
 export function LeaderboardPage() {
@@ -79,7 +73,7 @@ export function LeaderboardPage() {
         setBoardError(null);
       },
       (err) => {
-        console.error("leaderboard/latest listener error:", err);
+        console.error("leaderboard/latest listener error", { gameId, err });
         setBoardError("Could not load the leaderboard.");
         setBoardReady(true);
       },
