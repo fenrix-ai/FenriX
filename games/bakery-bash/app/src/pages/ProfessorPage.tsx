@@ -6,13 +6,11 @@ import {
   type DocumentData,
   type Timestamp,
 } from "firebase/firestore";
-import {
-  httpsCallable,
-  type FunctionsError,
-} from "firebase/functions";
+import { httpsCallable } from "firebase/functions";
 import { useGame } from "../contexts/GameContext";
 import { db, functions } from "../lib/firebase";
 import { PageShell } from "../components/ui/PageShell";
+import { humanizeFunctionError } from "../lib/errors";
 import { parseGamePhase } from "../types/game";
 
 /**
@@ -50,14 +48,6 @@ interface CallableResult {
   paused?: boolean;
 }
 
-function humanizeError(err: unknown, fallback: string): string {
-  if (err && typeof err === "object" && "message" in err) {
-    const fnErr = err as FunctionsError;
-    if (fnErr.message) return fnErr.message;
-  }
-  return fallback;
-}
-
 export function ProfessorPage() {
   const { gameId, currentRound } = useGame();
   const [phase, setPhase] = useState<string | null>(null);
@@ -83,7 +73,7 @@ export function ProfessorPage() {
         setPaused(data.paused === true);
       },
       (err) => {
-        console.error("professor: games/{gameId} listener error:", err);
+        console.error("professor: games listener error", { gameId, err });
       },
     );
     return unsubscribe;
@@ -159,7 +149,7 @@ export function ProfessorPage() {
         setInfo(onSuccessMessage);
       } catch (err) {
         setError(
-          humanizeError(
+          humanizeFunctionError(
             err,
             "Action failed. Confirm you are signed in as the professor for this game.",
           ),

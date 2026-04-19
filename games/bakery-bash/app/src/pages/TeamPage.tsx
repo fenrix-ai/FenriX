@@ -9,6 +9,7 @@ import {
 } from "firebase/firestore";
 import { httpsCallable, type FunctionsError } from "firebase/functions";
 import { db, functions } from "../lib/firebase";
+import { humanizeFunctionError } from "../lib/errors";
 import { useGame, useGameDispatch } from "../contexts/GameContext";
 import { PageShell } from "../components/ui/PageShell";
 import {
@@ -34,10 +35,13 @@ interface RosterEntry {
 interface TeamDoc {
   /** Shared team name (DEC-23). null when nobody has named it yet. */
   name: string | null;
-  /** All UIDs the backend has placed on this team. */
-  memberUids: string[];
-  /** uid → claimed role (DEC-21). Empty until anyone claims. */
-  roleAssignments: Record<string, PlayerRole>;
+  /**
+   * uid → claimed role (DEC-21), or `null` if the player is on the team but
+   * hasn't picked a role yet. The backend (`updateTeamName` / `setTeamRole`
+   * in `backend/functions/index.js`) treats the keys of this map as the
+   * canonical team roster — there is no separate `memberUids` field.
+   */
+  roleAssignments: Record<string, PlayerRole | null>;
 }
 
 const TEAM_NAME_MAX = 40;
@@ -152,11 +156,6 @@ export function TeamPage() {
             typeof data.name === "string" && data.name.length > 0
               ? data.name
               : null,
-          memberUids: Array.isArray(data.memberUids)
-            ? data.memberUids.filter(
-                (uid): uid is string => typeof uid === "string",
-              )
-            : [],
           roleAssignments:
             data.roleAssignments && typeof data.roleAssignments === "object"
               ? sanitizeRoleAssignments(data.roleAssignments)
@@ -202,7 +201,7 @@ export function TeamPage() {
 
   const memberRoster = useMemo(() => {
     if (!team) return [];
-    return team.memberUids.map((uid) => ({
+    return Object.keys(team.roleAssignments).map((uid) => ({
       uid,
       displayName: roster[uid]?.displayName ?? "Teammate",
       isYou: uid === playerId,
@@ -214,7 +213,7 @@ export function TeamPage() {
     if (!team || !playerId) return {};
     const out: Partial<Record<PlayerRole, string>> = {};
     for (const [uid, r] of Object.entries(team.roleAssignments)) {
-      if (uid !== playerId) {
+      if (uid !== playerId && r) {
         out[r] = roster[uid]?.displayName ?? "A teammate";
       }
     }
@@ -309,7 +308,7 @@ export function TeamPage() {
   }
 
   const waitingForAssignment = !teamId || !teamReady || !team;
-  const isSolo = !!team && team.memberUids.length <= 1;
+  const isSolo = !!team && Object.keys(team.roleAssignments).length <= 1;
 
   return (
     <PageShell className="team-page">
@@ -524,8 +523,8 @@ export function TeamPage() {
 
 function sanitizeRoleAssignments(
   raw: Record<string, unknown>,
-): Record<string, PlayerRole> {
-  const out: Record<string, PlayerRole> = {};
+): Record<string, PlayerRole | null> {
+  const out: Record<string, PlayerRole | null> = {};
   for (const [uid, value] of Object.entries(raw)) {
     if (
       value === "operations" ||
@@ -534,6 +533,10 @@ function sanitizeRoleAssignments(
       value === "solo"
     ) {
       out[uid] = value;
+    } else if (value === null || value === undefined) {
+      // Backend seeds members with `null` until they pick — keep the row so
+      // membership (Object.keys) stays accurate.
+      out[uid] = null;
     }
   }
   return out;
@@ -547,18 +550,31 @@ function sanitizeRoleAssignments(
  * gave us.
  */
 function humanizeBackendError(err: unknown, kind: "name" | "role"): string {
+  // Codes thrown by `updateTeamName` / `setTeamRole` in
+  // backend/functions/index.js — keep these in sync with the callable.
   const fnErr = err as FunctionsError | undefined;
   const code = (fnErr?.code || "").split("/").pop();
-  if (code === "not-found" || code === "internal") {
-    return kind === "name"
-      ? "Team naming will be enabled once the professor finalizes teams."
-      : "Role selection will be enabled once the professor finalizes teams.";
+
+  if (code === "already-exists") {
+    // setTeamRole only — another teammate beat you to it.
+    return "A teammate just claimed that role. Pick another.";
   }
   if (code === "permission-denied") {
-    return "Only your teammates can change this.";
+    return "You're not on this team — refresh and try again.";
   }
-  if (fnErr?.message) return fnErr.message;
-  return kind === "name"
-    ? "Could not save team name. Try again."
-    : "Could not save role. Try again.";
+  if (code === "not-found") {
+    return kind === "name"
+      ? "Team not found. The professor may not have finalized teams yet."
+      : "Team not found. The professor may not have finalized teams yet.";
+  }
+  if (code === "invalid-argument") {
+    // Backend rejects names > 64 chars / empty strings.
+    return fnErr?.message ?? "That value isn't allowed.";
+  }
+  return humanizeFunctionError(
+    err,
+    kind === "name"
+      ? "Could not save team name. Try again."
+      : "Could not save role. Try again.",
+  );
 }
