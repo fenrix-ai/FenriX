@@ -1230,6 +1230,112 @@ describe('simulation.js — Integration', () => {
     // We just confirm no phantom $50k+ bonus leaked in.
     ok(r[0].revenueGross < 10000, 'no ad bonus → revenueGross stays in expected range');
   });
+
+  it('runSimulation — Radio winner gets $25k flat bonus (DEC-04)', () => {
+    const makePlayer = (adWon) => ({
+      playerId: 'p1', displayName: 'Solo', bakeryName: 'Solo Bakery',
+      budgetCurrent: 500000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
+      decision: {
+        menu: { croissant: true }, quantities: { croissant: 10 },
+        sousChefCount: 0, sousChefAssignments: {},
+      },
+      auctionResults: { adWon, adBidPaid: 0, chefBidPaid: 0 },
+    });
+    const ctx = { gameId: 'ad-bonus-radio', round: 1 };
+    const winR = simulation.runSimulation([makePlayer('Radio')], {}, cfg, ctx);
+    const noWinR = simulation.runSimulation([makePlayer(null)], {}, cfg, ctx);
+    eq(winR[0].revenueGross - noWinR[0].revenueGross, cfg.adBonuses.Radio, 'Radio bonus');
+  });
+
+  it('runSimulation — Newspaper winner gets $18.75k flat bonus (DEC-04)', () => {
+    const makePlayer = (adWon) => ({
+      playerId: 'p1', displayName: 'Solo', bakeryName: 'Solo Bakery',
+      budgetCurrent: 500000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
+      decision: {
+        menu: { croissant: true }, quantities: { croissant: 10 },
+        sousChefCount: 0, sousChefAssignments: {},
+      },
+      auctionResults: { adWon, adBidPaid: 0, chefBidPaid: 0 },
+    });
+    const ctx = { gameId: 'ad-bonus-news', round: 1 };
+    const winR = simulation.runSimulation([makePlayer('Newspaper')], {}, cfg, ctx);
+    const noWinR = simulation.runSimulation([makePlayer(null)], {}, cfg, ctx);
+    eq(winR[0].revenueGross - noWinR[0].revenueGross, cfg.adBonuses.Newspaper, 'Newspaper bonus');
+  });
+
+  // Defensive: if bad data lands in auctionResults.adWon (e.g. a legacy ad type
+  // no longer in config.adBonuses), we must not crash and must not add a phantom
+  // bonus. The || 0 fallback in simulation.js handles this.
+  it('runSimulation — unknown adWon string contributes no bonus', () => {
+    const player = {
+      playerId: 'p1', displayName: 'Solo', bakeryName: 'Solo Bakery',
+      budgetCurrent: 500000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
+      decision: {
+        menu: { croissant: true }, quantities: { croissant: 10 },
+        sousChefCount: 0, sousChefAssignments: {},
+      },
+      auctionResults: { adWon: 'Podcast', adBidPaid: 0, chefBidPaid: 0 },
+    };
+    const bad = simulation.runSimulation([player], {}, cfg, { gameId: 'unknown-ad', round: 1 });
+    const none = simulation.runSimulation(
+      [{ ...player, auctionResults: { adWon: null, adBidPaid: 0, chefBidPaid: 0 } }],
+      {}, cfg, { gameId: 'unknown-ad', round: 1 }
+    );
+    eq(bad[0].revenueGross - none[0].revenueGross, 0, 'unknown ad type → no bonus, no crash');
+  });
+
+  // Ad bonus (flat add) should compose cleanly with the adSpend coefficient path
+  // (adSpendCoeff × adBidPaid). A player who bids $500 and wins TV should gain
+  // BOTH the $500 × 0.8 spend contribution AND the $50k flat bonus on top.
+  it('runSimulation — flat ad bonus stacks with adSpend coefficient', () => {
+    const makePlayer = (adWon, adBidPaid) => ({
+      playerId: 'p1', displayName: 'Solo', bakeryName: 'Solo Bakery',
+      budgetCurrent: 500000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
+      decision: {
+        menu: { croissant: true }, quantities: { croissant: 10 },
+        sousChefCount: 0, sousChefAssignments: {},
+      },
+      auctionResults: { adWon, adBidPaid, chefBidPaid: 0 },
+    });
+    const ctx = { gameId: 'ad-stack', round: 1 };
+    // Winner: bids $500 AND wins TV. Non-winner: bids $500, wins nothing.
+    const winR   = simulation.runSimulation([makePlayer('TV', 500)], {}, cfg, ctx);
+    const noWinR = simulation.runSimulation([makePlayer(null, 500)], {}, cfg, ctx);
+    // Both have same adSpend contribution (500 × adSpendCoeff), same noise (same
+    // playerId + seed), same everything else. Diff should be *exactly* the flat
+    // TV bonus — proving the flat add is additive, not replacing the coeff path.
+    eq(winR[0].revenueGross - noWinR[0].revenueGross, cfg.adBonuses.TV,
+       'TV bonus stacks on top of adSpend coefficient');
+  });
+
+  // revenueNet = revenueGross − loanSharkDeduction. If the bonus is added to
+  // revenueGross BEFORE loan-shark, then a player who borrows pays interest on
+  // (expenses − budget), unaffected by the bonus — but keeps the bonus in the
+  // net. Sanity-check: winner with loan shark triggered still ends up with the
+  // bonus reflected in revenueNet.
+  it('runSimulation — ad bonus survives loan-shark deduction into revenueNet', () => {
+    const makePlayer = (adWon) => ({
+      playerId: 'p1', displayName: 'Overspender', bakeryName: 'Broke Bakery',
+      budgetCurrent: 100, // forces borrowing
+      sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
+      decision: {
+        menu: { croissant: true, cookie: true },
+        quantities: { croissant: 50, cookie: 50 },
+        sousChefCount: 3, // hefty staffing bill
+        sousChefAssignments: { croissant: 2, cookie: 1 },
+      },
+      auctionResults: { adWon, adBidPaid: 0, chefBidPaid: 0 },
+    });
+    const ctx = { gameId: 'ad-with-loan', round: 1 };
+    const winR   = simulation.runSimulation([makePlayer('TV')], {}, cfg, ctx);
+    const noWinR = simulation.runSimulation([makePlayer(null)], {}, cfg, ctx);
+    ok(winR[0].amountBorrowed > 0, 'winner still overspends → borrows');
+    ok(noWinR[0].amountBorrowed > 0, 'non-winner also overspends → borrows');
+    // Same expenses on both sides → identical loanSharkDeduction.
+    // Diff in revenueNet should equal the full TV bonus.
+    eq(winR[0].revenueNet - noWinR[0].revenueNet, cfg.adBonuses.TV,
+       'TV bonus flows through to revenueNet even under loan-shark');
+  });
 });
 
 // ============================================================================
