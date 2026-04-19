@@ -375,6 +375,12 @@ export interface GameState {
    * simulation; renders the low-satisfaction warnings on the results screen.
    */
   chefSatisfactionScores: Record<string, number>;
+  /**
+   * Live remaining budget for the player, mirrored from
+   * `/games/{gameId}/players/{uid}.budgetCurrent`. `null` until the listener
+   * has read at least once. Cloud Functions own writes; the client reads only.
+   */
+  budgetCurrent: number | null;
 }
 
 /** Default maintenance bars (all 100%) used on game start / context reset. */
