@@ -13,6 +13,8 @@ import { db, functions } from "../lib/firebase";
 import {
   PRODUCT_STATION,
   parseGamePhase,
+  ownerOfDecide,
+  roleOwnsDecide,
   totalSousChefs,
   type GameConfigParams,
   type MaintenanceBars,
@@ -105,13 +107,14 @@ export function GamePage() {
     currentRound,
     pendingDecision,
     decisionSubmitted,
+    role,
   } = useGame();
   const dispatch = useGameDispatch();
   const navigate = useNavigate();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // --- Listener: /games/{gameId} — drives phase + round from backend. ---
+  // --- Listener: /games/{gameId} — drives phase + round + phaseEndsAt. ---
   useEffect(() => {
     if (!gameId) return;
     const gameRef = doc(db, "games", gameId);
@@ -132,6 +135,16 @@ export function GamePage() {
             : null;
         if (nextRound !== null) {
           dispatch({ type: "SET_ROUND", payload: nextRound });
+        }
+        // `phaseEndsAt` is a Firestore Timestamp written by `advanceGamePhase`
+        // (see backend/functions/index.js::phaseEndsAtFromNow). The
+        // RoundHeader uses it to render the live decide / auction
+        // countdown. Pause sets it to null (DEC-21 — backend pauseGame).
+        const ends = data.phaseEndsAt;
+        if (ends && typeof ends.toMillis === "function") {
+          dispatch({ type: "SET_PHASE_ENDS_AT", payload: ends.toMillis() });
+        } else if (ends === null || ends === undefined) {
+          dispatch({ type: "SET_PHASE_ENDS_AT", payload: null });
         }
       },
       (err) => {
@@ -334,17 +347,36 @@ export function GamePage() {
           {submitError}
         </p>
       )}
-      <button
-        className="btn btn--primary game-page__submit"
-        onClick={handleSubmit}
-        disabled={submitting || decisionSubmitted || !gameId}
-      >
-        {submitting
+      {(() => {
+        // DEC-21: only the Operations role (or solo) may submit Decide.
+        // Other teammates still see and edit the form so they can advise,
+        // but the button is disabled with an explicit owner tooltip.
+        const canSubmit = roleOwnsDecide(role);
+        const ownerLabel = ownerOfDecide();
+        const disabled =
+          submitting || decisionSubmitted || !gameId || !canSubmit;
+        const label = !canSubmit
+          ? `Your ${ownerLabel} teammate submits this decision`
+          : submitting
           ? "Submitting…"
           : decisionSubmitted
           ? "Submitted — waiting for other players…"
-          : "Submit Decisions"}
-      </button>
+          : "Submit Decisions";
+        return (
+          <button
+            className="btn btn--primary game-page__submit"
+            onClick={handleSubmit}
+            disabled={disabled}
+            title={
+              !canSubmit
+                ? `Your ${ownerLabel} teammate submits this decision.`
+                : undefined
+            }
+          >
+            {label}
+          </button>
+        );
+      })()}
     </PageShell>
   );
 }

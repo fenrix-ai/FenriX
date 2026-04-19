@@ -6,7 +6,11 @@ import { useGame, useGameDispatch } from "../contexts/GameContext";
 import { functions } from "../lib/firebase";
 import {
   AD_TYPES,
+  ownerOfAdBids,
+  ownerOfChefBids,
   parseGamePhase,
+  roleOwnsAdBids,
+  roleOwnsChefBids,
   type AdType,
   type AuctionTab,
   type ChefGender,
@@ -136,6 +140,7 @@ export function AuctionPage() {
     pendingChefBids,
     adBidsSubmitted,
     chefBidsSubmitted,
+    role,
   } = useGame();
   const dispatch = useGameDispatch();
 
@@ -258,6 +263,32 @@ export function AuctionPage() {
 
   const alreadySubmitted =
     (isAdPhase && adBidsSubmitted) || (isChefPhase && chefBidsSubmitted);
+
+  // DEC-21 role gating: Advertising owns ad bids, Finance owns chef bids,
+  // Solo owns both. Other teammates still see + can edit the inputs (so
+  // they can advise the role-owner) but the submit button is disabled with
+  // an explicit owner tooltip.
+  const ownerLabel = isAdPhase
+    ? ownerOfAdBids()
+    : isChefPhase
+    ? ownerOfChefBids()
+    : null;
+  const canSubmitForPhase = isAdPhase
+    ? roleOwnsAdBids(role)
+    : isChefPhase
+    ? roleOwnsChefBids(role)
+    : true;
+  const submitTooltip =
+    !canSubmitForPhase && ownerLabel
+      ? `Your ${ownerLabel} teammate submits this decision.`
+      : undefined;
+  const submitLabel = !canSubmitForPhase && ownerLabel
+    ? `Your ${ownerLabel} teammate submits this decision`
+    : submitting
+    ? "Submitting…"
+    : alreadySubmitted
+    ? "Submitted — waiting for other players…"
+    : "Submit Bids";
 
   return (
     <PageShell className="game-page auction-page">
@@ -397,13 +428,15 @@ export function AuctionPage() {
       <button
         className="btn btn--primary auction-page__submit"
         onClick={handleSubmitBids}
-        disabled={submitting || alreadySubmitted || (!isAdPhase && !isChefPhase)}
+        disabled={
+          submitting ||
+          alreadySubmitted ||
+          (!isAdPhase && !isChefPhase) ||
+          !canSubmitForPhase
+        }
+        title={submitTooltip}
       >
-        {submitting
-          ? "Submitting…"
-          : alreadySubmitted
-          ? "Submitted — waiting for other players…"
-          : "Submit Bids"}
+        {submitLabel}
       </button>
     </PageShell>
   );

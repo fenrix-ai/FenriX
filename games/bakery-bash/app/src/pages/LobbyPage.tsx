@@ -8,6 +8,7 @@ import {
 import { useGame } from "../contexts/GameContext";
 import { db } from "../lib/firebase";
 import { PageShell } from "../components/ui/PageShell";
+import { PLAYER_ROLE_LABELS } from "../types/game";
 
 /**
  * Roster entry as published to `/games/{gameId}/roster/{playerId}` by the
@@ -23,7 +24,7 @@ interface RosterEntry {
 }
 
 export function LobbyPage() {
-  const { player, playerId, gameId, gameCode } = useGame();
+  const { player, playerId, gameId, gameCode, role, teamName } = useGame();
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [rosterError, setRosterError] = useState<string | null>(null);
   // Distinct from `roster.length === 0`: tells us whether the snapshot
@@ -97,7 +98,10 @@ export function LobbyPage() {
 
         {player && (
           <div className="lobby-page__bakery">
-            Your bakery: <strong>{player.bakeryName}</strong>
+            Your bakery: <strong>{teamName ?? player.bakeryName}</strong>{" "}
+            <span className={`role-badge role-badge--${role}`}>
+              {PLAYER_ROLE_LABELS[role]}
+            </span>
           </div>
         )}
 
