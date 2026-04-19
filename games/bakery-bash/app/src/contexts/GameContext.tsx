@@ -83,6 +83,7 @@ const initialState: GameState = {
   chefBidsSubmitted: false,
   maintenanceBars: { ...DEFAULT_MAINTENANCE_BARS },
   chefSatisfactionScores: {},
+  budgetCurrent: null,
 };
 
 type GameAction =
@@ -129,6 +130,7 @@ type GameAction =
   | { type: "SET_CHEF_BIDS_SUBMITTED"; payload: boolean }
   | { type: "SET_MAINTENANCE_BARS"; payload: MaintenanceBars }
   | { type: "SET_CHEF_SATISFACTION"; payload: Record<string, number> }
+  | { type: "SET_BUDGET"; payload: number | null }
   | { type: "RESET" };
 
 function gameReducer(state: GameState, action: GameAction): GameState {
@@ -284,6 +286,11 @@ function gameReducer(state: GameState, action: GameAction): GameState {
 
     case "SET_CHEF_SATISFACTION":
       return { ...state, chefSatisfactionScores: { ...action.payload } };
+
+    case "SET_BUDGET": {
+      if (state.budgetCurrent === action.payload) return state;
+      return { ...state, budgetCurrent: action.payload };
+    }
 
     case "RESET":
       return initialState;

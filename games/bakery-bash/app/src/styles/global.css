@@ -282,12 +282,41 @@ h3 { font-size: 0.7rem; }
   background: var(--flour);
   border: 2px solid var(--dough);
   font-size: 0.9rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
 }
 
 .lobby-page__player--you {
   background: var(--honey);
   border-color: var(--caramel);
   font-weight: 700;
+}
+
+.lobby-page__player-rank {
+  font-family: var(--font-pixel);
+  font-size: 0.55rem;
+  color: var(--espresso);
+  opacity: 0.6;
+  min-width: 1.5rem;
+}
+
+.lobby-page__player-name {
+  flex: 1;
+}
+
+.lobby-page__player-bakery {
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  color: var(--espresso);
+  opacity: 0.7;
+}
+
+.lobby-page__error {
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  color: var(--berry);
+  margin-bottom: 0.75rem;
 }
 
 .lobby-page__status {
@@ -669,6 +698,81 @@ h3 { font-size: 0.7rem; }
   display: flex;
   background: var(--espresso);
   border-bottom: var(--border);
+}
+
+/* ─── Budget Summary (pinned above sidebar tabs) ─────────── */
+
+.budget-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.65rem 0.75rem;
+  background: var(--dough);
+  border-bottom: var(--border);
+  font-family: var(--font-pixel);
+  font-size: 0.55rem;
+  color: var(--espresso);
+}
+
+.budget-summary--over {
+  background: color-mix(in srgb, var(--berry) 15%, var(--dough));
+}
+
+.budget-summary__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.budget-summary__row--primary .budget-summary__value {
+  font-size: 0.75rem;
+  color: var(--sage);
+}
+
+.budget-summary__label {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.85;
+}
+
+.budget-summary__value {
+  font-weight: 600;
+}
+
+.budget-summary__breakdown {
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  background: color-mix(in srgb, var(--cream) 60%, transparent);
+  border: 1px solid color-mix(in srgb, var(--espresso) 20%, transparent);
+  font-size: 0.5rem;
+}
+
+.budget-summary__breakdown li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  opacity: 0.85;
+}
+
+.budget-summary__row--projected {
+  border-top: 1px dashed color-mix(in srgb, var(--espresso) 25%, transparent);
+  padding-top: 0.35rem;
+}
+
+.budget-summary__row--warn .budget-summary__value {
+  color: var(--berry);
+}
+
+.budget-summary__warn-text {
+  margin: 0;
+  font-size: 0.5rem;
+  color: var(--berry);
+  line-height: 1.3;
 }
 
 .game-sidebar__tab {
@@ -1458,6 +1562,28 @@ h3 { font-size: 0.7rem; }
   text-shadow: 2px 2px 0 var(--espresso);
 }
 
+.leaderboard-page__round {
+  font-size: 0.6rem;
+  color: var(--sage);
+  text-shadow: none;
+  margin-left: 0.5rem;
+}
+
+.leaderboard-page__error {
+  font-family: var(--font-pixel);
+  font-size: 0.55rem;
+  color: var(--berry);
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+.leaderboard-table__you-tag {
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  color: var(--caramel);
+  margin-left: 0.4rem;
+}
+
 .leaderboard-table {
   width: 100%;
   border-collapse: collapse;
@@ -1522,6 +1648,35 @@ h3 { font-size: 0.7rem; }
   color: var(--dark-roast);
   text-align: center;
   line-height: 1.8;
+}
+
+.professor-page__phase {
+  font-family: var(--font-pixel);
+  font-size: 0.55rem;
+  color: var(--espresso);
+  margin-bottom: 1rem;
+  text-align: center;
+}
+
+.professor-page__paused {
+  color: var(--berry);
+  margin-left: 0.5rem;
+}
+
+.professor-page__error {
+  font-family: var(--font-pixel);
+  font-size: 0.55rem;
+  color: var(--berry);
+  text-align: center;
+  margin-top: 0.5rem;
+}
+
+.professor-page__info {
+  font-family: var(--font-pixel);
+  font-size: 0.55rem;
+  color: var(--sage);
+  text-align: center;
+  margin-top: 0.5rem;
 }
 
 /* ─── Dev Nav (dev only) ─────────────────────────────────── */

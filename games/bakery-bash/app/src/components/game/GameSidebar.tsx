@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { BudgetSummary } from "./BudgetSummary";
 import { StaffTab } from "./tabs/StaffTab";
 import { StatusTab } from "./tabs/StatusTab";
 
@@ -20,6 +21,7 @@ export function GameSidebar() {
 
   return (
     <aside className="game-sidebar">
+      <BudgetSummary />
       <nav className="game-sidebar__tabs" role="tablist">
         {TABS.map((tab) => (
           <button
