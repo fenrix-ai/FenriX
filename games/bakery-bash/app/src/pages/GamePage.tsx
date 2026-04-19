@@ -310,20 +310,13 @@ export function GamePage() {
 
   const isDecisionPhase = basePhase === "decide";
   const isSimulating = basePhase === "simulating";
-  const isResultsReady = basePhase === "results_ready";
 
   if (!isDecisionPhase) {
     return (
       <PageShell className="game-page">
         <RoundHeader />
         <div className="game-page__content">
-          {isSimulating ? (
-            <SimulatePhase />
-          ) : isResultsReady ? (
-            <ResultsPhase />
-          ) : (
-            <ResultsPhase />
-          )}
+          {isSimulating ? <SimulatePhase /> : <ResultsPhase />}
         </div>
       </PageShell>
     );

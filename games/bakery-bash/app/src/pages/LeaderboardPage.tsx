@@ -115,19 +115,18 @@ export function LeaderboardPage() {
             <th>Rank</th>
             <th>Bakery</th>
             <th>Revenue</th>
-            <th>Budget</th>
           </tr>
         </thead>
         <tbody>
           {!boardReady ? (
             <tr>
-              <td colSpan={4} className="leaderboard-table__empty">
+              <td colSpan={3} className="leaderboard-table__empty">
                 Loading leaderboard…
               </td>
             </tr>
           ) : waitingForFirstRound ? (
             <tr>
-              <td colSpan={4} className="leaderboard-table__empty">
+              <td colSpan={3} className="leaderboard-table__empty">
                 Waiting for first round results…
               </td>
             </tr>
@@ -138,7 +137,6 @@ export function LeaderboardPage() {
                 entry.revenueNet,
                 entry.cumulativeRevenue,
               );
-              const budget = readNumber(entry.budgetAfter, entry.budgetCurrent);
               return (
                 <tr
                   key={entry.playerId}
@@ -152,7 +150,6 @@ export function LeaderboardPage() {
                     )}
                   </td>
                   <td>{formatMoney(revenue)}</td>
-                  <td>{formatMoney(budget)}</td>
                 </tr>
               );
             })

@@ -137,8 +137,9 @@ export function StaffTab() {
       <h3 className="sidebar-tab__title">Hire Staff</h3>
       <p className="sidebar-tab__hint">
         Hire sous chefs per station and maintenance guys to keep the kitchen
-        running. More than {OVERCROWDING_THRESHOLD} sous chefs hurts kitchen
-        coordination. Check the <strong>Status</strong> tab for machine health.
+        running. Crowded kitchens slow production — watch your head chef for
+        signs of strain. Check the <strong>Status</strong> tab for machine
+        health.
       </p>
 
       {/* Three sous chef station steppers */}
@@ -186,8 +187,7 @@ export function StaffTab() {
 
       {overcrowded && (
         <p className="staff-tab__warning" role="alert">
-          ⚠ Overcrowding: {sousChefTotal} sous chefs — coordination penalty
-          applies beyond {OVERCROWDING_THRESHOLD}.
+          ⚠ Kitchen is getting crowded — your head chef looks stressed.
         </p>
       )}
 
