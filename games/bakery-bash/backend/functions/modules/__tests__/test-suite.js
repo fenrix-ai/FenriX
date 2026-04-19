@@ -1167,6 +1167,69 @@ describe('simulation.js — Integration', () => {
   it('SELLOUT_SAT_CAP is 45', () => {
     eq(simulation.SELLOUT_SAT_CAP, 45);
   });
+
+  // DEC-03/DEC-04: ad auction winner gets a flat bonus added to revenueGross.
+  // TV=$50k, Billboard=$37.5k, Radio=$25k, Newspaper=$18.75k (from config.adBonuses).
+  // Test strategy: two runs with identical inputs except auctionResults.adWon.
+  // Same playerId → same noise seed → exact difference = ad bonus.
+  it('runSimulation — TV winner gets $50k flat bonus added to revenueGross (DEC-03)', () => {
+    const makePlayer = (adWon) => ({
+      playerId: 'p1',
+      displayName: 'Solo',
+      bakeryName: 'Solo Bakery',
+      budgetCurrent: 500000,
+      sousChefCount: 0,
+      specialtyChefs: [],
+      returningCustomersPending: 0,
+      decision: {
+        menu: { croissant: true, cookie: true, bagel: true, sandwich: true, coffee: true, matcha: true },
+        quantities: { croissant: 20, cookie: 20, bagel: 20, sandwich: 20, coffee: 20, matcha: 20 },
+        sousChefCount: 0,
+        sousChefAssignments: {},
+      },
+      auctionResults: { adWon, adBidPaid: 0, chefBidPaid: 0 },
+    });
+    const prefs = { modifiers: { croissant: 1.0, cookie: 1.0, bagel: 1.0, sandwich: 1.0, coffee: 1.0, matcha: 1.0 } };
+    const ctx = { gameId: 'ad-bonus-test', round: 1 };
+    const winR = simulation.runSimulation([makePlayer('TV')], prefs, cfg, ctx);
+    const noWinR = simulation.runSimulation([makePlayer(null)], prefs, cfg, ctx);
+    const diff = winR[0].revenueGross - noWinR[0].revenueGross;
+    eq(diff, cfg.adBonuses.TV, 'TV bonus exactly added to gross revenue');
+  });
+
+  it('runSimulation — Billboard winner gets $37.5k flat bonus (DEC-04)', () => {
+    const makePlayer = (adWon) => ({
+      playerId: 'p1', displayName: 'Solo', bakeryName: 'Solo Bakery',
+      budgetCurrent: 500000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
+      decision: {
+        menu: { croissant: true }, quantities: { croissant: 10 },
+        sousChefCount: 0, sousChefAssignments: {},
+      },
+      auctionResults: { adWon, adBidPaid: 0, chefBidPaid: 0 },
+    });
+    const ctx = { gameId: 'ad-bonus-bb', round: 1 };
+    const winR = simulation.runSimulation([makePlayer('Billboard')], {}, cfg, ctx);
+    const noWinR = simulation.runSimulation([makePlayer(null)], {}, cfg, ctx);
+    eq(winR[0].revenueGross - noWinR[0].revenueGross, cfg.adBonuses.Billboard, 'Billboard bonus');
+  });
+
+  it('runSimulation — no ad won → no flat bonus applied', () => {
+    const player = {
+      playerId: 'p1', displayName: 'Solo', bakeryName: 'Solo Bakery',
+      budgetCurrent: 500000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
+      decision: {
+        menu: { croissant: true }, quantities: { croissant: 10 },
+        sousChefCount: 0, sousChefAssignments: {},
+      },
+      auctionResults: { adWon: null, adBidPaid: 0, chefBidPaid: 0 },
+    };
+    const r = simulation.runSimulation([player], {}, cfg, { gameId: 'no-ad', round: 1 });
+    // With no bonus, revenueGross should be within the noise range of the formula
+    // base ($500) + noise ± $100 + other coefficients (all 0 here) + totalProductRevenue.
+    // Croissant price $4.75 × qtySold (≤10 with a solo player/no competition most customers).
+    // We just confirm no phantom $50k+ bonus leaked in.
+    ok(r[0].revenueGross < 10000, 'no ad bonus → revenueGross stays in expected range');
+  });
 });
 
 // ============================================================================
