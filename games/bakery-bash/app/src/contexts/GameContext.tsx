@@ -12,7 +12,6 @@ import {
   DEFAULT_MAINTENANCE_BARS,
   DEFAULT_STAFF_COUNTS,
   type AdType,
-  type AuctionTab,
   type GameConfigParams,
   type GamePhaseString,
   type GameState,
@@ -72,7 +71,6 @@ const initialState: GameState = {
   players: [],
   roundResults: [],
   timeRemaining: null,
-  auctionTab: "chefs",
   pendingDecision: DEFAULT_PENDING_DECISION,
   pendingAdBids: DEFAULT_PENDING_AD_BIDS,
   pendingChefBids: DEFAULT_PENDING_CHEF_BIDS,
@@ -101,7 +99,7 @@ type GameAction =
   | { type: "ADD_RESULT"; payload: RoundResult }
   | { type: "SET_TIMER"; payload: number | null }
   | { type: "UPDATE_PLAYER"; payload: Partial<Player> }
-  | { type: "SET_AUCTION_TAB"; payload: AuctionTab }
+
   | { type: "SET_CONFIG"; payload: GameConfigParams | null }
   | {
       type: "UPDATE_PENDING_DECISION";
@@ -198,8 +196,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         player: state.player ? { ...state.player, ...action.payload } : null,
       };
 
-    case "SET_AUCTION_TAB":
-      return { ...state, auctionTab: action.payload };
+
 
     case "SET_CONFIG":
       return { ...state, config: action.payload };

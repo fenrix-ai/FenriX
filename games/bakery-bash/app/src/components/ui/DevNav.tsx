@@ -16,7 +16,7 @@ const PHASE_JUMPS: { label: string; value: GamePhaseString }[] = [
 ];
 
 export function DevNav() {
-  const { phase, auctionTab } = useGame();
+  const { phase } = useGame();
   const dispatch = useGameDispatch();
 
   if (import.meta.env.PROD) return null;
@@ -40,7 +40,7 @@ export function DevNav() {
       {PHASE_JUMPS.map((p) => (
         <Link
           key={p.value}
-          to={p.value.includes("bid_") ? "/auction" : "/game"}
+          to="/game"
           onClick={() => setPhase(p.value)}
         >
           {p.label}
@@ -50,7 +50,7 @@ export function DevNav() {
       <Link to="/professor">Prof</Link>
       {isAuctionPhase && (
         <span className="dev-nav__phase-indicator">
-          auction tab: {auctionTab === "chefs" ? "Chef Hiring" : "Advertisements"}
+          phase: {base}
         </span>
       )}
     </nav>

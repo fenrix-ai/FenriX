@@ -239,8 +239,6 @@ export interface ChefListing {
   multiplier: number;
 }
 
-export type AuctionTab = "chefs" | "ads";
-
 export interface MenuItem {
   id: MenuItemId;
   name: string;
@@ -354,7 +352,6 @@ export interface GameState {
   players: Player[];
   roundResults: RoundResult[];
   timeRemaining: number | null;
-  auctionTab: AuctionTab;
   pendingDecision: PendingDecisionDraft;
   pendingAdBids: PendingAdBidsDraft;
   pendingChefBids: PendingChefBidsDraft;

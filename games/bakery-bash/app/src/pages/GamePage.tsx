@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { doc, onSnapshot, type DocumentData } from "firebase/firestore";
 import { httpsCallable, type FunctionsError } from "firebase/functions";
 import { useGame, useGameDispatch } from "../contexts/GameContext";
@@ -7,6 +6,7 @@ import { RoundHeader } from "../components/game/RoundHeader";
 import { BakeryView } from "../components/game/BakeryView";
 import { GameSidebar } from "../components/game/GameSidebar";
 import { PageShell } from "../components/ui/PageShell";
+import { BidPhase } from "./phases/BidPhase";
 import { SimulatePhase } from "./phases/SimulatePhase";
 import { ResultsPhase } from "./phases/ResultsPhase";
 import { db, functions } from "../lib/firebase";
@@ -107,7 +107,6 @@ export function GamePage() {
     decisionSubmitted,
   } = useGame();
   const dispatch = useGameDispatch();
-  const navigate = useNavigate();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -211,13 +210,7 @@ export function GamePage() {
   const parsed = parseGamePhase(phase, currentRound);
   const basePhase = parsed.base;
 
-  // Redirect into the dedicated auction page when backend says so. This is
-  // phase-driven (not a manual navigation after submit).
-  useEffect(() => {
-    if (basePhase === "bid_ad" || basePhase === "bid_chef") {
-      navigate("/auction");
-    }
-  }, [basePhase, navigate]);
+  // bid phases are rendered inline via BidPhase — no separate route needed
 
   const handleSubmit = useCallback(async () => {
     if (!gameId) {
@@ -300,6 +293,7 @@ export function GamePage() {
   }, [gameId, basePhase, pendingDecision, dispatch]);
 
   const isDecisionPhase = basePhase === "decide";
+  const isBidPhase = basePhase === "bid_ad" || basePhase === "bid_chef";
   const isSimulating = basePhase === "simulating";
   const isResultsReady = basePhase === "results_ready";
 
@@ -308,7 +302,9 @@ export function GamePage() {
       <PageShell className="game-page">
         <RoundHeader />
         <div className="game-page__content">
-          {isSimulating ? (
+          {isBidPhase ? (
+            <BidPhase />
+          ) : isSimulating ? (
             <SimulatePhase />
           ) : isResultsReady ? (
             <ResultsPhase />
