@@ -127,7 +127,9 @@ function ProductTile({
       <img className="product-tile__image" src={d.asset} alt={d.name} />
       <div className="product-tile__info">
         <span className="product-tile__name">{d.name}</span>
-        <span className="product-tile__price">${d.price.toFixed(2)}</span>
+        <span className="product-tile__price">
+          Sell price: ${d.price.toFixed(2)}
+        </span>
       </div>
       {isOnMenu ? (
         <div className="product-tile__controls">
