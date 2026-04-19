@@ -1,7 +1,7 @@
 # Bakery Bash — Backend Spec
 
-**Team:** Daniel + Scott + Dylan B.
-**Last Updated:** April 16, 2026 — aligned to GAME_DESIGN_PROPOSAL.md (April 15, 2026)
+**Team:** Scott + Dylan B. (Daniel departed — April 19, 2026)
+**Last Updated:** April 19, 2026 — aligned to GAME_DESIGN_PROPOSAL.md (April 19 Team Roles update)
 
 > **Source of truth:** [GAME_DESIGN_PROPOSAL.md](./GAME_DESIGN_PROPOSAL.md). Anything in this spec that conflicts with the proposal is wrong — fix the spec, not the proposal.
 
@@ -9,9 +9,11 @@
 
 ## API Surface
 
+> **Role-gated callables (April 19 update, DEC-21):** `submitDecision`, `submitBids` (split into ad/chef), `layoffChef`, and `continueFromRoster` check the caller's `role` on `players/{uid}` before accepting. Operations owns Decide; Advertising owns Ad bids; Finance owns Chef bids + roster. Solo / incomplete teams get fallback: a single player with no teammates owns all three buttons. See `Team Roles & Access` in GAME_DESIGN_PROPOSAL.md.
+
 ```
 /api/game/create        → Professor creates session (createGame onCall)
-/api/game/join          → Player joins session (joinGame onCall — already implemented)
+/api/game/join          → Player joins session (joinGame onCall — already implemented; accepts teamName + role)
 /api/game/start         → Professor starts game
 /api/game/advance       → Professor advances phase (state machine below)
 /api/game/pause         → Professor pauses
@@ -336,7 +338,9 @@ Cache the result on `games/{gameId}.conclusion` once `phase === 'game_over'` so 
 
 ## CSV Output
 
-One row per player per round. **Decision inputs:**
+> **April 19 update:** CSV rows are now **one per team per round** (not per player), since financial state is shared across a team. Each row still carries both `teamId` and the submitting `playerId`+`role` per phase, so regression work can still partition by individual when useful.
+
+One row per team per round. **Decision inputs:**
 
 ```
 round, num_products, sous_chef_count, ad_type,
@@ -363,7 +367,7 @@ sellout_sandwich, sellout_coffee, sellout_matcha
 
 `null` for satisfaction columns of products not offered. `revenue` is **net** (post loan shark deduction). `returning_customers` is shown on the results screen but **excluded from this CSV** per the proposal.
 
-The professor export adds `playerId, bakeryName, displayName` prepended to every row.
+The professor export adds `teamId, teamName?, member_operations_uid, member_advertising_uid, member_finance_uid` prepended to every row. `teamName` is blank when the team chose not to set one (DEC-23).
 
 ---
 
@@ -381,21 +385,36 @@ games/{gameId}
     adWinners            → { tv, radio, newspaper, billboard }
     marketEmail.body     → hint string (client-readable)
     players/{uid}        → per-round result snapshot (mirror of player rounds for aggregate views)
+  teams/{teamId}         → name? (optional — DEC-23), memberUids[], createdAt (April 19, DEC-21)
+                           Financial state (budgetCurrent, cumulativeRevenue, specialtyChefs[], etc.)
+                           lives on the TEAM doc, not per-player, once a team is formed.
   players/{uid}
-    displayName, joinedAt, budgetCurrent (private — server-only writes), creditBalance,
-    cumulativeRevenue, specialtyChefs[], sousChefCount, sousChefAssignments,
-    returningCustomersPending, pendingRosterAction,
+    displayName, joinedAt, teamId, role: "finance"|"advertising"|"operations"|"solo",
     pendingDecision, pendingBids, lastRoundResult,
-    decisions/{round}    → immutable submitted decision snapshot
+    decisions/{round}    → immutable submitted decision snapshot (mirrors team decision)
     rounds/{round}       → per-round result (revenue, sat %, sellouts, borrowed, interest)
-  leaderboard/latest     → ranked array (Cloud Function rewrites after each sim)
-  csvRows/{playerId}/rounds/{round}  → flattened row matching CSV columns
+                           (mirror of team rounds for player CSV export)
+  leaderboard/latest     → ranked array of TEAMS (Cloud Function rewrites after each sim)
+  csvRows/{teamId}/rounds/{round}  → flattened row matching CSV columns, one per team per round
 catalog/chefs            → master roster (variant art specs, name lists, multiplier matrix)
 catalog/menuItems        → master product catalog
 config/insightTemplates  → market email phrase library
 ```
 
-**Security:** chef `specialty` fields, the preferences matrix, and any other player's private state are never client-readable. Already-implemented `firestore.rules` cover `players/{uid}` self-only access — extend the same pattern to the new collections.
+**Security:** chef `specialty` fields, the preferences matrix, and any other team's private state are never client-readable. `players/{uid}` remains self-only. Teammates read the shared `teams/{teamId}` doc (members list + team name). Extend existing rule patterns to the new `teams` and `config/teamNameWords` collections.
+
+### Role Validation (DEC-21)
+
+Role ownership map for callables:
+
+| Callable | Role Required (on 3-person team) | Fallback |
+|---|---|---|
+| `submitDecision` | `operations` | On teams < 3, any member whose role includes `operations` (solo player = all roles). |
+| `submitBids` (ad payload) | `advertising` | Same fallback rule. |
+| `submitBids` (chef payload) | `finance` | Same fallback rule. |
+| `layoffChef`, `continueFromRoster` | `finance` | Same fallback rule. |
+
+Reject mismatched callers with `permission-denied`. The `role` field on `players/{uid}` is written once by `joinGame` and not editable by the player.
 
 ---
 

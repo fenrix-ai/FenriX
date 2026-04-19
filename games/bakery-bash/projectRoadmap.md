@@ -1,8 +1,8 @@
 # Bakery Bash — Project Roadmap
 
-**Source of truth:** [GAME_DESIGN_PROPOSAL.md](./GAME_DESIGN_PROPOSAL.md) (April 15, 2026)
+**Source of truth:** [GAME_DESIGN_PROPOSAL.md](./GAME_DESIGN_PROPOSAL.md) (April 15, 2026 · Maintenance + Station updates April 17 · Team Roles + meeting decisions April 19)
 **Companion specs:** [BACKEND.md](./BACKEND.md) · [FRONTEND.md](./FRONTEND.md) · [CHEF_ROSTER.md](./CHEF_ROSTER.md)
-**Target launch:** April 27 or May 1, 2026
+**Target launch:** **May 1, 2026 (live session 8–10 AM)**. MVP-ready target: **April 23 (Thursday)** for team testing. Assignment release: **Fri/Sat April 24–25**.
 **This roadmap:** MVP-scoped, AI-executable task list for the Frontend and Backend teams.
 
 ---
@@ -82,6 +82,67 @@ MVP definition (from proposal): one complete 5-round session end-to-end with aut
 
 ---
 
+## April 19, 2026 — Meeting Decisions (Dylan M., team + Prof. Frenzel)
+
+Live review with the professor confirmed most of the April 17 architecture (three-station bakery, per-section sous chefs, Maintenance Guy / cleanliness) and locked several new MVP items. See DEC-19..DEC-26 below.
+
+**Confirmed (no spec change needed):**
+- Three-section bakery **Bakery (Croissant + Cookie) / Deli (Bagel + Sandwich) / Barista (Coffee + Matcha)** — already in proposal's Station Architecture section.
+- **Sous chefs assigned per section** (Bakery / Deli / Barista), not per product — already in proposal line "Sous chefs are assigned per station, not per product".
+- **Janitor = Maintenance Guy** (existing role). Cleanliness feeds Chef Satisfaction via the existing Maintenance System.
+- **Loan shark interest stays 10%** (DEC-16) — the "bump to 20%" idea was discussed and declined.
+- **Pricing stays fixed for MVP** — player-set pricing remains post-MVP (POST-01, DEC-17).
+
+**New this week (see tasks + decisions below):**
+- **Team-based role access:** teams of ~3, each player logs in with a role (Finance / Advertising / Operations). Only the assigned role's action button is enabled in each phase on that player's screen. Incomplete teams get a fallback role assignment.
+- **Team name is optional** — teams can pick one if they want branding on the leaderboard, but we're not forcing it. If absent, the team is displayed by its members' `displayName`s (DEC-06 behavior). Team logos deferred — **not in MVP**.
+- **Soften kitchen-overcrowding copy:** remove any explicit "don't hire more than 4 sous chefs" instruction. Replace with a subtle "kitchen crowding may hurt productivity" warning. Let players learn the curve by playing.
+- **Auction UI:** enlarge the top-bid display during auctions — currently too small to read competitively.
+- **Professor panel:** per-player real-time monitoring + progress/stats pane (already scoped in FE-15/FE-16 — confirmed as required for May 1).
+- **Data intelligence marketplace** (tiered insight purchases, regression-derived reports) — **POST-MVP** (POST-14).
+- **Video walkthrough:** 3-min AI-enhanced overview of the game. Must be produced **early**, not on launch day. Optimized for 8 AM student engagement.
+- **External tester recruitment** via TAs + alumni networks. Device compatibility testing (personal devices + computer-lab backup).
+- **Daniel has left the team.** Remaining engineering: Scott + Dylan B. (backend), AB + Kavin (frontend), Dylan M. + Mia (game design).
+- **No intro test round.** If we want a warm-up, we'll just end a round and start a new game session rather than add a tutorial phase to the state machine.
+
+**Firebase infrastructure (from meeting):**
+- All team members upgraded to **owner** on the Firebase project. Spark plan, credit card attached for overage.
+- Confirmed scalability target: **60–70 concurrent users** for the live session. Cost projection ≈ **$0.60–0.70 per full test run**.
+- Real-time data processing validated end-to-end; schema-setup access confirmed for all developers.
+
+---
+
+## Status Audit — April 19, 2026
+
+Snapshot of what actually shipped between April 17 and April 19.
+
+**Landed on `main`:**
+- [#19](https://github.com/fenrix-ai/FenriX/pull/19) — modular backend rewrite + 43 QA fixes. Adds `createGame`, `submitBids`, `layoffChef`, `continueFromRoster`, `pauseGame`/`resumeGame`/`endGame`, `getConclusion`, `exportPlayerCsv`, `exportProfessorCsv`, simulation/chef-system/phases/csv-export/revenue/satisfaction/round-preferences/loan-shark/customer-allocation modules, 10 test suites green.
+- [#18](https://github.com/fenrix-ai/FenriX/pull/18) — frontend wired to Firebase for P0 blockers.
+- [#22](https://github.com/fenrix-ai/FenriX/pull/22) — maintenance system + 3-station decide-phase layout.
+- [#23](https://github.com/fenrix-ai/FenriX/pull/23) — sidebar split into Hire + Status tabs with color-coded health.
+- [#24](https://github.com/fenrix-ai/FenriX/pull/24) — design proposal: maintenance + station architecture + chef satisfaction.
+- [#25](https://github.com/fenrix-ai/FenriX/pull/25) — lobby roster read rule + canonical `leaderboard/latest` path + `joinedAt` backfill on rejoin.
+
+**Open PRs (this week's critical path):**
+- [#20](https://github.com/fenrix-ai/FenriX/pull/20) — **Phase 0 migration + BE-18 professor custom claim (P0 unblock for professor login) + BE-19 disconnection handling + MIG-06 AuctionPage/tab deletion.** Needs review.
+- [#27](https://github.com/fenrix-ai/FenriX/pull/27) — **P1 tasks 6/7/8/9:** real-time lobby player list, real-time leaderboard (FE-14), professor start/advance/pause/end controls (FE-15 partial), budget display + shared cost helper. Under review.
+- [#26](https://github.com/fenrix-ai/FenriX/pull/26) — small frontend state + a11y fixes. Quick review.
+
+**Known issue flagged mid-review ([#27](https://github.com/fenrix-ai/FenriX/pull/27) footnote 2):** `joinGame` surfaces Firebase's generic `internal` error instead of a controlled `invalid-argument` `HttpsError` on bad input. Backend fix needed before demo. File as a new task after #20 lands.
+
+**What's still genuinely unstarted:**
+- MIG-01 (product key rename `latte`→`coffee`, `matchaLatte`→`matcha` — 130 occurrences still in tree).
+- MIG-02 ( `firestore-schema.js` still documents old `productPrices`/`headchefSkill` shapes — functional code moved on, but the schema doc file is stale).
+- BE-04 (catalog seed script), BE-07 (market insight email generator).
+- FE-01 (hide-budget CI audit), FE-04 (`<ChefCard>`), FE-05 (`<SousChefPanel>`), FE-06 (Email phase), FE-07 (Decide phase rework), FE-09 (Roster page), FE-10 (Simulate minigame — deferred per DEC-09), FE-11 (`<AdWinnerBanner>`), FE-12 (`<LoanSharkCallout>` + Results rework), FE-13 (Conclusion page), FE-16 (Professor leaderboard + export UI), FE-17 (`<SubmissionLock>`).
+- All of Phase H (ART-01..ART-25) — zero chef portraits exist.
+- All of Phase G (INT-01..INT-06) — no end-to-end smoke, no load test, no hide-budget CI, no prod deploy dry run, no team playtest.
+
+> Calendar says Phase A + B should be done today (4/19). Backend Phase A–E is substantially in, thanks to #19. Frontend MVP rework and art pipeline are the long poles to launch (4/27 or 5/1).
+
+---
+
 ## Phase 0 — Schema & Code Migration (P0, DO THESE FIRST)
 
 The existing `firestore-schema.js`, `submitDecision`, and parts of the frontend are based on the **pre-April-8 design** and conflict with the April 15 proposal. These must be resolved before Phase A — otherwise every new task will collide with stale field names, phase names, and data shapes.
@@ -98,37 +159,37 @@ The existing `firestore-schema.js`, `submitDecision`, and parts of the frontend 
   - **Acceptance:** Schema file matches the Firestore Schema section of `BACKEND.md` 1:1. No `productPrices` or `headchefSkill` references remain anywhere.
   - **Depends on:** MIG-01.
 
-- [ ] **MIG-03** — Phase name migration in `submitDecision` and state machine
+- [x] **MIG-03** — Phase name migration in `submitDecision` and state machine ([#19](https://github.com/fenrix-ai/FenriX/pull/19))
   - **Goal:** Replace phase checks for `"closing_hours"` / `"decide"` / `"auction"` / `"open_for_business"` / `"results"` with the new state machine labels: `round_N_decide` for decision submit, `round_N_bid_ad` + `round_N_bid_chef` for bid submit, `round_N_roster` for roster actions. `submitDecision` must only accept writes when phase matches `round_${round}_decide`.
   - **Files:** `backend/functions/index.js`.
   - **Acceptance:** Calling `submitDecision` during any non-`*_decide` phase returns `failed-precondition`. Existing `test:auth-flow` passes against the new phase names.
   - **Depends on:** MIG-02.
 
-- [ ] **MIG-04** — Drop pricing input path
+- [x] **MIG-04** — Drop pricing input path ([#19](https://github.com/fenrix-ai/FenriX/pull/19))
   - **Goal:** `submitDecision` no longer accepts `productPrices` in the payload. `validateDecisionInput` rejects requests containing it. Pricing is fetched server-side from `config/params.productPrices` wherever needed.
   - **Files:** `backend/functions/index.js`.
   - **Acceptance:** Old payload including `productPrices` returns `invalid-argument`. Simulator reads prices from config.
   - **Depends on:** MIG-02.
 
-- [ ] **MIG-05** — Split decisions from bids at the callable level
+- [x] **MIG-05** — Split decisions from bids at the callable level ([#19](https://github.com/fenrix-ai/FenriX/pull/19) — `submitDecision` + `submitBids` are separate)
   - **Goal:** `submitDecision` now only accepts `{ quantities, sousChefCount, sousChefAssignments, menu, round }`. A new `submitBids` callable (BE-09) handles ads + chefs. Old combined payload is rejected.
   - **Files:** `backend/functions/index.js`.
   - **Acceptance:** Legacy combined payload fails; two-step decide-then-bid path works end-to-end in emulator.
   - **Depends on:** MIG-03.
 
-- [ ] **MIG-06** — Remove/replace tab-based UI and standalone AuctionPage
+- [~] **MIG-06** — Remove/replace tab-based UI and standalone AuctionPage ([#20](https://github.com/fenrix-ai/FenriX/pull/20) open)
   - **Goal:** Delete or refactor `components/game/tabs/{AuctionTab,StaffTab,MenuTab}.tsx` and `pages/AuctionPage.tsx` (333 lines) — none of these match the phase-based flow from the proposal. Update `App.tsx` routing to remove `/auction`. Sous chef hiring moves into `<SousChefPanel>`; menu choice moves into `DecidePhase`; auction logic moves into `BidPhase`.
   - **Files:** `app/src/pages/AuctionPage.tsx` (delete), `app/src/components/game/tabs/*.tsx` (delete), `app/src/components/game/GameSidebar.tsx` (remove tab nav if obsolete), `app/src/App.tsx`.
   - **Acceptance:** No route at `/auction`, no tab components imported anywhere. `GamePage` routes purely on game-doc `phase`.
   - **Depends on:** FE-07, FE-08 (the replacement phases must land before the old UI is deleted, or delete and re-stub — either order is OK but tracking it explicitly).
 
-- [ ] **MIG-07** — Clarify sous chef phase authority
+- [x] **MIG-07** — Clarify sous chef phase authority (locked as **DEC-02**: decide phase only)
   - **Goal:** Decide — is `sousChefCount` submitted in `decide` phase only, `roster` phase only, or both? Both FRONTEND.md and the proposal show `<SousChefPanel>` on both screens. Resolve with Game Design, then update both specs to match. Proposed default: **hires in `decide` are provisional; hires in `roster` are final; simulator reads the value from the last-submitted roster write.**
   - **Files:** `BACKEND.md`, `FRONTEND.md`, `GAME_DESIGN_PROPOSAL.md` (if needed).
   - **Acceptance:** One authoritative sentence in each spec. Matching implementation in BE-09/BE-11 callable contracts.
   - **Depends on:** none (unblocks BE-09, BE-11, FE-07, FE-09).
 
-- [ ] **MIG-08** — Bakery name assignment flow
+- [x] **MIG-08** — Bakery name assignment flow (locked as **DEC-06**: one name at join, used as both displayName + bakery label)
   - **Goal:** Clarify whether `displayName` == "bakery name" or whether bakery name is a separate field. Proposed: on join, player enters one name used as both `displayName` and the team/bakery label. Lobby shows it; leaderboard and winner banner reuse it. If randomly generated names are desired, generator lives in `joinGame`.
   - **Files:** `BACKEND.md` (schema note), `FRONTEND.md` (lobby copy), `backend/functions/index.js` (joinGame if generator is added).
   - **Acceptance:** Each spec has one sentence describing the bakery-name source. Lobby renders the correct field.
@@ -140,25 +201,25 @@ The existing `firestore-schema.js`, `submitDecision`, and parts of the frontend 
 
 Everything else depends on these writes. Do these first.
 
-- [ ] **BE-01** — Seed `games/{gameId}/config/params` on game create
+- [x] **BE-01** — Seed `games/{gameId}/config/params` on game create ([#19](https://github.com/fenrix-ai/FenriX/pull/19) — `backend/functions/modules/config.js` + `createGame` writes it)
   - **Goal:** Every game doc has a `config/params` subdoc using the values locked in the Decisions Table: `startingBudget: 500000`, `playerCap: 20` (schema must accept up to 50), `sousChefBaseCost: 12500`, `unitCosts: $1/item flat`, `loanSharkInterestRate: 0.10`, `adBonus: { tv: 50000, billboard: 37500, radio: 25000, newspaper: 18750 }`, `chefBidFloors: { novel: 25000, intermediate: 43750, advanced: 68750 }`, `productPrices` and `productBaseDemand` from proposal (unscaled), `productWeights` from proposal, `revenueCoefficients` as placeholders (flagged for INT-06 tuning), `phaseDurations` from BACKEND.md.
   - **Files:** `backend/functions/index.js` (new `createGame` onCall), `backend/firestore-schema.js`, `backend/seed/local-game.json`.
   - **Acceptance:** Create a game via the new callable → inspect emulator UI → every value in DEC-01..DEC-18 is present and correct.
   - **Depends on:** MIG-02.
 
-- [ ] **SPEC-01** — Reconcile placeholder ad bonus values with proposal
+- [x] **SPEC-01** — Reconcile placeholder ad bonus values with proposal (locked as **DEC-04**: TV $50k / Billboard $37.5k / Radio $25k / Newspaper $18.75k; path = flat add per **DEC-03**)
   - **Goal:** Proposal lists ad bonus values as "TBD". BACKEND.md picked defaults (TV $200, Billboard $150, Radio $100, Newspaper $75). Either (a) Game Design signs off on the defaults and moves them into the proposal, or (b) the defaults are re-tuned. Also resolve OQ-03 (ad bonus enters revenue as flat add vs flows through traffic).
   - **Files:** `GAME_DESIGN_PROPOSAL.md`, `BACKEND.md`.
   - **Acceptance:** Proposal has a concrete ad bonus table. BACKEND.md points at it, not at its own defaults.
   - **Depends on:** none (unblocks BE-10, BE-13).
 
-- [ ] **BE-02** — `createGame` onCall (professor-only)
+- [x] **BE-02** — `createGame` onCall (professor-only) ([#19](https://github.com/fenrix-ai/FenriX/pull/19) — `backend/functions/index.js:376`)
   - **Goal:** Professor callable that generates a 6-char joinCode (A–Z, 2–9), writes initial game doc in `lobby` phase, writes `config/params`, writes the full 5-round preference profile (see BE-03), and returns `{ gameId, joinCode }`.
   - **Files:** `backend/functions/index.js`.
   - **Acceptance:** Callable from emulator shell → returns joinCode → `/games/{gameId}` exists with `phase: "lobby"`, `round: 0`, config subdoc, preferences subdoc.
   - **Depends on:** BE-01.
 
-- [ ] **BE-03** — Preference profile generator
+- [x] **BE-03** — Preference profile generator ([#19](https://github.com/fenrix-ai/FenriX/pull/19) — `backend/functions/modules/round-preferences.js`)
   - **Goal:** At game-create, generate a 5-round demand modifier matrix. Each round has exactly 2 Trending (+40%), 2 Warm (+15%), 1 Neutral (0%), 1 Cold (−25%). Constraint: no product is Trending in two consecutive rounds (regenerate if violated). Write to `games/{gameId}/preferences/rounds` with Cloud-Function-only read access.
   - **Files:** `backend/functions/index.js`, `backend/firestore.rules`.
   - **Acceptance:** Unit test in `backend/test/` generates 100 profiles → all satisfy the constraints. Rule test confirms client cannot read this subcollection.
@@ -174,13 +235,13 @@ Everything else depends on these writes. Do these first.
 
 ## Phase B — Round State Machine & Timers (P0)
 
-- [ ] **BE-05** — Expand `advanceGamePhase` to full state machine
+- [x] **BE-05** — Expand `advanceGamePhase` to full state machine ([#19](https://github.com/fenrix-ai/FenriX/pull/19) — `backend/functions/modules/phases.js` + lifecycle test 80/80 green)
   - **Goal:** Enforce transitions `lobby → round_N_email → round_N_decide → round_N_bid_ad → round_N_bid_chef → round_N_roster → simulating → results_ready → round_N+1_email → game_over`. Reject invalid transitions with `failed-precondition`. Wrap in a Firestore transaction. Write `phaseEndsAt` (Timestamp) on each transition using durations from `config/params.phaseDurations`.
   - **Files:** `backend/functions/index.js`.
   - **Acceptance:** Emulator test advances a game through all 5 rounds sequentially and ends in `game_over`. Invalid jumps (e.g. lobby → simulating) return `failed-precondition`.
   - **Depends on:** BE-01, BE-02.
 
-- [ ] **BE-06** — `pauseGame`, `resumeGame`, `endGame` callables (professor-only)
+- [x] **BE-06** — `pauseGame`, `resumeGame`, `endGame` callables (professor-only) ([#19](https://github.com/fenrix-ai/FenriX/pull/19) — `backend/functions/index.js:1352-1359`)
   - **Goal:** `pauseGame` freezes `phaseEndsAt` and sets `status: "paused"`; `resumeGame` restores the timer with remaining duration; `endGame` forces `phase: "game_over"` regardless of current round.
   - **Files:** `backend/functions/index.js`.
   - **Acceptance:** Professor pauses mid-round → timer stops → resume advances correctly. End-game triggers conclusion aggregation (see BE-15).
@@ -196,31 +257,31 @@ Everything else depends on these writes. Do these first.
 
 ## Phase C — Chef System Backend (P0)
 
-- [ ] **BE-08** — Chef pool generator (per round)
+- [x] **BE-08** — Chef pool generator (per round) ([#19](https://github.com/fenrix-ai/FenriX/pull/19) — `backend/functions/modules/chef-system.js`)
   - **Goal:** On entry to `round_N_bid_chef`, spawn 6–8 chefs to `games/{gameId}/rounds/{N}/chefs[]`. Each chef: random nationality, gender, variant, skill (sampled from the round's spawn-rate row), random name from the nationality list, derived specialty. Minimum bid floor = `(Novel 2.0 | Intermediate 3.5 | Advanced 5.5) × baselineFloor`. **Specialty field must be denied to client reads via security rules.**
   - **Files:** `backend/functions/index.js`, `backend/firestore.rules`.
   - **Acceptance:** 5-round sim → each round chefs[] exists, spawn rates within ±10% of target over 100 trials. Client read of a chef's `specialty` field returns `permission-denied`.
   - **Depends on:** BE-04, BE-05.
 
-- [ ] **BE-09** — `submitBids` onCall (ad + chef)
+- [x] **BE-09** — `submitBids` onCall (ad + chef) ([#19](https://github.com/fenrix-ai/FenriX/pull/19) — `backend/functions/index.js:1145`)
   - **Goal:** Accept `{ adBids: {tv, radio, newspaper, billboard}, chefBids: {chefId: amount} }`. Validate minimum bid floors server-side. Store in `players/{uid}/pendingBids` immutably for that round.
   - **Files:** `backend/functions/index.js`.
   - **Acceptance:** Two players submit → pendingBids docs exist → second submit in same round is rejected (`already-exists`).
   - **Depends on:** BE-08.
 
-- [ ] **BE-10** — Auction resolution (ad + chef)
+- [x] **BE-10** — Auction resolution (ad + chef) ([#19](https://github.com/fenrix-ai/FenriX/pull/19) — resolved during `round_N_roster` entry in phases module)
   - **Goal:** On entry to `round_N_roster`, resolve both auctions. Ad: highest bidder wins, pays bid; if they already won another ad type, award to next-highest. Chef: each chef resolves independently, highest bidder wins, pays bid. Tie-break by `submittedAt asc`. Losing bidders pay nothing. Won chefs append to `players/{uid}.specialtyChefs[]`. If specialty count now > 3, set `pendingRosterAction: true`. Ad winners persisted to `rounds/{N}/adWinners` for next round's banner.
   - **Files:** `backend/functions/index.js`.
   - **Acceptance:** 3-player auction test → winners correct, no double-ad-wins, pendingRosterAction correctly flagged.
   - **Depends on:** BE-09.
 
-- [ ] **BE-11** — Roster management callables
+- [x] **BE-11** — Roster management callables ([#19](https://github.com/fenrix-ai/FenriX/pull/19) — `layoffChef` + `continueFromRoster` at `index.js:1211` and `:1278`. **Note:** callables are named `layoffChef`/`continueFromRoster`, not `rosterLayoff`/`rosterContinue` as originally spec'd — frontend callers must use the shipped names.)
   - **Goal:** `rosterLayoff({ chefId })` removes a specialty chef from `players/{uid}.specialtyChefs[]` and pushes to `games/{gameId}/auctionReturnPool`. `rosterContinue()` advances the player out of roster phase; rejects with `failed-precondition` if `specialtyChefs.length > 3`.
   - **Files:** `backend/functions/index.js`.
   - **Acceptance:** Player with 4 specialty chefs cannot continue until laying off → once ≤3, can continue. Laid-off chef can re-spawn in future chef pools.
   - **Depends on:** BE-10.
 
-- [ ] **BE-12** — Sous chef hire math + Chef Satisfaction Score
+- [x] **BE-12** — Sous chef hire math + Chef Satisfaction Score ([#19](https://github.com/fenrix-ai/FenriX/pull/19) — `backend/functions/modules/chef-system.js` + `satisfaction.js`)
   - **Goal:** Helper fns: `nextSousChefCost(count, baseCost)` returning the escalating cost (1.0×, 1.5×, 2.25×, 3.0×, +0.75×). `chefSatisfactionScore(count) = max(35, 100 − max(0, count − 4) × 16)`. Used by the simulator and exposed through decision submit validation.
   - **Files:** `backend/functions/index.js`.
   - **Acceptance:** Unit tests cover counts 0–10 and match the table in `BACKEND.md`.
@@ -230,7 +291,7 @@ Everything else depends on these writes. Do these first.
 
 ## Phase D — Simulation Engine (P0)
 
-- [ ] **BE-13** — Revenue + satisfaction simulator
+- [x] **BE-13** — Revenue + satisfaction simulator ([#19](https://github.com/fenrix-ai/FenriX/pull/19) — `backend/functions/modules/simulation.js` + `revenue.js` + `customer-allocation.js` + `loan-shark.js`. Golden-file/coefficient tuning still pending per **DEC-13** / INT-06.)
   - **Goal:** `runSimulation(gameId, round)` runs on entry to `simulating`. For each player:
     1. Compute per-chef output (base + specialties). Apply `chefSatisfactionScore / 100` as throughput multiplier.
     2. Cap per-product output by supply purchased.
@@ -246,13 +307,13 @@ Everything else depends on these writes. Do these first.
   - **Acceptance:** Golden-file test — fixed inputs → fixed outputs (noise seeded). Manual playthrough with 2 players matches the worked examples in the proposal (e.g. Advanced French chef on Croissant = 66 units/day).
   - **Depends on:** BE-10, BE-11, BE-12.
 
-- [ ] **BE-14** — Leaderboard writer + per-round result writes
+- [x] **BE-14** — Leaderboard writer + per-round result writes ([#19](https://github.com/fenrix-ai/FenriX/pull/19) — `runSimulationAndPersist` at `index.js:784` writes `leaderboard/latest` and `players/{uid}/rounds/{N}`)
   - **Goal:** After simulation, write per-player round result to `players/{uid}/rounds/{N}` and the flattened CSV row to `csvRows/{playerId}/rounds/{N}`. Rewrite `games/{gameId}/leaderboard/latest` as a ranked array by cumulative net revenue.
   - **Files:** `backend/functions/index.js`, `backend/functions/simulator.js`.
   - **Acceptance:** After each sim, leaderboard is a sorted array and every player has a new `rounds/{N}` doc.
   - **Depends on:** BE-13.
 
-- [ ] **BE-15** — Conclusion aggregation
+- [x] **BE-15** — Conclusion aggregation ([#19](https://github.com/fenrix-ai/FenriX/pull/19) — `getConclusion` at `index.js:1417` + `modules/conclusion.js`)
   - **Goal:** `getConclusion(gameId)` callable. Per-player aggregations: totalRevenue (gross), totalInterest, totalBorrowed, netRevenue = gross − interest − borrowed, budgetRemaining = startingBudget + Σ revenueNet − Σ spent. Rank by netRevenue desc, tiebreak by budgetRemaining desc. Include winner's full chef roster (base + specialties with portrait variant codes). Cache on `games/{gameId}.conclusion` once `phase === "game_over"`.
   - **Files:** `backend/functions/index.js`.
   - **Acceptance:** After a 5-round test game, conclusion doc matches hand-calculated totals. Re-fetching returns cached data (no recompute).
@@ -262,25 +323,25 @@ Everything else depends on these writes. Do these first.
 
 ## Phase E — CSV Export & Professor Tools (P0)
 
-- [ ] **BE-16** — `/api/csv/{gameId}/{playerId}` HTTPS function
+- [~] **BE-16** — `/api/csv/{gameId}/{playerId}` HTTPS function ([#19](https://github.com/fenrix-ai/FenriX/pull/19) — shipped as **callable** `exportPlayerCsv` at `index.js:1446`, not an HTTPS endpoint. Frontend FE-12 download button needs to call the callable and handle the CSV response client-side, or we need a thin HTTPS wrapper. Decide before FE-12.)
   - **Goal:** Authenticated player downloads a CSV of their own rounds (all columns per the proposal's Data Requirements section). `null` for satisfaction columns of products not offered. `revenue` is net (post loan shark). Excludes `returning_customers`.
   - **Files:** `backend/functions/index.js`.
   - **Acceptance:** Curl with the player's ID token returns a valid CSV; curl without token or for another player's ID returns 403.
   - **Depends on:** BE-14.
 
-- [ ] **BE-17** — Professor export (`/api/professor/export`)
+- [~] **BE-17** — Professor export (`/api/professor/export`) ([#19](https://github.com/fenrix-ai/FenriX/pull/19) — shipped as callable `exportProfessorCsv` at `index.js:1484`. Same decision as BE-16: keep as callable or add HTTPS wrapper.)
   - **Goal:** Prepends `playerId, bakeryName, displayName` to every CSV row, returns the full game across all players. Requires professor custom claim.
   - **Files:** `backend/functions/index.js`.
   - **Acceptance:** Professor token returns full CSV; player token returns 403.
   - **Depends on:** BE-16.
 
-- [ ] **BE-18** — Professor custom claim setter
+- [~] **BE-18** — Professor custom claim setter ([#20](https://github.com/fenrix-ai/FenriX/pull/20) open — script `backend/scripts/set-professor-claim.js` not yet on `main`)
   - **Goal:** A one-off admin script (or callable guarded by a deploy-time secret) that sets `professor: true` on a given UID.
   - **Files:** `backend/scripts/set-professor-claim.js`.
   - **Acceptance:** Running the script with a UID sets the claim; token refresh picks it up.
   - **Depends on:** none.
 
-- [ ] **BE-19** — Disconnection handling
+- [~] **BE-19** — Disconnection handling ([#20](https://github.com/fenrix-ai/FenriX/pull/20) open)
   - **Goal:** If a player submits no decision in a round, default all inputs to 0 (no stock, no sous chef hire, no bids). After 2 consecutive missed phases, set `disconnected: true`.
   - **Files:** `backend/functions/index.js`.
   - **Acceptance:** Simulated player with no submissions in rounds 3+4 → marked disconnected in round 4; revenue computed with zeros.
@@ -298,13 +359,13 @@ All existing frontend phase files need to be aligned to the April 15 proposal. *
   - **Acceptance:** Introducing `budgetCurrent` in a disallowed file fails CI. Test passes against an empty ChefCard.
   - **Depends on:** none (gate for everything else).
 
-- [ ] **FE-02** — Landing page validation + join
+- [x] **FE-02** — Landing page validation + join ([#18](https://github.com/fenrix-ai/FenriX/pull/18); join-code alphabet tightened in [#27](https://github.com/fenrix-ai/FenriX/pull/27) follow-up)
   - **Goal:** Wire the existing LandingPage to call `joinGame` callable. Enforce 2–40 char names, 6-char uppercase A–Z/2–9 codes, auto-uppercase input. Error states: invalid code, game started, game full.
   - **Files:** `app/src/pages/LandingPage.tsx`.
   - **Acceptance:** Manual test — all three error states render correctly against the emulator.
   - **Depends on:** BE-DONE-04.
 
-- [ ] **FE-03** — Lobby auto-redirect on game start
+- [x] **FE-03** — Lobby auto-redirect on game start ([#18](https://github.com/fenrix-ai/FenriX/pull/18); live roster + `joinedAt` stability landed in [#25](https://github.com/fenrix-ai/FenriX/pull/25) and [#27](https://github.com/fenrix-ai/FenriX/pull/27))
   - **Goal:** Subscribe to game doc; when `phase === "round_1_email"`, redirect to `/game/email`.
   - **Files:** `app/src/pages/LobbyPage.tsx`.
   - **Acceptance:** Professor starts game → all lobby clients redirect within 1s.
@@ -370,13 +431,13 @@ All existing frontend phase files need to be aligned to the April 15 proposal. *
   - **Acceptance:** 5-round test game → conclusion screen ranks correctly, tiebreaker works, expansion shows the per-round table.
   - **Depends on:** BE-15, FE-04.
 
-- [ ] **FE-14** — Leaderboard page rework
+- [~] **FE-14** — Leaderboard page rework ([#27](https://github.com/fenrix-ai/FenriX/pull/27) under review — subscribes to `leaderboard/latest`, renders rank/bakery/revenueNet/budgetAfter with fallback chain)
   - **Goal:** Student view with Rank / Bakery / Net Revenue (this round) / Cumulative Net Revenue. Your row highlighted. **No budget column.** Subscribes to `games/{gameId}/leaderboard/latest`.
   - **Files:** `app/src/pages/LeaderboardPage.tsx`.
   - **Acceptance:** After each simulation, leaderboard updates within 1s.
   - **Depends on:** BE-14.
 
-- [ ] **FE-15** — Professor control panel
+- [~] **FE-15** — Professor control panel ([#27](https://github.com/fenrix-ai/FenriX/pull/27) under review — Start/Advance/Pause/Resume/End wired to callables with live phase + paused flags. Still missing: Create Game flow, submission status list, copy-join-link button, professor claim gating — those land after BE-18 merges in [#20](https://github.com/fenrix-ai/FenriX/pull/20).)
   - **Goal:** Rebuild `ProfessorPage.tsx`: Create Game (calls `createGame`, shows join code huge), Start/Advance/Pause/Resume/End buttons (each disabled on invalid phase), player submission status list (✓ / ⏳ / ⚠️), live leaderboard, copy-join-link button. Protected by professor custom claim.
   - **Files:** `app/src/pages/ProfessorPage.tsx`.
   - **Acceptance:** Non-professor UID hitting `/professor` is rejected. Professor can drive a full game start-to-finish from this page.
@@ -393,6 +454,60 @@ All existing frontend phase files need to be aligned to the April 15 proposal. *
   - **Files:** `app/src/components/game/RoundHeader.tsx`, `app/src/components/game/SubmissionLock.tsx` (new).
   - **Acceptance:** Timer counts down; submission lock updates live as other players submit.
   - **Depends on:** FE-01.
+
+---
+
+## Phase F2 — April 19 Meeting Deltas (P0)
+
+New MVP work that fell out of the April 19 meeting. All must land before the April 23 testing target.
+
+- [ ] **BE-20** — Team role schema + `joinGame` role assignment
+  - **Goal:** Extend the player doc with `role: "finance" | "advertising" | "operations"` and a `teamId` grouping ~3 players into a team. `joinGame` payload accepts an optional `role`; if unspecified (solo/incomplete team), backend auto-assigns in order. Team name is stored once per team at `games/{gameId}/teams/{teamId}.name` and reused for leaderboard + conclusion.
+  - **Files:** `backend/functions/index.js` (joinGame), `backend/firestore-schema.js`, `backend/firestore.rules` (teams collection rules).
+  - **Acceptance:** Three players joining the same game code with the same team name end up grouped under one `teamId`, with distinct roles. Solo join gets all three roles (or operations fallback) per DEC-21.
+  - **Depends on:** MIG-08 (bakery name flow).
+
+- [ ] **BE-21** — Role-gated callable validation
+  - **Goal:** `submitDecision` rejects with `permission-denied` unless caller's `role` owns the decide-phase action. `submitBids` splits: ad bids require `advertising` (or fallback), chef bids require `finance` (or fallback). `rosterContinue`/`layoffChef` require `operations` (or fallback). All callables accept fallback when a team has < 3 members (see DEC-21).
+  - **Files:** `backend/functions/index.js`.
+  - **Acceptance:** A player with `role: "finance"` cannot submit decisions; a solo player can submit everything.
+  - **Depends on:** BE-20.
+
+- [ ] **FE-18** — Role selection on landing page
+  - **Goal:** Extend LandingPage with a team name input (optional) and a role picker (Finance / Advertising / Operations / "I'll play solo"). Pass through to `joinGame`. Store role locally for UI gating.
+  - **Files:** `app/src/pages/LandingPage.tsx`.
+  - **Acceptance:** Manual test — three browsers join one code with the same team name → lobby shows one team of three with distinct role badges.
+  - **Depends on:** BE-20, FE-02.
+
+- [ ] **FE-19** — Role-based button gating (global)
+  - **Goal:** Every phase submit/action button reads the player's `role` and disables (with tooltip: "Your [X] teammate submits this decision") when the player's role doesn't own that phase. All players still see the full UI and watch teammates' inputs live. Mapping per DEC-21.
+  - **Files:** `app/src/components/game/SubmissionLock.tsx`, all phase files under `app/src/pages/phases/`.
+  - **Acceptance:** Finance role on Decide phase sees the form but the Submit button is disabled with tooltip; Operations teammate can submit.
+  - **Depends on:** BE-21, FE-18.
+
+- [ ] **FE-20** — Auction top-bid display enlargement
+  - **Goal:** In BidPhase, the "current top bid" readout for both ad and chef auctions should be large and high-contrast (readable at 2m from screen). Treat as a heads-up ticker, not a footnote.
+  - **Files:** `app/src/pages/phases/BidPhase.tsx`.
+  - **Acceptance:** Visual check — top-bid text ≥ 48px, clearly dominant on the card.
+  - **Depends on:** FE-08.
+
+- [ ] **FE-21** — Soften kitchen overcrowding copy
+  - **Goal:** Audit every mention of "4 sous chefs" or "don't hire more than" in decide/roster UI copy. Replace with subtle behavioral hints ("Crowded kitchens slow down prep" / "Your head chef is looking stressed"). Never reveal the numeric threshold.
+  - **Files:** `app/src/components/game/SousChefPanel.tsx` (and any copy file under `app/src/pages/phases/`).
+  - **Acceptance:** grep for `4 sous chefs` in student-facing UI returns 0 results; warning still visible at count >4.
+  - **Depends on:** FE-05.
+
+- [ ] **INT-07** — 3-minute video walkthrough
+  - **Goal:** Produce an AI-enhanced 3-min overview video introducing the game mechanics, target audience is 8 AM undergrads on May 1. Draft script → record gameplay → edit with AI tooling. **Ship well before May 1**, not day-of.
+  - **Files:** `games/bakery-bash/deliverables/walkthrough.mp4` (new).
+  - **Acceptance:** Playable file, internally reviewed by Dylan M. + Mia, ≤ 3:30 runtime.
+  - **Depends on:** INT-01 (needs a stable game to record).
+
+- [ ] **INT-08** — External tester coordination
+  - **Goal:** Recruit 3–5 TAs/alumni for device compatibility + usability testing. Run one stress test on personal devices and one fallback test on the Chapman computer lab before April 25.
+  - **Files:** none (operational).
+  - **Acceptance:** Test log with device/browser/OS + pass/fail + any bugs filed as new tasks.
+  - **Depends on:** INT-01.
 
 ---
 
@@ -511,6 +626,13 @@ Ordered roughly by strategic value per proposal's "Deferred from Design Deck" ta
 - [ ] **POST-13** — Simulate-phase minigame
   - Interactive mini-game during the `simulating` phase (tap falling croissants or similar). Cosmetic only — no mechanical effect on revenue. Deferred from MVP per DEC-09 but committed.
 
+- [ ] **POST-14** — Data intelligence marketplace
+  - In-game storefront where players can purchase strategic insights during a round. Tiers: (1) basic hints (free or cheap — similar to the existing market email), (2) per-product satisfaction/demand reports priced mid-range, (3) detailed regression-style performance reports derived from per-player telemetry, priced highest. Interaction-term discovery (e.g., "Coffee × ad bonus" joint effect) sold as a top-tier insight. Adds a spending sink and rewards analytically sharp players.
+  - Introduced in the April 19 meeting; deferred to post-MVP to protect the May 1 launch.
+
+- [ ] **POST-15** — Team logos + branding
+  - Mandatory team-logo upload during join, displayed on leaderboard + winner banner. Deferred from MVP — team names only for May 1.
+
 ---
 
 ## Locked Decisions (April 17, 2026 — Dylan M.)
@@ -537,6 +659,14 @@ All resolved. Any change requires a design-review revisit.
 | DEC-16 | Loan shark interest | **10%** (unchanged — it's a rate, not an absolute) |
 | DEC-17 | Product sell prices | **Unchanged from proposal** (Coffee $4, Croissant $4.75, Bagel $3, Cookie $2.50, Sandwich $8.75, Matcha $6.25) |
 | DEC-18 | Unit supply cost per item | **Unchanged at $1/item** — NOT scaled. Required to keep sell-price margins positive given DEC-17. |
+| DEC-19 | Bakery section architecture (confirmed from April 17) | **Three sections / two products each:** Bakery = Croissant + Cookie; Deli = Bagel + Sandwich; Barista = Coffee + Matcha. Drives sous chef assignment, machine health, and maintenance. |
+| DEC-20 | Sous chef assignment granularity (confirmed from April 17) | **Per section**, not per product. Sous chef output is split across the two products in that section proportional to demand. |
+| DEC-21 | Team-based role access (MVP) | Teams of ~3. Each player logs in with a **role**: Finance / Advertising / Operations. Role gates which submit buttons are enabled on that player's device. Mapping: **Operations owns Decide submit (quantities, sous chef, Maintenance Guy/cleanliness); Advertising owns Ad bid submit; Finance owns Chef bid submit.** All players see all screens; only assigned role can execute. Incomplete teams fall back — solo players own all three buttons. |
+| DEC-22 | Janitor decision | The "janitor" referenced at the April 19 meeting is the existing **Maintenance Guy** role (April 17 Maintenance System). Cleanliness flows into Chef Satisfaction via the existing mechanic. No new role. Owned by the **Operations** player on 3-person teams. |
+| DEC-23 | Team naming | **Team name is optional.** If a team sets one, it's used as the bakery label on leaderboard + conclusion. If absent, the team is displayed by its members' `displayName`s. No humorous-default generator. Team logos deferred to POST-15. |
+| DEC-24 | Launch date | **May 1, 2026, 8–10 AM live session.** April 27 alternate date dropped. MVP-ready for testing by **April 23**. Assignment release Fri/Sat April 24–25. |
+| DEC-25 | Kitchen overcrowding copy | **Never display the numeric "4 sous chef" threshold** in student-facing UI. Use subtle behavioral hints only. Let players discover the curve by playing and by reading the CSV. |
+| DEC-26 | Intro tutorial / warm-up round | **No tutorial phase.** If a warm-up is needed on May 1, the professor will end a practice game and start a new one instead of adding a round-0 tutorial to the state machine. |
 
 > **Economic framing (from DEC-01 + DEC-17 + DEC-18):** Players have $500k in investor capital. Supply stock is cheap ($1/unit); sell prices are small ($4–$8.75). The real spend is **staffing + chef auctions + ad bids** — those consume 6-figure chunks of the budget. Revenue from sales alone won't repay investor capital; winning means maximizing net revenue through smart satisfaction + foot traffic decisions. The leaderboard ranks "who grew the investor's money most."
 
@@ -544,14 +674,17 @@ All resolved. Any change requires a design-review revisit.
 
 ## Delivery Timeline (Reference)
 
-| Date | Milestone |
-|---|---|
-| April 17 (today) | Roadmap published, team aligned on task IDs |
-| April 19 | Phase A + B complete (config, schema, state machine) |
-| April 22 | Phase C + D complete (chef system, simulator) |
-| April 24 | Phase E + F complete (CSV, frontend rework) |
-| April 25 | INT-01 full smoke test passing |
-| April 26 | INT-02 load test + INT-06 team playtest |
-| **April 27 or May 1** | **Launch** |
+Updated April 19, 2026 after team meeting with Prof. Frenzel. **May 1 is the hard launch date** — April 27 alternate is dropped.
+
+| Date | Milestone | Status (as of 2026-04-19) |
+|---|---|---|
+| April 17 | Roadmap published, team aligned on task IDs | ✅ done |
+| April 19 | Meeting with Prof. — team roles, team names, launch locked | ✅ done; DEC-19..26 added |
+| April 19 | Phase A + B complete (config, schema, state machine) | ✅ on backend (via [#19](https://github.com/fenrix-ai/FenriX/pull/19)); ⚠️ MIG-01 and MIG-02 schema cleanup still unstarted; frontend phase rework (FE-06/07/09) not started |
+| April 22 (Wed) | **Internal team testing session** (reserved study room) | scheduled — requires INT-01 smoke test green |
+| April 23 (Thu) | **MVP-ready for external testing** (INT-08 recruits) | target |
+| April 24–25 (Fri/Sat) | Assignment release hard cutoff + external stress testing | target |
+| April 26–29 | INT-06 team playtest, coefficient tuning, INT-07 video finalization | target |
+| **May 1 (Thu) 8–10 AM** | **LIVE SESSION — launch** | single hard date, no fallback |
 
 > Every task ID in this file can be referenced in commits (e.g. `feat(BE-13): simulator engine`) and PR titles so progress is legible without reopening this doc.

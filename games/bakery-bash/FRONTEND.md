@@ -1,7 +1,7 @@
 # Bakery Bash — Frontend Spec
 
 **Team:** AB + Kavin
-**Last Updated:** April 16, 2026 — aligned to GAME_DESIGN_PROPOSAL.md (April 15, 2026)
+**Last Updated:** April 19, 2026 — aligned to GAME_DESIGN_PROPOSAL.md (April 19 Team Roles update)
 
 > **Source of truth:** [GAME_DESIGN_PROPOSAL.md](./GAME_DESIGN_PROPOSAL.md). Anything in this spec that conflicts with the proposal is wrong — fix the spec, not the proposal.
 
@@ -31,11 +31,15 @@
 
 These rules apply globally to every screen. Violating them breaks the game's core design.
 
-1. **Budget is hidden during play.** No screen — except `/game/conclusion` and the professor view — may display the player's remaining budget. Do not show "Budget Remaining", "Cash Left", "$X available", or any equivalent. Players track their own finances externally.
+1. **Budget is hidden during play.** No screen — except `/game/conclusion`, the professor view, and the in-decide `<BudgetSummary>` panel (P1 override, see below) — may display the player's remaining budget. Do not show "Budget Remaining", "Cash Left", "$X available", or any equivalent on any other surface. Players otherwise track their own finances externally.
+
+   > **P1 spec override (2026-04):** P1 Task 9 explicitly required a live budget panel in the decide phase so players can see staffing/production/ad spend deducted from `budgetCurrent` in real time. The `<BudgetSummary>` component in `app/src/components/game/BudgetSummary.tsx` is the *only* sanctioned exception to this rule on the player side; it lives inside `<GameSidebar>` above the Hire/Status tabs. Budget remains hidden everywhere else (Lobby, Email, Bid, Simulating, Results, Roster, Leaderboard table). If the design doc is later reverted to a strictly-hidden budget, delete this component and remove the `budgetCurrent` plumbing from `GamePage.tsx` + `GameContext.tsx`.
 2. **Pricing is fixed for MVP.** No price input fields anywhere. Prices are read-only labels next to product inputs (Coffee $4.00, Croissant $4.75, Bagel $3.00, Cookie $2.50, Sandwich $8.75, Matcha $6.25).
 3. **Chef specialty is hidden.** ChefCard components must never render specialty products or multiplier values, regardless of whether the data is in props. Only nationality, skill tier (Novel/Intermediate/Advanced), name, and portrait are visible.
-4. **Opponents' decisions are hidden.** Players see the leaderboard but never another player's stocked quantities, sous chef count, or bids.
+4. **Opposing teams' decisions are hidden.** Players see the leaderboard but never another team's stocked quantities, sous chef count, or bids. Teammates on the same team DO see each other's inputs in real time.
 5. **Overspend is allowed.** Decision/bid forms never block on budget. The loan shark applies a 10% interest penalty silently at end of round.
+6. **Role-gated submits (April 19, DEC-21).** Every submit button reads the logged-in player's `role` and disables when the player's role doesn't own that phase, with a tooltip: *"Your [role] teammate submits this decision."* Inputs stay visible and interactive for everyone on the team — only the submit is gated. Solo players (team size 1) have all roles and all submits enabled.
+7. **Never show the numeric sous chef threshold (DEC-25).** No copy should say "4 sous chefs" or "don't hire more than N". Use subtle behavioral hints ("Kitchen getting crowded", "Your head chef looks stressed") so players discover the curve by playing.
 
 ---
 
@@ -45,18 +49,21 @@ These rules apply globally to every screen. Violating them breaks the game's cor
 
 - Game logo / title
 - Input: Player name (2–40 chars)
+- Input: **Team name** (2–40 chars, **optional** per DEC-23 — teams can skip this and be labelled by members' displayNames)
 - Input: 6-character game code (uppercase A–Z, 2–9; auto-uppercased on input)
+- **Role picker (radio group):** Finance / Advertising / Operations / "Solo (all roles)" — defaults to Solo when no teammate has already claimed a role in this team; otherwise defaults to the first unclaimed role.
 - Button: "Join Game"
-- Error states: invalid code, game already started, game full (cap 30)
-- Anonymous Firebase auth happens on mount; join calls the `joinGame` callable on submit.
+- Error states: invalid code, game already started, game full (cap 20 teams), role already taken in this team.
+- Anonymous Firebase auth happens on mount; join calls the `joinGame` callable on submit with `{ displayName, teamName?, joinCode, role }`.
 
 ---
 
 ### 2. Lobby (`/lobby`)
 
-- Live list of joined players (subscribe to `games/{gameId}/players`)
-- Player count + status ("Waiting for professor to start…")
-- Your team/bakery name displayed
+- Live list of joined **teams**, each expanded to show its 1–3 members with role badges (subscribe to `games/{gameId}/teams` + `games/{gameId}/players`)
+- Team count + status ("Waiting for professor to start…")
+- Your team name displayed large with your role badge
+- Teammates joining live append under the same team card — no refresh needed
 - Auto-redirects to `/game/email` (Round 1) when professor starts game
 
 ---
@@ -79,13 +86,14 @@ Shown at the start of each round (and after results before the next round). Emai
 - Countdown timer (red when < 60s)
 - **No budget display.**
 - **Quantity per product** — one numeric input per offered menu item, with the fixed price shown as a read-only label next to the input
-- **Sous Chef Hiring panel** (see `<SousChefPanel>` below) — current count, per-product assignments, "Next hire $X" computed from escalation curve, soft warnings at >4 (Kitchen Satisfaction drop) and >8 (severe disruption); never blocks
+- **Sous Chef Hiring panel** (see `<SousChefPanel>` below) — current count, **per-section assignments** (Bakery / Deli / Barista), "Next hire $X" computed from escalation curve, **behavioral-only warnings** ("Kitchen getting crowded" / "Your head chef looks stressed") — never reveal the numeric threshold (DEC-25). Never blocks.
 - **Menu unlock panel** — toggle Sandwich / Coffee / Matcha (base menu = Croissant, Cookie, Bagel)
 - **Ad-winner banner** at top showing previous round's ad winners on the appropriate ad surface (TV, Radio, Newspaper, Billboard) with the winning bakery's branding overlaid; player's own win highlighted
 - (Optional) "Last round's market hint" recap card — dismissible, pulls from prior round's email body
-- Submit button — disables after submission, shows "Waiting for other players (N/M submitted)"
+- Submit button (role-gated to **Operations**; disabled on other teammates' devices with tooltip) — disables after submission, shows "Waiting for other teams (N/M submitted)"
+- Maintenance Guy ("janitor") panel: hire count + task assignment (Clean Store / Repair Oven / Repair Meat Slicer / Repair Espresso Machine). Owned by Operations (DEC-22). Station health bars + cleanliness % visible here.
 
-> **What is NOT here:** price inputs (prices are fixed), budget display (hidden), chef specialty (hidden).
+> **What is NOT here:** price inputs (prices are fixed), budget display (hidden), chef specialty (hidden), numeric sous chef threshold copy (DEC-25).
 
 ---
 
@@ -95,18 +103,20 @@ Two sequential 1-minute auctions. Sealed-bid, first-price.
 
 **Ad Auction (1 min)**
 - Cards for each ad type: TV, Radio, Newspaper, Billboard
-- Bid input per card; player can bid on multiple but wins at most one
-- **No budget remaining display.** A "Total of all your bids: $X" running total is acceptable since it's player-derived from their own inputs.
-- Submit button locks the form; if timer expires without submit, all bids treated as $0
+- **Current top bid readout** on each card in large, high-contrast type — readable at 2m from the screen (≥ 48px). Treated as a heads-up ticker, not a footnote. (April 19 meeting — the previous treatment was too small to read during competitive bidding.)
+- Bid input per card; team can bid on multiple but wins at most one
+- **No budget remaining display.** A "Total of all your team's bids: $X" running total is acceptable since it's team-derived from their own inputs.
+- Submit button (role-gated to Advertising; disabled on other teammates' devices with tooltip) locks the form; if timer expires without submit, all bids treated as $0
 
 **Chef Auction (1 min)**
 - Cards rendered via `<ChefCard mode="bid">` for each chef in the round's pool
-  - Visible: portrait, nationality flag, skill tier (Novel / Intermediate / Advanced), name, minimum bid floor
+  - Visible: portrait, nationality flag, skill tier (Novel / Intermediate / Advanced), name, minimum bid floor, **current top bid (large, high-contrast)**
   - **Hidden:** specialty products, multiplier values
-- One bid input per chef. A player can bid on (and win) multiple chefs.
+- One bid input per chef. A team can bid on (and win) multiple chefs.
 - Minimum bid floor enforced client-side (server is the final arbiter)
 - If timer expires without submit: all chef bids treated as $0
-- After submit, the BE evaluates wins; if total specialty chefs > 3, BE routes the player to `/game/roster` (otherwise straight to `/game/simulate`)
+- Submit button is **role-gated to Finance** (disabled on other teammates' devices with tooltip)
+- After submit, the BE evaluates wins; if total specialty chefs > 3, BE routes the team to `/game/roster` (otherwise straight to `/game/simulate`)
 
 ---
 
@@ -185,9 +195,9 @@ Each row expands into a per-round breakdown — Round / Revenue / Borrowed / Int
 ### 10. Leaderboard (`/leaderboard`)
 
 **Student view:**
-- Ranked by cumulative net revenue
-- Your row highlighted
-- Columns: Rank, Bakery Name, Net Revenue (this round), Cumulative Net Revenue
+- Ranked **by team** (cumulative net revenue), not by individual player
+- Your team's row highlighted
+- Columns: Rank, Bakery Label (team name if set, else concatenated member displayNames per DEC-23), Net Revenue (this round), Cumulative Net Revenue
 - **No budget column.**
 
 **Professor view (`/professor/leaderboard`):**
@@ -199,11 +209,16 @@ Each row expands into a per-round breakdown — Round / Revenue / Borrowed / Int
 
 ### 11. Professor Control Panel (`/professor`)
 
+Expanded in the April 19 meeting — prof needs **real-time visibility into every team's progress** to run the 8–10 AM live session confidently.
+
 - Create Game (form for settings → returns join code displayed huge for the class)
 - Start Game / Advance Phase / Pause / Resume / End Game (each disabled when invalid for current phase)
-- Player list with per-phase submission status (✓ submitted / ⏳ pending / ⚠️ disconnected)
-- Live leaderboard
+- **Per-team submission grid** (rows = teams, columns = phases of the current round). Cell states: ✓ submitted / ⏳ pending / ⚠️ disconnected / 🔒 not yet unlocked. Click a team row to drill in.
+- **Team drill-down panel** — on row click, shows the team's last-submitted decisions (quantities, sous chef counts + section assignments, Maintenance Guy hires, bid amounts, roster). This is the "individual team progress and decisions" visibility the prof asked for.
+- **Live aggregate stats** — mean/median revenue, satisfaction distribution, spread between fastest and slowest team on the current phase. Updates in real time as sims complete.
+- Live leaderboard (same data as `/leaderboard` but with per-team budget column visible here).
 - "Copy join link" button (puts `https://…/?code=XXXXXX` on clipboard)
+- **Reset / New Game** button — ends the current session and starts a fresh one without leaving the page. Covers the "intro warm-up" use case (DEC-26) and the data-regen testing workflow.
 - **Auth:** professor custom claim required on the Firebase ID token (not a password — see backend AUTH_PLAYER_FLOW.md)
 
 ---
@@ -212,14 +227,15 @@ Each row expands into a per-round breakdown — Round / Revenue / Borrowed / Int
 
 | Component | Used By | Notes |
 |---|---|---|
-| `<RoundHeader>` | All `/game/*` routes | Round N/M, countdown timer, sous chef count, specialty chef count. **No budget.** |
+| `<RoundHeader>` | All `/game/*` routes | Round N/M, countdown timer, sous chef count, specialty chef count, **team name + your role badge**. **No budget.** |
 | `<ChefCard mode="bid"\|"roster"\|"won">` | Bid, Roster, Results, Conclusion | Portrait, nationality, skill tier, name. **Never specialty or multipliers.** Has a regression test asserting `data-testid="chef-specialty"` is never in the DOM. |
-| `<SousChefPanel>` | Decide, Roster | Current count, per-product assignments, escalating "Next hire $X", warnings at >4 and >8. Never blocks. |
+| `<SousChefPanel>` | Decide, Roster | Current count, **per-section assignments** (Bakery / Deli / Barista — not per product, per DEC-20), escalating "Next hire $X". **No numeric threshold hints** (DEC-25): subtle behavioral copy only. Never blocks. |
 | `<ProductBreakdownTable>` | Results | Per-product stocked / sold / satisfaction % / sell-out flag, sorted by satisfaction desc. |
 | `<MarketEmailModal>` | `/game/email` | Email-themed UI, vague hint body, 5-second read delay before dismiss. |
 | `<LoanSharkCallout>` | Results | Red banner shown only when `amountBorrowed > 0`. |
-| `<AdWinnerBanner>` | Decide | Renders previous round's ad winners on TV/Radio/Newspaper/Billboard surfaces. |
-| `<SubmissionLock>` | Decide, Bid (both halves) | Disables form on submit; shows "N/M players submitted". |
+| `<AdWinnerBanner>` | Decide | Renders previous round's ad winners on TV/Radio/Newspaper/Billboard surfaces, overlaid with the winning team's name. |
+| `<SubmissionLock>` | Decide, Bid (both halves), Roster | Disables form on submit; shows "N/M teams submitted". Reads logged-in player's `role` and gates the submit button (tooltip for non-owning roles). |
+| `<RoleBadge>` | RoundHeader, Lobby, Professor panel | Small pill showing the player's role (Finance / Advertising / Operations / Solo) with a color code. Purely informational. |
 
 ---
 
@@ -280,6 +296,10 @@ Add a CI check (lint rule or grep test) that fails if `budgetCurrent`, `budgetRe
 - `pages/ConclusionPage.tsx`
 - `pages/ProfessorPage.tsx`
 - `pages/ProfessorLeaderboardPage.tsx`
+- `components/game/BudgetSummary.tsx` (P1 override — see Hard UI Rule #1)
+- `pages/GamePage.tsx` (only for the player-doc listener that dispatches `SET_BUDGET` into context for `BudgetSummary`)
+- `contexts/GameContext.tsx` (only for the `budgetCurrent` field on `GameState` and the `SET_BUDGET` action consumed by `BudgetSummary`)
+- `lib/cost.ts` (cost-only helpers; never reads or renders `budgetCurrent` itself)
 
 This catches accidental budget leaks in PRs.
 
@@ -288,7 +308,7 @@ This catches accidental budget leaks in PRs.
 ## Open Questions
 
 1. ~~**Auction UX:** Can a player bid on multiple ad types or just one?~~ → ✅ **Multiple bids allowed; wins at most one ad and gets routed to next-highest if would-double-win.**
-2. ~~**Budget display:** Real-time deductions as inputs change, or only shown on submit?~~ → ✅ **Hidden entirely during play. Revealed once on Conclusion Screen as the tiebreaker.**
+2. ~~**Budget display:** Real-time deductions as inputs change, or only shown on submit?~~ → ✅ **Hidden entirely during play. Revealed once on Conclusion Screen as the tiebreaker.** **(P1 override, 2026-04: live `<BudgetSummary>` panel added to the decide-phase sidebar per P1 Task 9 — see Hard UI Rule #1 for the explicit allow-list.)**
 3. ~~**Minigame spec:**~~ → ✅ **Skipped for MVP** (DEC-09). Simulate phase shows a cute loading animation only. Interactive minigame is post-MVP (POST-13).
 4. ~~**Mobile support:**~~ → ✅ **Desktop-only for MVP** (DEC-11). Responsive polish is post-MVP.
 5. ~~**Email phase as full route vs modal overlay:**~~ → ✅ **Full-screen route `/game/email`** (DEC-08).

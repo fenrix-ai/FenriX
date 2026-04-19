@@ -6,39 +6,12 @@ import {
   type MaintenanceTask,
   type StaffCounts,
 } from "../../../types/game";
-
-/**
- * Default per-hire base cost when Firestore `config/params` has not yet
- * resolved. Mirrors `DEFAULT_GAME_CONFIG.sousChefBaseCost` in
- * `backend/functions/modules/config.js`.
- */
-const DEFAULT_BASE_COST = 50;
-
-/**
- * Escalation multipliers for the first four hires per role (indices 0–3).
- * For hires beyond the 4th, we linearly extend the curve by +0.75 multiplier
- * per additional hire. Matches the game-design-proposal curve:
- *   [$50, $75, $112.50, $150, $187.50, $225, …] at a $50 base.
- */
-const ESCALATION_MULTIPLIERS = [1.0, 1.5, 2.25, 3.0];
-const ESCALATION_DELTA_AFTER = 0.75;
-
-/** Cost of the Nth hire (N = currentCount, so 0 = first hire). */
-function getHireCost(base: number, currentCount: number): number {
-  if (currentCount < ESCALATION_MULTIPLIERS.length) {
-    return base * ESCALATION_MULTIPLIERS[currentCount];
-  }
-  const last = ESCALATION_MULTIPLIERS[ESCALATION_MULTIPLIERS.length - 1];
-  const extra = currentCount - (ESCALATION_MULTIPLIERS.length - 1);
-  return base * (last + ESCALATION_DELTA_AFTER * extra);
-}
-
-/** Sum of all hire costs from 0 → count-1 for a given role. */
-function totalRoleCost(base: number, count: number): number {
-  let total = 0;
-  for (let i = 0; i < count; i++) total += getHireCost(base, i);
-  return total;
-}
+import {
+  getHireCost,
+  resolveBaseCosts,
+  totalRoleCost,
+  totalStaffCost,
+} from "../../../lib/cost";
 
 const OVERCROWDING_THRESHOLD = 4;
 const MAX_PER_ROLE = 20;
@@ -110,12 +83,7 @@ export function StaffTab() {
   const { config, pendingDecision } = useGame();
   const dispatch = useGameDispatch();
 
-  const sousBase =
-    config?.sousChefBaseCost ??
-    config?.costPerStaffPerRound ??
-    DEFAULT_BASE_COST;
-  const maintBase =
-    config?.maintenanceBaseCost ?? sousBase ?? DEFAULT_BASE_COST;
+  const { sousBase, maintBase } = resolveBaseCosts(config);
 
   const staffCounts = pendingDecision.staffCounts;
   const maintenanceTasks = pendingDecision.maintenanceTasks;
@@ -156,14 +124,10 @@ export function StaffTab() {
     });
   };
 
-  const grandTotal = useMemo(() => {
-    return (
-      totalRoleCost(sousBase, staffCounts.bakerySousChefs) +
-      totalRoleCost(sousBase, staffCounts.deliSousChefs) +
-      totalRoleCost(sousBase, staffCounts.baristaSousChefs) +
-      totalRoleCost(maintBase, staffCounts.maintenanceGuys)
-    );
-  }, [sousBase, maintBase, staffCounts]);
+  const grandTotal = useMemo(
+    () => totalStaffCost(staffCounts, config),
+    [staffCounts, config],
+  );
 
   const sousChefTotal = totalSousChefs(staffCounts);
   const overcrowded = sousChefTotal > OVERCROWDING_THRESHOLD;
@@ -173,8 +137,9 @@ export function StaffTab() {
       <h3 className="sidebar-tab__title">Hire Staff</h3>
       <p className="sidebar-tab__hint">
         Hire sous chefs per station and maintenance guys to keep the kitchen
-        running. More than {OVERCROWDING_THRESHOLD} sous chefs hurts kitchen
-        coordination. Check the <strong>Status</strong> tab for machine health.
+        running. Crowded kitchens slow production — watch your head chef for
+        signs of strain. Check the <strong>Status</strong> tab for machine
+        health.
       </p>
 
       {/* Three sous chef station steppers */}
@@ -222,8 +187,7 @@ export function StaffTab() {
 
       {overcrowded && (
         <p className="staff-tab__warning" role="alert">
-          ⚠ Overcrowding: {sousChefTotal} sous chefs — coordination penalty
-          applies beyond {OVERCROWDING_THRESHOLD}.
+          ⚠ Kitchen is getting crowded — your head chef looks stressed.
         </p>
       )}
 

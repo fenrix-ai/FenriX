@@ -1,8 +1,8 @@
 # Game Design Proposal — Bakery Bash
 
-**Date:** April 1, 2026 · Updated April 8, 2026 (all-hands decisions) · Updated April 15, 2026 (Chef System, Loan Shark mechanic) · Updated April 17, 2026 (Maintenance System, Station Architecture, Chef Satisfaction overhaul)
-**Team:** Game Design (Dylan M. + Mia) · Frontend (AB + Kavin) · Backend (Daniel + Scott + Dylan B.)
-**Target Launch:** April 27 or May 1, 2026
+**Date:** April 1, 2026 · Updated April 8, 2026 (all-hands decisions) · Updated April 15, 2026 (Chef System, Loan Shark mechanic) · Updated April 17, 2026 (Maintenance System, Station Architecture, Chef Satisfaction overhaul) · Updated April 19, 2026 (Team Roles, Team Names, launch locked to May 1)
+**Team:** Game Design (Dylan M. + Mia) · Frontend (AB + Kavin) · Backend (Scott + Dylan B.)
+**Target Launch:** **May 1, 2026 (live session 8–10 AM)** — April 27 alternate dropped at the April 19 meeting. MVP-ready for external testing by April 23.
 **Course:** MGSC 310 · Prof. Frenzel · Chapman University
 
 > This document proposes an MVP-scoped version of Bakery Bash. It is intentionally simplified from the full design deck to maximize the chance of shipping a working game by launch day. Features can be layered on after the core loop works.
@@ -86,6 +86,49 @@ Players have 1 minute to bid each round, sealed auction, highest bidder wins. Pl
 **Option to add new menu item + quantity of stock each round.**
 
 **New item selection:** Sandwich, Coffee, Matcha — six products, six price inputs total.
+
+---
+
+## Team Composition & Roles
+
+*Added April 19, 2026 — locked at meeting with Prof. Frenzel.*
+
+Bakery Bash is played in **teams of ~3**, not solo. Every student logs in with their own device; the three teammates share one bakery. This is a collaboration-forcing mechanic: role-gated UI buttons mean teammates **must talk** to each other between phases to play at all.
+
+### The Three Roles
+
+| Role | Owns This Submit Button | Responsible For |
+|---|---|---|
+| **Operations** | Decide-phase submit (`submitDecision`) | Stock quantities per product, sous chef hiring + section assignments, Maintenance Guy ("janitor") hiring + assignments, menu unlocks. |
+| **Advertising** | Ad auction submit (ad half of `submitBids`) | Choosing how to split the team's ad budget across TV / Radio / Newspaper / Billboard. |
+| **Finance** | Chef auction submit + roster decisions (chef half of `submitBids`, `layoffChef`, `continueFromRoster`) | Chef bidding strategy, budget discipline, roster management at ≥ 4 specialty chefs. |
+
+All three players see every screen — the full team state is always visible to everyone. Only the role-owning player's **submit button is enabled** on their device; for other roles it's disabled with a tooltip: *"Your [role] teammate submits this decision."*
+
+### Team Size Fallback
+
+Teams of 3 are the design target, but attendance will vary on May 1. Fallback rules:
+
+| Team Size | Role Assignment |
+|---|---|
+| 3 (ideal) | Finance / Advertising / Operations, one each. |
+| 2 | Split at join — one player picks 2 roles, the other picks 1. Both buttons light up on the 2-role player's device. |
+| 1 (solo) | All three roles assigned to the single player. Game plays identically to pre-role-gating behavior. |
+
+No team ever loses access to a phase because of missing teammates.
+
+### Team Names
+
+**Team names are optional.** A team can set one at join if they want branding on the leaderboard; if they skip it, the team is labelled by its members' individual `displayName`s (per DEC-06). No humorous-default generator is required for MVP.
+
+> **Team logos** were discussed at the April 19 meeting and **deferred to post-MVP** (POST-15). No branding work for May 1.
+
+### What This Changes for Other Systems
+
+- **Firestore schema:** player docs gain `role` and `teamId`. A new `games/{gameId}/teams/{teamId}` doc carries the team name and member list. See [BACKEND.md](./BACKEND.md).
+- **Leaderboard + conclusion:** ranked by **team**, not individual player. Winning team's roster shows all three members.
+- **CSV export:** every row carries both `teamId` and the submitting `playerId` + `role`, so regression work can isolate individual decisions if desired.
+- **Professor panel:** submission status is per-team per-phase, with a drill-down to per-role status inside the team.
 
 ---
 

@@ -164,11 +164,12 @@ export function GamePage() {
     return unsubscribe;
   }, [gameId, dispatch]);
 
-  // --- Listener: /games/{gameId}/players/{playerId} — maintenance/chef stats. ---
-  // Cloud Functions write `maintenanceBars` and `chefSatisfactionScores` onto
-  // the player doc as they evolve. We mirror them into GameContext so the
-  // sidebar status bars and results-phase warnings stay live. These fields
-  // are absent until BE-1..BE-10 ship — the listener is a no-op in that case.
+  // --- Listener: /games/{gameId}/players/{playerId} — maintenance/chef stats + budget. ---
+  // Cloud Functions write `maintenanceBars`, `chefSatisfactionScores`, and
+  // `budgetCurrent` onto the player doc as they evolve. We mirror them into
+  // GameContext so the sidebar status bars, results-phase warnings, and
+  // budget summary stay live. The maintenance/satisfaction fields are absent
+  // until BE-1..BE-10 ship; `budgetCurrent` is initialized at join time.
   useEffect(() => {
     if (!gameId || !playerId) return;
     const playerRef = doc(db, "games", gameId, "players", playerId);
@@ -196,6 +197,14 @@ export function GamePage() {
             type: "SET_CHEF_SATISFACTION",
             payload: scores as Record<string, number>,
           });
+        }
+        if (typeof data.budgetCurrent === "number") {
+          dispatch({ type: "SET_BUDGET", payload: data.budgetCurrent });
+        } else {
+          // Field absent (legacy doc, mid-write, or backend dropped it):
+          // clear so the BudgetSummary doesn't display a stale value from a
+          // previous round / previous game session.
+          dispatch({ type: "SET_BUDGET", payload: null });
         }
       },
       (err) => {
@@ -301,20 +310,13 @@ export function GamePage() {
 
   const isDecisionPhase = basePhase === "decide";
   const isSimulating = basePhase === "simulating";
-  const isResultsReady = basePhase === "results_ready";
 
   if (!isDecisionPhase) {
     return (
       <PageShell className="game-page">
         <RoundHeader />
         <div className="game-page__content">
-          {isSimulating ? (
-            <SimulatePhase />
-          ) : isResultsReady ? (
-            <ResultsPhase />
-          ) : (
-            <ResultsPhase />
-          )}
+          {isSimulating ? <SimulatePhase /> : <ResultsPhase />}
         </div>
       </PageShell>
     );

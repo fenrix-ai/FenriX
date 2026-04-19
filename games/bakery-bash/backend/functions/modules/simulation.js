@@ -368,8 +368,14 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
       ? decision.sousChefCount
       : Number(p.sousChefCount) || 0;
     const adBidPaid = getAdBidPaid(p);
+    const adWon = getAdWon(p);
 
-    const revenueGross = computeGrossRevenue({
+    // DEC-03/DEC-04: flat ad-winner bonus added to gross revenue.
+    // TV $50k, Billboard $37.5k, Radio $25k, Newspaper $18.75k (config.adBonuses).
+    const adWinnerBonus =
+      (adWon && config && config.adBonuses && config.adBonuses[adWon]) || 0;
+
+    let revenueGross = computeGrossRevenue({
       sousChefCount,
       aggregateSatisfactionPct: postSelloutAggregate,
       adSpend: adBidPaid,
@@ -377,6 +383,7 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
       totalProductRevenue,
       noiseSeed: `${gameId || 'game'}:${round}:${p.playerId}`,
     }, config);
+    revenueGross += adWinnerBonus;
 
     // --- Round costs (excluding loan shark) ---
     const costDecision = {

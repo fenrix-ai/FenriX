@@ -1167,6 +1167,175 @@ describe('simulation.js — Integration', () => {
   it('SELLOUT_SAT_CAP is 45', () => {
     eq(simulation.SELLOUT_SAT_CAP, 45);
   });
+
+  // DEC-03/DEC-04: ad auction winner gets a flat bonus added to revenueGross.
+  // TV=$50k, Billboard=$37.5k, Radio=$25k, Newspaper=$18.75k (from config.adBonuses).
+  // Test strategy: two runs with identical inputs except auctionResults.adWon.
+  // Same playerId → same noise seed → exact difference = ad bonus.
+  it('runSimulation — TV winner gets $50k flat bonus added to revenueGross (DEC-03)', () => {
+    const makePlayer = (adWon) => ({
+      playerId: 'p1',
+      displayName: 'Solo',
+      bakeryName: 'Solo Bakery',
+      budgetCurrent: 500000,
+      sousChefCount: 0,
+      specialtyChefs: [],
+      returningCustomersPending: 0,
+      decision: {
+        menu: { croissant: true, cookie: true, bagel: true, sandwich: true, coffee: true, matcha: true },
+        quantities: { croissant: 20, cookie: 20, bagel: 20, sandwich: 20, coffee: 20, matcha: 20 },
+        sousChefCount: 0,
+        sousChefAssignments: {},
+      },
+      auctionResults: { adWon, adBidPaid: 0, chefBidPaid: 0 },
+    });
+    const prefs = { modifiers: { croissant: 1.0, cookie: 1.0, bagel: 1.0, sandwich: 1.0, coffee: 1.0, matcha: 1.0 } };
+    const ctx = { gameId: 'ad-bonus-test', round: 1 };
+    const winR = simulation.runSimulation([makePlayer('TV')], prefs, cfg, ctx);
+    const noWinR = simulation.runSimulation([makePlayer(null)], prefs, cfg, ctx);
+    const diff = winR[0].revenueGross - noWinR[0].revenueGross;
+    eq(diff, cfg.adBonuses.TV, 'TV bonus exactly added to gross revenue');
+  });
+
+  it('runSimulation — Billboard winner gets $37.5k flat bonus (DEC-04)', () => {
+    const makePlayer = (adWon) => ({
+      playerId: 'p1', displayName: 'Solo', bakeryName: 'Solo Bakery',
+      budgetCurrent: 500000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
+      decision: {
+        menu: { croissant: true }, quantities: { croissant: 10 },
+        sousChefCount: 0, sousChefAssignments: {},
+      },
+      auctionResults: { adWon, adBidPaid: 0, chefBidPaid: 0 },
+    });
+    const ctx = { gameId: 'ad-bonus-bb', round: 1 };
+    const winR = simulation.runSimulation([makePlayer('Billboard')], {}, cfg, ctx);
+    const noWinR = simulation.runSimulation([makePlayer(null)], {}, cfg, ctx);
+    eq(winR[0].revenueGross - noWinR[0].revenueGross, cfg.adBonuses.Billboard, 'Billboard bonus');
+  });
+
+  it('runSimulation — no ad won → no flat bonus applied', () => {
+    const player = {
+      playerId: 'p1', displayName: 'Solo', bakeryName: 'Solo Bakery',
+      budgetCurrent: 500000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
+      decision: {
+        menu: { croissant: true }, quantities: { croissant: 10 },
+        sousChefCount: 0, sousChefAssignments: {},
+      },
+      auctionResults: { adWon: null, adBidPaid: 0, chefBidPaid: 0 },
+    };
+    const r = simulation.runSimulation([player], {}, cfg, { gameId: 'no-ad', round: 1 });
+    // With no bonus, revenueGross should be within the noise range of the formula
+    // base ($500) + noise ± $100 + other coefficients (all 0 here) + totalProductRevenue.
+    // Croissant price $4.75 × qtySold (≤10 with a solo player/no competition most customers).
+    // We just confirm no phantom $50k+ bonus leaked in.
+    ok(r[0].revenueGross < 10000, 'no ad bonus → revenueGross stays in expected range');
+  });
+
+  it('runSimulation — Radio winner gets $25k flat bonus (DEC-04)', () => {
+    const makePlayer = (adWon) => ({
+      playerId: 'p1', displayName: 'Solo', bakeryName: 'Solo Bakery',
+      budgetCurrent: 500000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
+      decision: {
+        menu: { croissant: true }, quantities: { croissant: 10 },
+        sousChefCount: 0, sousChefAssignments: {},
+      },
+      auctionResults: { adWon, adBidPaid: 0, chefBidPaid: 0 },
+    });
+    const ctx = { gameId: 'ad-bonus-radio', round: 1 };
+    const winR = simulation.runSimulation([makePlayer('Radio')], {}, cfg, ctx);
+    const noWinR = simulation.runSimulation([makePlayer(null)], {}, cfg, ctx);
+    eq(winR[0].revenueGross - noWinR[0].revenueGross, cfg.adBonuses.Radio, 'Radio bonus');
+  });
+
+  it('runSimulation — Newspaper winner gets $18.75k flat bonus (DEC-04)', () => {
+    const makePlayer = (adWon) => ({
+      playerId: 'p1', displayName: 'Solo', bakeryName: 'Solo Bakery',
+      budgetCurrent: 500000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
+      decision: {
+        menu: { croissant: true }, quantities: { croissant: 10 },
+        sousChefCount: 0, sousChefAssignments: {},
+      },
+      auctionResults: { adWon, adBidPaid: 0, chefBidPaid: 0 },
+    });
+    const ctx = { gameId: 'ad-bonus-news', round: 1 };
+    const winR = simulation.runSimulation([makePlayer('Newspaper')], {}, cfg, ctx);
+    const noWinR = simulation.runSimulation([makePlayer(null)], {}, cfg, ctx);
+    eq(winR[0].revenueGross - noWinR[0].revenueGross, cfg.adBonuses.Newspaper, 'Newspaper bonus');
+  });
+
+  // Defensive: if bad data lands in auctionResults.adWon (e.g. a legacy ad type
+  // no longer in config.adBonuses), we must not crash and must not add a phantom
+  // bonus. The || 0 fallback in simulation.js handles this.
+  it('runSimulation — unknown adWon string contributes no bonus', () => {
+    const player = {
+      playerId: 'p1', displayName: 'Solo', bakeryName: 'Solo Bakery',
+      budgetCurrent: 500000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
+      decision: {
+        menu: { croissant: true }, quantities: { croissant: 10 },
+        sousChefCount: 0, sousChefAssignments: {},
+      },
+      auctionResults: { adWon: 'Podcast', adBidPaid: 0, chefBidPaid: 0 },
+    };
+    const bad = simulation.runSimulation([player], {}, cfg, { gameId: 'unknown-ad', round: 1 });
+    const none = simulation.runSimulation(
+      [{ ...player, auctionResults: { adWon: null, adBidPaid: 0, chefBidPaid: 0 } }],
+      {}, cfg, { gameId: 'unknown-ad', round: 1 }
+    );
+    eq(bad[0].revenueGross - none[0].revenueGross, 0, 'unknown ad type → no bonus, no crash');
+  });
+
+  // Ad bonus (flat add) should compose cleanly with the adSpend coefficient path
+  // (adSpendCoeff × adBidPaid). A player who bids $500 and wins TV should gain
+  // BOTH the $500 × 0.8 spend contribution AND the $50k flat bonus on top.
+  it('runSimulation — flat ad bonus stacks with adSpend coefficient', () => {
+    const makePlayer = (adWon, adBidPaid) => ({
+      playerId: 'p1', displayName: 'Solo', bakeryName: 'Solo Bakery',
+      budgetCurrent: 500000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
+      decision: {
+        menu: { croissant: true }, quantities: { croissant: 10 },
+        sousChefCount: 0, sousChefAssignments: {},
+      },
+      auctionResults: { adWon, adBidPaid, chefBidPaid: 0 },
+    });
+    const ctx = { gameId: 'ad-stack', round: 1 };
+    // Winner: bids $500 AND wins TV. Non-winner: bids $500, wins nothing.
+    const winR   = simulation.runSimulation([makePlayer('TV', 500)], {}, cfg, ctx);
+    const noWinR = simulation.runSimulation([makePlayer(null, 500)], {}, cfg, ctx);
+    // Both have same adSpend contribution (500 × adSpendCoeff), same noise (same
+    // playerId + seed), same everything else. Diff should be *exactly* the flat
+    // TV bonus — proving the flat add is additive, not replacing the coeff path.
+    eq(winR[0].revenueGross - noWinR[0].revenueGross, cfg.adBonuses.TV,
+       'TV bonus stacks on top of adSpend coefficient');
+  });
+
+  // revenueNet = revenueGross − loanSharkDeduction. If the bonus is added to
+  // revenueGross BEFORE loan-shark, then a player who borrows pays interest on
+  // (expenses − budget), unaffected by the bonus — but keeps the bonus in the
+  // net. Sanity-check: winner with loan shark triggered still ends up with the
+  // bonus reflected in revenueNet.
+  it('runSimulation — ad bonus survives loan-shark deduction into revenueNet', () => {
+    const makePlayer = (adWon) => ({
+      playerId: 'p1', displayName: 'Overspender', bakeryName: 'Broke Bakery',
+      budgetCurrent: 100, // forces borrowing
+      sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
+      decision: {
+        menu: { croissant: true, cookie: true },
+        quantities: { croissant: 50, cookie: 50 },
+        sousChefCount: 3, // hefty staffing bill
+        sousChefAssignments: { croissant: 2, cookie: 1 },
+      },
+      auctionResults: { adWon, adBidPaid: 0, chefBidPaid: 0 },
+    });
+    const ctx = { gameId: 'ad-with-loan', round: 1 };
+    const winR   = simulation.runSimulation([makePlayer('TV')], {}, cfg, ctx);
+    const noWinR = simulation.runSimulation([makePlayer(null)], {}, cfg, ctx);
+    ok(winR[0].amountBorrowed > 0, 'winner still overspends → borrows');
+    ok(noWinR[0].amountBorrowed > 0, 'non-winner also overspends → borrows');
+    // Same expenses on both sides → identical loanSharkDeduction.
+    // Diff in revenueNet should equal the full TV bonus.
+    eq(winR[0].revenueNet - noWinR[0].revenueNet, cfg.adBonuses.TV,
+       'TV bonus flows through to revenueNet even under loan-shark');
+  });
 });
 
 // ============================================================================

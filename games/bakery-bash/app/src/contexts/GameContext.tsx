@@ -11,6 +11,7 @@ import {
   AD_TYPES,
   DEFAULT_MAINTENANCE_BARS,
   DEFAULT_STAFF_COUNTS,
+  totalSousChefs,
   type AdType,
   type AuctionTab,
   type GameConfigParams,
@@ -43,7 +44,7 @@ function buildDefaultDecisionDraft(): PendingDecisionDraft {
   return {
     menu,
     quantities,
-    sousChefCount: 0,
+    sousChefCount: totalSousChefs(DEFAULT_STAFF_COUNTS),
     sousChefAssignments,
     staffCounts: { ...DEFAULT_STAFF_COUNTS },
     maintenanceTasks: [],
@@ -82,6 +83,7 @@ const initialState: GameState = {
   chefBidsSubmitted: false,
   maintenanceBars: { ...DEFAULT_MAINTENANCE_BARS },
   chefSatisfactionScores: {},
+  budgetCurrent: null,
 };
 
 type GameAction =
@@ -128,6 +130,7 @@ type GameAction =
   | { type: "SET_CHEF_BIDS_SUBMITTED"; payload: boolean }
   | { type: "SET_MAINTENANCE_BARS"; payload: MaintenanceBars }
   | { type: "SET_CHEF_SATISFACTION"; payload: Record<string, number> }
+  | { type: "SET_BUDGET"; payload: number | null }
   | { type: "RESET" };
 
 function gameReducer(state: GameState, action: GameAction): GameState {
@@ -205,10 +208,17 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       return { ...state, config: action.payload };
 
     case "UPDATE_PENDING_DECISION": {
+      const nextStaffCounts = action.payload.staffCounts
+        ? {
+            ...state.pendingDecision.staffCounts,
+            ...action.payload.staffCounts,
+          }
+        : state.pendingDecision.staffCounts;
       const next: PendingDecisionDraft = {
         ...state.pendingDecision,
-        sousChefCount:
-          action.payload.sousChefCount ?? state.pendingDecision.sousChefCount,
+        // Keep the legacy flat field in sync until backend consumers stop
+        // reading it directly.
+        sousChefCount: totalSousChefs(nextStaffCounts),
         menu: action.payload.menu
           ? { ...state.pendingDecision.menu, ...action.payload.menu }
           : state.pendingDecision.menu,
@@ -224,12 +234,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
               ...action.payload.sousChefAssignments,
             }
           : state.pendingDecision.sousChefAssignments,
-        staffCounts: action.payload.staffCounts
-          ? {
-              ...state.pendingDecision.staffCounts,
-              ...action.payload.staffCounts,
-            }
-          : state.pendingDecision.staffCounts,
+        staffCounts: nextStaffCounts,
         maintenanceTasks:
           action.payload.maintenanceTasks !== undefined
             ? action.payload.maintenanceTasks
@@ -281,6 +286,11 @@ function gameReducer(state: GameState, action: GameAction): GameState {
 
     case "SET_CHEF_SATISFACTION":
       return { ...state, chefSatisfactionScores: { ...action.payload } };
+
+    case "SET_BUDGET": {
+      if (state.budgetCurrent === action.payload) return state;
+      return { ...state, budgetCurrent: action.payload };
+    }
 
     case "RESET":
       return initialState;

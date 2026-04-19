@@ -7,6 +7,13 @@
       "runtimeArgs": ["start"],
       "cwd": "templates/firebase-react-starter",
       "port": 3000
+    },
+    {
+      "name": "bakery-bash-app",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "games/bakery-bash/app",
+      "port": 5173
     }
   ]
 }

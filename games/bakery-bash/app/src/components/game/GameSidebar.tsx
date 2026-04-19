@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { BudgetSummary } from "./BudgetSummary";
 import { StaffTab } from "./tabs/StaffTab";
 import { StatusTab } from "./tabs/StatusTab";
 
@@ -12,18 +13,24 @@ import { StatusTab } from "./tabs/StatusTab";
  */
 const TABS = ["Hire", "Status"] as const;
 type Tab = (typeof TABS)[number];
+const tabId = (tab: Tab) => `game-sidebar-tab-${tab.toLowerCase()}`;
+const panelId = (tab: Tab) => `game-sidebar-panel-${tab.toLowerCase()}`;
 
 export function GameSidebar() {
   const [activeTab, setActiveTab] = useState<Tab>("Hire");
 
   return (
     <aside className="game-sidebar">
+      <BudgetSummary />
       <nav className="game-sidebar__tabs" role="tablist">
         {TABS.map((tab) => (
           <button
             key={tab}
+            id={tabId(tab)}
             role="tab"
+            type="button"
             aria-selected={activeTab === tab}
+            aria-controls={panelId(tab)}
             className={`game-sidebar__tab ${
               activeTab === tab ? "game-sidebar__tab--active" : ""
             }`}
@@ -34,7 +41,12 @@ export function GameSidebar() {
         ))}
       </nav>
 
-      <div className="game-sidebar__panel" role="tabpanel">
+      <div
+        id={panelId(activeTab)}
+        className="game-sidebar__panel"
+        role="tabpanel"
+        aria-labelledby={tabId(activeTab)}
+      >
         {activeTab === "Hire" && <StaffTab />}
         {activeTab === "Status" && <StatusTab />}
       </div>

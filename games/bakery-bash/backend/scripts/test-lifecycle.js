@@ -500,7 +500,7 @@ async function main() {
   });
 
   // ─── Final Summary ─────────────────────────────────────────
-  await test("Final leaderboard has correct structure", async () => {
+  await test("Final leaderboard has correct cumulative revenues", async () => {
     const lbSnap = await gameRef.collection("leaderboard").doc("latest").get();
     const rankings = lbSnap.get("rankings");
 
