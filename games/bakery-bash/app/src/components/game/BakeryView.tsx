@@ -1,7 +1,6 @@
 import { useGame, useGameDispatch } from "../../contexts/GameContext";
 import {
   BASE_MENU,
-  PRODUCT_STATION,
   type ProductKey,
   type StationId,
 } from "../../types/game";
