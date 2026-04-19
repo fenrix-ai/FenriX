@@ -62,6 +62,8 @@ Open [http://localhost:4000](http://localhost:4000) in your browser to see the E
 
 The backend folder is linked to Firebase project `bakery-bash-54d12` through `backend/.firebaserc`.
 
+> **Team access (as of April 19, 2026):** all active team members (Scott, Dylan B., AB, Kavin, Dylan M., Mia) are **owners** on the Firebase project. Plan: **Spark** with a credit card attached to cover any burst beyond the free tier during the May 1 live session. Cost projection for a full 5-round run with ~60–70 concurrent users is **$0.60–$0.70** — well inside Spark's free tier in practice.
+
 Deploy backend resources from `games/bakery-bash/backend/`:
 
 ```bash
