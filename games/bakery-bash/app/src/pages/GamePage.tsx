@@ -219,6 +219,24 @@ export function GamePage() {
           // previous round / previous game session.
           dispatch({ type: "SET_BUDGET", payload: null });
         }
+        // DEC-21: backend assigns role + teamId on the player doc once
+        // teams are formed. Mirror them so the team page + role-gated
+        // submits can react. The team doc's `name` is read separately
+        // by `TeamPage` (subscribes to /teams/{teamId} for live sync).
+        if (
+          data.role === "operations" ||
+          data.role === "advertising" ||
+          data.role === "finance" ||
+          data.role === "solo"
+        ) {
+          dispatch({ type: "SET_ROLE", payload: data.role });
+        }
+        if (typeof data.teamId === "string" && data.teamId.length > 0) {
+          // teamName itself comes from the team-doc listener (TeamPage).
+          dispatch({ type: "SET_TEAM_ID", payload: data.teamId });
+        } else if (data.teamId === null) {
+          dispatch({ type: "SET_TEAM_ID", payload: null });
+        }
       },
       (err) => {
         console.error(

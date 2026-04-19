@@ -439,15 +439,25 @@ export interface GameState {
    */
   budgetCurrent: number | null;
   /**
-   * The local player's team role (DEC-21). UI-only until BE-21 ships
-   * server-side enforcement. Defaults to "solo" so a single-browser playtest
-   * keeps every submit button enabled.
+   * The local player's team role (DEC-21). Assigned by the backend on team
+   * formation and mirrored from `/games/{gameId}/players/{uid}.role`.
+   * Defaults to "solo" so a single-browser playtest keeps every submit
+   * button enabled until backend role assignment ships (BE-20/BE-21).
    */
   role: PlayerRole;
   /**
-   * Optional shared team name (DEC-23). Sent to `joinGame` as `bakeryName`
-   * and mirrored to the player doc; if blank, the leaderboard / lobby
-   * label falls back to the player's `displayName`.
+   * The local player's team identifier (DEC-21). Mirrored from
+   * `/games/{gameId}/players/{uid}.teamId`. `null` while the backend has
+   * not yet assigned the player to a team — the /team page renders a
+   * "waiting for assignment" state in that case.
+   */
+  teamId: string | null;
+  /**
+   * Shared team name (DEC-23). Read from
+   * `/games/{gameId}/teams/{teamId}.name`. Editable by any teammate via
+   * the `updateTeamName` callable. `null` while the team has not been
+   * named yet — the leaderboard / lobby label falls back to the player's
+   * `displayName` in that case.
    */
   teamName: string | null;
   /**

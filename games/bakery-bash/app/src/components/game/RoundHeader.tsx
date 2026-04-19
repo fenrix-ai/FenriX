@@ -111,6 +111,7 @@ export function RoundHeader() {
     teamName,
     player,
     role,
+    teamId,
   } = useGame();
 
   const phaseSeconds = usePhaseCountdownSeconds();
@@ -146,9 +147,14 @@ export function RoundHeader() {
       {teamLabel && (
         <div className="round-header__team" title="Team">
           <span className="round-header__team-label">{teamLabel}</span>
-          <span className={`role-badge role-badge--${role}`}>
-            {PLAYER_ROLE_LABELS[role]}
-          </span>
+          {/* Hide the role badge until backend assignment writes a real
+              teamId — otherwise every fresh client claims to be "solo"
+              even when they're actually one of three teammates. */}
+          {teamId && (
+            <span className={`role-badge role-badge--${role}`}>
+              {PLAYER_ROLE_LABELS[role]}
+            </span>
+          )}
         </div>
       )}
 

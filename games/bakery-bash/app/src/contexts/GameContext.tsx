@@ -85,10 +85,13 @@ const initialState: GameState = {
   maintenanceBars: { ...DEFAULT_MAINTENANCE_BARS },
   chefSatisfactionScores: {},
   budgetCurrent: null,
-  // DEC-21 default: solo / all-roles. Real assignment happens via the
-  // landing-page role picker on JOIN_GAME, persisted in localStorage so
-  // a refresh during a round doesn't silently demote the player to "solo".
+  // DEC-21 default: solo / all-roles. The real role + team assignment is
+  // written by the backend onto the player doc and the team doc; the
+  // player doc listener mirrors them into context. "solo" stays the
+  // default so a single-browser playtest keeps every submit button
+  // enabled before BE-20/BE-21 ship.
   role: "solo",
+  teamId: null,
   teamName: null,
   phaseEndsAtMs: null,
 };
@@ -101,13 +104,11 @@ type GameAction =
         playerId: string;
         gameCode: string;
         player: Player;
-        /** April 19 (DEC-21): selected on the LandingPage role picker. */
-        role: PlayerRole;
-        /** April 19 (DEC-23): optional team label. */
-        teamName: string | null;
       };
     }
   | { type: "SET_ROLE"; payload: PlayerRole }
+  | { type: "SET_TEAM_ID"; payload: string | null }
+  | { type: "SET_TEAM_NAME"; payload: string | null }
   | { type: "SET_PHASE_ENDS_AT"; payload: number | null }
   | { type: "SET_PHASE"; payload: GamePhaseString }
   | { type: "SET_ROUND"; payload: number }
@@ -155,8 +156,12 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         playerId: action.payload.playerId,
         gameCode: action.payload.gameCode,
         player: action.payload.player,
-        role: action.payload.role,
-        teamName: action.payload.teamName,
+        // Reset team-assignment state on a fresh join; backend writes
+        // role + teamId onto the player doc and the team doc, and the
+        // player-doc / team-doc listeners mirror them back into context.
+        role: "solo",
+        teamId: null,
+        teamName: null,
         phase: "lobby",
       };
 
@@ -164,6 +169,16 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       return state.role === action.payload
         ? state
         : { ...state, role: action.payload };
+
+    case "SET_TEAM_ID":
+      return state.teamId === action.payload
+        ? state
+        : { ...state, teamId: action.payload };
+
+    case "SET_TEAM_NAME":
+      return state.teamName === action.payload
+        ? state
+        : { ...state, teamName: action.payload };
 
     case "SET_PHASE_ENDS_AT":
       return state.phaseEndsAtMs === action.payload

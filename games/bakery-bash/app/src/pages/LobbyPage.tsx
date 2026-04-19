@@ -9,6 +9,7 @@ import { useGame } from "../contexts/GameContext";
 import { db } from "../lib/firebase";
 import { PageShell } from "../components/ui/PageShell";
 import { PLAYER_ROLE_LABELS } from "../types/game";
+import { Link } from "react-router-dom";
 
 /**
  * Roster entry as published to `/games/{gameId}/roster/{playerId}` by the
@@ -24,7 +25,7 @@ interface RosterEntry {
 }
 
 export function LobbyPage() {
-  const { player, playerId, gameId, gameCode, role, teamName } = useGame();
+  const { player, playerId, gameId, gameCode, role, teamId, teamName } = useGame();
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [rosterError, setRosterError] = useState<string | null>(null);
   // Distinct from `roster.length === 0`: tells us whether the snapshot
@@ -99,10 +100,22 @@ export function LobbyPage() {
         {player && (
           <div className="lobby-page__bakery">
             Your bakery: <strong>{teamName ?? player.bakeryName}</strong>{" "}
-            <span className={`role-badge role-badge--${role}`}>
-              {PLAYER_ROLE_LABELS[role]}
-            </span>
+            {/* Only render the role badge once the backend has actually
+                assigned the player to a team. Before assignment, every
+                client defaults to "solo", which would lie about role
+                ownership in a real session. */}
+            {teamId && (
+              <span className={`role-badge role-badge--${role}`}>
+                {PLAYER_ROLE_LABELS[role]}
+              </span>
+            )}
           </div>
+        )}
+
+        {!teamId && (
+          <p className="lobby-page__team-hint">
+            <Link to="/team">Set your team name →</Link>
+          </p>
         )}
 
         <div className="lobby-page__players">
