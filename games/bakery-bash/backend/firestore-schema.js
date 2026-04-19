@@ -11,7 +11,7 @@
  */
 
 /**
- * @typedef {"lobby" | "closing_hours" | "auction" | "open_for_business" | "results" | "game_over"} GamePhase
+ * @typedef {"lobby" | "round_N_email" | "round_N_decide" | "round_N_bid_ad" | "round_N_bid_chef" | "round_N_roster" | "simulating" | "results_ready" | "game_over"} GamePhase
  */
 
 // ─────────────────────────────────────────────────────────────
@@ -23,11 +23,16 @@ const GameDocument = {
   joinCode: "ABC123",             // string
 
   // Current phase of the state machine
-  // Transitions: lobby → closing_hours → auction → open_for_business → results → (next round closing_hours or game_over)
+  // Transitions: lobby → round_N_email → round_N_decide → round_N_bid_ad → round_N_bid_chef
+  //              → round_N_roster → simulating → results_ready → round_N+1_email → game_over
   phase: "lobby",                 // GamePhase
 
-  // Current round number (1-indexed)
-  currentRound: 1,                // number (1–5)
+  // Current round number (1-indexed).
+  // Both `round` and `currentRound` are written by Cloud Functions on every
+  // phase transition — they always hold the same value. `currentRound` is the
+  // legacy alias kept for backward-compat readers; new code should prefer `round`.
+  round: 1,                       // number (1–5) — canonical field
+  currentRound: 1,                // number (1–5) — legacy alias (same value as `round`)
   totalRounds: 5,                 // number
 
   // Server-owned timestamps for the current phase. Clients calculate time remaining
@@ -52,68 +57,69 @@ const GameDocument = {
 // ─────────────────────────────────────────────────────────────
 // /games/{gameId}/config/{configId}  (single doc: "params")
 // Stores all tunable parameters so nothing is hardcoded in Cloud Functions.
+// Mirrors DEFAULT_GAME_CONFIG in backend/functions/modules/config.js — that
+// file is the authoritative source; keep this in sync with it.
 // ─────────────────────────────────────────────────────────────
 const GameConfigDocument = {
-  // Economy
-  startingBudget: 2000,           // number ($)
-  costPerStaffPerRound: 50,       // number ($)
+  // ── Economy ──────────────────────────────────────────────
+  startingBudget: 500000,         // number ($) — each player's opening budget
+  sousChefBaseCost: 12500,        // number ($) — cost per sous chef hired per round
   unitCostPerProduct: 1,          // number ($) — flat cost per unit ordered
 
-  // Credit / overdraft mechanics are pending Game Design sign-off.
-  // Until creditCostRate is finalized, backend validation should keep budgets non-negative.
-  credit: {
-    overdraftEnabled: false,       // boolean
-    creditCostRate: null,          // number | null — Open Q #6
-    chargeTiming: null,            // "immediate" | "per_round" | "game_end" | null
+  // ── Revenue model ────────────────────────────────────────
+  // revenue = base + sousChefCoeff×sousChefs + satisfactionCoeff×satisfaction
+  //         + adSpendCoeff×adSpend + numProductsCoeff×numProducts + noise
+  revenueCoefficients: {
+    base: 500,                    // number — intercept
+    sousChefCoeff: 12,            // number — per-sous-chef revenue boost
+    satisfactionCoeff: 8.0,       // number — per-point satisfaction boost
+    adSpendCoeff: 0.8,            // number — multiplier on ad spend ($)
+    numProductsCoeff: 50,         // number — per-active-product boost
+    noiseMin: -100,               // number ($) — lower bound of uniform noise
+    noiseMax: 100,                // number ($) — upper bound of uniform noise
   },
 
-  // Dynamic staffing cost is pending Game Design sign-off.
-  // Until escalationCurve is finalized, use costPerStaffPerRound as a flat fallback.
-  staffingCost: {
-    baseCostPerStaff: 50,          // number ($)
-    escalationCurve: null,         // object | null — Open Q #7
-  },
-
-  // Revenue regression coefficients
-  revenueModel: {
-    base: 500,
-    staffCoefficient: 30,
-    priceCoefficient: -15,
-    adSpendCoefficient: 0.8,
-    numProductsCoefficient: 50,
-    noiseMin: -100,
-    noiseMax: 100,
-  },
-
-  // Ad auction bonus values ($/round added to revenue if player wins that ad slot)
+  // ── Advertising ──────────────────────────────────────────
+  // Sealed-bid first-price auction; winner adds bonus to revenue that round.
   adBonuses: {
-    TV: 200,
-    Billboard: 150,
-    Radio: 100,
-    Newspaper: 75,
+    TV: 50000,                    // number ($)
+    Billboard: 37500,             // number ($)
+    Radio: 25000,                 // number ($)
+    Newspaper: 18750,             // number ($)
   },
 
-  // Chef auction: skill level (0–100) won maps to a revenue bonus
-  // bonus = chefSkill * chefBonusPerPoint
-  chefBonusPerPoint: 5,           // number
-
-  // Customer pool = customerPoolMultiplier × numPlayers
-  customerPoolMultiplier: 100,
-
-  // Attractiveness weights (used for proportional customer allocation)
-  attractivenessWeights: {
-    priceWeight: 100,             // (1 / avg_price) * priceWeight
-    staffWeight: 5,               // staff_count * staffWeight
-    adSpendWeight: 0.3,           // ad_spend * adSpendWeight
-    numProductsWeight: 10,        // num_products * numProductsWeight
-  },
-
-  // Phase durations (seconds)
+  // ── Phase durations ──────────────────────────────────────
+  // Seconds per phase; professor can override at game creation.
   phaseDurations: {
-    closing_hours: 180,           // 3 minutes
-    auction: 90,                  // 3 × 30s sealed-bid auctions
-    open_for_business: 30,
-    results: 60,
+    email: 30,                    // market-insight reading window
+    decide: 300,                  // menu + quantities + sous chef hiring
+    bid_ad: 60,                   // sealed ad bids
+    bid_chef: 60,                 // sealed chef bids
+    roster: 60,                   // layoff / continue specialty chef roster
+    simulating: 30,               // server-side simulation (auto-advances)
+    results: 60,                  // results review
+  },
+
+  // ── Chef system ──────────────────────────────────────────
+  totalRounds: 5,                 // number — rounds per game
+  specialtyChefCap: 3,            // number — max specialty chefs per player
+  chefPoolSize: { min: 6, max: 8 }, // object — pool size range per round
+
+  // Chef satisfaction decay: satisfaction = max(floor, 100 - max(0, n - threshold) × decay)
+  // where n = consecutive rounds on roster without a win bonus.
+  chefSatisfactionThreshold: 4,   // number — rounds before decay starts
+  chefSatisfactionDecay: 16,      // number — satisfaction lost per round beyond threshold
+  chefSatisfactionFloor: 35,      // number — minimum satisfaction (prevents instant departure)
+
+  // ── Loan shark ───────────────────────────────────────────
+  // If a player cannot afford total spend, they borrow the shortfall at this rate.
+  loanSharkInterestRate: 0.10,    // number — interest charged on borrowed amount (10%)
+
+  // ── Returning customers ──────────────────────────────────
+  // Bonus customer counts granted the next round based on prior satisfaction tier.
+  returningCustomerBonuses: {
+    excellent: 0.15,              // number — fraction of total customers if satisfaction ≥ 85
+    good: 0.08,                   // number — fraction if satisfaction ≥ 60
   },
 };
 
@@ -123,12 +129,16 @@ const GameConfigDocument = {
 // ─────────────────────────────────────────────────────────────
 const PlayerDocument = {
   uid: "firebase_auth_uid",       // string — Firebase Auth UID (anonymous)
-  displayName: "The Rolling Scone", // string — bakery name chosen on join
+  // playerId is stored redundantly (same value as the document ID and uid)
+  // so subcollection queries can filter without knowing the parent doc ID.
+  playerId: "firebase_auth_uid",  // string — same as uid; redundant for query convenience
+  displayName: "The Rolling Scone", // string — bakery name chosen on join (DEC-06)
+  bakeryName: "The Rolling Scone",  // string — same as displayName at join time (DEC-06)
+
   joinedAt: null,                 // Timestamp
 
-  // Live financial state
-  budgetCurrent: 2000,            // number ($) — updated after each round
-  creditBalance: 0,               // number ($) — amount currently financed through overdraft/credit
+  // Live financial state (never shown to players mid-game — DEC design principle)
+  budgetCurrent: 500000,          // number ($) — updated after each round (DEC-01)
   cumulativeRevenue: 0,           // number ($) — sum of all round revenues (for leaderboard)
 
   // Current round's working draft (live editable state before submit)
@@ -137,73 +147,51 @@ const PlayerDocument = {
     submitted: false,             // boolean
     submittedAt: null,            // Timestamp | null
 
-    // Pricing & staffing
-    staffCount: 3,                // number (integer)
-    adSpend: 0,                   // number ($)
-
-    // Active menu items (true = on menu this round)
+    // Active menu items (true = on menu this round; base products always true)
     menu: {
       croissant: true,
       cookie: true,
       bagel: true,
       sandwich: false,
-      latte: false,
-      matchaLatte: false,
+      coffee: false,
+      matcha: false,
     },
 
-    // Per-product prices (backend computes avgPrice from active menu items)
-    productPrices: {
-      croissant: 0,
-      cookie: 0,
-      bagel: 0,
-      sandwich: 0,
-      latte: 0,
-      matchaLatte: 0,
-    },
-
-    // Per-product quantity ordered (units)
+    // Per-product quantity ordered (units); prices are fixed server-side (MIG-04)
     quantities: {
       croissant: 0,
       cookie: 0,
       bagel: 0,
       sandwich: 0,
-      latte: 0,
-      matchaLatte: 0,
+      coffee: 0,
+      matcha: 0,
     },
+
+    // Sous chef hiring (decide phase only — DEC-02)
+    sousChefCount: 0,             // number
+    sousChefAssignments: {},      // { [product]: number } — sums to sousChefCount
   },
 
-  // Auction bids for current round (written client-side, validated server-side)
+  // Specialty chef roster (max 3; written server-side after auction)
+  specialtyChefs: [],             // ChefObject[] — max 3; specialty field hidden from client
+
+  // Sous chef count hired this round (decide phase only — DEC-02)
+  sousChefCount: 0,               // number
+
+  // True when specialtyChefs.length > 3 after auction; blocks rosterContinue
+  pendingRosterAction: false,     // boolean
+
+  // Returning customer bonus earned from prior round satisfaction
+  returningCustomersPending: 0,   // number
+
+  // Ad + chef bids (separate callable submitBids — MIG-05)
   pendingBids: {
-    // Ad auction: player bids on one ad type
-    adBid: {
-      adType: "TV",               // "TV" | "Billboard" | "Radio" | "Newspaper" | null
-      amount: 0,                  // number ($)
-    },
-
-    // Chef auction: player bids a skill level (0–100) + dollar amount
-    chefBid: {
-      skillLevel: 0,              // number (0–100) — desired skill tier
-      amount: 0,                  // number ($)
-    },
+    ad: null,    // { TV, Billboard, Radio, Newspaper } | null
+    chef: null,  // [{ chefId, amount }] | null
   },
 
-  // Results from the most recently completed round (denormalized for fast display)
-  lastRoundResult: {
-    round: 0,
-    revenue: 0,
-    customerCount: 0,
-    customerSatisfaction: 0,
-    headchefSkill: 0,
-    adTypeWon: null,
-    productsSold: {
-      croissant: 0,
-      cookie: 0,
-      bagel: 0,
-      sandwich: 0,
-      latte: 0,
-      matchaLatte: 0,
-    },
-  },
+  // Denormalised last-round result for fast UI reads
+  lastRoundResult: null,          // RoundResultDocument snapshot | null
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -216,26 +204,14 @@ const DecisionDocument = {
   round: 1,                       // number
   submittedAt: null,              // Timestamp
 
-  staffCount: 3,                  // number
-  adSpend: 0,                     // number ($)
-
+  // Active menu (base products always true; prices are fixed server-side — MIG-04)
   menu: {
     croissant: true,
     cookie: true,
     bagel: true,
     sandwich: false,
-    latte: false,
-    matchaLatte: false,
-  },
-
-  // Per-product prices (backend computes avgPrice from active menu items)
-  productPrices: {
-    croissant: 0,
-    cookie: 0,
-    bagel: 0,
-    sandwich: 0,
-    latte: 0,
-    matchaLatte: 0,
+    coffee: false,
+    matcha: false,
   },
 
   quantities: {
@@ -243,30 +219,16 @@ const DecisionDocument = {
     cookie: 0,
     bagel: 0,
     sandwich: 0,
-    latte: 0,
-    matchaLatte: 0,
+    coffee: 0,
+    matcha: 0,
   },
 
-  adBid: {
-    adType: null,                 // string | null
-    amount: 0,
-  },
-
-  chefBid: {
-    skillLevel: 0,
-    amount: 0,
-  },
+  // Sous chef hiring (decide phase only — DEC-02)
+  sousChefCount: 0,               // number
+  sousChefAssignments: {},        // { [product]: number }
 
   // Derived server-side
   numProducts: 3,                 // number — count of active menu items
-  staffingCost: 0,                // number ($) — dynamic curve once Open Q #7 is resolved
-  creditCost: 0,                  // number ($) — overdraft/credit fee once Open Q #6 is resolved
-  stockCost: 0,                   // number ($) — inventory purchased from totalQuantityCost
-  adBidAmount: 0,                 // number ($) — player's ad bid reserve at submit time
-  chefBidAmount: 0,               // number ($) — player's chef bid reserve at submit time
-  guaranteedCosts: 0,             // number ($) — staffing + stock + credit (always charged)
-  totalCostsMax: 0,               // number ($) — guaranteed + max bid reserve (worst-case at submit)
-  budgetBefore: 2000,             // number ($) — snapshot before deductions
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -277,70 +239,30 @@ const DecisionDocument = {
 const RoundResultDocument = {
   round: 1,                       // number
 
-  // Revenue engine outputs
-  revenue: 0,                     // number ($)
+  // Revenue (post loan-shark deduction)
+  revenueGross: 0,                // number ($) — before loan-shark deduction
+  revenueNet: 0,                  // number ($) — gross − (borrowed × 1.10)
+  amountBorrowed: 0,              // number ($) — $0 if within budget
+  interestCharged: 0,             // number ($) — amountBorrowed × 0.10
+  totalSpent: 0,                  // number ($)
+  budgetAfter: 0,                 // number ($)
+
+  // Customer metrics
   customerCount: 0,               // number
-  customerSatisfaction: 0,        // number (0–100)
-  headchefSkill: 0,               // number (0–100) — skill of won chef (or 0)
+  returningCustomersEarned: 0,    // number
 
-  // Auction outcomes
-  adTypeWon: null,                // "TV" | "Billboard" | "Radio" | "Newspaper" | null
-  adBonus: 0,                     // number ($) — bonus revenue from ad win
-  chefBonus: 0,                   // number ($) — bonus revenue from chef skill
+  // Satisfaction
+  aggregateSatisfactionPct: 0,    // number (0–100)
+  chefSatisfactionScore: 0,       // number (0–100)
 
-  // Per-product units sold
-  productsSold: {
-    croissant: 0,
-    cookie: 0,
-    bagel: 0,
-    sandwich: 0,
-    latte: 0,
-    matchaLatte: 0,
-  },
+  // Per-product breakdown (keyed by product)
+  // Each entry: { fillRate, satisfactionPct, qtySold, sellout: boolean }
+  perProductSatisfaction: {},
 
-  // Inputs + derived values echoed back (makes CSV export trivial — all data in one doc)
-  avgPrice: 0,
-
-  // Player inputs echoed back for CSV export / auditing
-  productPrices: {
-    croissant: 0,
-    cookie: 0,
-    bagel: 0,
-    sandwich: 0,
-    latte: 0,
-    matchaLatte: 0,
-  },
-  menu: {
-    croissant: true,
-    cookie: true,
-    bagel: true,
-    sandwich: false,
-    latte: false,
-    matchaLatte: false,
-  },
-  quantitySubmitted: {
-    croissant: 0,
-    cookie: 0,
-    bagel: 0,
-    sandwich: 0,
-    latte: 0,
-    matchaLatte: 0,
-  },
-
-  staffCount: 0,
-  adSpend: 0,
-  numProducts: 0,
-  totalCosts: 0,
-
-  // Budget ledger
-  revenueGross: 0,
-  staffingCost: 0,
-  creditCost: 0,
-  creditBalanceBefore: 0,
-  creditBalanceAfter: 0,
-  totalCosts: 0,
-  budgetBefore: 0,
-  budgetAfter: 0,
+  // Flat aliases for easy frontend consumption
+  perProductSold: {},             // { [product]: number }
+  selloutFlags: {},               // { [product]: boolean }
+  perProductCustomers: {},        // { [product]: number }
 
   computedAt: null,               // Timestamp
 };
@@ -382,7 +304,7 @@ const AggregateRoundDocument = {
 };
 
 // ─────────────────────────────────────────────────────────────
-// /games/{gameId}/leaderboard/latest
+// /games/{gameId}/leaderboard/current
 // Rewritten by Cloud Function at the end of each round.
 // ─────────────────────────────────────────────────────────────
 const LeaderboardDocument = {
@@ -400,20 +322,6 @@ const LeaderboardDocument = {
 
   updatedAt: null,                // Timestamp
   round: 1,                       // number — which round this snapshot reflects
-};
-
-// ─────────────────────────────────────────────────────────────
-// /games/{gameId}/roster/{playerId}
-// Public-safe lobby roster. Written only by the joinGame callable.
-// Readable (get + list) by any signed-in user so the lobby can subscribe
-// to the player list. Intentionally excludes financial state.
-// ─────────────────────────────────────────────────────────────
-const RosterMemberDocument = {
-  uid: "uid_abc",                 // string — Firebase Auth uid, matches doc id
-  displayName: "The Rolling Scone", // string (2–40 chars, validated in joinGame)
-  bakeryName: "Rolling Scone Bakery", // string (≤60 chars)
-  joinedAt: null,                 // Timestamp — set on first join, preserved on rejoin
-  updatedAt: null,                // Timestamp — refreshed on each join/rejoin
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -439,8 +347,8 @@ const CsvRowsDocument = {
     cookie: 0,
     bagel: 0,
     sandwich: 0,
-    latte: 0,
-    matcha_latte: 0,
+    coffee: 0,
+    matcha: 0,
     ad_type: "none",           // string — ad type won this round, or "none"
   },
 };
@@ -483,8 +391,7 @@ const PlayerEmailDocument = {
 // /games/{gameId}/players/{playerId}/rounds/{roundId}     ← RoundResultDocument
 // /games/{gameId}/players/{playerId}/emails/{emailId}     ← PlayerEmailDocument
 // /games/{gameId}/rounds/{roundId}         ← AggregateRoundDocument
-// /games/{gameId}/leaderboard/latest       ← LeaderboardDocument
-// /games/{gameId}/roster/{playerId}        ← RosterMemberDocument (public-safe)
+// /games/{gameId}/leaderboard/current      ← LeaderboardDocument
 // /games/{gameId}/csvRows/{playerId}/rounds/{roundId}  ← CsvRowsDocument
 //
 // ─────────────────────────────────────────────────────────────
