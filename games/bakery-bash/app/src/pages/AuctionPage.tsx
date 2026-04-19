@@ -150,6 +150,9 @@ function generateChefPool(round: number): ChefListing[] {
  * Shape of a chef as written to `games/{gameId}/rounds/{round}.chefPool`
  * by the backend. Only the fields the UI renders or submits are declared
  * here; the backend also attaches `specialties`, `minBidFloor`, etc.
+ * `gender` is written as the full string `"male"` / `"female"` server-side
+ * (see `backend/functions/modules/chef-system.js`) and mapped to the UI's
+ * `"m"` / `"f"` in `mapBackendChef`.
  */
 interface BackendChef {
   id: string;
@@ -170,18 +173,23 @@ function mapBackendSkill(tier: string | undefined): SkillLevel {
   return (tier && BACKEND_SKILL_MAP[tier]) || "low";
 }
 
+function mapBackendGender(gen: unknown): ChefGender | null {
+  if (gen === "male" || gen === "m") return "m";
+  if (gen === "female" || gen === "f") return "f";
+  return null;
+}
+
 function mapBackendChef(chef: BackendChef): ChefListing | null {
   const nat = chef.nationality;
-  const gen = chef.gender;
   const isValidNat =
     nat === "american" || nat === "french" || nat === "italian" || nat === "japanese";
-  const isValidGen = gen === "m" || gen === "f";
-  if (!chef.id || !isValidNat || !isValidGen) return null;
+  const gender = mapBackendGender(chef.gender);
+  if (!chef.id || !isValidNat || !gender) return null;
   const skill = mapBackendSkill(chef.skillTier);
   return {
     id: chef.id,
     nationality: nat,
-    gender: gen,
+    gender,
     name: chef.name || `${NATIONALITY_LABELS[nat]} Chef`,
     skill,
     multiplier: SKILL_CONFIG[skill].multiplier,
@@ -240,7 +248,7 @@ export function AuctionPage() {
       setBackendPool(null);
       return;
     }
-    const roundRef = doc(db, "games", gameId, "rounds", String(currentRound));
+    const roundRef = doc(db, "games", gameId, "rounds", `round_${currentRound}`);
     const unsubscribe = onSnapshot(
       roundRef,
       (snap) => {
