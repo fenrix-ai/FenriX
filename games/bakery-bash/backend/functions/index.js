@@ -474,10 +474,11 @@ exports.joinGame = onCall(async (request) => {
   let playerId = auth.uid;
 
   await db.runTransaction(async (transaction) => {
-    const [gSnap, pSnap, cfgSnap] = await Promise.all([
+    const [gSnap, pSnap, cfgSnap, rSnap] = await Promise.all([
       transaction.get(gameRef),
       transaction.get(playerRef),
       transaction.get(gameRef.collection('config').doc('params')),
+      transaction.get(rosterRef),
     ]);
 
     if (!gSnap.exists) {
@@ -501,6 +502,7 @@ exports.joinGame = onCall(async (request) => {
         displayName,
         bakeryName,
         updatedAt: FieldValue.serverTimestamp(),
+        ...(rSnap.exists ? {} : { joinedAt: FieldValue.serverTimestamp() }),
       }, { merge: true });
       return;
     }
