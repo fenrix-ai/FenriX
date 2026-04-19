@@ -67,7 +67,7 @@ export function LobbyPage() {
         setRosterReady(true);
       },
       (err) => {
-        console.error("games/{gameId}/roster listener error:", err);
+        console.error("games/roster listener error", { gameId, err });
         setRosterError(
           "Could not load the player list. Refresh if this persists.",
         );

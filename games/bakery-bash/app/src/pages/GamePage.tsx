@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { doc, onSnapshot, type DocumentData } from "firebase/firestore";
-import { httpsCallable, type FunctionsError } from "firebase/functions";
+import { httpsCallable } from "firebase/functions";
 import { useGame, useGameDispatch } from "../contexts/GameContext";
 import { RoundHeader } from "../components/game/RoundHeader";
 import { BakeryView } from "../components/game/BakeryView";
@@ -10,6 +10,7 @@ import { PageShell } from "../components/ui/PageShell";
 import { SimulatePhase } from "./phases/SimulatePhase";
 import { ResultsPhase } from "./phases/ResultsPhase";
 import { db, functions } from "../lib/firebase";
+import { humanizeFunctionError } from "../lib/errors";
 import {
   PRODUCT_STATION,
   parseGamePhase,
@@ -89,14 +90,6 @@ function deriveSousChefAssignments(
   return assignments;
 }
 
-function humanizeFunctionError(err: unknown, fallback: string): string {
-  if (err && typeof err === "object" && "code" in err) {
-    const fnErr = err as FunctionsError;
-    if (fnErr.message) return fnErr.message;
-  }
-  return fallback;
-}
-
 export function GamePage() {
   const {
     gameId,
@@ -135,7 +128,7 @@ export function GamePage() {
         }
       },
       (err) => {
-        console.error("games/{gameId} listener error:", err);
+        console.error("games listener error", { gameId, err });
       }
     );
     return unsubscribe;
@@ -158,7 +151,7 @@ export function GamePage() {
         });
       },
       (err) => {
-        console.error("games/{gameId}/config/params listener error:", err);
+        console.error("games/config/params listener error", { gameId, err });
       }
     );
     return unsubscribe;
@@ -208,10 +201,11 @@ export function GamePage() {
         }
       },
       (err) => {
-        console.error(
-          "games/{gameId}/players/{playerId} listener error:",
+        console.error("games/players listener error", {
+          gameId,
+          playerId,
           err,
-        );
+        });
       },
     );
     return unsubscribe;
