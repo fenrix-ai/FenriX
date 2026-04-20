@@ -33,15 +33,25 @@ import type { RoundResult } from "../types/game";
  * remediation note.
  */
 
+/**
+ * Matches the rankings shape written by `simulateRound` into
+ * `/games/{gameId}/leaderboard/latest` (see
+ * `backend/functions/index.js` around line 1136). The backend writes
+ * `budgetAfter` (not `budgetCurrent`) and does not include
+ * `amountBorrowed` / `cumulativeRevenue` directly — those are only
+ * available on per-player round docs.
+ */
 interface ProfessorRanking {
   rank: number;
   playerId: string;
   displayName: string;
   bakeryName?: string;
   revenueNet?: number;
+  revenueGross?: number;
   cumulativeRevenue?: number;
+  customerCount?: number;
+  budgetAfter?: number;
   budgetCurrent?: number;
-  amountBorrowed?: number;
 }
 
 interface ProfessorLeaderboardDoc {
@@ -77,11 +87,21 @@ function readRanking(data: DocumentData): ProfessorRanking {
       typeof data.cumulativeRevenue === "number"
         ? data.cumulativeRevenue
         : undefined,
+    revenueGross:
+      typeof data.revenueGross === "number" ? data.revenueGross : undefined,
+    customerCount:
+      typeof data.customerCount === "number" ? data.customerCount : undefined,
+    budgetAfter:
+      typeof data.budgetAfter === "number" ? data.budgetAfter : undefined,
     budgetCurrent:
       typeof data.budgetCurrent === "number" ? data.budgetCurrent : undefined,
-    amountBorrowed:
-      typeof data.amountBorrowed === "number" ? data.amountBorrowed : undefined,
   };
+}
+
+/** Prefer `budgetAfter` (what the leaderboard writes), fall back to any
+ * legacy `budgetCurrent` on the doc. */
+function rankingBudget(r: ProfessorRanking): number | undefined {
+  return readNumber(r.budgetAfter) ?? readNumber(r.budgetCurrent);
 }
 
 export function ProfessorLeaderboardPage() {
@@ -158,12 +178,18 @@ export function ProfessorLeaderboardPage() {
           const rows: RoundResult[] = snap.docs.map((d) => {
             const data = d.data() as DocumentData;
             const round = typeof data.round === "number" ? data.round : 0;
+            // The per-player round doc writes `aggregateSatisfactionPct`
+            // and `perProductSold` (see `index.js` `playerRoundRef` write).
+            // Older docs may carry `customerSatisfaction`/`productBreakdown`.
             return {
               round,
               revenue:
                 readNumber(data.revenue) ?? readNumber(data.revenueNet) ?? 0,
               customerCount: readNumber(data.customerCount) ?? 0,
-              customerSatisfaction: readNumber(data.customerSatisfaction) ?? 0,
+              customerSatisfaction:
+                readNumber(data.aggregateSatisfactionPct) ??
+                readNumber(data.customerSatisfaction) ??
+                0,
               auctionResults: data.auctionResults ?? {
                 adWon: null,
                 chefWon: null,
@@ -180,6 +206,8 @@ export function ProfessorLeaderboardPage() {
                 slicerHealth: 100,
                 espressoHealth: 100,
               },
+              productBreakdown:
+                data.perProductSold ?? data.productBreakdown ?? undefined,
               chefDepartures: Array.isArray(data.chefDepartures)
                 ? (data.chefDepartures as string[])
                 : [],
@@ -208,20 +236,26 @@ export function ProfessorLeaderboardPage() {
         sum + (readNumber(e.revenueNet) ?? readNumber(e.cumulativeRevenue) ?? 0),
       0,
     );
-    const totalBudget = r.reduce(
-      (sum, e) => sum + (readNumber(e.budgetCurrent) ?? 0),
-      0,
-    );
-    const borrowers = r.filter(
-      (e) => (readNumber(e.amountBorrowed) ?? 0) > 0,
-    ).length;
+    const totalBudget = r.reduce((sum, e) => sum + (rankingBudget(e) ?? 0), 0);
+    // Per-player `amountBorrowed` is on round docs, not the leaderboard, so we
+    // aggregate from the fan-out history map below.
     return {
       count: r.length,
       avgRevenue: totalRevenue / r.length,
       totalBudget,
-      borrowers,
     };
   }, [board?.rankings]);
+
+  const borrowerCount = useMemo(() => {
+    const uids = new Set<string>();
+    Object.entries(historyByUid).forEach(([uid, rows]) => {
+      const anyBorrowed = rows.some(
+        (r) => (readNumber(r.amountBorrowed) ?? 0) > 0,
+      );
+      if (anyBorrowed) uids.add(uid);
+    });
+    return uids.size;
+  }, [historyByUid]);
 
   const onExportAll = () => {
     // Multi-player CSV: one row per (player, round). Adds a `bakery` and
@@ -351,7 +385,7 @@ export function ProfessorLeaderboardPage() {
           <div className="professor-leaderboard__stat">
             <span className="professor-leaderboard__stat-label">Borrowers</span>
             <span className="professor-leaderboard__stat-value">
-              {stats.borrowers}
+              {borrowerCount}
             </span>
           </div>
         </div>
@@ -387,8 +421,15 @@ export function ProfessorLeaderboardPage() {
                 readNumber(entry.revenueNet) ??
                 readNumber(entry.cumulativeRevenue) ??
                 0;
-              const budget = readNumber(entry.budgetCurrent) ?? 0;
-              const borrowed = readNumber(entry.amountBorrowed) ?? 0;
+              const budget = rankingBudget(entry) ?? 0;
+              // Aggregate `amountBorrowed` across every round doc we have
+              // cached for this player. Leaderboard rankings don't include
+              // this field directly.
+              const history = historyByUid[entry.playerId] ?? [];
+              const borrowedTotal = history.reduce(
+                (sum, r) => sum + (readNumber(r.amountBorrowed) ?? 0),
+                0,
+              );
               return (
                 <tr key={entry.playerId || entry.rank}>
                   <td>{entry.rank}</td>
@@ -402,7 +443,9 @@ export function ProfessorLeaderboardPage() {
                   >
                     {formatMoney(budget)}
                   </td>
-                  <td>{borrowed > 0 ? formatMoney(borrowed) : "—"}</td>
+                  <td>
+                    {borrowedTotal > 0 ? formatMoney(borrowedTotal) : "—"}
+                  </td>
                 </tr>
               );
             })

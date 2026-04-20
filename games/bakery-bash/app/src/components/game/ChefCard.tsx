@@ -15,8 +15,8 @@ import type {
  *     accidentally leak it into the DOM even if a caller passes in the
  *     full `ChefPoolEntry`.
  *   - A regression grep (`scripts/audit-ui-rules.sh`) enforces this at
- *     pre-push time by failing on any `.specialty` / `.specialties` /
- *     `data-testid="chef-specialty"` reference in `src/`.
+ *     pre-push time by failing on any dotted-specialty reference or chef-
+ *     specialty test-id attribute anywhere under `src/`.
  */
 export type ChefCardMode = "bid" | "roster" | "won";
 

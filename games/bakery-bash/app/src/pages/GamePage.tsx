@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { doc, onSnapshot, type DocumentData } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  onSnapshot,
+  type DocumentData,
+} from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { useGame, useGameDispatch } from "../contexts/GameContext";
 import { RoundHeader } from "../components/game/RoundHeader";
@@ -113,13 +118,18 @@ export function GamePage() {
   const [submitting, setSubmitting] = useState(false);
 
   // FE-11 — previous round's ad winners, rendered at the top of Decide.
-  // Backend writes `adAuctionResults` on each player's round doc; a future
-  // server-side aggregation (BE-20) will expose `rounds/{N}.adWinners` with
-  // {adType: {bakeryName, amount, ...}}. We subscribe to round N-1 defensively
-  // and fall back gracefully when the field isn't present.
+  // The aggregate `rounds/round_{N}` doc writes
+  // `auctionResults.ads.{TV|Billboard|Radio|Newspaper}.{winnerId, winningBid}`
+  // (see firestore-schema.js). We resolve each `winnerId` to a bakery name
+  // via the public roster subcollection so the banner shows "Bakery — $X"
+  // rather than a raw uid. Rendering falls back to the empty state when
+  // any part of the chain is missing.
   const [adWinners, setAdWinners] = useState<
     Partial<Record<AdWinnerEntry["adType"], AdWinnerEntry>> | null
   >(null);
+  const [rosterByUid, setRosterByUid] = useState<
+    Record<string, { displayName?: string; bakeryName?: string }>
+  >({});
 
   // --- Listener: /games/{gameId} — drives phase + round + phaseEndsAt. ---
   useEffect(() => {
@@ -332,10 +342,35 @@ export function GamePage() {
   const parsed = parseGamePhase(phase, currentRound);
   const basePhase = parsed.base;
 
+  // Subscribe to the roster so we can map `winnerId` → bakeryName/display.
+  // Rules allow everyone to read the roster subcollection, so this works
+  // without professor custom claims.
+  useEffect(() => {
+    if (!gameId) return;
+    const rosterRef = collection(db, "games", gameId, "roster");
+    const unsubscribe = onSnapshot(rosterRef, (snap) => {
+      const map: Record<
+        string,
+        { displayName?: string; bakeryName?: string }
+      > = {};
+      snap.docs.forEach((d) => {
+        const data = d.data() as DocumentData;
+        map[d.id] = {
+          displayName:
+            typeof data.displayName === "string" ? data.displayName : undefined,
+          bakeryName:
+            typeof data.bakeryName === "string" ? data.bakeryName : undefined,
+        };
+      });
+      setRosterByUid(map);
+    });
+    return unsubscribe;
+  }, [gameId]);
+
   // FE-11 — read last round's ad winners for the banner (only shown on
-  // decide after round 1). Subscribes to `rounds/round_{N-1}`. When the
-  // backend hasn't yet materialized a structured `adWinners` object, we
-  // leave the banner in its neutral "awaiting results" state.
+  // decide after round 1). Parses `auctionResults.ads.{adType}` out of
+  // the aggregate `rounds/round_{N-1}` doc (firestore-schema.js). The
+  // `winnerId` is resolved against the roster-derived name map above.
   useEffect(() => {
     if (!gameId || !currentRound || currentRound <= 1) {
       setAdWinners(null);
@@ -349,30 +384,32 @@ export function GamePage() {
         return;
       }
       const data = snap.data() as DocumentData;
-      const raw = data.adWinners as DocumentData | undefined;
-      if (!raw || typeof raw !== "object") {
+      const auction = data.auctionResults as DocumentData | undefined;
+      const adsRaw = (auction?.ads ?? null) as DocumentData | null;
+      if (!adsRaw || typeof adsRaw !== "object") {
         setAdWinners(null);
         return;
       }
       const out: Partial<Record<AdWinnerEntry["adType"], AdWinnerEntry>> = {};
       (["TV", "Billboard", "Radio", "Newspaper"] as const).forEach((t) => {
-        const entry = raw[t];
+        const entry = adsRaw[t];
         if (!entry || typeof entry !== "object") return;
+        const winnerId =
+          typeof entry.winnerId === "string" ? entry.winnerId : null;
+        const winningBid =
+          typeof entry.winningBid === "number" ? entry.winningBid : undefined;
+        if (!winnerId || !winningBid) return; // no bids landed for this surface
         out[t] = {
           adType: t,
-          bakeryName:
-            typeof entry.bakeryName === "string" ? entry.bakeryName : undefined,
-          displayName:
-            typeof entry.displayName === "string"
-              ? entry.displayName
-              : undefined,
-          amount: typeof entry.amount === "number" ? entry.amount : undefined,
+          amount: winningBid,
+          bakeryName: rosterByUid[winnerId]?.bakeryName,
+          displayName: rosterByUid[winnerId]?.displayName,
         };
       });
       setAdWinners(Object.keys(out).length > 0 ? out : null);
     });
     return unsubscribe;
-  }, [gameId, currentRound]);
+  }, [gameId, currentRound, rosterByUid]);
 
   // Redirect into the dedicated phase page when backend says so. This is
   // phase-driven (not a manual navigation after submit).

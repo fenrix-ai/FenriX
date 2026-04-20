@@ -439,6 +439,16 @@ export function roleOwnsAdBids(role: PlayerRole): boolean {
 export function roleOwnsChefBids(role: PlayerRole): boolean {
   return role === "finance" || role === "solo";
 }
+/**
+ * Roster (lay-off + continue) is owned by Operations per the backend
+ * contract. `backend/functions/index.js::layoffChef` and `continueFromRoster`
+ * both call `assertRoleAllowed(role, ['operations'])`. The April 19 design
+ * blurb read as "Finance owns … roster"; the shipped backend disagrees. If
+ * the backend realigns to Finance later, flip this helper to match.
+ */
+export function roleOwnsRoster(role: PlayerRole): boolean {
+  return role === "operations" || role === "solo";
+}
 
 /** Human-readable owner copy used in the disabled-button tooltip. */
 export function ownerOfDecide(): string {
@@ -449,6 +459,9 @@ export function ownerOfAdBids(): string {
 }
 export function ownerOfChefBids(): string {
   return "Finance";
+}
+export function ownerOfRoster(): string {
+  return "Operations";
 }
 
 export interface Player {

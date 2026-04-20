@@ -15,6 +15,8 @@ import { SubmissionLock } from "../components/game/SubmissionLock";
 import {
   parseGamePhase,
   toChefCardInput,
+  roleOwnsRoster,
+  ownerOfRoster,
   type ChefPoolEntry,
 } from "../types/game";
 import { humanizeFunctionError } from "../lib/errors";
@@ -31,6 +33,8 @@ import { humanizeFunctionError } from "../lib/errors";
  *
  * Role-gated: only `operations` or `solo` can click Lay off / Continue
  * (matches backend `assertRoleAllowed` in `layoffChef` + `continueFromRoster`).
+ * The design proposal says Finance owns this, but the shipped backend
+ * enforces Operations; we follow the backend.
  */
 
 /** Chef doc as stored on `players/{uid}.specialtyChefs`. Same shape as pool. */
@@ -112,7 +116,8 @@ export function RosterPhasePage() {
     else if (parsed.base === "game_over") navigate("/game/conclusion");
   }, [phase, currentRound, navigate]);
 
-  const canAct = role === "operations" || role === "solo";
+  const canAct = roleOwnsRoster(role);
+  const ownerLabel = ownerOfRoster();
   const overCap = specialtyChefs.length > SPECIALTY_CAP;
   const continueDisabled =
     overCap || submitting !== null || !canAct || rosterCompleted;
@@ -174,7 +179,7 @@ export function RosterPhasePage() {
 
       {!canAct && (
         <p className="roster-phase-page__role-gate">
-          Only your Operations teammate can lay off chefs or continue.
+          Only your {ownerLabel} teammate can lay off chefs or continue.
         </p>
       )}
 
