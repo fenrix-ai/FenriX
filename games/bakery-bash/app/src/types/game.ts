@@ -239,6 +239,55 @@ export interface ChefListing {
   multiplier: number;
 }
 
+/** Real skill tier written by the backend in `rounds/{N}.chefPool`. */
+export type ChefSkillTier = "novel" | "intermediate" | "advanced";
+
+/**
+ * Backend shape of a chef in `rounds/round_{N}.chefPool`. Mirrors
+ * `generateChefPool` in `backend/functions/modules/chef-system.js`.
+ *
+ * IMPORTANT — `specialties` is part of the backend payload but is
+ * **forbidden** from reaching the rendered DOM (FRONTEND.md Hard UI Rule
+ * #3). Consumers MUST convert to {@link ChefCardInput} before passing to
+ * `<ChefCard>`; the cardʼs prop type deliberately omits specialties so a
+ * compile-time error catches accidental leakage.
+ */
+export interface ChefPoolEntry {
+  id: string;
+  name: string;
+  nationality: ChefNationality;
+  gender: ChefGender;
+  skillTier: ChefSkillTier;
+  /** Hidden — do not render. Kept on the type so we can read the backend doc. */
+  specialties: string[];
+  minBidFloor: number;
+}
+
+/**
+ * Strict subset of {@link ChefPoolEntry} that `<ChefCard>` accepts. Drop
+ * `specialties` + `minBidFloor` at the type boundary so the component
+ * physically cannot render them.
+ */
+export type ChefCardInput = Pick<
+  ChefPoolEntry,
+  "id" | "name" | "nationality" | "gender" | "skillTier"
+>;
+
+/**
+ * Helper: strip forbidden fields from a `ChefPoolEntry` before handing it
+ * to `<ChefCard>`. Use this in every call site so `specialties` never
+ * survives into the rendered tree.
+ */
+export function toChefCardInput(chef: ChefPoolEntry): ChefCardInput {
+  return {
+    id: chef.id,
+    name: chef.name,
+    nationality: chef.nationality,
+    gender: chef.gender,
+    skillTier: chef.skillTier,
+  };
+}
+
 export type AuctionTab = "chefs" | "ads";
 
 export interface MenuItem {
@@ -332,6 +381,21 @@ export interface RoundResult {
   chefDepartureNames?: string[];
   /** Station-based staff counts the player submitted for this round. */
   staffCounts?: StaffCounts;
+  /** Gross revenue (pre loan-shark repayment). */
+  revenueGross?: number;
+  /** Net revenue after loan-shark interest deducted. */
+  revenueNet?: number;
+  /** Principal borrowed this round; 0 means the loan shark stayed away. */
+  amountBorrowed?: number;
+  /** Interest paid on this round's borrow. */
+  interestCharged?: number;
+  /** Any station that hit sellout this round (`true` = ran out at least once). */
+  selloutAnywhere?: boolean;
+  /** Per-product unit-sold breakdown, used for the Results breakdown table. */
+  productBreakdown?: Partial<Record<ProductKey, number>>;
+  /** Ad surface the player won this round, with paid amount. */
+  adWon?: AdType | null;
+  adPaid?: number;
 }
 
 /**
