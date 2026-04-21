@@ -14,6 +14,7 @@ import { db, functions } from "../lib/firebase";
 import { PageShell } from "../components/ui/PageShell";
 import { humanizeFunctionError } from "../lib/errors";
 import { parseGamePhase, type BasePhase } from "../types/game";
+import { isDevModeEnabled, setDevMode } from "../lib/devMode";
 
 /**
  * FE-15 — Professor control panel.
@@ -87,6 +88,17 @@ export function ProfessorPage() {
   const [copyState, setCopyState] = useState<"idle" | "copied">("idle");
 
   const gameId = contextGameId ?? createdGame?.gameId ?? null;
+
+  // Dev-tools visibility — the DevNav is hidden from students by default.
+  // Professors can toggle it from this page so they (and our dev team) can
+  // jump between phases while debugging without exposing the controls to
+  // the classroom.
+  const [devModeOn, setDevModeOn] = useState<boolean>(() => isDevModeEnabled());
+  const toggleDevMode = () => {
+    const next = !devModeOn;
+    setDevMode(next);
+    setDevModeOn(next);
+  };
 
   // Roster + submissions monitor.
   const [roster, setRoster] = useState<ProfessorRosterEntry[]>([]);
@@ -490,6 +502,19 @@ export function ProfessorPage() {
         >
           Leaderboard →
         </Link>
+
+        <button
+          type="button"
+          className="btn btn--ghost"
+          onClick={toggleDevMode}
+          title={
+            devModeOn
+              ? "Hide the phase-jump nav bar. Students should never see this."
+              : "Show a phase-jump nav bar at the bottom of the screen (for debugging). Students don't see this."
+          }
+        >
+          {devModeOn ? "Hide dev tools" : "Show dev tools"}
+        </button>
       </div>
 
       {error && (
