@@ -67,6 +67,8 @@ export function GamePhaseListener() {
       if (pathnameRef.current !== target) {
         navigateRef.current(target);
       }
+    }, (err) => {
+      console.error("games/{gameId} phase listener error:", { gameId, err });
     });
   }, [gameId, dispatch]);
 

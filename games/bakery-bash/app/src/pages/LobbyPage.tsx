@@ -30,17 +30,21 @@ export function LobbyPage() {
   const { player, playerId, gameId, gameCode, role, teamId, teamName, phase } = useGame();
   const navigate = useNavigate();
 
-  // Mirror TeamPage's exact working pattern: own game-doc listener + fallback
-  // to context phase so either path triggers navigation.
   const [gamePhase, setGamePhase] = useState<GamePhaseString | null>(null);
   useEffect(() => {
     if (!gameId) return;
     const gameRef = doc(db, "games", gameId);
-    return onSnapshot(gameRef, (snap) => {
-      if (!snap.exists()) return;
-      const data = snap.data() as DocumentData;
-      if (typeof data.phase === "string") setGamePhase(data.phase);
-    });
+    return onSnapshot(
+      gameRef,
+      (snap) => {
+        if (!snap.exists()) return;
+        const data = snap.data() as DocumentData;
+        if (typeof data.phase === "string") setGamePhase(data.phase as GamePhaseString);
+      },
+      (err) => {
+        console.error("lobby game-doc listener error:", { gameId, err });
+      },
+    );
   }, [gameId]);
   useEffect(() => {
     const livePhase = gamePhase ?? phase;
