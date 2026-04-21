@@ -37,9 +37,6 @@ BUDGET_ALLOWLIST=(
   "src/pages/GamePage.tsx"
   "src/contexts/GameContext.tsx"
   "src/lib/cost.ts"
-  "src/lib/utils.ts"
-  "src/lib/errors.ts"
-  "src/types/game.ts"
 )
 
 # Build a grep exclude-file list.
