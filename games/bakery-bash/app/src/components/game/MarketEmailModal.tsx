@@ -1,4 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+
+const READ_DELAY_MS = 5000;
 
 /**
  * FE-06 — The opening "company email" modal for each round. Backend
@@ -35,6 +37,13 @@ export function MarketEmailModal({
   onContinue,
   continueDisabled,
 }: MarketEmailModalProps) {
+  // FRONTEND.md §3 requires the dismiss button be disabled for the first
+  // 5 seconds so players actually read the memo. Countdown resets every
+  // time the modal opens.
+  const [secondsLeft, setSecondsLeft] = useState(
+    Math.ceil(READ_DELAY_MS / 1000),
+  );
+
   // Trap scroll on the body while the modal is open so readers don't lose
   // their place in background content.
   useEffect(() => {
@@ -46,7 +55,21 @@ export function MarketEmailModal({
     };
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    setSecondsLeft(Math.ceil(READ_DELAY_MS / 1000));
+    const tick = window.setInterval(() => {
+      setSecondsLeft((n) => (n <= 1 ? 0 : n - 1));
+    }, 1000);
+    return () => {
+      window.clearInterval(tick);
+    };
+  }, [open]);
+
   if (!open) return null;
+
+  const readLocked = secondsLeft > 0;
+  const buttonDisabled = continueDisabled || readLocked;
 
   return (
     <div
@@ -99,10 +122,21 @@ export function MarketEmailModal({
             type="button"
             className="btn btn--primary"
             onClick={onContinue}
-            disabled={continueDisabled}
+            disabled={buttonDisabled}
+            aria-describedby={
+              readLocked ? "market-email-modal-countdown" : undefined
+            }
           >
-            {continueLabel}
+            {readLocked ? `${continueLabel} (${secondsLeft})` : continueLabel}
           </button>
+          {readLocked && (
+            <span
+              id="market-email-modal-countdown"
+              className="market-email-modal__hint"
+            >
+              Take a moment to read the memo…
+            </span>
+          )}
         </footer>
       </div>
     </div>

@@ -19,10 +19,12 @@ import { parseGamePhase } from "../types/game";
  * the game is in a `round_N_email` phase; when the professor advances to
  * `round_N_decide`, this page auto-navigates to the Decide route.
  *
- * Clicking "Got it" is a soft dismiss: the phase is driven by the
- * professor / `phaseEndsAt`, so the button navigates to `/game/decide`
- * locally but the player still sees the Decide screen as soon as the
- * backend flips the phase regardless.
+ * Clicking "Got it" is a soft dismiss: the modal closes locally and the
+ * page renders a "waiting for the professor" placeholder. Navigation is
+ * phase-driven — as soon as the backend flips to `round_N_decide` the
+ * auto-route effect below takes the player to `/game/decide`. We don't
+ * navigate on dismiss because `GamePage` also redirects email-phase
+ * players back to `/game/email`, which would bounce the user in a loop.
  */
 
 interface MarketEmail {
@@ -36,6 +38,13 @@ export function EmailPhasePage() {
   const navigate = useNavigate();
 
   const [email, setEmail] = useState<MarketEmail | null>(null);
+  const [dismissed, setDismissed] = useState(false);
+
+  // Reset the local dismiss whenever the active round changes, so that
+  // each round's email starts fresh with the modal open.
+  useEffect(() => {
+    setDismissed(false);
+  }, [currentRound]);
 
   // Subscribe to the round doc for the current round's marketEmail.
   useEffect(() => {
@@ -92,12 +101,12 @@ export function EmailPhasePage() {
       </div>
 
       <MarketEmailModal
-        open
+        open={!dismissed}
         round={currentRound}
         subject={email?.subject ?? null}
         body={email?.body ?? null}
         from={email?.from ?? null}
-        onContinue={() => navigate("/game/decide")}
+        onContinue={() => setDismissed(true)}
       />
     </PageShell>
   );

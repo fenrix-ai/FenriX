@@ -159,17 +159,31 @@ export function ProfessorLeaderboardPage() {
     return unsubscribe;
   }, [gameId]);
 
+  // The leaderboard snapshot produces a fresh `rankings` array on every
+  // write, so depending on `board?.rankings` directly would tear down and
+  // reattach every per-player round subscription on each Firestore update.
+  // Reduce to a stable key of player IDs — the fan-out only needs to
+  // re-run when the roster of players actually changes.
+  const playerIdsKey = useMemo(() => {
+    const ids = (board?.rankings ?? [])
+      .map((r) => r.playerId)
+      .filter((id) => !!id)
+      .sort();
+    return ids.join(",");
+  }, [board?.rankings]);
+
   // Fan out per-player round subscriptions for Export-All CSV.
   useEffect(() => {
-    if (!gameId || !board?.rankings) return;
+    if (!gameId || !playerIdsKey) return;
+    const playerIds = playerIdsKey.split(",").filter(Boolean);
     const unsubs: Array<() => void> = [];
-    board.rankings.forEach((entry) => {
+    playerIds.forEach((playerId) => {
       const roundsRef = collection(
         db,
         "games",
         gameId,
         "players",
-        entry.playerId,
+        playerId,
         "rounds",
       );
       const unsubscribe = onSnapshot(
@@ -214,7 +228,7 @@ export function ProfessorLeaderboardPage() {
             } satisfies RoundResult;
           });
           rows.sort((a, b) => a.round - b.round);
-          setHistoryByUid((prev) => ({ ...prev, [entry.playerId]: rows }));
+          setHistoryByUid((prev) => ({ ...prev, [playerId]: rows }));
         },
         () => {
           // Silent — export will just skip that player.
@@ -225,7 +239,7 @@ export function ProfessorLeaderboardPage() {
     return () => {
       unsubs.forEach((u) => u());
     };
-  }, [gameId, board?.rankings]);
+  }, [gameId, playerIdsKey]);
 
   // Stats rollup (totals + averages across all players).
   const stats = useMemo(() => {

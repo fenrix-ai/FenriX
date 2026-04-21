@@ -71,7 +71,7 @@ const NATIONALITY_LABEL: Record<ChefNationality, string> = {
 };
 
 const SKILL_LABEL: Record<ChefSkillTier, string> = {
-  novel: "Novice",
+  novel: "Novel",
   intermediate: "Intermediate",
   advanced: "Advanced",
 };
