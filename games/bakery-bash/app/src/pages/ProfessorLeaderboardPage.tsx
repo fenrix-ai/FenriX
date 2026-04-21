@@ -162,20 +162,21 @@ export function ProfessorLeaderboardPage() {
   // The leaderboard snapshot produces a fresh `rankings` array on every
   // write, so depending on `board?.rankings` directly would tear down and
   // reattach every per-player round subscription on each Firestore update.
-  // Reduce to a stable key of player IDs — the fan-out only needs to
-  // re-run when the roster of players actually changes.
+  // Reduce to a stable newline-joined key of player IDs — the fan-out
+  // only needs to re-run when the roster of players actually changes.
+  // Newline is safe because Firebase Auth UIDs are alphanumeric + `-_`.
   const playerIdsKey = useMemo(() => {
     const ids = (board?.rankings ?? [])
       .map((r) => r.playerId)
       .filter((id) => !!id)
       .sort();
-    return ids.join(",");
+    return ids.join("\n");
   }, [board?.rankings]);
 
   // Fan out per-player round subscriptions for Export-All CSV.
   useEffect(() => {
     if (!gameId || !playerIdsKey) return;
-    const playerIds = playerIdsKey.split(",").filter(Boolean);
+    const playerIds = playerIdsKey.split("\n").filter(Boolean);
     const unsubs: Array<() => void> = [];
     playerIds.forEach((playerId) => {
       const roundsRef = collection(

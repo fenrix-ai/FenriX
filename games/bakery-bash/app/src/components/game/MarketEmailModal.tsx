@@ -43,6 +43,17 @@ export function MarketEmailModal({
   const [secondsLeft, setSecondsLeft] = useState(
     Math.ceil(READ_DELAY_MS / 1000),
   );
+  // Track the previous `open` so we can reset the countdown in render
+  // (React "adjust state on prop change" pattern) — otherwise the first
+  // render of a re-opened modal would show a stale `secondsLeft=0` for
+  // one frame and the button would flash enabled.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setSecondsLeft(Math.ceil(READ_DELAY_MS / 1000));
+    }
+  }
 
   // Trap scroll on the body while the modal is open so readers don't lose
   // their place in background content.
@@ -57,7 +68,6 @@ export function MarketEmailModal({
 
   useEffect(() => {
     if (!open) return;
-    setSecondsLeft(Math.ceil(READ_DELAY_MS / 1000));
     const tick = window.setInterval(() => {
       setSecondsLeft((n) => (n <= 1 ? 0 : n - 1));
     }, 1000);
