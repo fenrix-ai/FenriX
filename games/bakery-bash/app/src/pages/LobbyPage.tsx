@@ -6,11 +6,12 @@ import {
   type DocumentData,
   type Timestamp,
 } from "firebase/firestore";
-import { useNavigate, Link } from "react-router-dom";
-import { useGame, useGameDispatch } from "../contexts/GameContext";
+import { Link, useNavigate } from "react-router-dom";
+import { useGame } from "../contexts/GameContext";
+import type { GamePhaseString } from "../types/game";
 import { db } from "../lib/firebase";
 import { PageShell } from "../components/ui/PageShell";
-import { PLAYER_ROLE_LABELS, parseGamePhase } from "../types/game";
+import { PLAYER_ROLE_LABELS } from "../types/game";
 
 /**
  * Roster entry as published to `/games/{gameId}/roster/{playerId}` by the
@@ -26,9 +27,26 @@ interface RosterEntry {
 }
 
 export function LobbyPage() {
-  const { player, playerId, gameId, gameCode, role, teamId, teamName } = useGame();
-  const dispatch = useGameDispatch();
+  const { player, playerId, gameId, gameCode, role, teamId, teamName, phase } = useGame();
   const navigate = useNavigate();
+
+  // Mirror TeamPage's exact working pattern: own game-doc listener + fallback
+  // to context phase so either path triggers navigation.
+  const [gamePhase, setGamePhase] = useState<GamePhaseString | null>(null);
+  useEffect(() => {
+    if (!gameId) return;
+    const gameRef = doc(db, "games", gameId);
+    return onSnapshot(gameRef, (snap) => {
+      if (!snap.exists()) return;
+      const data = snap.data() as DocumentData;
+      if (typeof data.phase === "string") setGamePhase(data.phase);
+    });
+  }, [gameId]);
+  useEffect(() => {
+    const livePhase = gamePhase ?? phase;
+    if (livePhase && livePhase !== "lobby") navigate("/game");
+  }, [gamePhase, phase, navigate]);
+
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [rosterError, setRosterError] = useState<string | null>(null);
   // Distinct from `roster.length === 0`: tells us whether the snapshot
@@ -82,29 +100,6 @@ export function LobbyPage() {
     return unsubscribe;
   }, [gameId]);
 
-  // Listen to the game doc; navigate immediately when the professor starts.
-  useEffect(() => {
-    if (!gameId) return;
-    const gameRef = doc(db, "games", gameId);
-    return onSnapshot(gameRef, (snap) => {
-      if (!snap.exists()) return;
-      const data = snap.data() as DocumentData;
-      const p = data.phase;
-      const round = typeof data.currentRound === "number" ? data.currentRound : typeof data.round === "number" ? data.round : 0;
-      if (typeof p === "string") {
-        dispatch({ type: "SET_PHASE", payload: p });
-        if (round) dispatch({ type: "SET_ROUND", payload: round });
-        if (p !== "lobby") {
-          const base = parseGamePhase(p, round).base;
-          if (base === "bid_ad" || base === "bid_chef") navigate("/auction");
-          else if (base === "email") navigate("/game/email");
-          else if (base === "roster") navigate("/game/roster");
-          else if (base === "game_over") navigate("/game/conclusion");
-          else navigate("/game");
-        }
-      }
-    });
-  }, [gameId, dispatch, navigate]);
 
   // Fallback to the local context-only "you" row only while the listener is
   // genuinely still warming up. Once we've heard from Firestore (success or

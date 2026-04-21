@@ -77,8 +77,10 @@ const {
 // required only where needed so that missing optional helpers do not break
 // the lobby / decision / bid flows.
 let decisionValidation = null;
+let ValidationError = null;
 try {
   decisionValidation = require('./modules/decision-validation');
+  ValidationError = decisionValidation.ValidationError ?? null;
 } catch (loadErr) {
   logger.error('decision-validation module failed to load — using passthrough fallback.', {
     error: loadErr && loadErr.message,
