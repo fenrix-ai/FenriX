@@ -21,6 +21,12 @@
 
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+
+// Allow Firebase ID tokens (anonymous + real users) to invoke callables.
+// Without this, Cloud Run blocks requests at the IAM layer before they
+// reach the onCall handler, causing 401s instead of auth checks.
+const CALLABLE_OPTS = { invoker: 'public' };
+
 const { getApps, initializeApp } = require('firebase-admin/app');
 const {
   FieldValue,
@@ -1316,29 +1322,35 @@ exports.submitDecision = onCall(async (request) => {
     roundId = `round_${currentRound}`;
     const decisionRef = playerRef.collection('decisions').doc(roundId);
     const dSnap = await transaction.get(decisionRef);
-    if (dSnap.exists) {
+    // POST-01: `submitPrices` may have created this doc already with just
+    // `productPrices + pricesSubmittedAt`. We only block duplicate Operations
+    // submissions — presence of `submittedAt` is the Operations marker.
+    if (dSnap.exists && dSnap.get('submittedAt')) {
       throw new HttpsError('already-exists', 'Decision already submitted for this round.');
     }
 
+    // Merge so an existing Finance-written `productPrices` survives.
     transaction.set(decisionRef, {
       round: currentRound,
       submittedAt: FieldValue.serverTimestamp(),
       ...validated,
-    });
+    }, { merge: true });
 
     // BUG-1 fix: FieldValue.serverTimestamp() is invalid inside a nested
     // map — Firestore only allows sentinels at top-level fields. Use
     // Timestamp.now() for the nested submittedAt.
+    //
+    // POST-01: use dot-paths rather than replacing the whole `pendingDecision`
+    // so Finance's `pendingDecision.productPrices` (written by submitPrices)
+    // isn't clobbered when Operations submits after Finance.
     transaction.update(playerRef, {
-      pendingDecision: {
-        submitted: true,
-        submittedAt: Timestamp.now(),
-        round: currentRound,
-        menu: validated.menu || {},
-        quantities: validated.quantities || {},
-        sousChefCount: validated.sousChefCount || 0,
-        sousChefAssignments: validated.sousChefAssignments || {},
-      },
+      'pendingDecision.submitted': true,
+      'pendingDecision.submittedAt': Timestamp.now(),
+      'pendingDecision.round': currentRound,
+      'pendingDecision.menu': validated.menu || {},
+      'pendingDecision.quantities': validated.quantities || {},
+      'pendingDecision.sousChefCount': validated.sousChefCount || 0,
+      'pendingDecision.sousChefAssignments': validated.sousChefAssignments || {},
       // BE-19: un-flag a reconnected player immediately on successful submit.
       // Without this, a previously-disconnected player stays flagged on the
       // professor dashboard until the next simulation batch runs.
@@ -1374,7 +1386,7 @@ exports.submitDecision = onCall(async (request) => {
 //
 // Multiple submits during a single Decide phase are allowed — latest wins.
 
-exports.submitPrices = onCall(async (request) => {
+exports.submitPrices = onCall(CALLABLE_OPTS, async (request) => {
   const auth = requireAuth(request, 'Sign in before submitting prices.');
   const data = request.data || {};
   const gameId = cleanGameId(data.gameId);

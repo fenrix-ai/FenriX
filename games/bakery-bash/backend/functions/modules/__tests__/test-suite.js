@@ -2100,10 +2100,10 @@ describe('simulation.js — floor vs ceiling smoke test (POST-01)', () => {
     ok(share > 0.60, `floor share was ${(share * 100).toFixed(1)}% — expected > 60%`);
   });
 
-  it('ceiling player captures <40% of combined customers', () => {
+  it('ceiling player captures <20% of combined customers (spec Testing §1)', () => {
     const total = floorR.customerCount + ceilingR.customerCount;
-    ok(ceilingR.customerCount / total < 0.40,
-      `ceiling share was ${(ceilingR.customerCount / total * 100).toFixed(1)}% — expected < 40%`);
+    ok(ceilingR.customerCount / total < 0.20,
+      `ceiling share was ${(ceilingR.customerCount / total * 100).toFixed(1)}% — expected < 20%`);
   });
 
   it('floor player revenue per customer is lower than ceiling player', () => {
