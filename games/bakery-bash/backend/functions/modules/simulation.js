@@ -381,7 +381,7 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
       adSpend: adBidPaid,
       numProducts: pp.offeredProducts.length,
       totalProductRevenue,
-      noiseSeed: `${gameId || 'game'}:${round}:${p.playerId}`,
+      noiseSeed: `${gameId || 'game'}:${round}:${p.teamId || p.playerId}`,
     }, config);
     revenueGross += adWinnerBonus;
 

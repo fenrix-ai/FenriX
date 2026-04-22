@@ -469,12 +469,19 @@ h3 { font-size: 0.7rem; }
   color: var(--dough);
 }
 
+/*
+ * Each station is a horizontal strip: compact header block on the left,
+ * the station's two product tiles laid out in a row on the right. The
+ * previous 3-column-wide layout stretched every station to the full
+ * viewport height with huge empty tails because each station only
+ * carries two products.
+ */
 .bakery-view__stations {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1rem;
-  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
   min-height: 0;
+  overflow-y: auto;
 }
 
 /* ─── Station Card ───────────────────────────────────────── */
@@ -484,19 +491,24 @@ h3 { font-size: 0.7rem; }
   border: var(--border);
   box-shadow: var(--shadow-pixel);
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   min-height: 0;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .station-card__header {
   background: var(--dough);
-  border-bottom: var(--border);
+  border-right: var(--border);
   padding: 0.65rem 0.85rem;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
   gap: 0.5rem;
+  min-width: 150px;
+  max-width: 180px;
+  flex-shrink: 0;
 }
 
 .station-card__heading {
@@ -548,13 +560,19 @@ h3 { font-size: 0.7rem; }
 }
 
 .station-card__products {
-  padding: 0.75rem;
+  padding: 0.6rem 0.75rem;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 0.6rem;
   flex: 1;
+  min-width: 0;
   min-height: 0;
-  overflow-y: auto;
+  overflow-x: auto;
+}
+
+.station-card__products > .product-tile {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 /* ─── Product Tile ───────────────────────────────────────── */
@@ -1426,6 +1444,176 @@ h3 { font-size: 0.7rem; }
   border-color: var(--caramel);
 }
 
+/* ─── Chef Hiring Table (replaces card strip) ────────────────
+ *
+ * The card strip scrolled horizontally with fixed-width cards and
+ * frequently ran off the right edge with 12 chefs in the pool. Switch
+ * to a dense table with columns pinned so headers line up over values
+ * and every candidate is visible without horizontal scrubbing.
+ */
+.auction-chefs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.auction-chefs__table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.auction-chefs__table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--cream);
+  border: var(--border);
+  box-shadow: var(--shadow-pixel);
+  table-layout: fixed;
+}
+
+.auction-chefs__table thead tr {
+  background: var(--espresso);
+}
+
+.auction-chefs__table th {
+  font-family: var(--font-pixel);
+  font-size: 0.55rem;
+  font-weight: 400;
+  color: var(--honey);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.7rem 0.85rem;
+  text-align: left;
+  border-bottom: 3px solid var(--outline);
+}
+
+.auction-chefs__table th:nth-child(2) { width: 7rem; }
+.auction-chefs__table th:nth-child(3) { width: 8rem; text-align: right; }
+.auction-chefs__table th:nth-child(4) { width: 10rem; text-align: right; }
+
+.auction-chefs__table td {
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  padding: 0.5rem 0.85rem;
+  border-bottom: 2px solid var(--dough);
+  color: var(--espresso);
+  vertical-align: middle;
+}
+
+.auction-chefs__table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.auction-chefs__table tbody tr:hover {
+  background: color-mix(in srgb, var(--honey) 25%, transparent);
+}
+
+.auction-chefs__chef-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.auction-chefs__portrait {
+  position: relative;
+  display: inline-block;
+  width: 34px;
+  height: 34px;
+  background: var(--flour);
+  border: 2px solid var(--dough);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.auction-chefs__portrait img {
+  position: absolute;
+  top: -2px;
+  left: 0;
+  width: 34px;
+  height: 51px;
+  image-rendering: pixelated;
+}
+
+.auction-chefs__name {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--espresso);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.auction-chefs__skill {
+  display: inline-block;
+  font-family: var(--font-pixel);
+  font-size: 0.42rem;
+  padding: 3px 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #fff;
+  border: 1px solid;
+  white-space: nowrap;
+}
+
+.auction-chefs__skill--low {
+  background: #c0392b;
+  border-color: #922b21;
+}
+.auction-chefs__skill--medium {
+  background: #b8860b;
+  border-color: #8b6508;
+}
+.auction-chefs__skill--high {
+  background: #5ea05e;
+  border-color: #3e7a3e;
+}
+
+.auction-chefs__top-bid-cell {
+  text-align: right;
+  font-family: var(--font-pixel);
+  font-size: 0.7rem;
+  color: var(--berry);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.auction-chefs__bid-input {
+  width: 100%;
+  max-width: 120px;
+  padding: 0.35rem 0.55rem;
+  border: 2px solid var(--outline);
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  text-align: right;
+  background: var(--cream);
+  font-variant-numeric: tabular-nums;
+}
+
+.auction-chefs__bid-input:focus {
+  outline: none;
+  border-color: var(--caramel);
+  box-shadow: 0 0 0 2px var(--golden);
+}
+
+.auction-chefs__bid-input:disabled {
+  background: var(--flour);
+  opacity: 0.7;
+}
+
+.auction-chefs__bid-input::-webkit-outer-spin-button,
+.auction-chefs__bid-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  .auction-chefs__table {
+    min-width: 520px;
+  }
+}
+
 /* ─── Advertisements Grid ───────────────────────────────── */
 
 .auction-ads__grid {
@@ -1821,8 +2009,20 @@ h3 { font-size: 0.7rem; }
 }
 
 @media (max-width: 640px) {
-  .bakery-view__stations {
-    grid-template-columns: 1fr;
+  .station-card {
+    flex-direction: column;
+  }
+  .station-card__header {
+    max-width: none;
+    min-width: 0;
+    border-right: none;
+    border-bottom: var(--border);
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .station-card__products {
+    flex-direction: column;
   }
 }
 
@@ -3700,4 +3900,374 @@ h3 { font-size: 0.7rem; }
   font-size: 0.7rem;
   color: var(--berry);
   font-weight: 700;
+}
+
+/* ─── Conclusion Page (game over screen) ─────────────────────
+ *
+ * The previous build shipped without any `.conclusion-page` styles, so
+ * the final results inherited raw browser defaults — headings ran
+ * together, the standings table collapsed its columns into a cramped
+ * block, and the per-round `<ul>` still showed bullet points. Give the
+ * whole page the same pixel-card treatment the rest of the app uses.
+ */
+
+.conclusion-page {
+  max-width: 960px;
+  gap: 1.5rem;
+}
+
+.conclusion-page__header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.25rem;
+}
+
+.conclusion-page__eyebrow {
+  font-family: var(--font-pixel);
+  font-size: 0.55rem;
+  color: var(--dark-roast);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.conclusion-page__title {
+  font-size: 1.4rem;
+  color: var(--caramel);
+  text-shadow: 2px 2px 0 var(--espresso);
+  line-height: 1.25;
+}
+
+.conclusion-page__section-title {
+  font-size: 0.75rem;
+  color: var(--caramel);
+  margin-bottom: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Winner banner */
+.conclusion-page__winner {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  background: var(--cream);
+  border: var(--border);
+  box-shadow: var(--shadow-pixel);
+}
+
+.conclusion-page__winner-crown {
+  font-size: 2.4rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.conclusion-page__winner-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.conclusion-page__winner-label {
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  color: var(--dark-roast);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.conclusion-page__winner-name {
+  font-family: var(--font-pixel);
+  font-size: 0.95rem;
+  color: var(--espresso);
+  line-height: 1.25;
+}
+
+.conclusion-page__winner-you {
+  color: var(--berry);
+  margin-left: 0.35rem;
+}
+
+.conclusion-page__winner-revenue {
+  font-family: var(--font-pixel);
+  font-size: 0.7rem;
+  color: var(--sage);
+}
+
+/* Your bakery stat grid */
+.conclusion-page__yours {
+  display: flex;
+  flex-direction: column;
+}
+
+.conclusion-page__yours-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.85rem;
+}
+
+.conclusion-page__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 1rem 1.1rem;
+  background: var(--cream);
+  border: var(--border);
+  box-shadow: var(--shadow-pixel-sm);
+  text-align: center;
+  align-items: center;
+}
+
+.conclusion-page__stat-label {
+  font-family: var(--font-pixel);
+  font-size: 0.48rem;
+  color: var(--dark-roast);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.conclusion-page__stat-value {
+  font-family: var(--font-pixel);
+  font-size: 1.05rem;
+  color: var(--caramel);
+  text-shadow: var(--shadow-pixel-sm);
+  word-break: break-word;
+}
+
+/* Final standings table — the main thing the user flagged. The
+ * un-styled browser default was rendering the column headers in a
+ * tight run with no separation from the data rows below. Give it the
+ * same espresso-header card treatment as `.leaderboard-table`, and
+ * pin column widths so the header labels actually line up over the
+ * values beneath them. */
+.conclusion-page__leaderboard {
+  display: flex;
+  flex-direction: column;
+}
+
+.conclusion-page__board-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--cream);
+  border: var(--border);
+  box-shadow: var(--shadow-pixel);
+  table-layout: fixed;
+}
+
+.conclusion-page__board-table thead tr {
+  background: var(--espresso);
+}
+
+.conclusion-page__board-table th {
+  font-family: var(--font-pixel);
+  font-size: 0.55rem;
+  font-weight: 400;
+  color: var(--honey);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.75rem 0.85rem;
+  text-align: left;
+  border-bottom: 3px solid var(--outline);
+}
+
+.conclusion-page__board-table th:first-child {
+  width: 3.5rem;
+  text-align: center;
+}
+
+.conclusion-page__board-table th:nth-child(3),
+.conclusion-page__board-table th:nth-child(4) {
+  width: 10rem;
+  text-align: right;
+}
+
+.conclusion-page__board-table td {
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  padding: 0.7rem 0.85rem;
+  border-bottom: 2px solid var(--dough);
+  color: var(--espresso);
+  vertical-align: middle;
+}
+
+.conclusion-page__board-table td:first-child {
+  font-family: var(--font-pixel);
+  font-size: 0.65rem;
+  color: var(--dark-roast);
+  text-align: center;
+}
+
+.conclusion-page__board-table td:nth-child(3),
+.conclusion-page__board-table td:nth-child(4) {
+  font-family: var(--font-pixel);
+  font-size: 0.7rem;
+  text-align: right;
+  color: var(--sage);
+  font-variant-numeric: tabular-nums;
+}
+
+.conclusion-page__board-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.conclusion-page__board-row--you {
+  background: var(--honey);
+}
+
+.conclusion-page__board-row--you td {
+  color: var(--espresso);
+  font-weight: 700;
+}
+
+.conclusion-page__board-row--you td:nth-child(3),
+.conclusion-page__board-row--you td:nth-child(4) {
+  color: var(--espresso);
+}
+
+/* Round-by-round expansion */
+.conclusion-page__rounds {
+  display: flex;
+  flex-direction: column;
+}
+
+.conclusion-page__round-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.conclusion-page__round {
+  background: var(--cream);
+  border: var(--border);
+  box-shadow: var(--shadow-pixel-sm);
+  overflow: hidden;
+}
+
+.conclusion-page__round[data-open="true"] {
+  box-shadow: var(--shadow-pixel);
+}
+
+.conclusion-page__round-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.75rem 1rem;
+  background: var(--dough);
+  border: none;
+  font-family: var(--font-pixel);
+  font-size: 0.7rem;
+  color: var(--espresso);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
+}
+
+.conclusion-page__round-header:hover {
+  background: var(--flour);
+}
+
+.conclusion-page__round[data-open="true"] .conclusion-page__round-header {
+  background: var(--espresso);
+  color: var(--cream);
+}
+
+.conclusion-page__round-num {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  flex: 1;
+}
+
+.conclusion-page__round-rev {
+  color: var(--caramel);
+  font-size: 0.8rem;
+}
+
+.conclusion-page__round[data-open="true"] .conclusion-page__round-rev {
+  color: var(--honey);
+}
+
+.conclusion-page__round-caret {
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+
+.conclusion-page__round-body {
+  padding: 1rem 1.1rem;
+  background: var(--cream);
+  border-top: 2px solid var(--dough);
+}
+
+.conclusion-page__round-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.65rem;
+}
+
+/* Mini KPI — fixes "Customers0", "Satisfaction0/100", "Chef sat.100/100"
+ * mashing label and value together. */
+.conclusion-page__mini-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.6rem 0.75rem;
+  background: var(--flour);
+  border: 2px solid var(--dough);
+  text-align: center;
+  align-items: center;
+}
+
+.conclusion-page__mini-kpi--warn {
+  background: color-mix(in srgb, var(--berry) 12%, var(--flour));
+  border-color: var(--berry);
+}
+
+.conclusion-page__mini-kpi-label {
+  font-family: var(--font-pixel);
+  font-size: 0.42rem;
+  color: var(--dark-roast);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  line-height: 1.3;
+}
+
+.conclusion-page__mini-kpi-value {
+  font-family: var(--font-pixel);
+  font-size: 0.8rem;
+  color: var(--espresso);
+  line-height: 1.1;
+}
+
+.conclusion-page__mini-kpi--warn .conclusion-page__mini-kpi-value {
+  color: var(--berry);
+}
+
+/* Footer actions */
+.conclusion-page__footer {
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+  padding-top: 1rem;
+  border-top: 2px dashed var(--dough);
+}
+
+/* Narrow screens: let the standings table scroll horizontally rather
+ * than forcing everything to squeeze together again. */
+@media (max-width: 640px) {
+  .conclusion-page__leaderboard {
+    overflow-x: auto;
+  }
+  .conclusion-page__board-table {
+    min-width: 520px;
+  }
+  .conclusion-page__title {
+    font-size: 1.1rem;
+  }
 }
