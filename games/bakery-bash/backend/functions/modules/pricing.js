@@ -27,6 +27,31 @@ function classifyZone(price, productCfg) {
   return 'floor';
 }
 
+/**
+ * Demand multiplier applied per player per product. Combines:
+ *   - continuous point-elasticity centered on the midpoint of the
+ *     competitive range (e × %ΔP)
+ *   - a discrete +FLOOR_BONUS demand bump when the price sits in the
+ *     Floor zone
+ *   - a hard lower bound of MULTIPLIER_FLOOR so ceiling-priced
+ *     high-elasticity products still receive a nonzero allocation share.
+ *
+ * @param {number} price
+ * @param {object} productCfg - one entry of PRICE_ZONES
+ * @returns {number} multiplier in [MULTIPLIER_FLOOR, ∞), typically [0.1, 2.0]
+ */
+function calculatePriceDemandMultiplier(price, productCfg) {
+  const competitiveMid =
+    (productCfg.competitiveRangeLow + productCfg.competitiveRangeHigh) / 2;
+  const zone = classifyZone(price, productCfg);
+  const floorBonus = zone === 'floor' ? FLOOR_BONUS : 0;
+  const elasticity = ELASTICITY_COEFFICIENTS[productCfg.elasticityTier];
+  const pctDeltaP = (price - competitiveMid) / competitiveMid;
+  const elasticityEffect = -elasticity * pctDeltaP;
+  return Math.max(MULTIPLIER_FLOOR, 1 + floorBonus + elasticityEffect);
+}
+
 module.exports = {
   classifyZone,
+  calculatePriceDemandMultiplier,
 };

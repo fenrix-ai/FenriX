@@ -191,6 +191,47 @@ describe('pricing.js — classifyZone', () => {
   });
 });
 
+describe('pricing.js — calculatePriceDemandMultiplier', () => {
+  const { PRICE_ZONES } = require('../config');
+  const coffee = PRICE_ZONES.coffee;   // high elasticity (e=1.5), competitiveMid = (3+4.5)/2 = 3.75
+  const matcha = PRICE_ZONES.matcha;   // low elasticity (e=0.6), competitiveMid = (5.5+7)/2 = 6.25
+  const croissant = PRICE_ZONES.croissant; // medium elasticity (e=1.0)
+
+  it('coffee at floor $2.00 → 1.85 (floor bonus + elasticity bump)', () => {
+    near(pricing.calculatePriceDemandMultiplier(2.00, coffee), 1.85, 0.01);
+  });
+  it('coffee at $2.75 still in floor zone → 1.55', () => {
+    near(pricing.calculatePriceDemandMultiplier(2.75, coffee), 1.55, 0.01);
+  });
+  it('coffee at $3.00 (competitive) → 1.30 (step-down, no floor bonus)', () => {
+    near(pricing.calculatePriceDemandMultiplier(3.00, coffee), 1.30, 0.01);
+  });
+  it('coffee at competitiveMid $3.75 → 1.00', () => {
+    near(pricing.calculatePriceDemandMultiplier(3.75, coffee), 1.00, 0.01);
+  });
+  it('coffee at $4.50 → 0.70', () => {
+    near(pricing.calculatePriceDemandMultiplier(4.50, coffee), 0.70, 0.01);
+  });
+  it('coffee at $5.00 (premium) → 0.50', () => {
+    near(pricing.calculatePriceDemandMultiplier(5.00, coffee), 0.50, 0.01);
+  });
+  it('coffee at ceiling $6.50 → floored at 0.10', () => {
+    near(pricing.calculatePriceDemandMultiplier(6.50, coffee), 0.10, 0.01);
+  });
+  it('matcha at floor $3.50 → 1.414 (low elasticity so bump is smaller)', () => {
+    near(pricing.calculatePriceDemandMultiplier(3.50, matcha), 1.414, 0.01);
+  });
+  it('matcha at competitiveMid $6.25 → 1.00', () => {
+    near(pricing.calculatePriceDemandMultiplier(6.25, matcha), 1.00, 0.01);
+  });
+  it('matcha at ceiling $10.00 → 0.64 (low-elasticity premium still viable)', () => {
+    near(pricing.calculatePriceDemandMultiplier(10.00, matcha), 0.64, 0.01);
+  });
+  it('croissant at competitiveMid $4.75 → 1.00', () => {
+    near(pricing.calculatePriceDemandMultiplier(4.75, croissant), 1.00, 0.01);
+  });
+});
+
 // ============================================================================
 // 3. CHEF SYSTEM
 // ============================================================================
