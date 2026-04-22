@@ -1982,14 +1982,6 @@ h3 { font-size: 0.7rem; }
   color: var(--dark-roast);
 }
 
-.professor-page__section-hint {
-  margin: 0 0 0.75rem 0;
-  font-family: var(--font-body);
-  font-size: 0.9rem;
-  color: var(--dark-roast);
-  line-height: 1.45;
-}
-
 .professor-page__create-form {
   display: flex;
   gap: 0.75rem;

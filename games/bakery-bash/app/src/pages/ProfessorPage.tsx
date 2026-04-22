@@ -100,6 +100,19 @@ export function ProfessorPage() {
     setDevModeOn(next);
   };
 
+  // Keep the button label in sync when dev mode is flipped elsewhere — another
+  // tab (`storage` event) or the same tab via `?dev=1` / `?dev=0` / the DevNav
+  // (`bakery-bash:dev-mode-change`). Mirrors the pattern in `DevNav.tsx`.
+  useEffect(() => {
+    const onChange = () => setDevModeOn(isDevModeEnabled());
+    window.addEventListener("bakery-bash:dev-mode-change", onChange);
+    window.addEventListener("storage", onChange);
+    return () => {
+      window.removeEventListener("bakery-bash:dev-mode-change", onChange);
+      window.removeEventListener("storage", onChange);
+    };
+  }, []);
+
   // Roster + submissions monitor.
   const [roster, setRoster] = useState<ProfessorRosterEntry[]>([]);
   const [rosterError, setRosterError] = useState<string | null>(null);
