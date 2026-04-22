@@ -218,6 +218,17 @@ const DEFAULT_GAME_CONFIG = {
     excellent: 0.15,
     good: 0.08,
   },
+
+  marketInsights: {
+    trendBoost: 2.0,
+    trendPenalty: 0.85,
+  },
+
+  curveballs: {
+    burglaryThreshold: 20,
+    burglaryChance: 0.25,
+    burglaryAmount: 10000,
+  },
 };
 
 // ---------------------------------------------------------------------------

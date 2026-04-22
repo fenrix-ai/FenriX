@@ -84,6 +84,8 @@ function _toModifiers(round) {
  *   modifiers: Object<string, number>
  * }>}
  */
+const ALL_PRODUCTS = ["croissant", "cookie", "bagel", "sandwich", "coffee", "matcha"];
+
 function generateGamePreferences(totalRounds, cfg = {}) {
   // Use PRODUCT_KEYS from config module — this is the canonical list of products.
   const products = config.PRODUCT_KEYS.slice();
@@ -93,6 +95,12 @@ function generateGamePreferences(totalRounds, cfg = {}) {
   for (let i = 0; i < totalRounds; i++) {
     const r = _buildRound(products, prevTrending);
     r.modifiers = _toModifiers(r);
+
+    // BE-N05: pick 1-2 random trending products for the Market Watch elasticity feature.
+    const trendCount = Math.random() < 0.4 ? 2 : 1;
+    const shuffled = [...ALL_PRODUCTS].sort(() => Math.random() - 0.5);
+    r.trendingProducts = shuffled.slice(0, trendCount);
+
     rounds.push(r);
     prevTrending = r.trending;
   }
