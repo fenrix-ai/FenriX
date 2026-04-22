@@ -93,6 +93,9 @@ export function SimulatePhase() {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const burglary = Boolean((latest as { burglary?: boolean } | undefined)?.burglary);
+  const burglaryAmount = Number((latest as { burglaryAmount?: number } | undefined)?.burglaryAmount ?? 0);
+
   return (
     <section className={`simulate-phase ${isNight ? "simulate-phase--night" : "simulate-phase--day"}`}>
       {/* Top bar */}
@@ -104,6 +107,13 @@ export function SimulatePhase() {
           Revenue: <strong>${displayRevenue.toLocaleString()}</strong>
         </div>
       </div>
+
+      {burglary && (
+        <div className="simulate-phase__burglar-banner" role="alert">
+          🔓 Your bakery was broken into! A maintenance deficit left you vulnerable.
+          {burglaryAmount > 0 ? ` –$${burglaryAmount.toLocaleString()}` : ""}
+        </div>
+      )}
 
       <div className="simulate-phase__main">
         {/* Left: Menu */}

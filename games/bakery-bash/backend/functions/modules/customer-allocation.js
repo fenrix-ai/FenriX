@@ -166,10 +166,6 @@ function allocateAllCustomers(allPlayersState, roundPreferences, cfg = config, p
   // The caller (simulation.js) already computes this and passes it as
   // footTrafficMultiplier. If present, use it directly; otherwise compute.
   const footTrafficByPlayer = new Map();
-  // BE-N05: Market Watch trending product multipliers
-  const trendBoost = (cfg && cfg.marketInsights && cfg.marketInsights.trendBoost) || 2.0;
-  const trendPenalty = (cfg && cfg.marketInsights && cfg.marketInsights.trendPenalty) || 0.85;
-  const trendingProducts = (roundPreferences && roundPreferences.trendingProducts) || [];
   for (const p of allPlayersState) {
     let attractiveness;
     if (p.footTrafficMultiplier != null) {
@@ -183,19 +179,6 @@ function allocateAllCustomers(allPlayersState, roundPreferences, cfg = config, p
         p.sousChefCount || 0
       );
       attractiveness = 1 + mod;
-    }
-
-    // Apply market watch multipliers based on whether the player stocks trending products.
-    if (trendingProducts.length > 0 && p.quantities) {
-      let hasTrending = false;
-      for (const prod of trendingProducts) {
-        if ((p.quantities[prod] || 0) > 0) { hasTrending = true; break; }
-      }
-      if (hasTrending) {
-        attractiveness *= trendBoost;
-      } else {
-        attractiveness *= trendPenalty;
-      }
     }
 
     footTrafficByPlayer.set(p.playerId, attractiveness);

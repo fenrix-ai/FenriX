@@ -473,7 +473,7 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
     });
 
     // --- Burglar curveball (BE-N06) — fires when cleanliness is critically low ---
-    const burglaryThreshold = (config && config.curveballs && config.curveballs.burglaryThreshold) || 20;
+    const burglaryThreshold = (config && config.curveballs && config.curveballs.burglaryThreshold) || 40;
     const burglaryChance = (config && config.curveballs && config.curveballs.burglaryChance) || 0.25;
     const burglaryAmount = (config && config.curveballs && config.curveballs.burglaryAmount) || 10000;
     const cleanlinessPct = typeof p.cleanliness_pct === 'number' ? p.cleanliness_pct : undefined;
