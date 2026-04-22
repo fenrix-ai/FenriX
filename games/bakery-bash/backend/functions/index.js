@@ -977,6 +977,19 @@ async function runSimulationAndPersist(gameRef, round, config) {
     )
   );
 
+  // POST-01: load prior-round decisions for each player so pricing carry-over
+  // can walk back through rounds 1..round-1.
+  const priorRoundIds = [];
+  for (let r = 1; r < round; r += 1) priorRoundIds.push(`round_${r}`);
+
+  const priorDecisionSnapsByPlayer = await Promise.all(
+    playerDocs.map((pd) =>
+      Promise.all(priorRoundIds.map((rid) =>
+        pd.ref.collection('decisions').doc(rid).get()
+      ))
+    )
+  );
+
   // BE-19: compute disconnection state for each player before simulation.
   // A player is considered "disconnected" if they have missed 2+ consecutive rounds.
   const disconnectionMap = new Map();
@@ -1003,6 +1016,11 @@ async function runSimulationAndPersist(gameRef, round, config) {
     const ar = auctionByPlayer.get(pd.id) || {
       adWon: null, adBidPaid: 0, chefsWon: [], chefBidPaid: 0,
     };
+
+    // POST-01: chronological list of prior-round productPrices maps.
+    const priorSubmittedPrices = (priorDecisionSnapsByPlayer[i] || [])
+      .map((s) => (s && s.exists && s.data()) ? (s.data().productPrices || null) : null);
+
     return {
       playerId: pd.id,
       displayName: p.displayName || 'Player',
@@ -1012,11 +1030,13 @@ async function runSimulationAndPersist(gameRef, round, config) {
         quantities: (decision && decision.quantities) || {},
         sousChefCount: missed ? 0 : numberOrDefault(decision && decision.sousChefCount, p.sousChefCount || 0),
         sousChefAssignments: (decision && decision.sousChefAssignments) || {},
+        productPrices: (decision && decision.productPrices) || {},   // POST-01
       },
       specialtyChefs: Array.isArray(p.specialtyChefs) ? p.specialtyChefs : [],
       budgetCurrent: numberOrDefault(p.budgetCurrent, 0),
       returningCustomersPending: numberOrDefault(p.returningCustomersPending, 0),
       auctionResults: ar,
+      priorSubmittedPrices,   // POST-01
     };
   });
 
