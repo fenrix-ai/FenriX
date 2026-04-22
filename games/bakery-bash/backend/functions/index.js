@@ -155,6 +155,30 @@ try {
  */
 const BATCH_OP_LIMIT = 487;
 
+/**
+ * Batch-delete every document in a collection. Used by `resetGame` to wipe
+ * round/sim subcollections without leaving orphans. Chunks at BATCH_OP_LIMIT
+ * so games with many rounds × many players don't bust the 500-op batch limit.
+ */
+async function deleteCollectionDocs(colRef) {
+  const snap = await colRef.get();
+  if (snap.empty) return;
+  let batch = db.batch();
+  let ops = 0;
+  for (const docSnap of snap.docs) {
+    batch.delete(docSnap.ref);
+    ops += 1;
+    if (ops >= BATCH_OP_LIMIT) {
+      await batch.commit();
+      batch = db.batch();
+      ops = 0;
+    }
+  }
+  if (ops > 0) {
+    await batch.commit();
+  }
+}
+
 /** Chars allowed in generated join codes — avoids 0/O/1/I confusion. */
 const JOIN_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
