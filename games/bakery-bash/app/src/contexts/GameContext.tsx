@@ -17,6 +17,7 @@ import {
   type GameConfigParams,
   type GamePhaseString,
   type GameState,
+  type LeaderboardRanking,
   type MaintenanceBars,
   type MaintenanceTask,
   type PendingAdBidsDraft,
@@ -94,6 +95,7 @@ const initialState: GameState = {
   teamId: null,
   teamName: null,
   phaseEndsAtMs: null,
+  leaderboard: [],
 };
 
 type GameAction =
@@ -145,6 +147,7 @@ type GameAction =
   | { type: "SET_MAINTENANCE_BARS"; payload: MaintenanceBars }
   | { type: "SET_CHEF_SATISFACTION"; payload: Record<string, number> }
   | { type: "SET_BUDGET"; payload: number | null }
+  | { type: "SET_LEADERBOARD"; payload: LeaderboardRanking[] }
   | { type: "RESET" };
 
 function gameReducer(state: GameState, action: GameAction): GameState {
@@ -341,6 +344,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       if (state.budgetCurrent === action.payload) return state;
       return { ...state, budgetCurrent: action.payload };
     }
+
+    case "SET_LEADERBOARD":
+      return { ...state, leaderboard: action.payload };
 
     case "RESET":
       return initialState;

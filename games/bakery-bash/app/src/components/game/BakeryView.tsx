@@ -104,6 +104,8 @@ interface ProductTileProps {
   isBase: boolean;
   onQtyChange: (next: number) => void;
   onToggle: (next: boolean) => void;
+  /** FE-9 — lock quantity + menu toggle once the round is submitted. */
+  readOnly?: boolean;
 }
 function ProductTile({
   product,
@@ -112,12 +114,13 @@ function ProductTile({
   isBase,
   onQtyChange,
   onToggle,
+  readOnly = false,
 }: ProductTileProps) {
   const d = PRODUCT_DISPLAY[product];
   return (
     <div
-      className={`product-tile ${
-        !isOnMenu ? "product-tile--locked" : ""
+      className={`product-tile${!isOnMenu ? " product-tile--locked" : ""}${
+        readOnly ? " product-tile--readonly" : ""
       }`}
     >
       <img className="product-tile__image" src={d.asset} alt={d.name} />
@@ -129,39 +132,52 @@ function ProductTile({
       </div>
       {isOnMenu ? (
         <div className="product-tile__controls">
-          <div
-            className="product-tile__stepper"
-            role="group"
-            aria-label={`${d.name} quantity`}
-          >
-            <button
-              type="button"
-              className="product-tile__step-btn"
-              onClick={() => onQtyChange(Math.max(0, qty - 1))}
-              disabled={qty <= 0}
-              aria-label={`Decrease ${d.name}`}
+          {readOnly ? (
+            <span
+              className="product-tile__stepper product-tile__stepper--readonly"
+              aria-label={`${d.name} submitted quantity`}
             >
-              −
-            </button>
-            <input
-              type="number"
-              className="product-tile__step-value"
-              min={0}
-              step={1}
-              value={qty}
-              onChange={(e) => onQtyChange(parseInt(e.target.value, 10) || 0)}
+              <span className="product-tile__step-value product-tile__step-value--static">
+                {qty}
+              </span>
+            </span>
+          ) : (
+            <div
+              className="product-tile__stepper"
+              role="group"
               aria-label={`${d.name} quantity`}
-            />
-            <button
-              type="button"
-              className="product-tile__step-btn"
-              onClick={() => onQtyChange(qty + 1)}
-              aria-label={`Increase ${d.name}`}
             >
-              +
-            </button>
-          </div>
-          {!isBase && (
+              <button
+                type="button"
+                className="product-tile__step-btn"
+                onClick={() => onQtyChange(Math.max(0, qty - 1))}
+                disabled={qty <= 0}
+                aria-label={`Decrease ${d.name}`}
+              >
+                −
+              </button>
+              <input
+                type="number"
+                className="product-tile__step-value"
+                min={0}
+                step={1}
+                value={qty}
+                onChange={(e) =>
+                  onQtyChange(parseInt(e.target.value, 10) || 0)
+                }
+                aria-label={`${d.name} quantity`}
+              />
+              <button
+                type="button"
+                className="product-tile__step-btn"
+                onClick={() => onQtyChange(qty + 1)}
+                aria-label={`Increase ${d.name}`}
+              >
+                +
+              </button>
+            </div>
+          )}
+          {!isBase && !readOnly && (
             <button
               type="button"
               className="product-tile__remove"
@@ -173,6 +189,8 @@ function ProductTile({
             </button>
           )}
         </div>
+      ) : readOnly ? (
+        <span className="product-tile__muted">Off menu</span>
       ) : (
         <button
           type="button"
@@ -187,7 +205,16 @@ function ProductTile({
   );
 }
 
-export function BakeryView() {
+/**
+ * FE-9 — parent (GamePage) passes `readOnly` so that the entire menu grid
+ * becomes inert once the player submits or the phase advances past Decide.
+ * Prices remain visible; only the interactive controls disappear.
+ */
+export interface BakeryViewProps {
+  readOnly?: boolean;
+}
+
+export function BakeryView({ readOnly = false }: BakeryViewProps) {
   const { player, currentRound, totalRounds, pendingDecision } = useGame();
   const dispatch = useGameDispatch();
 
@@ -199,6 +226,7 @@ export function BakeryView() {
   };
 
   const setQty = (product: ProductKey, value: number) => {
+    if (readOnly) return;
     const clamped = Math.max(0, Math.floor(value) || 0);
     dispatch({
       type: "UPDATE_PENDING_DECISION",
@@ -207,6 +235,7 @@ export function BakeryView() {
   };
 
   const toggleMenu = (product: ProductKey, checked: boolean) => {
+    if (readOnly) return;
     if (BASE_MENU.includes(product)) return;
     dispatch({
       type: "UPDATE_PENDING_DECISION",
@@ -218,10 +247,18 @@ export function BakeryView() {
   };
 
   return (
-    <div className="bakery-view">
+    <div className={`bakery-view${readOnly ? " bakery-view--readonly" : ""}`}>
       <div className="bakery-view__sign">
         <h2 className="bakery-view__name">
           {player?.bakeryName ?? "My Bakery"}
+          {readOnly && (
+            <span
+              className="tab__badge tab__badge--submitted bakery-view__badge"
+              aria-label="Menu submitted"
+            >
+              Submitted
+            </span>
+          )}
         </h2>
         <span className="bakery-view__round">
           Round {currentRound} of {totalRounds}
@@ -261,6 +298,7 @@ export function BakeryView() {
                     isBase={BASE_MENU.includes(product)}
                     onQtyChange={(n) => setQty(product, n)}
                     onToggle={(next) => toggleMenu(product, next)}
+                    readOnly={readOnly}
                   />
                 ))}
               </div>
