@@ -334,6 +334,21 @@ export function ProfessorPage() {
     void callCallable("endGame", "end", "Game ended.");
   };
 
+  const onReset = () => {
+    if (
+      !window.confirm(
+        "Reset this game back to the lobby? This clears round data and lets the same class replay.",
+      )
+    ) {
+      return;
+    }
+    void callCallable(
+      "resetGame",
+      "reset",
+      "Game reset — round data cleared and returned to lobby.",
+    );
+  };
+
   const onCreateGame = async () => {
     setError(null);
     setInfo(null);
@@ -526,6 +541,15 @@ export function ProfessorPage() {
           }
         >
           {pendingAction === "end" ? "Ending…" : "End Game"}
+        </button>
+
+        <button
+          className="btn btn--danger"
+          onClick={onReset}
+          disabled={!gameId || controlsDisabled}
+          title="Clear round data and send the current game back to the lobby."
+        >
+          {pendingAction === "reset" ? "Resetting…" : "Reset Game"}
         </button>
 
         <Link

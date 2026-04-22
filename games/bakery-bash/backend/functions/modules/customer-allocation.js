@@ -17,6 +17,7 @@
 
 const config = require('./config');
 const satisfaction = require('./satisfaction');
+const { calculatePriceDemandMultiplier } = require('./pricing');
 
 /**
  * Calculate the total customer (demand) pool for each product in a round.
@@ -69,7 +70,13 @@ function calculateBaseTrafficPool(allPlayersPerProductSatisfaction, roundPrefere
  *        (for this product, already apportioned by caller).
  * @returns {Map<string, number>} playerId → allocated customer count for product.
  */
-function allocateCustomersPerProduct(product, demandPool, allPlayersSatisfaction, returningCustomers) {
+function allocateCustomersPerProduct(
+  product,
+  demandPool,
+  allPlayersSatisfaction,
+  returningCustomers,
+  perPlayerPrices,
+) {
   const result = new Map();
 
   // Only players offering the product compete for it.
@@ -100,13 +107,23 @@ function allocateCustomersPerProduct(product, demandPool, allPlayersSatisfaction
     return 0;
   };
 
-  // Sum of satisfaction weights across eligible players.
-  const totalSat = eligible.reduce(
-    (acc, p) => acc + getSat(p.perProductSatisfaction[product]),
-    0
-  );
+  const priceCfg = config.PRICE_ZONES && config.PRICE_ZONES[product];
+  const getWeight = (p) => {
+    const sat = getSat(p.perProductSatisfaction[product]);
+    if (sat <= 0) return 0;
+    const price =
+      perPlayerPrices &&
+      perPlayerPrices[p.playerId] &&
+      perPlayerPrices[p.playerId][product];
+    if (typeof price !== 'number' || !Number.isFinite(price) || !priceCfg) {
+      return sat;
+    }
+    return sat * calculatePriceDemandMultiplier(price, priceCfg);
+  };
 
-  if (totalSat <= 0) {
+  const totalWeight = eligible.reduce((acc, p) => acc + getWeight(p), 0);
+
+  if (totalWeight <= 0) {
     // No differentiating satisfaction → split evenly among eligible.
     const even = competitivePool / eligible.length;
     for (const p of eligible) {
@@ -114,7 +131,7 @@ function allocateCustomersPerProduct(product, demandPool, allPlayersSatisfaction
     }
   } else {
     for (const p of eligible) {
-      const share = getSat(p.perProductSatisfaction[product]) / totalSat;
+      const share = getWeight(p) / totalWeight;
       const add = competitivePool * share;
       result.set(p.playerId, (result.get(p.playerId) || 0) + add);
     }
@@ -146,7 +163,12 @@ function allocateCustomersPerProduct(product, demandPool, allPlayersSatisfaction
  *   footTrafficModifier: number
  * }>} playerId → allocation result.
  */
-function allocateAllCustomers(allPlayersState, roundPreferences, cfg = config) {
+function allocateAllCustomers(
+  allPlayersState,
+  roundPreferences,
+  cfg = config,
+  perPlayerPrices,
+) {
   // Step A: market demand per product.
   const pools = calculateBaseTrafficPool(null, roundPreferences, cfg);
 
@@ -191,7 +213,8 @@ function allocateAllCustomers(allPlayersState, roundPreferences, cfg = config) {
       product,
       pools[product],
       allPlayersState,
-      returningForProduct
+      returningForProduct,
+      perPlayerPrices
     );
   }
 

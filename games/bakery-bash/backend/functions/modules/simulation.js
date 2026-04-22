@@ -21,7 +21,9 @@
 const {
   PRODUCT_CATALOG,
   PRODUCT_KEYS,
+  PRICE_ZONES,
 } = require('./config');
+const { resolvePriceForSim } = require('./pricing');
 
 const {
   calculateTotalProductOutput,
@@ -303,7 +305,33 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
     };
   });
 
-  const allocation = allocateAllCustomers(allocationInput, roundPreferences, config);
+  const resolvedPricesPerPlayer = {};
+  for (const pp of perPlayer) {
+    const p = pp.player;
+    const decision = p.decision || {};
+    const submitted = decision.productPrices || {};
+    const prior = Array.isArray(p.priorSubmittedPrices) ? p.priorSubmittedPrices : [];
+    const resolved = {};
+    for (const product of PRODUCT_KEYS) {
+      const cfg = PRICE_ZONES[product];
+      if (!cfg) continue;
+      resolved[product] = resolvePriceForSim({
+        submittedThisRound: submitted[product],
+        priorSubmissions: prior.map((m) => (m && m[product])),
+        productCfg: cfg,
+        catalogBasePrice:
+          (PRODUCT_CATALOG[product] && PRODUCT_CATALOG[product].fixedPrice) || 0,
+      });
+    }
+    resolvedPricesPerPlayer[p.playerId] = resolved;
+  }
+
+  const allocation = allocateAllCustomers(
+    allocationInput,
+    roundPreferences,
+    config,
+    resolvedPricesPerPlayer,
+  );
 
   // ---------------------------------------------------------------------
   // Pass 3 — sell-outs, quantities sold, revenue, loan shark, CSV row
@@ -356,13 +384,18 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
     const postSelloutAggregate = postSelloutAggResult.aggregateSatisfactionPct;
 
     // --- Revenue ---
-    const totalProductRevenue = Object.entries(perProductSatisfaction).reduce(
-      (sum, [product, s]) => {
-        const price = (PRODUCT_CATALOG[product] && PRODUCT_CATALOG[product].fixedPrice) || 0;
-        return sum + s.qtySold * price;
-      },
-      0
-    );
+    const resolvedPrices = resolvedPricesPerPlayer[p.playerId] || {};
+    const revenueBreakdown = {};
+    let totalProductRevenue = 0;
+    for (const [product, s] of Object.entries(perProductSatisfaction)) {
+      const override = resolvedPrices[product];
+      const catalogPrice =
+        (PRODUCT_CATALOG[product] && PRODUCT_CATALOG[product].fixedPrice) || 0;
+      const price = Number.isFinite(override) ? override : catalogPrice;
+      const rev = s.qtySold * price;
+      revenueBreakdown[product] = { qtySold: s.qtySold, price, revenue: rev };
+      totalProductRevenue += rev;
+    }
 
     const sousChefCount = Number.isFinite(decision.sousChefCount)
       ? decision.sousChefCount
@@ -430,6 +463,7 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
       interestCharged,
       aggregateSatisfactionPct: postSelloutAggregate,
       chefSatisfactionScore: pp.chefSatisfactionScore,
+      productPrices: resolvedPricesPerPlayer[p.playerId] || {},
       // For professor export
       playerId: p.playerId,
       displayName: p.displayName,
@@ -454,6 +488,8 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
       returningCustomersEarned,
       selloutAnywhere,
       csvRow,
+      productPrices: resolvedPricesPerPlayer[p.playerId] || {},
+      revenueBreakdown,
     });
   }
 

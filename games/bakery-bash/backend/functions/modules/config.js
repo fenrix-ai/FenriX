@@ -30,6 +30,68 @@ const PRODUCT_KEYS   = ['coffee', 'croissant', 'bagel', 'cookie', 'sandwich', 'm
 const BASE_MENU      = ['croissant', 'cookie', 'bagel'];
 const OPTIONAL_MENU  = ['sandwich', 'coffee', 'matcha'];
 
+const PRICE_ZONES = {
+  coffee: {
+    floor: 2.0,
+    competitiveRangeLow: 3.0,
+    competitiveRangeHigh: 4.5,
+    premiumRangeLow: 5.0,
+    premiumRangeHigh: 6.0,
+    ceiling: 6.5,
+    elasticityTier: 'high',
+  },
+  croissant: {
+    floor: 2.5,
+    competitiveRangeLow: 4.0,
+    competitiveRangeHigh: 5.5,
+    premiumRangeLow: 6.0,
+    premiumRangeHigh: 7.0,
+    ceiling: 8.0,
+    elasticityTier: 'medium',
+  },
+  bagel: {
+    floor: 1.5,
+    competitiveRangeLow: 2.5,
+    competitiveRangeHigh: 3.5,
+    premiumRangeLow: 4.0,
+    premiumRangeHigh: 5.0,
+    ceiling: 5.5,
+    elasticityTier: 'high',
+  },
+  cookie: {
+    floor: 1.0,
+    competitiveRangeLow: 2.0,
+    competitiveRangeHigh: 3.0,
+    premiumRangeLow: 3.5,
+    premiumRangeHigh: 4.5,
+    ceiling: 5.0,
+    elasticityTier: 'high',
+  },
+  sandwich: {
+    floor: 5.0,
+    competitiveRangeLow: 7.5,
+    competitiveRangeHigh: 10.0,
+    premiumRangeLow: 10.5,
+    premiumRangeHigh: 12.5,
+    ceiling: 14.0,
+    elasticityTier: 'medium',
+  },
+  matcha: {
+    floor: 3.5,
+    competitiveRangeLow: 5.5,
+    competitiveRangeHigh: 7.0,
+    premiumRangeLow: 7.5,
+    premiumRangeHigh: 9.0,
+    ceiling: 10.0,
+    elasticityTier: 'low',
+  },
+};
+
+const ELASTICITY_COEFFICIENTS = { high: 1.5, medium: 1.0, low: 0.6 };
+const PRICE_STEP = 0.25;
+const FLOOR_BONUS = 0.15;
+const MULTIPLIER_FLOOR = 0.1;
+
 // ---------------------------------------------------------------------------
 // Advertising
 // ---------------------------------------------------------------------------
@@ -311,6 +373,11 @@ module.exports = {
   PRODUCT_KEYS,
   BASE_MENU,
   OPTIONAL_MENU,
+  PRICE_ZONES,
+  ELASTICITY_COEFFICIENTS,
+  PRICE_STEP,
+  FLOOR_BONUS,
+  MULTIPLIER_FLOOR,
   AD_TYPES,
   CHEF_NATIONALITIES,
   CHEF_MULTIPLIERS,

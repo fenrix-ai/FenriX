@@ -22,10 +22,13 @@ import { ResultsPhase } from "./phases/ResultsPhase";
 import { db, functions } from "../lib/firebase";
 import { humanizeFunctionError } from "../lib/errors";
 import {
+  PRODUCT_KEYS,
   PRODUCT_STATION,
   parseGamePhase,
   ownerOfDecide,
   roleOwnsDecide,
+  roleOwnsPricing,
+  type PriceSubmissionReceipt,
   totalSousChefs,
   type GameConfigParams,
   type MaintenanceBars,
@@ -41,6 +44,65 @@ interface SubmitDecisionResponse {
   playerId: string;
   roundId: string;
   submitted: boolean;
+}
+
+interface SubmitPricesResponse {
+  submitted: boolean;
+  priceReceipt?: Omit<PriceSubmissionReceipt, "submittedAtMs">;
+}
+
+function hydratePriceReceipt(
+  raw: unknown,
+): PriceSubmissionReceipt | null {
+  if (!raw || typeof raw !== "object") return null;
+  const data = raw as Record<string, unknown>;
+  if (typeof data.round !== "number" || typeof data.submissionKey !== "string") {
+    return null;
+  }
+  const pricesRaw = data.productPrices;
+  if (!pricesRaw || typeof pricesRaw !== "object") return null;
+  const prices: Partial<Record<ProductKey, number>> = {};
+  for (const key of PRODUCT_KEYS) {
+    const value = (pricesRaw as Record<string, unknown>)[key];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      prices[key] = value;
+    }
+  }
+  const submittedAt = data.submittedAt;
+  const submittedAtMs =
+    submittedAt && typeof submittedAt === "object" && "toMillis" in submittedAt
+      ? (submittedAt as { toMillis: () => number }).toMillis()
+      : null;
+  return {
+    round: data.round,
+    submissionKey: data.submissionKey,
+    submittedAtMs,
+    productPrices: prices,
+  };
+}
+
+function formatReceiptTime(ms: number | null): string {
+  if (!ms) return "pending timestamp";
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(ms);
+}
+
+function getActiveProductPrices(
+  menu: Record<ProductKey, boolean>,
+  productPrices: Record<ProductKey, number>,
+): Partial<Record<ProductKey, number>> {
+  const active: Partial<Record<ProductKey, number>> = {};
+  for (const product of PRODUCT_KEYS) {
+    if (!menu[product]) continue;
+    const value = productPrices[product];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      active[product] = value;
+    }
+  }
+  return active;
 }
 
 /**
@@ -110,12 +172,15 @@ export function GamePage() {
     currentRound,
     pendingDecision,
     decisionSubmitted,
+    pricesSubmitted,
+    priceSubmissionReceipt,
     role,
   } = useGame();
   const dispatch = useGameDispatch();
   const navigate = useNavigate();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [submittingPrices, setSubmittingPrices] = useState(false);
 
   // FE-11 — previous round's ad winners, rendered at the top of Decide.
   // The aggregate `rounds/round_{N}` doc writes
@@ -254,6 +319,56 @@ export function GamePage() {
         } else if (data.teamId === null) {
           dispatch({ type: "SET_TEAM_ID", payload: null });
         }
+        const pending = data.pendingDecision;
+        if (pending && typeof pending === "object") {
+          if (pending.menu && typeof pending.menu === "object") {
+            const incomingMenu = pending.menu as Record<string, unknown>;
+            const hydratedMenu: Partial<Record<ProductKey, boolean>> = {};
+            for (const key of PRODUCT_KEYS) {
+              if (typeof incomingMenu[key] === "boolean") {
+                hydratedMenu[key] = incomingMenu[key] as boolean;
+              }
+            }
+            if (Object.keys(hydratedMenu).length > 0) {
+              dispatch({
+                type: "UPDATE_PENDING_DECISION",
+                payload: { menu: hydratedMenu },
+              });
+            }
+          }
+        }
+        if (
+          pending &&
+          typeof pending === "object" &&
+          pending.productPrices &&
+          typeof pending.productPrices === "object"
+        ) {
+          const incoming = pending.productPrices as Record<string, unknown>;
+          const hydratedPrices: Partial<Record<ProductKey, number>> = {};
+          for (const key of PRODUCT_KEYS) {
+            const v = incoming[key];
+            if (typeof v === "number" && Number.isFinite(v)) {
+              hydratedPrices[key] = v;
+            }
+          }
+          if (Object.keys(hydratedPrices).length > 0) {
+            dispatch({
+              type: "UPDATE_PENDING_DECISION",
+              payload: { productPrices: hydratedPrices },
+            });
+          }
+        }
+        const receipt = hydratePriceReceipt(data.priceSubmissionReceipt);
+        const receiptForCurrentRound =
+          receipt && receipt.round === currentRound ? receipt : null;
+        dispatch({
+          type: "SET_PRICE_SUBMISSION_RECEIPT",
+          payload: receiptForCurrentRound,
+        });
+        dispatch({
+          type: "SET_PRICES_SUBMITTED",
+          payload: Boolean(receiptForCurrentRound),
+        });
 
         // lastRoundResult → dispatch ADD_RESULT so ResultsPhase + the CSV
         // download pick it up. Backend writes this on the player doc after
@@ -337,7 +452,7 @@ export function GamePage() {
       },
     );
     return unsubscribe;
-  }, [gameId, playerId, dispatch]);
+  }, [gameId, playerId, dispatch, currentRound]);
 
   const parsed = parseGamePhase(phase, currentRound);
   const basePhase = parsed.base;
@@ -503,6 +618,7 @@ export function GamePage() {
           sanitizedAssignments as PendingDecisionDraft["sousChefAssignments"],
         staffCounts: pendingDecision.staffCounts,
         maintenanceTasks,
+        productPrices: pendingDecision.productPrices,
       });
       dispatch({ type: "SET_DECISION_SUBMITTED", payload: true });
       // Do NOT dispatch SET_PHASE — the backend phase listener owns transitions.
@@ -517,6 +633,60 @@ export function GamePage() {
       setSubmitting(false);
     }
   }, [gameId, basePhase, pendingDecision, dispatch]);
+
+  const handleSubmitPrices = useCallback(async () => {
+    if (!gameId) {
+      setSubmitError("Not connected to a game yet.");
+      return;
+    }
+    if (basePhase !== "decide") {
+      setSubmitError("Prices can only be submitted during the decide phase.");
+      return;
+    }
+    setSubmitError(null);
+    setSubmittingPrices(true);
+    try {
+      const callable = httpsCallable<
+        {
+          gameId: string;
+          menu: Record<ProductKey, boolean>;
+          productPrices: Record<ProductKey, number>;
+        },
+        SubmitPricesResponse
+      >(functions, "submitPrices");
+      const activeProductPrices = getActiveProductPrices(
+        pendingDecision.menu,
+        pendingDecision.productPrices,
+      );
+      const result = await callable({
+        gameId,
+        menu: pendingDecision.menu,
+        productPrices: activeProductPrices as Record<ProductKey, number>,
+      });
+      dispatch({ type: "SET_PRICES_SUBMITTED", payload: true });
+      if (result.data.priceReceipt) {
+        dispatch({
+          type: "SET_PRICE_SUBMISSION_RECEIPT",
+          payload: {
+            ...result.data.priceReceipt,
+            submittedAtMs: Date.now(),
+          },
+        });
+      }
+    } catch (err) {
+      setSubmitError(
+        humanizeFunctionError(err, "Could not submit prices. Please try again."),
+      );
+    } finally {
+      setSubmittingPrices(false);
+    }
+  }, [
+    gameId,
+    basePhase,
+    pendingDecision.menu,
+    pendingDecision.productPrices,
+    dispatch,
+  ]);
 
   const isDecisionPhase = basePhase === "decide";
   const isSimulating = basePhase === "simulating";
@@ -559,13 +729,38 @@ export function GamePage() {
       )}
 
       <div className="game-page__dashboard">
-        <BakeryView />
+        <BakeryView readOnly={decisionSubmitted} />
         <GameSidebar />
       </div>
       {submitError && (
         <p className="game-page__submit-error" role="alert">
           {submitError}
         </p>
+      )}
+      {roleOwnsPricing(role) && priceSubmissionReceipt && (
+        <section className="game-page__price-receipt" aria-live="polite">
+          <strong className="game-page__price-receipt-title">
+            Price receipt
+          </strong>
+          <span>
+            Round {priceSubmissionReceipt.round} at{" "}
+            {formatReceiptTime(priceSubmissionReceipt.submittedAtMs)}
+          </span>
+          <span className="game-page__price-receipt-values">
+            {PRODUCT_KEYS.filter(
+              (product) =>
+                typeof priceSubmissionReceipt.productPrices[product] === "number",
+            )
+              .map((product) => {
+                const value = priceSubmissionReceipt.productPrices[product];
+                return typeof value === "number"
+                  ? `${product} $${value.toFixed(2)}`
+                  : null;
+              })
+              .filter((value): value is string => Boolean(value))
+              .join(" • ")}
+          </span>
+        </section>
       )}
 
       {/* FE-17 — timer + live submission counter + role-gated submit. */}
@@ -578,18 +773,34 @@ export function GamePage() {
             : undefined
         }
         action={
-          <button
-            className="btn btn--primary game-page__submit"
-            onClick={handleSubmit}
-            disabled={submitDisabled}
-            title={
-              !canSubmit
-                ? `Your ${ownerLabel} teammate submits this decision.`
-                : undefined
-            }
-          >
-            {submitLabel}
-          </button>
+          <>
+            {roleOwnsPricing(role) && (
+              <button
+                className="btn btn--secondary game-page__submit"
+                type="button"
+                onClick={handleSubmitPrices}
+                disabled={submittingPrices || !gameId}
+              >
+                {submittingPrices
+                  ? "Submitting…"
+                  : pricesSubmitted
+                    ? "✓ Update Prices"
+                    : "Submit Prices"}
+              </button>
+            )}
+            <button
+              className="btn btn--primary game-page__submit"
+              onClick={handleSubmit}
+              disabled={submitDisabled}
+              title={
+                !canSubmit
+                  ? `Your ${ownerLabel} teammate submits this decision.`
+                  : undefined
+              }
+            >
+              {submitLabel}
+            </button>
+          </>
         }
       />
     </PageShell>

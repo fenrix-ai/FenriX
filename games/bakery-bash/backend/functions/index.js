@@ -21,11 +21,18 @@
 
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const crypto = require('node:crypto');
 
 // Allow Firebase ID tokens (anonymous + real users) to invoke callables.
 // Without this, Cloud Run blocks requests at the IAM layer before they
 // reach the onCall handler, causing 401s instead of auth checks.
 const CALLABLE_OPTS = { invoker: 'public' };
+const LOW_RESOURCE_CALLABLE_OPTS = {
+  ...CALLABLE_OPTS,
+  cpu: 'gcf_gen1',
+  memory: '256MiB',
+  concurrency: 1,
+};
 const { getApps, initializeApp } = require('firebase-admin/app');
 const {
   FieldValue,
@@ -89,6 +96,7 @@ try {
     validateDecision: (d) => d,
     validateAdBids: (d) => d,
     validateChefBids: (d) => d,
+    validateProductPrices: (d) => d,
   };
 }
 
@@ -208,6 +216,59 @@ function phaseEndsAtFromNow(phaseName, config) {
  */
 function gameDoc(gameId) {
   return db.collection('games').doc(gameId);
+}
+
+function buildPriceSubmissionReceipt(round, prices) {
+  const normalized = Object.keys(prices || {})
+    .sort()
+    .reduce((acc, key) => {
+      const value = prices[key];
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        acc[key] = Math.round(value * 100) / 100;
+      }
+      return acc;
+    }, {});
+  const submissionKey = crypto
+    .createHash('sha1')
+    .update(JSON.stringify({ round, prices: normalized }))
+    .digest('hex')
+    .slice(0, 10)
+    .toUpperCase();
+  return {
+    round,
+    submissionKey,
+    productPrices: normalized,
+    submittedAt: FieldValue.serverTimestamp(),
+  };
+}
+
+function filterPricesToMenu(productPrices, menu) {
+  const filtered = {};
+  for (const [product, value] of Object.entries(productPrices || {})) {
+    if (menu && menu[product] === true) {
+      filtered[product] = value;
+    }
+  }
+  return filtered;
+}
+
+async function deleteCollectionDocs(colRef) {
+  const snap = await colRef.get();
+  if (snap.empty) return;
+  let batch = db.batch();
+  let ops = 0;
+  for (const docSnap of snap.docs) {
+    batch.delete(docSnap.ref);
+    ops += 1;
+    if (ops >= BATCH_OP_LIMIT) {
+      await batch.commit();
+      batch = db.batch();
+      ops = 0;
+    }
+  }
+  if (ops > 0) {
+    await batch.commit();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -984,6 +1045,15 @@ async function runSimulationAndPersist(gameRef, round, config) {
       pd.ref.collection('decisions').doc(roundId).get()
     )
   );
+  const priorPriceHistoryByPlayer = await Promise.all(
+    playerDocs.map((pd) =>
+      pd.ref
+        .collection('decisions')
+        .orderBy('round', 'asc')
+        .where('round', '<', round)
+        .get()
+    )
+  );
 
   // BE-19: compute disconnection state for each player before simulation.
   // A player is considered "disconnected" if they have missed 2+ consecutive rounds.
@@ -1020,11 +1090,15 @@ async function runSimulationAndPersist(gameRef, round, config) {
         quantities: (decision && decision.quantities) || {},
         sousChefCount: missed ? 0 : numberOrDefault(decision && decision.sousChefCount, p.sousChefCount || 0),
         sousChefAssignments: (decision && decision.sousChefAssignments) || {},
+        productPrices: (decision && decision.productPrices) || {},
       },
       specialtyChefs: Array.isArray(p.specialtyChefs) ? p.specialtyChefs : [],
       budgetCurrent: numberOrDefault(p.budgetCurrent, 0),
       returningCustomersPending: numberOrDefault(p.returningCustomersPending, 0),
       auctionResults: ar,
+      priorSubmittedPrices: priorPriceHistoryByPlayer[i].docs
+        .map((snap) => (snap.exists ? (snap.data().productPrices || null) : null))
+        .filter(Boolean),
     };
   });
 
@@ -1314,7 +1388,7 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
     roundId = `round_${currentRound}`;
     const decisionRef = playerRef.collection('decisions').doc(roundId);
     const dSnap = await transaction.get(decisionRef);
-    if (dSnap.exists) {
+    if (dSnap.exists && dSnap.get('submittedAt')) {
       throw new HttpsError('already-exists', 'Decision already submitted for this round.');
     }
 
@@ -1322,21 +1396,19 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
       round: currentRound,
       submittedAt: FieldValue.serverTimestamp(),
       ...validated,
-    });
+    }, { merge: true });
 
     // BUG-1 fix: FieldValue.serverTimestamp() is invalid inside a nested
     // map — Firestore only allows sentinels at top-level fields. Use
     // Timestamp.now() for the nested submittedAt.
     transaction.update(playerRef, {
-      pendingDecision: {
-        submitted: true,
-        submittedAt: Timestamp.now(),
-        round: currentRound,
-        menu: validated.menu || {},
-        quantities: validated.quantities || {},
-        sousChefCount: validated.sousChefCount || 0,
-        sousChefAssignments: validated.sousChefAssignments || {},
-      },
+      'pendingDecision.submitted': true,
+      'pendingDecision.submittedAt': Timestamp.now(),
+      'pendingDecision.round': currentRound,
+      'pendingDecision.menu': validated.menu || {},
+      'pendingDecision.quantities': validated.quantities || {},
+      'pendingDecision.sousChefCount': validated.sousChefCount || 0,
+      'pendingDecision.sousChefAssignments': validated.sousChefAssignments || {},
       // BE-19: un-flag a reconnected player immediately on successful submit.
       // Without this, a previously-disconnected player stays flagged on the
       // professor dashboard until the next simulation batch runs.
@@ -1362,11 +1434,104 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
   return { gameId, playerId: uid, roundId, submitted: true };
 });
 
+exports.submitPrices = onCall(CALLABLE_OPTS, async (request) => {
+  const auth = requireAuth(request, 'Sign in before submitting prices.');
+  const data = request.data || {};
+  const gameId = cleanGameId(data.gameId);
+  const uid = auth.uid;
+  const gameRef = gameDoc(gameId);
+  const playerRef = gameRef.collection('players').doc(uid);
+
+  let roundId = null;
+  let priceReceipt = null;
+  let _submitPrices_role = null;
+  let _submitPrices_displayName = '';
+
+  await db.runTransaction(async (transaction) => {
+    const [gSnap, pSnap, cfgSnap] = await Promise.all([
+      transaction.get(gameRef),
+      transaction.get(playerRef),
+      transaction.get(gameRef.collection('config').doc('params')),
+    ]);
+
+    if (!gSnap.exists) throw new HttpsError('not-found', 'Game not found.');
+    if (!pSnap.exists) {
+      throw new HttpsError('failed-precondition', 'Join the game before submitting.');
+    }
+
+    assertRoleAllowed(pSnap.get('role'), ['finance']);
+    _submitPrices_role = pSnap.get('role') || null;
+    _submitPrices_displayName = pSnap.get('displayName') || '';
+
+    const game = gSnap.data();
+    if (!canSubmitDecision(game.phase)) {
+      throw new HttpsError('failed-precondition', 'Prices can only be submitted during the decide phase.');
+    }
+
+    const currentRound = numberOrDefault(game.currentRound || game.round, 1);
+    void mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
+
+    let validated;
+    try {
+      validated = decisionValidation.validateProductPrices(data.productPrices);
+    } catch (vErr) {
+      if (ValidationError && vErr instanceof ValidationError) {
+        throw new HttpsError(vErr.code || 'invalid-argument', vErr.message);
+      }
+      throw vErr;
+    }
+
+    roundId = `round_${currentRound}`;
+    const decisionRef = playerRef.collection('decisions').doc(roundId);
+    const requestMenu =
+      data.menu && typeof data.menu === 'object' ? data.menu : {};
+    const filteredPrices = filterPricesToMenu(validated, requestMenu);
+    priceReceipt = buildPriceSubmissionReceipt(currentRound, filteredPrices);
+
+    transaction.set(decisionRef, {
+      round: currentRound,
+      productPrices: filteredPrices,
+      pricesSubmittedAt: FieldValue.serverTimestamp(),
+      priceSubmissionReceipt: priceReceipt,
+    }, { merge: true });
+
+    transaction.update(playerRef, {
+      'pendingDecision.productPrices': filteredPrices,
+      priceSubmissionReceipt: priceReceipt,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+
+  if (roundId) {
+    await recordSubmission(
+      gameRef,
+      `${roundId}_prices`,
+      uid,
+      _submitPrices_displayName,
+      _submitPrices_role,
+    );
+  }
+
+  return {
+    gameId,
+    playerId: uid,
+    roundId,
+    submitted: true,
+    priceReceipt: priceReceipt
+      ? {
+          round: priceReceipt.round,
+          submissionKey: priceReceipt.submissionKey,
+          productPrices: priceReceipt.productPrices,
+        }
+      : null,
+  };
+});
+
 // ===========================================================================
 // submitBids
 // ===========================================================================
 
-exports.submitBids = onCall(CALLABLE_OPTS, async (request) => {
+exports.submitBids = onCall(LOW_RESOURCE_CALLABLE_OPTS, async (request) => {
   const auth = requireAuth(request, 'Sign in before bidding.');
   const data = request.data || {};
   const gameId = cleanGameId(data.gameId);
@@ -1632,7 +1797,7 @@ async function setPausedFlag(request, paused) {
   return { gameId, paused };
 }
 
-exports.pauseGame  = onCall(CALLABLE_OPTS, async (request) => setPausedFlag(request, true));
+exports.pauseGame  = onCall(LOW_RESOURCE_CALLABLE_OPTS, async (request) => setPausedFlag(request, true));
 exports.resumeGame = onCall(CALLABLE_OPTS, async (request) => setPausedFlag(request, false));
 
 // ===========================================================================
@@ -1691,6 +1856,108 @@ exports.endGame = onCall(CALLABLE_OPTS, async (request) => {
   await persistConclusion(gameRef, totalRounds, config);
 
   return { gameId, phase: 'game_over' };
+});
+
+exports.resetGame = onCall(CALLABLE_OPTS, async (request) => {
+  const auth = requireAuth(request);
+  const gameId = cleanGameId((request.data || {}).gameId);
+  const gameRef = gameDoc(gameId);
+
+  const [gameSnap, cfgSnap, playersSnap] = await Promise.all([
+    gameRef.get(),
+    gameRef.collection('config').doc('params').get(),
+    gameRef.collection('players').get(),
+  ]);
+
+  if (!gameSnap.exists) throw new HttpsError('not-found', 'Game not found.');
+  if (
+    gameSnap.get('professorUid') !== auth.uid &&
+    gameSnap.get('professorId') !== auth.uid
+  ) {
+    throw new HttpsError('permission-denied', 'Only the professor can reset this game.');
+  }
+
+  const config = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
+  const startingBudget = numberOrDefault(
+    config.startingBudget,
+    DEFAULT_GAME_CONFIG.startingBudget,
+  );
+
+  const playerDocs = playersSnap.docs;
+
+  await Promise.all([
+    deleteCollectionDocs(gameRef.collection('rounds')),
+    deleteCollectionDocs(gameRef.collection('submissions')),
+    deleteCollectionDocs(gameRef.collection('marketInsights')),
+    deleteCollectionDocs(gameRef.collection('leaderboard')),
+    deleteCollectionDocs(gameRef.collection('conclusion')),
+    ...playerDocs.map((pd) => deleteCollectionDocs(pd.ref.collection('decisions'))),
+    ...playerDocs.map((pd) => deleteCollectionDocs(pd.ref.collection('rounds'))),
+    ...playerDocs.map((pd) => deleteCollectionDocs(pd.ref.collection('emails'))),
+    ...playerDocs.map((pd) =>
+      deleteCollectionDocs(
+        gameRef.collection('csvRows').doc(pd.id).collection('rounds'),
+      )
+    ),
+  ]);
+
+  let batch = db.batch();
+  let ops = 0;
+
+  const commitBatch = async () => {
+    if (ops === 0) return;
+    await batch.commit();
+    batch = db.batch();
+    ops = 0;
+  };
+
+  batch.update(gameRef, {
+    phase: 'lobby',
+    round: 0,
+    currentRound: 0,
+    paused: false,
+    submittedCount: 0,
+    phaseEndsAt: null,
+    phaseStartedAt: FieldValue.serverTimestamp(),
+    pausedAt: null,
+    startedAt: null,
+    endedAt: null,
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+  ops += 1;
+
+  for (const pd of playerDocs) {
+    batch.update(pd.ref, {
+      budgetCurrent: startingBudget,
+      cumulativeRevenue: 0,
+      specialtyChefs: [],
+      sousChefCount: 0,
+      pendingDecision: {},
+      pendingBids: {},
+      pendingRosterAction: false,
+      rosterCompleted: false,
+      returningCustomersPending: 0,
+      chefSatisfactionScores: {},
+      maintenanceBars: {
+        cleanliness: 100,
+        ovenHealth: 100,
+        slicerHealth: 100,
+        espressoHealth: 100,
+      },
+      lastRoundResult: FieldValue.delete(),
+      consecutiveMissedRounds: 0,
+      disconnected: false,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    ops += 1;
+    if (ops >= BATCH_OP_LIMIT) {
+      await commitBatch();
+    }
+  }
+
+  await commitBatch();
+
+  return { gameId, phase: 'lobby', reset: true };
 });
 
 // ===========================================================================

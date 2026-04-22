@@ -450,6 +450,37 @@ h3 { font-size: 0.7rem; }
   text-align: center;
 }
 
+.game-page__price-receipt {
+  margin-top: 0.65rem;
+  padding: 0.65rem 0.8rem;
+  border: 2px solid var(--sage);
+  background: color-mix(in srgb, var(--sage) 10%, var(--flour));
+  color: var(--dark-roast);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+}
+
+.game-page__price-receipt-title {
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  color: var(--espresso);
+  text-transform: uppercase;
+}
+
+.game-page__price-receipt code {
+  font-family: var(--font-pixel);
+  font-size: 0.55rem;
+  color: var(--espresso);
+}
+
+.game-page__price-receipt-values {
+  font-family: var(--font-pixel);
+  font-size: 0.48rem;
+  line-height: 1.5;
+}
+
 /* ─── Bakery View (station grid) ─────────────────────────── */
 
 .bakery-view {
@@ -620,6 +651,87 @@ h3 { font-size: 0.7rem; }
   gap: 0.4rem;
 }
 
+.price-input {
+  display: flex;
+  align-items: center;
+  gap: 0.22rem;
+  padding: 0 0.35rem;
+  border: var(--border-light);
+  background: var(--flour);
+}
+
+.price-input__nudge {
+  width: 20px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--espresso);
+  font-family: var(--font-pixel);
+  font-size: 0.6rem;
+  cursor: pointer;
+}
+
+.price-input__nudge:hover:not(:disabled) {
+  color: var(--berry);
+}
+
+.price-input__nudge:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.price-input__symbol {
+  font-family: var(--font-pixel);
+  font-size: 0.45rem;
+  color: var(--sage);
+}
+
+.price-input__field {
+  width: 52px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--espresso);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  text-align: center;
+  -moz-appearance: textfield;
+}
+
+.price-input__field::-webkit-outer-spin-button,
+.price-input__field::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.price-input__field:focus {
+  outline: none;
+}
+
+.price-input__field:disabled {
+  color: var(--sage);
+}
+
+.price-input__badge {
+  min-width: 72px;
+  text-align: center;
+  font-family: var(--font-pixel);
+  font-size: 0.42rem;
+  text-transform: uppercase;
+}
+
+.price-input__badge--floor {
+  color: var(--berry);
+}
+
+.price-input__badge--competitive {
+  color: var(--sage);
+}
+
+.price-input__badge--premium {
+  color: var(--caramel);
+}
+
 .product-tile__stepper {
   display: flex;
   align-items: center;
@@ -692,6 +804,29 @@ h3 { font-size: 0.7rem; }
 .product-tile__step-value:focus {
   outline: 2px solid var(--caramel);
   outline-offset: -2px;
+}
+
+.product-tile__step-value--static,
+.product-tile__stepper--readonly {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.product-tile--readonly .product-tile__stepper--readonly {
+  min-width: 96px;
+  padding: 0 0.5rem;
+}
+
+.product-tile__muted {
+  font-family: var(--font-pixel);
+  font-size: 0.45rem;
+  color: var(--sage);
+  text-transform: uppercase;
+}
+
+.bakery-view__badge {
+  margin-left: 0.6rem;
 }
 
 .product-tile__add {
