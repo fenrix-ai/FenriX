@@ -90,7 +90,16 @@ try {
     validateDecision: (d) => d,
     validateAdBids: (d) => d,
     validateChefBids: (d) => d,
-    validateProductPrices: (d) => d || {},
+    // Fail-closed: the real validator snaps to the $0.25 grid and clamps to
+    // [floor, ceiling]. A passthrough fallback would let unsnapped/unclamped
+    // prices reach Firestore and break resolvePriceForSim's contract, so we
+    // refuse price submissions when the validation module is unavailable.
+    validateProductPrices: () => {
+      throw new HttpsError(
+        'internal',
+        'Price validation module unavailable; cannot validate prices.',
+      );
+    },
   };
 }
 

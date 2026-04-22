@@ -375,22 +375,30 @@ export function GamePage() {
   useEffect(() => {
     if (!gameId) return;
     const rosterRef = collection(db, "games", gameId, "roster");
-    const unsubscribe = onSnapshot(rosterRef, (snap) => {
-      const map: Record<
-        string,
-        { displayName?: string; bakeryName?: string }
-      > = {};
-      snap.docs.forEach((d) => {
-        const data = d.data() as DocumentData;
-        map[d.id] = {
-          displayName:
-            typeof data.displayName === "string" ? data.displayName : undefined,
-          bakeryName:
-            typeof data.bakeryName === "string" ? data.bakeryName : undefined,
-        };
-      });
-      setRosterByUid(map);
-    });
+    const unsubscribe = onSnapshot(
+      rosterRef,
+      (snap) => {
+        const map: Record<
+          string,
+          { displayName?: string; bakeryName?: string }
+        > = {};
+        snap.docs.forEach((d) => {
+          const data = d.data() as DocumentData;
+          map[d.id] = {
+            displayName:
+              typeof data.displayName === "string"
+                ? data.displayName
+                : undefined,
+            bakeryName:
+              typeof data.bakeryName === "string" ? data.bakeryName : undefined,
+          };
+        });
+        setRosterByUid(map);
+      },
+      (err) => {
+        console.error("games/roster listener error", { gameId, err });
+      },
+    );
     return unsubscribe;
   }, [gameId]);
 
@@ -405,36 +413,46 @@ export function GamePage() {
     }
     const prevRound = currentRound - 1;
     const prevRoundRef = doc(db, "games", gameId, "rounds", `round_${prevRound}`);
-    const unsubscribe = onSnapshot(prevRoundRef, (snap) => {
-      if (!snap.exists()) {
-        setAdWinners(null);
-        return;
-      }
-      const data = snap.data() as DocumentData;
-      const auction = data.auctionResults as DocumentData | undefined;
-      const adsRaw = (auction?.ads ?? null) as DocumentData | null;
-      if (!adsRaw || typeof adsRaw !== "object") {
-        setAdWinners(null);
-        return;
-      }
-      const out: Partial<Record<AdWinnerEntry["adType"], AdWinnerEntry>> = {};
-      (["TV", "Billboard", "Radio", "Newspaper"] as const).forEach((t) => {
-        const entry = adsRaw[t];
-        if (!entry || typeof entry !== "object") return;
-        const winnerId =
-          typeof entry.winnerId === "string" ? entry.winnerId : null;
-        const winningBid =
-          typeof entry.winningBid === "number" ? entry.winningBid : undefined;
-        if (!winnerId || !winningBid) return; // no bids landed for this surface
-        out[t] = {
-          adType: t,
-          amount: winningBid,
-          bakeryName: rosterByUid[winnerId]?.bakeryName,
-          displayName: rosterByUid[winnerId]?.displayName,
-        };
-      });
-      setAdWinners(Object.keys(out).length > 0 ? out : null);
-    });
+    const unsubscribe = onSnapshot(
+      prevRoundRef,
+      (snap) => {
+        if (!snap.exists()) {
+          setAdWinners(null);
+          return;
+        }
+        const data = snap.data() as DocumentData;
+        const auction = data.auctionResults as DocumentData | undefined;
+        const adsRaw = (auction?.ads ?? null) as DocumentData | null;
+        if (!adsRaw || typeof adsRaw !== "object") {
+          setAdWinners(null);
+          return;
+        }
+        const out: Partial<Record<AdWinnerEntry["adType"], AdWinnerEntry>> = {};
+        (["TV", "Billboard", "Radio", "Newspaper"] as const).forEach((t) => {
+          const entry = adsRaw[t];
+          if (!entry || typeof entry !== "object") return;
+          const winnerId =
+            typeof entry.winnerId === "string" ? entry.winnerId : null;
+          const winningBid =
+            typeof entry.winningBid === "number" ? entry.winningBid : undefined;
+          if (!winnerId || !winningBid) return; // no bids landed for this surface
+          out[t] = {
+            adType: t,
+            amount: winningBid,
+            bakeryName: rosterByUid[winnerId]?.bakeryName,
+            displayName: rosterByUid[winnerId]?.displayName,
+          };
+        });
+        setAdWinners(Object.keys(out).length > 0 ? out : null);
+      },
+      (err) => {
+        console.error("games/rounds prev-round listener error", {
+          gameId,
+          prevRound,
+          err,
+        });
+      },
+    );
     return unsubscribe;
   }, [gameId, currentRound, rosterByUid]);
 
