@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import { GameProvider } from "./contexts/GameContext";
 import { DevNav } from "./components/ui/DevNav";
+import { PhaseTransitionBanner } from "./components/ui/PhaseTransitionBanner";
 import { GamePhaseListener } from "./components/GamePhaseListener";
 import { LandingPage } from "./pages/LandingPage";
 import { TeamPage } from "./pages/TeamPage";
@@ -21,6 +22,7 @@ export default function App() {
       <GameProvider>
         <BrowserRouter>
           <DevNav />
+          <PhaseTransitionBanner />
           <GamePhaseListener />
           <Routes>
             <Route path="/" element={<LandingPage />} />

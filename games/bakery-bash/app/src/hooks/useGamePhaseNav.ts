@@ -4,6 +4,7 @@ import { doc, onSnapshot, type DocumentData } from "firebase/firestore";
 import { useGame, useGameDispatch } from "../contexts/GameContext";
 import { db } from "../lib/firebase";
 import { parseGamePhase } from "../types/game";
+import { schedulePhaseNav } from "../lib/phaseNav";
 
 /**
  * Subscribes to the active game doc and navigates to the correct phase route
@@ -55,7 +56,6 @@ export function useGamePhaseNav() {
   useEffect(() => {
     const active = livePhase ?? phase;
     if (!active || active === "lobby") return;
-    if (location.pathname.startsWith("/professor")) return;
 
     const base = parseGamePhase(active).base;
     let target: string;
@@ -65,6 +65,10 @@ export function useGamePhaseNav() {
     else if (base === "game_over") target = "/game/conclusion";
     else target = "/game";
 
-    if (location.pathname !== target) navigate(target);
+    // Delegate to the shared scheduler so every nav goes through the same
+    // 7-second grace window + `PhaseTransitionBanner` experience, and so
+    // the allowlist (/team, /professor, /leaderboard) is honoured the
+    // same way the app-level listener honours it.
+    schedulePhaseNav(navigate, target, location.pathname);
   }, [livePhase, phase, navigate, location.pathname]);
 }

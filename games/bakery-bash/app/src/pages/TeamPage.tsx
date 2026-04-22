@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   collection,
   doc,
@@ -14,9 +14,11 @@ import { useGame, useGameDispatch } from "../contexts/GameContext";
 import { PageShell } from "../components/ui/PageShell";
 import {
   PLAYER_ROLE_LABELS,
+  parseGamePhase,
   type GamePhaseString,
   type PlayerRole,
 } from "../types/game";
+import { schedulePhaseNav } from "../lib/phaseNav";
 
 /**
  * /team — post-join team room. Members see who's on the team, claim a
@@ -42,6 +44,13 @@ interface TeamDoc {
    * canonical team roster — there is no separate `memberUids` field.
    */
   roleAssignments: Record<string, PlayerRole | null>;
+  /**
+   * Mirrored by the simulation pipeline (BE-19): the uids of teammates
+   * whose player doc has `disconnected: true` after 2+ missed rounds.
+   * Drives the "Take over this role" flow on /team during a running
+   * game. Absent / empty array = everyone is still active.
+   */
+  disconnectedUids: string[];
 }
 
 const TEAM_NAME_MAX = 40;
@@ -69,9 +78,10 @@ const ROLE_DESCRIPTIONS: Record<PlayerRole, string> = {
 };
 
 export function TeamPage() {
-  const { gameId, playerId, player, teamId, role, phase } = useGame();
+  const { gameId, playerId, player, teamId, role, phase, gameCode } = useGame();
   const dispatch = useGameDispatch();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [roster, setRoster] = useState<Record<string, RosterEntry>>({});
   const [team, setTeam] = useState<TeamDoc | null>(null);
@@ -86,6 +96,8 @@ export function TeamPage() {
 
   const [savingRole, setSavingRole] = useState<PlayerRole | null>(null);
   const [roleError, setRoleError] = useState<string | null>(null);
+  const [takeoverTarget, setTakeoverTarget] = useState<PlayerRole | null>(null);
+  const [copyState, setCopyState] = useState<"idle" | "copied">("idle");
 
   // Subscribe to the player's own doc so role + teamId arrive on /team
   // (GamePage's listener isn't mounted on this route).
@@ -160,6 +172,11 @@ export function TeamPage() {
             data.roleAssignments && typeof data.roleAssignments === "object"
               ? sanitizeRoleAssignments(data.roleAssignments)
               : {},
+          disconnectedUids: Array.isArray(data.disconnectedUids)
+            ? data.disconnectedUids.filter(
+                (uid): uid is string => typeof uid === "string",
+              )
+            : [],
         };
         setTeam(next);
         dispatch({ type: "SET_TEAM_NAME", payload: next.name });
@@ -197,10 +214,28 @@ export function TeamPage() {
     );
     return unsubscribe;
   }, [gameId]);
+  // Lobby → game handoff goes through the shared scheduler so the player
+  // sees the countdown banner (and can "Stay here" to keep managing the
+  // team) rather than getting silently yanked into the round.
   useEffect(() => {
     const livePhase = gamePhase ?? phase;
-    if (livePhase && livePhase !== "lobby") navigate("/game");
-  }, [gamePhase, phase, navigate]);
+    if (!livePhase || livePhase === "lobby") return;
+    const base = parseGamePhase(livePhase).base;
+    let target: string;
+    if (base === "bid_ad" || base === "bid_chef") target = "/auction";
+    else if (base === "email") target = "/game/email";
+    else if (base === "roster") target = "/game/roster";
+    else if (base === "game_over") target = "/game/conclusion";
+    else target = "/game";
+    schedulePhaseNav(navigate, target, location.pathname);
+  }, [gamePhase, phase, navigate, location.pathname]);
+
+  const inGame = !!gamePhase && gamePhase !== "lobby";
+
+  const disconnectedSet = useMemo(
+    () => new Set(team?.disconnectedUids ?? []),
+    [team],
+  );
 
   const memberRoster = useMemo(() => {
     if (!team) return [];
@@ -209,19 +244,28 @@ export function TeamPage() {
       displayName: roster[uid]?.displayName ?? "Teammate",
       isYou: uid === playerId,
       role: team.roleAssignments[uid] ?? null,
+      disconnected: disconnectedSet.has(uid),
     }));
-  }, [team, roster, playerId]);
+  }, [team, roster, playerId, disconnectedSet]);
 
-  const claimedByOther: Partial<Record<PlayerRole, string>> = useMemo(() => {
+  const claimedByOther: Partial<
+    Record<PlayerRole, { displayName: string; uid: string; disconnected: boolean }>
+  > = useMemo(() => {
     if (!team || !playerId) return {};
-    const out: Partial<Record<PlayerRole, string>> = {};
+    const out: Partial<
+      Record<PlayerRole, { displayName: string; uid: string; disconnected: boolean }>
+    > = {};
     for (const [uid, r] of Object.entries(team.roleAssignments)) {
       if (uid !== playerId && r) {
-        out[r] = roster[uid]?.displayName ?? "A teammate";
+        out[r] = {
+          uid,
+          displayName: roster[uid]?.displayName ?? "A teammate",
+          disconnected: disconnectedSet.has(uid),
+        };
       }
     }
     return out;
-  }, [team, roster, playerId]);
+  }, [team, roster, playerId, disconnectedSet]);
 
   const myClaimedRole: PlayerRole | null = useMemo(() => {
     if (!team || !playerId) return null;
@@ -279,6 +323,46 @@ export function TeamPage() {
     }
   };
 
+  const handleTakeoverRole = async (next: PlayerRole) => {
+    if (!gameId || !teamId) return;
+    const holder = claimedByOther[next];
+    if (!holder || !holder.disconnected) return;
+
+    const confirmed = window.confirm(
+      `Take over the ${PLAYER_ROLE_LABELS[next]} role from ${holder.displayName}? They've been marked as offline — you'll be able to submit their screens for the rest of the game.`,
+    );
+    if (!confirmed) return;
+
+    setRoleError(null);
+    setTakeoverTarget(next);
+    try {
+      const takeoverTeamRole = httpsCallable<
+        { gameId: string; teamId: string; role: PlayerRole },
+        { ok: true }
+      >(functions, "takeoverTeamRole");
+      await takeoverTeamRole({ gameId, teamId, role: next });
+    } catch (err) {
+      setRoleError(humanizeBackendError(err, "takeover"));
+    } finally {
+      setTakeoverTarget(null);
+    }
+  };
+
+  const handleCopyInvite = async () => {
+    if (!gameCode) return;
+    const teamLabel = team?.name ? ` · Team: ${team.name}` : "";
+    const payload = `Join my Bakery Bash game: code ${gameCode}${teamLabel}`;
+    try {
+      await navigator.clipboard.writeText(payload);
+      setCopyState("copied");
+      window.setTimeout(() => setCopyState("idle"), 1500);
+    } catch {
+      setRoleError(
+        "Couldn't copy to the clipboard. Share the game code manually.",
+      );
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -322,6 +406,51 @@ export function TeamPage() {
           <p className="team-page__hello">
             Hi, <strong>{player.name}</strong>.
           </p>
+        )}
+
+        {inGame && (
+          <div className="team-page__in-game" role="status">
+            <strong>Game in progress.</strong> You're managing your team
+            here — if a teammate drops off, you can take over their role
+            below. Use the banner up top (or the button here) to jump
+            back into the current phase.
+            <div className="team-page__in-game-actions">
+              <button
+                type="button"
+                className="btn btn--primary btn--small"
+                onClick={() => navigate("/game")}
+              >
+                Back to game
+              </button>
+            </div>
+          </div>
+        )}
+
+        {!inGame && gameCode && (
+          <section className="team-page__invite">
+            <div className="team-page__invite-row">
+              <span className="team-page__invite-label">Game code</span>
+              <span className="team-page__invite-value">{gameCode}</span>
+            </div>
+            {team?.name && (
+              <div className="team-page__invite-row">
+                <span className="team-page__invite-label">Team name</span>
+                <span className="team-page__invite-value">{team.name}</span>
+              </div>
+            )}
+            <div className="team-page__invite-row">
+              <button
+                type="button"
+                className="btn btn--secondary btn--small"
+                onClick={handleCopyInvite}
+              >
+                {copyState === "copied" ? "✓ Copied invite" : "Copy invite"}
+              </button>
+              <span className="team-page__invite-hint">
+                Share this with teammates so they land on the same team.
+              </span>
+            </div>
+          </section>
         )}
 
         {waitingForAssignment ? (
@@ -382,9 +511,11 @@ export function TeamPage() {
                 {memberRoster.map((m) => (
                   <li
                     key={m.uid}
-                    className={`team-page__member${
-                      m.isYou ? " team-page__member--you" : ""
-                    }`}
+                    className={
+                      "team-page__member" +
+                      (m.isYou ? " team-page__member--you" : "") +
+                      (m.disconnected ? " team-page__member--disconnected" : "")
+                    }
                   >
                     <span className="team-page__member-name">
                       {m.displayName}
@@ -420,8 +551,10 @@ export function TeamPage() {
                 {PICKABLE_ROLES.map((r) => {
                   const otherClaimer = claimedByOther[r];
                   const taken = !!otherClaimer;
+                  const takenByOffline = !!(otherClaimer && otherClaimer.disconnected);
                   const mine = myClaimedRole === r;
                   const saving = savingRole === r;
+                  const takingOver = takeoverTarget === r;
                   const disabled = taken || saving || isSolo;
                   return (
                     <li
@@ -438,7 +571,8 @@ export function TeamPage() {
                         </span>
                         {taken && (
                           <span className="team-page__role-claimed">
-                            Claimed by {otherClaimer}
+                            Claimed by {otherClaimer!.displayName}
+                            {takenByOffline && " (offline)"}
                           </span>
                         )}
                         {mine && (
@@ -450,27 +584,41 @@ export function TeamPage() {
                       <p className="team-page__role-desc">
                         {ROLE_DESCRIPTIONS[r]}
                       </p>
-                      <button
-                        type="button"
-                        className="btn btn--ghost team-page__role-btn"
-                        onClick={() => void handleClaimRole(r)}
-                        disabled={disabled || mine}
-                        title={
-                          taken
-                            ? `${otherClaimer} already picked this role.`
-                            : isSolo
-                            ? "Roles unlock once a teammate joins."
-                            : undefined
-                        }
-                      >
-                        {saving
-                          ? "Saving…"
-                          : mine
-                          ? "Selected"
-                          : taken
-                          ? "Taken"
-                          : "Choose"}
-                      </button>
+                      {takenByOffline ? (
+                        <button
+                          type="button"
+                          className="btn team-page__role-btn team-page__role-btn--takeover"
+                          onClick={() => void handleTakeoverRole(r)}
+                          disabled={takingOver || mine}
+                          title={`${otherClaimer!.displayName} has missed enough rounds to be marked offline. Take over so your team can keep submitting.`}
+                        >
+                          {takingOver
+                            ? "Taking over…"
+                            : `Take over from ${otherClaimer!.displayName}`}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn btn--ghost team-page__role-btn"
+                          onClick={() => void handleClaimRole(r)}
+                          disabled={disabled || mine}
+                          title={
+                            taken
+                              ? `${otherClaimer!.displayName} already picked this role.`
+                              : isSolo
+                              ? "Roles unlock once a teammate joins."
+                              : undefined
+                          }
+                        >
+                          {saving
+                            ? "Saving…"
+                            : mine
+                            ? "Selected"
+                            : taken
+                            ? "Taken"
+                            : "Choose"}
+                        </button>
+                      )}
                     </li>
                   );
                 })}
@@ -552,9 +700,12 @@ function sanitizeRoleAssignments(
  * shipped yet); everything else falls through to the message Firebase
  * gave us.
  */
-function humanizeBackendError(err: unknown, kind: "name" | "role"): string {
-  // Codes thrown by `updateTeamName` / `setTeamRole` in
-  // backend/functions/index.js — keep these in sync with the callable.
+function humanizeBackendError(
+  err: unknown,
+  kind: "name" | "role" | "takeover",
+): string {
+  // Codes thrown by `updateTeamName` / `setTeamRole` / `takeoverTeamRole`
+  // in backend/functions/index.js — keep these in sync with the callables.
   const fnErr = err as FunctionsError | undefined;
   const code = (fnErr?.code || "").split("/").pop();
 
@@ -566,18 +717,20 @@ function humanizeBackendError(err: unknown, kind: "name" | "role"): string {
     return "You're not on this team — refresh and try again.";
   }
   if (code === "not-found") {
-    return kind === "name"
-      ? "Team not found. The professor may not have finalized teams yet."
-      : "Team not found. The professor may not have finalized teams yet.";
+    return "Team not found. The professor may not have finalized teams yet.";
   }
   if (code === "invalid-argument") {
     // Backend rejects names > 64 chars / empty strings.
     return fnErr?.message ?? "That value isn't allowed.";
   }
-  return humanizeFunctionError(
-    err,
+  if (code === "failed-precondition" && kind === "takeover") {
+    return "That teammate is still active — they haven't missed enough rounds yet. Ask them to hand off the role instead.";
+  }
+  const fallback =
     kind === "name"
       ? "Could not save team name. Try again."
-      : "Could not save role. Try again.",
-  );
+      : kind === "takeover"
+        ? "Could not take over the role. Try again."
+        : "Could not save role. Try again.";
+  return humanizeFunctionError(err, fallback);
 }

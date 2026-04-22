@@ -1174,6 +1174,32 @@ async function runSimulationAndPersist(gameRef, round, config) {
     updatedAt: FieldValue.serverTimestamp(),
   });
 
+  // Team-doc mirror of the per-player disconnected flags. The `teams`
+  // collection is readable by every signed-in player (per firestore.rules),
+  // while `players/{uid}` is owner-only, so teammates need this mirror to
+  // see which role-owner has dropped off — driving the "Take over this
+  // role" flow in `/team`. Kept in lockstep with the player writes so
+  // `disconnectedUids` never diverges from the source of truth.
+  const disconnectedByTeam = new Map();
+  for (let i = 0; i < playerDocs.length; i++) {
+    const pd = playerDocs[i];
+    const teamId = pd.get('teamId');
+    if (!teamId) continue;
+    const dc = disconnectionMap.get(pd.id) || { disconnected: false };
+    if (!disconnectedByTeam.has(teamId)) disconnectedByTeam.set(teamId, []);
+    if (dc.disconnected) disconnectedByTeam.get(teamId).push(pd.id);
+  }
+  for (const [teamId, uids] of disconnectedByTeam.entries()) {
+    batch.set(
+      gameRef.collection('teams').doc(teamId),
+      {
+        disconnectedUids: uids,
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+  }
+
   batches.push(batch);
 
   for (const b of batches) {
@@ -1970,6 +1996,92 @@ exports.setTeamRole = onCall(CALLABLE_OPTS, async (request) => {
       if (uid !== auth.uid && existingRole === role) {
         throw new HttpsError('already-exists', `Role "${role}" is already held by another teammate.`);
       }
+    }
+
+    tx.update(teamRef, {
+      [`roleAssignments.${auth.uid}`]: role,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    tx.update(playerRef, { role });
+  });
+
+  return { success: true };
+});
+
+// ---------------------------------------------------------------------------
+// takeoverTeamRole — seize a role whose current holder has dropped off.
+//
+// Design:
+//   • Same contract as setTeamRole, but allowed to overwrite an existing
+//     roleAssignments entry IFF the previous holder is flagged
+//     `disconnected: true` on their player doc (BE-19).
+//   • If the previous holder is still connected, reject with
+//     failed-precondition so the frontend can guide the user toward
+//     the "pick another role" flow. This is the "safety rail" the
+//     team decided on in the April 21 frontend meeting — a teammate
+//     cannot yank a role out from under a live participant.
+//   • The caller's previous role (if any) is vacated so nobody ends
+//     up holding two roles on the same team.
+//   • Mirrors the new role onto players/{callerUid}.role so role-gated
+//     submits update immediately.
+// ---------------------------------------------------------------------------
+exports.takeoverTeamRole = onCall(CALLABLE_OPTS, async (request) => {
+  const auth = request.auth;
+  if (!auth) throw new HttpsError('unauthenticated', 'Must be signed in.');
+
+  const gameId = cleanString(request.data && request.data.gameId);
+  const teamId = cleanString(request.data && request.data.teamId);
+  const role   = cleanString(request.data && request.data.role);
+
+  if (!gameId) throw new HttpsError('invalid-argument', 'gameId is required.');
+  if (!teamId) throw new HttpsError('invalid-argument', 'teamId is required.');
+  if (!role)   throw new HttpsError('invalid-argument', 'role is required.');
+
+  const gameRef   = db.collection('games').doc(gameId);
+  const teamRef   = gameRef.collection('teams').doc(teamId);
+  const playerRef = gameRef.collection('players').doc(auth.uid);
+
+  await db.runTransaction(async (tx) => {
+    const [teamSnap, playerSnap] = await Promise.all([
+      tx.get(teamRef),
+      tx.get(playerRef),
+    ]);
+
+    if (!teamSnap.exists)   throw new HttpsError('not-found', 'Team not found.');
+    if (!playerSnap.exists) throw new HttpsError('not-found', 'You are not in this game.');
+
+    const roleAssignments = (teamSnap.data() || {}).roleAssignments || {};
+    if (!(auth.uid in roleAssignments)) {
+      throw new HttpsError('permission-denied', 'You are not a member of this team.');
+    }
+
+    // Find the current holder (if any) who isn't the caller.
+    let currentHolder = null;
+    for (const [uid, existingRole] of Object.entries(roleAssignments)) {
+      if (uid !== auth.uid && existingRole === role) {
+        currentHolder = uid;
+        break;
+      }
+    }
+
+    if (currentHolder) {
+      // Must verify the current holder is actually disconnected before
+      // we let a teammate seize their role.
+      const holderSnap = await tx.get(gameRef.collection('players').doc(currentHolder));
+      const isDisconnected = !!(holderSnap.exists && holderSnap.get('disconnected') === true);
+      if (!isDisconnected) {
+        throw new HttpsError(
+          'failed-precondition',
+          'The current role holder is still active. Ask them to hand off the role instead.',
+        );
+      }
+      // Vacate the disconnected teammate's slot so the UI shows them as
+      // role-less until they reconnect. We intentionally keep their uid
+      // in roleAssignments so membership counts stay correct — just
+      // clear the role value.
+      tx.update(teamRef, {
+        [`roleAssignments.${currentHolder}`]: null,
+      });
     }
 
     tx.update(teamRef, {

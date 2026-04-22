@@ -6,12 +6,13 @@ import {
   type DocumentData,
   type Timestamp,
 } from "firebase/firestore";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useGame } from "../contexts/GameContext";
 import type { GamePhaseString } from "../types/game";
 import { db } from "../lib/firebase";
 import { PageShell } from "../components/ui/PageShell";
 import { PLAYER_ROLE_LABELS } from "../types/game";
+import { schedulePhaseNav } from "../lib/phaseNav";
 
 /**
  * Roster entry as published to `/games/{gameId}/roster/{playerId}` by the
@@ -29,6 +30,7 @@ interface RosterEntry {
 export function LobbyPage() {
   const { player, playerId, gameId, gameCode, role, teamId, teamName, phase } = useGame();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [gamePhase, setGamePhase] = useState<GamePhaseString | null>(null);
   useEffect(() => {
@@ -48,8 +50,10 @@ export function LobbyPage() {
   }, [gameId]);
   useEffect(() => {
     const livePhase = gamePhase ?? phase;
-    if (livePhase && livePhase !== "lobby") navigate("/game");
-  }, [gamePhase, phase, navigate]);
+    if (livePhase && livePhase !== "lobby") {
+      schedulePhaseNav(navigate, "/game", location.pathname);
+    }
+  }, [gamePhase, phase, navigate, location.pathname]);
 
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [rosterError, setRosterError] = useState<string | null>(null);

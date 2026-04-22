@@ -5,6 +5,7 @@ import { useGame, useGameDispatch } from "../contexts/GameContext";
 import { useGameListener } from "../hooks/useGameListener";
 import { db } from "../lib/firebase";
 import { parseGamePhase } from "../types/game";
+import { cancelPhaseNav, schedulePhaseNav } from "../lib/phaseNav";
 
 /**
  * App-level listener that stays mounted regardless of route. Subscribes to
@@ -63,8 +64,14 @@ export function GamePhaseListener() {
         dispatch({ type: "SET_PHASE_ENDS_AT", payload: null });
       }
 
-      if (typeof phase !== "string" || phase === "lobby") return;
-      if (pathnameRef.current.startsWith("/professor")) return;
+      if (typeof phase !== "string") return;
+      // Lobby state is handled on the landing / lobby / team routes; no
+      // force-nav needed (and scheduling one would cancel a pending
+      // advance if the professor bounced the game back briefly).
+      if (phase === "lobby") {
+        cancelPhaseNav();
+        return;
+      }
 
       const base = parseGamePhase(phase).base;
       let target: string;
@@ -74,13 +81,17 @@ export function GamePhaseListener() {
       else if (base === "game_over") target = "/game/conclusion";
       else target = "/game";
 
-      if (pathnameRef.current !== target) {
-        navigateRef.current(target);
-      }
+      schedulePhaseNav(navigateRef.current, target, pathnameRef.current);
     }, (err) => {
       console.error("games/{gameId} phase listener error:", { gameId, err });
     });
   }, [gameId, dispatch]);
+
+  // When the user manually navigates somewhere that matches the pending
+  // target, clear the scheduled nav so the banner doesn't linger.
+  useEffect(() => {
+    cancelPhaseNav();
+  }, [location.pathname]);
 
   return null;
 }

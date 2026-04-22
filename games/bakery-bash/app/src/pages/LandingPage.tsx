@@ -26,12 +26,35 @@ interface JoinGameResponse {
  */
 const JOIN_CODE_REGEX = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/;
 
+/**
+ * Team-name length matches the FRONTEND.md spec (2-40). Backend accepts up
+ * to 60 for the underlying `bakeryName` payload; we stay inside the common
+ * subset so both validators agree.
+ */
+const TEAM_NAME_MIN = 2;
+const TEAM_NAME_MAX = 40;
+
+/**
+ * Normalize a team name so typo-tolerant matching still groups teammates
+ * correctly. The backend derives `teamId` via
+ * `bakeryName.toLowerCase().replace(/[^a-z0-9]+/g, '-')`, so two teammates
+ * typing "The Crumbs", "the crumbs  ", or "THE-CRUMBS" all land on the
+ * same team. We preserve the user's visual casing for the outgoing
+ * `bakeryName` value (display) while trimming whitespace so "  Crumbs "
+ * and "Crumbs" still match.
+ */
+function normalizeTeamNameForSubmission(raw: string): string {
+  return raw.trim().replace(/\s+/g, " ");
+}
+
 const JOIN_FAILURE_MESSAGES: Record<string, string> = {
   unauthenticated: "Couldn't sign you in. Please reload and try again.",
   "invalid-argument":
-    "Check the join code (6 letters/digits) and name (2–40 characters).",
+    "Check the join code (6 letters/digits), name (2–40 characters), and team name (2–40 characters if set).",
   "not-found": "No game matches that join code. Double-check with your professor.",
   "failed-precondition": "This game has already started and isn't accepting new players.",
+  "resource-exhausted":
+    "This game is full. Ask the professor to open a new session.",
 };
 
 function humanizeJoinError(err: unknown): string {
@@ -51,6 +74,7 @@ function humanizeJoinError(err: unknown): string {
 export function LandingPage() {
   const [playerName, setPlayerName] = useState("");
   const [gameCode, setGameCode] = useState("");
+  const [teamName, setTeamName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
 
@@ -64,6 +88,7 @@ export function LandingPage() {
 
     const trimmedName = playerName.trim();
     const normalizedCode = gameCode.trim().toUpperCase();
+    const normalizedTeamName = normalizeTeamNameForSubmission(teamName);
 
     if (trimmedName.length < 2 || trimmedName.length > 40) {
       setError("Please enter a display name between 2 and 40 characters.");
@@ -75,6 +100,16 @@ export function LandingPage() {
       );
       return;
     }
+    if (
+      normalizedTeamName.length > 0 &&
+      (normalizedTeamName.length < TEAM_NAME_MIN ||
+        normalizedTeamName.length > TEAM_NAME_MAX)
+    ) {
+      setError(
+        `Team name must be ${TEAM_NAME_MIN}-${TEAM_NAME_MAX} characters, or leave it blank to play solo.`,
+      );
+      return;
+    }
     if (authLoading || !user) {
       setError("Still signing you in… please try again in a moment.");
       return;
@@ -83,18 +118,25 @@ export function LandingPage() {
     setJoining(true);
 
     try {
-      // Role + team are assigned by the backend (per BACKEND.md / DEC-21):
-      // we only ship name + join code now. The post-join /team page picks
-      // up the assignment from the player doc and shows the team naming
-      // UI once the professor (or auto-assignment) finalizes membership.
+      // Role + team are assigned by the backend (per BACKEND.md / DEC-21).
+      // The backend derives `teamId` from `bakeryName`, so passing a
+      // shared team name here is how teammates end up on the same team
+      // without any separate "join team" step. Empty team name falls
+      // back to the classic solo default ("<name>'s Bakery").
+      const bakeryName =
+        normalizedTeamName.length > 0
+          ? normalizedTeamName
+          : `${trimmedName}'s Bakery`;
+
       const joinGame = httpsCallable<
-        { joinCode: string; displayName: string },
+        { joinCode: string; displayName: string; bakeryName?: string },
         JoinGameResponse
       >(functions, "joinGame");
 
       const result = await joinGame({
         joinCode: normalizedCode,
         displayName: trimmedName,
+        bakeryName,
       });
       const { gameId, playerId } = result.data;
 
@@ -107,9 +149,7 @@ export function LandingPage() {
           player: {
             id: playerId,
             name: trimmedName,
-            // Default bakery label until the player chooses a team name on
-            // the /team page (which writes to the shared team doc).
-            bakeryName: `${trimmedName}'s Bakery`,
+            bakeryName,
             budget: 0,
             cumulativeRevenue: 0,
           },
@@ -158,6 +198,23 @@ export function LandingPage() {
               value={gameCode}
               onChange={(e) => setGameCode(e.target.value.toUpperCase())}
               maxLength={6}
+            />
+          </label>
+
+          <label className="form-field">
+            <span className="form-field__label">
+              Team Name{" "}
+              <span className="form-field__hint">
+                (optional · same name as a teammate = same team)
+              </span>
+            </span>
+            <input
+              type="text"
+              className="form-field__input"
+              placeholder="Leave blank to play solo"
+              value={teamName}
+              onChange={(e) => setTeamName(e.target.value)}
+              maxLength={TEAM_NAME_MAX}
             />
           </label>
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   collection,
   doc,
@@ -21,6 +21,7 @@ import { SimulatePhase } from "./phases/SimulatePhase";
 import { ResultsPhase } from "./phases/ResultsPhase";
 import { db, functions } from "../lib/firebase";
 import { humanizeFunctionError } from "../lib/errors";
+import { schedulePhaseNav } from "../lib/phaseNav";
 import {
   PRODUCT_STATION,
   parseGamePhase,
@@ -114,6 +115,7 @@ export function GamePage() {
   } = useGame();
   const dispatch = useGameDispatch();
   const navigate = useNavigate();
+  const location = useLocation();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -411,19 +413,18 @@ export function GamePage() {
     return unsubscribe;
   }, [gameId, currentRound, rosterByUid]);
 
-  // Redirect into the dedicated phase page when backend says so. This is
-  // phase-driven (not a manual navigation after submit).
+  // Redirect into the dedicated phase page when backend says so. Phase-
+  // driven (not a manual navigation after submit). Goes through the
+  // shared scheduler so the 7-second grace window / countdown banner
+  // applies here too.
   useEffect(() => {
-    if (basePhase === "bid_ad" || basePhase === "bid_chef") {
-      navigate("/auction");
-    } else if (basePhase === "email") {
-      navigate("/game/email");
-    } else if (basePhase === "roster") {
-      navigate("/game/roster");
-    } else if (basePhase === "game_over") {
-      navigate("/game/conclusion");
-    }
-  }, [basePhase, navigate]);
+    let target: string | null = null;
+    if (basePhase === "bid_ad" || basePhase === "bid_chef") target = "/auction";
+    else if (basePhase === "email") target = "/game/email";
+    else if (basePhase === "roster") target = "/game/roster";
+    else if (basePhase === "game_over") target = "/game/conclusion";
+    if (target) schedulePhaseNav(navigate, target, location.pathname);
+  }, [basePhase, navigate, location.pathname]);
 
   const handleSubmit = useCallback(async () => {
     if (!gameId) {
