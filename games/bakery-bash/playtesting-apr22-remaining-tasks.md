@@ -41,6 +41,8 @@ Verified present in the tree on `feat/playtesting-apr22-tasks` as of 2026-04-22:
 - **Phase grace/freeze timer** — PR #45: 5s grace banner after timer zero, 10s freeze overlay, then client auto-advances.
 - **Live top-bid rendering in auction** — PR #38 FE-20: `rounds/{N}.topBids` subscribed in AuctionPage.
 - **Professor Reset Game button + `resetGame` callable** — PR #42 shipped the button at [ProfessorPage.tsx:610](app/src/pages/ProfessorPage.tsx:610); backend callable exists in [index.js](backend/functions/index.js).
+- **Create-Team vs Join-Team two-path landing flow** — PR #53 (FE-R01 + BE-R01 + BE-R02): `createTeam` + `getTeamsInLobby` callables + `joinGame` `teamId` param; LandingPage rewritten with toggle + selectable team-card grid. Legacy PR #45 `team-{N}` path preserved.
+- **Round 2 data leak fix** — PR #53 (FE-R09 + BE-R04): `advanceGamePhase` now clears every player's `pendingDecision` + `pendingBids` + `pendingRosterAction` on each `→ email` transition (chunked batch, preserves `productPrices`); AuctionPage resets local pool/top-bids/inputs on `currentRound` change.
 
 ### Auction
 - **Thematic ad taglines (TV/Radio/Newspaper/Billboard)** — `AD_CARDS` desc strings in [AuctionPage.tsx](app/src/pages/AuctionPage.tsx:65).
@@ -84,55 +86,9 @@ Verified present in the tree on `feat/playtesting-apr22-tasks` as of 2026-04-22:
 
 ---
 
-### FE-R01 — Login: Create-Team vs Join-Team Two-Path Flow  (P0)
+### ~~FE-R01 — Login: Create-Team vs Join-Team Two-Path Flow  (P0)~~ ✅ Shipped in PR #53
 
-**Problem:** PR #45 shipped basic team self-join (pick team number 1–8 → shared `team-{N}` doc). But playtesters asked for **named teams** with explicit create vs join paths — the current number-based grouping is invisible (you don't know team 3 is "Sourdough Squad" until you're on `/team`). Enhancement on top of PR #45, not a replacement.
-
-**Today:** [LandingPage.tsx](app/src/pages/LandingPage.tsx) has a single form with `Team Number` (1–8) + optional logo. **This task keeps team-number as the underlying join mechanism** (don't break PR #45) but adds a name + create/join UX on top.
-
-**Files:**
-- `app/src/pages/LandingPage.tsx` — add path toggle + two forms
-- `app/src/styles/global.css` — BEM classes below
-
-**Steps:**
-
-1. Replace the single form with two primary buttons at the top of the card: `"Create a Team"` and `"Join a Team"`. Use `useState<"create" | "join" | null>` to pick which sub-form renders below.
-
-2. **Create Team form:**
-   - `Team Name` — text, 2–30 chars, required
-   - `Team Logo` — existing file input + 60×60 preview (keep logic)
-   - `Your Name` — keep
-   - `Game Code` — keep (6 chars uppercase)
-   - Submit → upload logo first, then call `createTeam` callable (see BE-R01) with `{ joinCode, teamName, displayName, logoUrl }`. Response: `{ gameId, playerId, teamId }`.
-   - On success: dispatch `JOIN_GAME`, navigate `/team` with `state: { teamId }`.
-
-3. **Join Team form:**
-   - `Game Code` — text
-   - When code is valid (regex match), call `getTeamsInLobby` callable (see BE-R02) with `{ joinCode }`. Render the returned teams as a grid of selectable cards (logo + name + member count).
-   - `Your Name` — text
-   - Selecting a team card highlights it; Submit calls existing `joinGame` callable **plus** `teamId` so backend adds this user to that team's `roleAssignments` map.
-   - If no teams yet: show an empty-state message: `"No teams yet. Be the first to create one."` with a button to flip to Create Team.
-
-4. **BEM classes:**
-```css
-.landing-page__path-toggle { display: flex; gap: 1rem; margin-bottom: 1.5rem; }
-.landing-page__path-btn { flex: 1; padding: 1rem; font-weight: bold; }
-.landing-page__path-btn--active { background: var(--caramel); color: #fff; }
-.team-select__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.75rem; }
-.team-select__card { display: flex; flex-direction: column; align-items: center; padding: 0.75rem; border: 2px solid transparent; border-radius: 8px; cursor: pointer; }
-.team-select__card--selected { border-color: var(--caramel); background: var(--cream); }
-.team-select__logo { width: 60px; height: 60px; border-radius: 50%; object-fit: cover; }
-.team-select__name { font-weight: bold; margin-top: 0.5rem; }
-.team-select__count { font-size: 0.8rem; color: #666; }
-```
-
-**Acceptance:**
-- `/` shows "Create a Team" + "Join a Team" toggle.
-- Create path uploads logo, creates team, navigates to `/team`.
-- Join path lists live teams from the lobby; selecting one + submitting adds user to that team's `roleAssignments`.
-- No regression: existing team-page role flow still works.
-
-**Depends on:** BE-R01 (`createTeam`), BE-R02 (`getTeamsInLobby`).
+Landed with BE-R01 + BE-R02. See the "Already Shipped" section above.
 
 ---
 
@@ -340,25 +296,9 @@ Alternatively (cleaner), file follow-up BE task to add a `round_N_auction_result
 
 ---
 
-### FE-R09 — Round 2 Data Leak: Frontend Dep-Array Fix  (P0)
+### ~~FE-R09 — Round 2 Data Leak: Frontend Dep-Array Fix  (P0)~~ ✅ Shipped in PR #53
 
-**Problem:** On Round 2, some screens still show Round 1's auction winners / decisions.
-
-**Files to audit:**
-- `app/src/hooks/useGameListener.ts` (if it exists — otherwise the subscriptions are inline in `GameContext` / `AuctionPage` / `ResultsPhase`).
-- `app/src/pages/AuctionPage.tsx` — the `rounds/round_{N}` `onSnapshot` at line 259 uses dep array `[gameId, currentRound]` — **good**, but verify no stale state from prior round persists in `backendPool` / `topBidsAd` / `topBidsChef` when `currentRound` increments.
-- `app/src/pages/phases/ResultsPhase.tsx` — verify it reads from the latest `roundResults[roundResults.length - 1]` (not `[0]` or a hard-coded index).
-- `app/src/contexts/GameContext.tsx` — in the `ADVANCE_ROUND` reducer case, reset `pendingAdBids`, `pendingChefBids`, `adBidsSubmitted`, `chefBidsSubmitted`, `auctionResults` to empty. **This is the most likely root cause.**
-
-**Steps:**
-
-1. Grep `ADVANCE_ROUND` / `SET_PHASE` in `GameContext.tsx` and confirm all round-scoped state is cleared when `currentRound` changes.
-2. In AuctionPage, when `currentRound` changes, reset the local `setBackendPool(null)` / `setTopBidsAd({})` / `setTopBidsChef({})` — currently the snapshot callback re-populates but there's a flash of stale data.
-3. Regression test: run a local 2-round sim in the emulator and confirm Round 2's Results + Auction screens are empty at phase entry, then fill only with Round 2 data.
-
-**Acceptance:** Starting Round 2 shows no Round 1 ad winners or decisions on any screen until Round 2 data is written.
-
-**Depends on:** BE-R04 (ensure backend also clears pending state).
+Landed with BE-R04. AuctionPage now resets `backendPool` / `topBidsAd` / `topBidsChef` / `chefBidInputs` + regenerates placeholder pool on `currentRound` change.
 
 ---
 
@@ -369,73 +309,15 @@ Alternatively (cleaner), file follow-up BE task to add a `round_N_auction_result
 
 ---
 
-### BE-R01 — `createTeam` Callable  (P0)
+### ~~BE-R01 — `createTeam` Callable  (P0)~~ ✅ Shipped in PR #53
 
-**File:** `games/bakery-bash/backend/functions/index.js`
-
-New `exports.createTeam = onCall(async (request) => { … })`.
-
-**Input:**
-```js
-{
-  joinCode: string,       // 6-char uppercase game code
-  teamName: string,       // 2–30 chars
-  displayName: string,    // this player's name
-  logoUrl?: string,       // Firebase Storage download URL (optional)
-}
-```
-
-**Steps:**
-1. Require `request.auth`. Validate `teamName.length in [2,30]`, `displayName.length in [2,40]`.
-2. Resolve `joinCode → gameId` via the existing code-lookup (see `joinGame` for the pattern).
-3. Read game doc. Require `phase === 'lobby'`; throw `failed-precondition` otherwise.
-4. Transaction:
-   - Check for duplicate team name in `/games/{gameId}/teams` (`where name == teamName`). Throw `already-exists` on conflict.
-   - Create new team doc at `/games/{gameId}/teams/{auto}` with:
-     ```js
-     {
-       name: teamName,
-       logoUrl: logoUrl ?? null,
-       createdBy: request.auth.uid,
-       createdAt: FieldValue.serverTimestamp(),
-       roleAssignments: { [request.auth.uid]: null },
-     }
-     ```
-   - Create/update player doc at `/games/{gameId}/players/{uid}` with `{ displayName, teamId, teamLogoUrl: logoUrl ?? null, joinedAt: serverTimestamp, … }` — reuse the same shape `joinGame` writes.
-5. Return `{ gameId, playerId: request.auth.uid, teamId, teamName, logoUrl }`.
-
-**Tests:** Extend `backend/functions/modules/__tests__/test-auth-flow.js` (or add `test-team-create.js`) with:
-- Happy path: creates team + player doc.
-- Dup name rejected with `already-exists`.
-- Phase ≠ lobby rejected with `failed-precondition`.
+Seat creator as `finance`, slug-collision loop, dup-name reject, `phase === 'lobby'` guard. Tested via `npm run test:create-join`.
 
 ---
 
-### BE-R02 — `getTeamsInLobby` Callable  (P0)
+### ~~BE-R02 — `getTeamsInLobby` Callable  (P0)~~ ✅ Shipped in PR #53
 
-**File:** `games/bakery-bash/backend/functions/index.js`
-
-New `exports.getTeamsInLobby = onCall(async (request) => { … })`.
-
-**Input:** `{ joinCode: string }`
-
-**Steps:**
-1. Require `request.auth`.
-2. Resolve `joinCode → gameId`. If not found, throw `not-found`.
-3. Query `/games/{gameId}/teams` (entire collection).
-4. Return:
-   ```js
-   {
-     teams: [{
-       teamId: string,
-       name: string,
-       logoUrl: string | null,
-       memberCount: number,  // keys in roleAssignments
-     }]
-   }
-   ```
-
-**Notes:** No professor auth required — the lobby is public by design (any joining player needs to see the team list).
+Returns `{ teamId, name, logoUrl, memberCount }[]`. Tested via `npm run test:create-join`.
 
 ---
 
@@ -486,43 +368,11 @@ return pool;
 
 ---
 
-### BE-R04 — Round Increment: Clear All Pending Round-Scoped Fields  (P0)
+### ~~BE-R04 — Round Increment: Clear All Pending Round-Scoped Fields  (P0)~~ ✅ Shipped in PR #53
 
-**Problem (pairs with FE-R09):** Round 2 shows Round 1 data. Likely root cause: `pendingDecision` / `pendingAdBids` / `pendingChefBids` / `submitted` flags on player docs are not reset when `currentRound` increments.
+`resetPendingPlayerStateForRound` helper (chunked batch, 400/batch) wired into `advanceGamePhase` on every `→ email` transition. Clears `pendingDecision.{submitted,submittedAt,round,menu,quantities,sousChefCount,sousChefAssignments}`, `pendingBids.{ad,chef}`, `pendingRosterAction`. Preserves `pendingDecision.productPrices` (POST-01 carry-over). Tested via `npm run test:round-reset`.
 
-**File:** `games/bakery-bash/backend/functions/modules/phases.js` (or wherever `advanceGamePhase` handles `results_ready → round_N+1_email`).
-
-**Steps:**
-
-1. In the `results_ready → next round email` transition, in the same batch that increments `currentRound`, reset every player doc:
-```js
-const playersSnap = await db.collection('games').doc(gameId).collection('players').get();
-const batch = db.batch();
-playersSnap.docs.forEach((p) => {
-  batch.update(p.ref, {
-    'pendingDecision.submitted': false,
-    'pendingDecision.submittedAt': null,
-    'pendingDecision.quantities': {},
-    'pendingDecision.menu': {},
-    'pendingDecision.staffCounts': { bakerySousChefs: 0, deliSousChefs: 0, baristaSousChefs: 0, maintenanceGuys: 0 },
-    'pendingDecision.maintenanceTasks': [],
-    'pendingBids.adBids': { TV: 0, Radio: 0, Newspaper: 0, Billboard: 0 },
-    'pendingBids.chefBids': [],
-    'pendingBids.adSubmitted': false,
-    'pendingBids.chefSubmitted': false,
-  });
-});
-await batch.commit();
-```
-Use the actual field names from [firestore-schema.js](backend/firestore-schema.js) — do not invent. If `pendingBids` uses a different shape (e.g. the codebase stores bids under `submittedBids` or on `rounds/{N}/teamBids/{teamId}`), mirror that; the principle is **no round-scoped state survives into round N+1**.
-
-2. Also reset the game-level `submissions/round_{N}_{phase}` docs — they're round-scoped too. Either delete them or write fresh empty docs at the start of each round.
-
-3. **Idempotency:** If the reset happens mid-transition and the callable retries, the resets should be safe to re-run — no tombstones, no cumulative counters.
-
-**Tests:** Add a 2-round simulation test that asserts `pendingDecision.submitted === false` and `pendingBids.adBids.TV === 0` on every player at start of round 2.
-
-**Acceptance:** End-to-end run: submit decisions + bids in Round 1, advance to Round 2, verify all player pending fields are empty before any Round 2 input.
+Note: the `submissions/round_{N}_{phase}` docs (step 2 in the original plan) are already natively round-scoped — each round uses a distinct doc id, so they don't need clearing. Revisit if the dashboard ever surfaces them via a cross-round query.
 
 ---
 
@@ -547,9 +397,9 @@ throw new HttpsError(
 
 ## 📋 Testing Checklist (for the new PR)
 
-- [ ] `/` landing page shows Create Team vs Join Team toggle (FE-R01)
-- [ ] Create Team creates a named team, uploads logo, and routes to `/team`
-- [ ] Join Team lists existing teams with logos + member counts; joining adds you to the team's roleAssignments
+- [x] `/` landing page shows Create Team vs Join Team toggle (FE-R01) — PR #53
+- [x] Create Team creates a named team, uploads logo, and routes to `/team` — PR #53
+- [x] Join Team lists existing teams with logos + member counts; joining adds you to the team's roleAssignments — PR #53
 - [ ] Staff tab clearly reads "Sous Chef Hires" + "Maintenance Crew" as two sections (FE-R02)
 - [ ] Each station stepper title starts with "Sous Chef —" and names the products
 - [ ] Chef cards show `#1`, `#2`, … in the top-left (FE-R03)
@@ -560,9 +410,9 @@ throw new HttpsError(
 - [ ] Roster slot reads "Basic Chef" (not "Head Chef") (FE-R06)
 - [ ] Roster page shows card grid, Lay Off button per occupied slot, New Hires row (FE-R07)
 - [ ] Round header has no CSV mail icon; Results screen has exactly one Download CSV button (FE-R08)
-- [ ] Start a Round 2 in the emulator — no Round 1 ad winners / decisions / bids visible anywhere (FE-R09 + BE-R04)
+- [x] Start a Round 2 in the emulator — no Round 1 ad winners / decisions / bids visible anywhere (FE-R09 + BE-R04) — PR #53 (emulator test `test:round-reset`)
 - [ ] Backend: every chef auction pool has exactly 12 chefs with unique names (BE-R03)
-- [ ] Backend: advancing to a new round clears every player's `pendingDecision` + `pendingBids` in one batch (BE-R04)
+- [x] Backend: advancing to a new round clears every player's `pendingDecision` + `pendingBids` in one batch (BE-R04) — PR #53
 
 ---
 
@@ -582,6 +432,9 @@ Two other PRs are open against `main` that overlap with tasks here. Check their 
 - **[PR #46 — phase-switch delay, shared team joining, role takeover](https://github.com/fenrix-ai/FenriX/pull/46)** (**closed, not merged**)
   - Proposed: 7s delay + countdown banner before auto page-switch, team-name input on LandingPage (not team number), `takeoverTeamRole` callable for disconnected teammates.
   - **Reviewed by maintainer and rejected** — the phase delay was later re-implemented more cleanly in PR #45's grace/freeze timer. Team-name input + takeover did not land. If we want those, pull them back in as separate tasks here (they're not urgent for May 1).
+
+**Pending review (open against `main`):**
+- [PR #53 — named team create/join flow + round-advance state reset](https://github.com/fenrix-ai/FenriX/pull/53) (branch `feat/team-flow-and-round-reset`) — covers FE-R01, BE-R01, BE-R02, FE-R09, BE-R04. Ships the "Already Shipped" entries listed at the top of this doc. Coordinate with PR #49 before merging — both touch `joinGame` in [index.js](backend/functions/index.js).
 
 **Already merged recently (confirmed on `main` / this branch):**
 - PR #50 — rejoin after game start
