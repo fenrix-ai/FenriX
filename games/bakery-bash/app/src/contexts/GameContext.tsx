@@ -398,7 +398,7 @@ const GameDispatchContext = createContext<Dispatch<GameAction>>(() => {});
 // carry across reloads is the game/player linkage — once `gameId` is seeded,
 // `useGameListener` reattaches and Firestore re-hydrates phase/round/etc.
 // localStorage (not sessionStorage) so a closed-and-reopened tab still rejoins.
-const SESSION_STORAGE_KEY = "bakery-bash:game-session";
+const PERSISTED_SESSION_KEY = "bakery-bash:game-session";
 
 type PersistedSession = {
   gameId: string;
@@ -410,7 +410,7 @@ type PersistedSession = {
 
 function readPersistedSession(): PersistedSession | null {
   try {
-    const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    const raw = window.localStorage.getItem(PERSISTED_SESSION_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<PersistedSession>;
     if (
@@ -442,10 +442,10 @@ function readPersistedSession(): PersistedSession | null {
 function writePersistedSession(payload: PersistedSession | null): void {
   try {
     if (!payload) {
-      window.localStorage.removeItem(SESSION_STORAGE_KEY);
+      window.localStorage.removeItem(PERSISTED_SESSION_KEY);
       return;
     }
-    window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(payload));
+    window.localStorage.setItem(PERSISTED_SESSION_KEY, JSON.stringify(payload));
   } catch {
     // Private mode / quota: acceptable to no-op; a refresh will still sign in,
     // just without the game linkage shortcut.
@@ -472,14 +472,16 @@ export function GameProvider({ children }: { children: ReactNode }) {
     buildInitialState,
   );
 
-  const { gameId, playerId, gameCode, role, teamId } = state;
+  const { gameId, playerId, gameCode, role, teamId, phase } = state;
   useEffect(() => {
-    if (!gameId || !playerId || !gameCode) {
+    // Clear on game_over so a reopened tab lands on the landing page instead
+    // of being re-routed into the finished game's conclusion screen.
+    if (!gameId || !playerId || !gameCode || phase === "game_over") {
       writePersistedSession(null);
       return;
     }
     writePersistedSession({ gameId, playerId, gameCode, role, teamId });
-  }, [gameId, playerId, gameCode, role, teamId]);
+  }, [gameId, playerId, gameCode, role, teamId, phase]);
 
   return (
     <GameContext.Provider value={state}>
