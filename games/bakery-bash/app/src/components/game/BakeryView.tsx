@@ -1,9 +1,12 @@
 import { useGame, useGameDispatch } from "../../contexts/GameContext";
 import {
   BASE_MENU,
+  roleOwnsPricing,
   type ProductKey,
   type StationId,
 } from "../../types/game";
+import { PRICE_ZONES } from "../../lib/pricing";
+import { PriceInput } from "./PriceInput";
 
 /**
  * Product display metadata — prices are fixed per FRONTEND.md rule #2.
@@ -100,21 +103,28 @@ function StationChefBadge({
 interface ProductTileProps {
   product: ProductKey;
   qty: number;
+  price: number;
   isOnMenu: boolean;
   isBase: boolean;
   onQtyChange: (next: number) => void;
+  onPriceChange: (next: number) => void;
   onToggle: (next: boolean) => void;
   /** FE-9 — lock quantity + menu toggle once the round is submitted. */
   readOnly?: boolean;
+  /** POST-01 — disable the price stepper when the viewer is not Finance. */
+  priceDisabled: boolean;
 }
 function ProductTile({
   product,
   qty,
+  price,
   isOnMenu,
   isBase,
   onQtyChange,
+  onPriceChange,
   onToggle,
   readOnly = false,
+  priceDisabled,
 }: ProductTileProps) {
   const d = PRODUCT_DISPLAY[product];
   return (
@@ -127,7 +137,7 @@ function ProductTile({
       <div className="product-tile__info">
         <span className="product-tile__name">{d.name}</span>
         <span className="product-tile__price">
-          Sell price: ${d.price.toFixed(2)}
+          Base: ${d.price.toFixed(2)}
         </span>
       </div>
       {isOnMenu ? (
@@ -177,6 +187,12 @@ function ProductTile({
               </button>
             </div>
           )}
+          <PriceInput
+            value={price}
+            onChange={onPriceChange}
+            cfg={PRICE_ZONES[product]}
+            disabled={readOnly || priceDisabled}
+          />
           {!isBase && !readOnly && (
             <button
               type="button"
@@ -215,8 +231,9 @@ export interface BakeryViewProps {
 }
 
 export function BakeryView({ readOnly = false }: BakeryViewProps) {
-  const { player, currentRound, totalRounds, pendingDecision } = useGame();
+  const { player, currentRound, totalRounds, pendingDecision, role } = useGame();
   const dispatch = useGameDispatch();
+  const canEditPrices = roleOwnsPricing(role);
 
   const { staffCounts } = pendingDecision;
   const chefCountForStation = (s: StationId): number => {
@@ -231,6 +248,13 @@ export function BakeryView({ readOnly = false }: BakeryViewProps) {
     dispatch({
       type: "UPDATE_PENDING_DECISION",
       payload: { quantities: { [product]: clamped } },
+    });
+  };
+
+  const setPrice = (product: ProductKey, value: number) => {
+    dispatch({
+      type: "UPDATE_PENDING_DECISION",
+      payload: { productPrices: { [product]: value } },
     });
   };
 
@@ -294,11 +318,14 @@ export function BakeryView({ readOnly = false }: BakeryViewProps) {
                     key={product}
                     product={product}
                     qty={pendingDecision.quantities[product] ?? 0}
+                    price={pendingDecision.productPrices[product] ?? 0}
                     isOnMenu={pendingDecision.menu[product]}
                     isBase={BASE_MENU.includes(product)}
                     onQtyChange={(n) => setQty(product, n)}
+                    onPriceChange={(n) => setPrice(product, n)}
                     onToggle={(next) => toggleMenu(product, next)}
                     readOnly={readOnly}
+                    priceDisabled={!canEditPrices}
                   />
                 ))}
               </div>

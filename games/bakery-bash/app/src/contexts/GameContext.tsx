@@ -29,6 +29,7 @@ import {
   type RoundResult,
   type StaffCounts,
 } from "../types/game";
+import { DEFAULT_PRICES } from "../lib/pricing";
 
 function buildDefaultDecisionDraft(): PendingDecisionDraft {
   const menu = PRODUCT_KEYS.reduce((acc, p) => {
@@ -43,6 +44,17 @@ function buildDefaultDecisionDraft(): PendingDecisionDraft {
     acc[p] = 0;
     return acc;
   }, {} as Record<ProductKey, number>);
+  // POST-01: seed with catalog base prices so the PriceInput renders in the
+  // Competitive zone and the nudge/minus button works out of the box for a
+  // fresh session. SET_ROUND preserves whatever prices are currently in
+  // state (backend carry-over semantics); the player-doc listener in
+  // `GamePage.tsx` additionally hydrates from `pendingDecision.productPrices`
+  // whenever Firestore reports a change.
+  const productPrices = PRODUCT_KEYS.reduce((acc, p) => {
+    acc[p] = DEFAULT_PRICES[p];
+    return acc;
+  }, {} as Record<ProductKey, number>);
+
   return {
     menu,
     quantities,
@@ -50,6 +62,7 @@ function buildDefaultDecisionDraft(): PendingDecisionDraft {
     sousChefAssignments,
     staffCounts: { ...DEFAULT_STAFF_COUNTS },
     maintenanceTasks: [],
+    productPrices,
   };
 }
 
@@ -81,6 +94,7 @@ const initialState: GameState = {
   pendingChefBids: DEFAULT_PENDING_CHEF_BIDS,
   config: null,
   decisionSubmitted: false,
+  pricesSubmitted: false,
   adBidsSubmitted: false,
   chefBidsSubmitted: false,
   maintenanceBars: { ...DEFAULT_MAINTENANCE_BARS },
@@ -131,6 +145,7 @@ type GameAction =
         sousChefAssignments?: Partial<Record<ProductKey, number>>;
         staffCounts?: Partial<StaffCounts>;
         maintenanceTasks?: MaintenanceTask[];
+        productPrices?: Partial<Record<ProductKey, number>>;
       };
     }
   | {
@@ -143,6 +158,7 @@ type GameAction =
     }
   | { type: "RESET_PENDING" }
   | { type: "SET_DECISION_SUBMITTED"; payload: boolean }
+  | { type: "SET_PRICES_SUBMITTED"; payload: boolean }
   | { type: "SET_AD_BIDS_SUBMITTED"; payload: boolean }
   | { type: "SET_CHEF_BIDS_SUBMITTED"; payload: boolean }
   | { type: "SET_MAINTENANCE_BARS"; payload: MaintenanceBars }
@@ -198,13 +214,20 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     case "SET_ROUND": {
       if (state.currentRound === action.payload) return state;
       // New round → reset any local per-round drafts/submission flags.
+      // POST-01: preserve `productPrices` across rounds to match the
+      // backend's price carry-over (resolvePriceForSim). Without this,
+      // Finance's nudged prices flash back to catalog defaults on round
+      // transition before the player-doc listener re-hydrates them.
+      const nextDecisionDraft = buildDefaultDecisionDraft();
+      nextDecisionDraft.productPrices = { ...state.pendingDecision.productPrices };
       return {
         ...state,
         currentRound: action.payload,
-        pendingDecision: buildDefaultDecisionDraft(),
+        pendingDecision: nextDecisionDraft,
         pendingAdBids: buildDefaultAdBidsDraft(),
         pendingChefBids: {},
         decisionSubmitted: false,
+        pricesSubmitted: false,
         adBidsSubmitted: false,
         chefBidsSubmitted: false,
       };
@@ -294,6 +317,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           action.payload.maintenanceTasks !== undefined
             ? action.payload.maintenanceTasks
             : state.pendingDecision.maintenanceTasks,
+        productPrices: action.payload.productPrices
+          ? { ...state.pendingDecision.productPrices, ...action.payload.productPrices }
+          : state.pendingDecision.productPrices,
       };
       return { ...state, pendingDecision: next };
     }
@@ -323,12 +349,16 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         pendingAdBids: buildDefaultAdBidsDraft(),
         pendingChefBids: {},
         decisionSubmitted: false,
+        pricesSubmitted: false,
         adBidsSubmitted: false,
         chefBidsSubmitted: false,
       };
 
     case "SET_DECISION_SUBMITTED":
       return { ...state, decisionSubmitted: action.payload };
+
+    case "SET_PRICES_SUBMITTED":
+      return { ...state, pricesSubmitted: action.payload };
 
     case "SET_AD_BIDS_SUBMITTED":
       return { ...state, adBidsSubmitted: action.payload };
