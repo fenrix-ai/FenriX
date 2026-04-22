@@ -1913,6 +1913,69 @@ describe('Stress Tests', () => {
 });
 
 // ============================================================================
+// simulation.js — productPrices wiring (POST-01)
+// ============================================================================
+describe('simulation.js — productPrices wiring (POST-01)', () => {
+  it('uses each player\'s submitted productPrices for revenue', () => {
+    const players = [
+      {
+        playerId: 'A',
+        displayName: 'Alice',
+        decision: {
+          menu:       { coffee: true, croissant: true, bagel: true, cookie: true, sandwich: false, matcha: false },
+          quantities: { coffee: 50, croissant: 40, bagel: 30, cookie: 20, sandwich: 0, matcha: 0 },
+          sousChefCount: 0,
+          sousChefAssignments: {},
+          productPrices: { coffee: 5.00 }, // above catalog default of $4.00
+        },
+        specialtyChefs: [],
+        budgetCurrent: 500000,
+        returningCustomersPending: 0,
+        priorSubmittedPrices: [],
+        auctionResults: {},
+      },
+    ];
+    const roundPreferences = { modifiers: { coffee: 1.0, croissant: 1.0, bagel: 1.0, cookie: 1.0, sandwich: 1.0, matcha: 1.0 } };
+
+    const results = simulation.runSimulation(players, roundPreferences, {});
+    const rowA = results.find((r) => r.playerId === 'A');
+    ok(rowA, 'player A result exists');
+    ok(rowA.revenueBreakdown, 'revenueBreakdown present');
+    ok(rowA.revenueBreakdown.coffee, 'coffee breakdown present');
+    eq(rowA.revenueBreakdown.coffee.price, 5.00);
+    ok(rowA.productPrices, 'productPrices present');
+    eq(rowA.productPrices.coffee, 5.00);
+  });
+
+  it('uses carry-over from priorSubmittedPrices when current productPrices missing', () => {
+    const players = [
+      {
+        playerId: 'A',
+        displayName: 'Alice',
+        decision: {
+          menu:       { coffee: true, croissant: true, bagel: true, cookie: true, sandwich: false, matcha: false },
+          quantities: { coffee: 10, croissant: 0, bagel: 0, cookie: 0, sandwich: 0, matcha: 0 },
+          sousChefCount: 0,
+          sousChefAssignments: {},
+          // no productPrices this round — should carry over from priors
+        },
+        specialtyChefs: [],
+        budgetCurrent: 500000,
+        returningCustomersPending: 0,
+        priorSubmittedPrices: [{ coffee: 4.50 }, { coffee: 3.75 }], // most recent last
+        auctionResults: {},
+      },
+    ];
+    const roundPreferences = { modifiers: { coffee: 1.0, croissant: 1.0, bagel: 1.0, cookie: 1.0, sandwich: 1.0, matcha: 1.0 } };
+
+    const results = simulation.runSimulation(players, roundPreferences, {});
+    const rowA = results.find((r) => r.playerId === 'A');
+    eq(rowA.revenueBreakdown.coffee.price, 3.75);
+    eq(rowA.productPrices.coffee, 3.75);
+  });
+});
+
+// ============================================================================
 // FINAL REPORT
 // ============================================================================
 console.log('\n\n========================================');
