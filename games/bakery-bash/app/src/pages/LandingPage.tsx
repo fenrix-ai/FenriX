@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { httpsCallable, type FunctionsError } from "firebase/functions";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -12,14 +12,35 @@ interface JoinGameResponse {
   playerId: string;
 }
 
+interface CreateTeamResponse {
+  gameId: string;
+  playerId: string;
+  teamId: string;
+  teamName: string;
+  logoUrl: string | null;
+}
+
+interface LobbyTeam {
+  teamId: string;
+  name: string;
+  logoUrl: string | null;
+  memberCount: number;
+}
+
+interface GetTeamsInLobbyResponse {
+  teams: LobbyTeam[];
+}
+
 const JOIN_CODE_REGEX = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/;
 
 const JOIN_FAILURE_MESSAGES: Record<string, string> = {
   unauthenticated: "Couldn't sign you in. Please reload and try again.",
   "invalid-argument":
-    "Check the join code (6 letters/digits) and name (2–40 characters).",
-  "not-found": "No game matches that join code. Double-check with your professor.",
+    "Check the game code (6 letters/digits) and name (2–40 characters).",
+  "not-found": "No game matches that game code. Double-check with your professor.",
   "failed-precondition": "This game has already started and isn't accepting new players.",
+  "already-exists": "A team with that name already exists. Try a different name.",
+  "resource-exhausted": "This game is full.",
 };
 
 function humanizeJoinError(err: unknown): string {
@@ -32,43 +53,96 @@ function humanizeJoinError(err: unknown): string {
     }
     if (fnErr.message) return fnErr.message;
   }
-  return "Could not join game. Please try again.";
+  return "Something went wrong. Please try again.";
 }
 
-const TEAM_COUNT = 8;
+type Path = "create" | "join" | null;
 
 export function LandingPage() {
+  const [path, setPath] = useState<Path>(null);
+
+  // Shared fields
   const [playerName, setPlayerName] = useState("");
   const [gameCode, setGameCode] = useState("");
-  const [teamNumber, setTeamNumber] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [joining, setJoining] = useState(false);
+
+  // Create-path fields
+  const [teamName, setTeamName] = useState("");
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+
+  // Join-path fields
+  const [lobbyTeams, setLobbyTeams] = useState<LobbyTeam[] | null>(null);
+  const [lobbyLoading, setLobbyLoading] = useState(false);
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
+
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const navigate = useNavigate();
   const dispatch = useGameDispatch();
   const { user, loading: authLoading } = useAuth();
 
-  const handleJoin = async (e: FormEvent) => {
+  // Fetch the lobby team list whenever the code becomes valid while the
+  // user is on the join path. Debounced lightly so each keystroke doesn't
+  // fire a callable.
+  useEffect(() => {
+    if (path !== "join") {
+      setLobbyTeams(null);
+      return;
+    }
+    const normalized = gameCode.trim().toUpperCase();
+    if (!JOIN_CODE_REGEX.test(normalized)) {
+      setLobbyTeams(null);
+      return;
+    }
+    if (authLoading || !user) return;
+
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      setLobbyLoading(true);
+      setError(null);
+      try {
+        const getTeamsInLobby = httpsCallable<
+          { joinCode: string },
+          GetTeamsInLobbyResponse
+        >(functions, "getTeamsInLobby");
+        const result = await getTeamsInLobby({ joinCode: normalized });
+        if (!cancelled) setLobbyTeams(result.data.teams ?? []);
+      } catch (err) {
+        if (!cancelled) {
+          setLobbyTeams([]);
+          setError(humanizeJoinError(err));
+        }
+      } finally {
+        if (!cancelled) setLobbyLoading(false);
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [path, gameCode, authLoading, user]);
+
+  const handleCreate = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    const trimmedName = playerName.trim();
+    const trimmedPlayer = playerName.trim();
+    const trimmedTeam = teamName.trim();
     const normalizedCode = gameCode.trim().toUpperCase();
 
-    if (trimmedName.length < 2 || trimmedName.length > 40) {
-      setError("Please enter a display name between 2 and 40 characters.");
+    if (trimmedTeam.length < 2 || trimmedTeam.length > 30) {
+      setError("Team name must be 2–30 characters.");
+      return;
+    }
+    if (trimmedPlayer.length < 2 || trimmedPlayer.length > 40) {
+      setError("Please enter your name (2–40 characters).");
       return;
     }
     if (!JOIN_CODE_REGEX.test(normalizedCode)) {
       setError(
-        "Join code must be 6 characters using letters A-Z (excluding I/O) and digits 2-9.",
+        "Game code must be 6 characters using letters A–Z (excluding I/O) and digits 2–9.",
       );
-      return;
-    }
-    if (!teamNumber) {
-      setError("Please select your team number.");
       return;
     }
     if (authLoading || !user) {
@@ -76,30 +150,100 @@ export function LandingPage() {
       return;
     }
 
-    setJoining(true);
-
+    setSubmitting(true);
     try {
       let logoUrl: string | undefined;
-      if (logoFile && teamNumber) {
-        const ext = logoFile.name.split(".").pop();
+      if (logoFile) {
+        const ext = logoFile.name.split(".").pop() || "png";
+        // teamName slug mirrors the backend's slugifier so the storage path
+        // is stable across create retries. Collisions are fine — upload
+        // overwrites.
+        const slug = trimmedTeam
+          .toLowerCase()
+          .replace(/[^a-z0-9\s-]/g, "")
+          .trim()
+          .replace(/\s+/g, "-")
+          .slice(0, 50);
         const storageRef = ref(
           storage,
-          `teams/${normalizedCode}/${teamNumber}/logo.${ext}`,
+          `teams/${normalizedCode}/${slug || "team"}/logo.${ext}`,
         );
         await uploadBytes(storageRef, logoFile);
         logoUrl = await getDownloadURL(storageRef);
       }
 
+      const createTeam = httpsCallable<
+        { joinCode: string; teamName: string; displayName: string; logoUrl?: string },
+        CreateTeamResponse
+      >(functions, "createTeam");
+      const result = await createTeam({
+        joinCode: normalizedCode,
+        teamName: trimmedTeam,
+        displayName: trimmedPlayer,
+        ...(logoUrl ? { logoUrl } : {}),
+      });
+      const { gameId, playerId, teamId } = result.data;
+
+      dispatch({
+        type: "JOIN_GAME",
+        payload: {
+          gameId,
+          playerId,
+          gameCode: normalizedCode,
+          player: {
+            id: playerId,
+            name: trimmedPlayer,
+            bakeryName: trimmedTeam,
+            budget: 0,
+            cumulativeRevenue: 0,
+          },
+        },
+      });
+      navigate("/team", { state: { teamId } });
+    } catch (err) {
+      setError(humanizeJoinError(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleJoin = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    const trimmedPlayer = playerName.trim();
+    const normalizedCode = gameCode.trim().toUpperCase();
+
+    if (!JOIN_CODE_REGEX.test(normalizedCode)) {
+      setError("Enter a valid 6-character game code.");
+      return;
+    }
+    if (!selectedTeamId) {
+      setError("Pick a team to join.");
+      return;
+    }
+    if (trimmedPlayer.length < 2 || trimmedPlayer.length > 40) {
+      setError("Please enter your name (2–40 characters).");
+      return;
+    }
+    if (authLoading || !user) {
+      setError("Still signing you in… please try again in a moment.");
+      return;
+    }
+
+    const selectedTeam = lobbyTeams?.find((t) => t.teamId === selectedTeamId);
+
+    setSubmitting(true);
+    try {
       const joinGame = httpsCallable<
-        { joinCode: string; displayName: string; teamNumber: number; logoUrl?: string },
+        { joinCode: string; displayName: string; teamId: string; bakeryName?: string },
         JoinGameResponse
       >(functions, "joinGame");
-
       const result = await joinGame({
         joinCode: normalizedCode,
-        displayName: trimmedName,
-        teamNumber,
-        ...(logoUrl ? { logoUrl } : {}),
+        displayName: trimmedPlayer,
+        teamId: selectedTeamId,
+        ...(selectedTeam ? { bakeryName: selectedTeam.name } : {}),
       });
       const { gameId, playerId } = result.data;
 
@@ -111,23 +255,22 @@ export function LandingPage() {
           gameCode: normalizedCode,
           player: {
             id: playerId,
-            name: trimmedName,
-            bakeryName: `Team ${teamNumber}`,
+            name: trimmedPlayer,
+            bakeryName: selectedTeam?.name ?? "",
             budget: 0,
             cumulativeRevenue: 0,
           },
         },
       });
-
-      navigate("/team", { state: { teamNumber } });
+      navigate("/team", { state: { teamId: selectedTeamId } });
     } catch (err) {
       setError(humanizeJoinError(err));
     } finally {
-      setJoining(false);
+      setSubmitting(false);
     }
   };
 
-  const disabled = joining || authLoading;
+  const disabled = submitting || authLoading;
 
   return (
     <PageShell className="landing-page">
@@ -137,90 +280,225 @@ export function LandingPage() {
           Run your bakery. Outprice the competition. Win.
         </p>
 
-        <form className="landing-page__form" onSubmit={handleJoin}>
-          <label className="form-field">
-            <span className="form-field__label">Your Name</span>
-            <input
-              type="text"
-              className="form-field__input"
-              placeholder="e.g. John"
-              value={playerName}
-              onChange={(e) => setPlayerName(e.target.value)}
-              maxLength={40}
-            />
-          </label>
-
-          <label className="form-field">
-            <span className="form-field__label">Game Code</span>
-            <input
-              type="text"
-              className="form-field__input"
-              placeholder="e.g. ABC234"
-              value={gameCode}
-              onChange={(e) => setGameCode(e.target.value.toUpperCase())}
-              maxLength={6}
-            />
-          </label>
-
-          <div className="form-field">
-            <span className="form-field__label">Team Number</span>
-            <div className="landing-page__team-grid">
-              {Array.from({ length: TEAM_COUNT }, (_, i) => i + 1).map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  className={`btn ${teamNumber === n ? "btn--primary" : "btn--ghost"}`}
-                  onClick={() => setTeamNumber(n)}
-                  disabled={disabled}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <label className="form-field">
-            <span className="form-field__label">Team Logo (optional)</span>
-            <input
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              className="form-field__input"
-              onChange={(e) => {
-                const file = e.target.files?.[0] ?? null;
-                setLogoFile(file);
-                if (file) {
-                  const reader = new FileReader();
-                  reader.onload = (ev) => setLogoPreview(ev.target?.result as string);
-                  reader.readAsDataURL(file);
-                } else {
-                  setLogoPreview(null);
-                }
-              }}
-            />
-            {logoPreview && (
-              <img
-                src={logoPreview}
-                className="join-form__logo-preview"
-                alt="Team logo preview"
-              />
-            )}
-          </label>
-
-          {error && <p className="landing-page__error">{error}</p>}
-
+        <div className="landing-page__path-toggle" role="tablist">
           <button
-            type="submit"
-            className="btn btn--primary"
-            disabled={disabled}
+            type="button"
+            role="tab"
+            aria-selected={path === "create"}
+            className={`landing-page__path-btn${
+              path === "create" ? " landing-page__path-btn--active" : ""
+            }`}
+            onClick={() => {
+              setPath("create");
+              setError(null);
+              setSelectedTeamId(null);
+            }}
           >
-            {joining
-              ? "Joining…"
-              : authLoading
-              ? "Signing you in…"
-              : "Join Game"}
+            Create a Team
           </button>
-          <a href="/how-to-play" className="landing-page__how-to-play-link">How to Play</a>
-        </form>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={path === "join"}
+            className={`landing-page__path-btn${
+              path === "join" ? " landing-page__path-btn--active" : ""
+            }`}
+            onClick={() => {
+              setPath("join");
+              setError(null);
+            }}
+          >
+            Join a Team
+          </button>
+        </div>
+
+        {path === "create" && (
+          <form className="landing-page__form" onSubmit={handleCreate}>
+            <label className="form-field">
+              <span className="form-field__label">Team Name</span>
+              <input
+                type="text"
+                className="form-field__input"
+                placeholder="e.g. Sourdough Squad"
+                value={teamName}
+                onChange={(e) => setTeamName(e.target.value)}
+                maxLength={30}
+                disabled={disabled}
+              />
+            </label>
+
+            <label className="form-field">
+              <span className="form-field__label">Team Logo (optional)</span>
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="form-field__input"
+                disabled={disabled}
+                onChange={(e) => {
+                  const file = e.target.files?.[0] ?? null;
+                  setLogoFile(file);
+                  if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (ev) => setLogoPreview(ev.target?.result as string);
+                    reader.readAsDataURL(file);
+                  } else {
+                    setLogoPreview(null);
+                  }
+                }}
+              />
+              {logoPreview && (
+                <img
+                  src={logoPreview}
+                  className="join-form__logo-preview"
+                  alt="Team logo preview"
+                />
+              )}
+            </label>
+
+            <label className="form-field">
+              <span className="form-field__label">Your Name</span>
+              <input
+                type="text"
+                className="form-field__input"
+                placeholder="e.g. John"
+                value={playerName}
+                onChange={(e) => setPlayerName(e.target.value)}
+                maxLength={40}
+                disabled={disabled}
+              />
+            </label>
+
+            <label className="form-field">
+              <span className="form-field__label">Game Code</span>
+              <input
+                type="text"
+                className="form-field__input"
+                placeholder="e.g. ABC234"
+                value={gameCode}
+                onChange={(e) => setGameCode(e.target.value.toUpperCase())}
+                maxLength={6}
+                disabled={disabled}
+              />
+            </label>
+
+            {error && <p className="landing-page__error">{error}</p>}
+
+            <button type="submit" className="btn btn--primary" disabled={disabled}>
+              {submitting
+                ? "Creating team…"
+                : authLoading
+                ? "Signing you in…"
+                : "Create Team"}
+            </button>
+          </form>
+        )}
+
+        {path === "join" && (
+          <form className="landing-page__form" onSubmit={handleJoin}>
+            <label className="form-field">
+              <span className="form-field__label">Game Code</span>
+              <input
+                type="text"
+                className="form-field__input"
+                placeholder="e.g. ABC234"
+                value={gameCode}
+                onChange={(e) => {
+                  setGameCode(e.target.value.toUpperCase());
+                  setSelectedTeamId(null);
+                }}
+                maxLength={6}
+                disabled={disabled}
+              />
+            </label>
+
+            {JOIN_CODE_REGEX.test(gameCode.trim().toUpperCase()) && (
+              <div className="form-field">
+                <span className="form-field__label">Pick a Team</span>
+                {lobbyLoading && (
+                  <p className="landing-page__hint">Loading teams…</p>
+                )}
+                {!lobbyLoading && lobbyTeams && lobbyTeams.length === 0 && (
+                  <div className="landing-page__empty-teams">
+                    <p>No teams yet. Be the first to create one.</p>
+                    <button
+                      type="button"
+                      className="btn btn--ghost"
+                      onClick={() => setPath("create")}
+                    >
+                      Create a Team
+                    </button>
+                  </div>
+                )}
+                {!lobbyLoading && lobbyTeams && lobbyTeams.length > 0 && (
+                  <div className="team-select__grid" role="listbox">
+                    {lobbyTeams.map((t) => (
+                      <button
+                        key={t.teamId}
+                        type="button"
+                        role="option"
+                        aria-selected={selectedTeamId === t.teamId}
+                        className={`team-select__card${
+                          selectedTeamId === t.teamId ? " team-select__card--selected" : ""
+                        }`}
+                        onClick={() => setSelectedTeamId(t.teamId)}
+                        disabled={disabled}
+                      >
+                        {t.logoUrl ? (
+                          <img src={t.logoUrl} alt="" className="team-select__logo" />
+                        ) : (
+                          <div className="team-select__logo team-select__logo--placeholder" aria-hidden>
+                            🥐
+                          </div>
+                        )}
+                        <span className="team-select__name">{t.name}</span>
+                        <span className="team-select__count">
+                          {t.memberCount} {t.memberCount === 1 ? "member" : "members"}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <label className="form-field">
+              <span className="form-field__label">Your Name</span>
+              <input
+                type="text"
+                className="form-field__input"
+                placeholder="e.g. John"
+                value={playerName}
+                onChange={(e) => setPlayerName(e.target.value)}
+                maxLength={40}
+                disabled={disabled}
+              />
+            </label>
+
+            {error && <p className="landing-page__error">{error}</p>}
+
+            <button
+              type="submit"
+              className="btn btn--primary"
+              disabled={disabled || !selectedTeamId}
+            >
+              {submitting
+                ? "Joining…"
+                : authLoading
+                ? "Signing you in…"
+                : "Join Team"}
+            </button>
+          </form>
+        )}
+
+        {path === null && (
+          <p className="landing-page__hint">
+            Pick an option above to get started.
+          </p>
+        )}
+
+        <a href="/how-to-play" className="landing-page__how-to-play-link">
+          How to Play
+        </a>
       </div>
     </PageShell>
   );
