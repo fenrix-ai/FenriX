@@ -166,7 +166,7 @@ const DEFAULT_GAME_CONFIG = {
 
   totalRounds: 5,
   specialtyChefCap: 3,
-  chefPoolSize: { min: 6, max: 8 },
+  chefPoolSize: { min: 12, max: 12 },
 
   // Kitchen cohesion: chefSatisfaction = max(floor, 100 - max(0, n - threshold) × decay)
   chefSatisfactionThreshold: 4,

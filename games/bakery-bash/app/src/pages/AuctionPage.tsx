@@ -69,8 +69,7 @@ const AD_CARDS: readonly AdCard[] = [
   { id: "Billboard", label: "Billboard", icon: "/assets/ads/billboard.svg", desc: "Constant neighborhood presence" },
 ];
 
-const TAB_DURATION_SECONDS = 60;
-const POOL_SIZE = 6;
+const POOL_SIZE = 12;
 
 // Skill-tier roll probabilities for the cosmetic placeholder pool. The roll
 // is a `Math.random()` value in [0, 1); cutoffs determine which tier the
@@ -226,7 +225,6 @@ export function AuctionPage() {
   // Shape: `{ad: {TV,Billboard,Radio,Newspaper: number}, chef: {[chefId]: number}}`.
   const [topBidsAd, setTopBidsAd] = useState<Partial<Record<AdType, number>>>({});
   const [topBidsChef, setTopBidsChef] = useState<Record<string, number>>({});
-  const [remaining, setRemaining] = useState<number>(TAB_DURATION_SECONDS);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -407,24 +405,6 @@ export function AuctionPage() {
 
   const isDev = !import.meta.env.PROD;
 
-  useEffect(() => {
-    setRemaining(TAB_DURATION_SECONDS);
-  }, [activeTab]);
-
-  useEffect(() => {
-    const tick = setInterval(() => {
-      setRemaining((prev) => Math.max(0, prev - 1));
-    }, 1000);
-    return () => clearInterval(tick);
-  }, [activeTab]);
-
-  const timerMinutes = Math.floor(remaining / 60);
-  const timerSeconds = remaining % 60;
-  const timerDisplay = `${timerMinutes}:${timerSeconds
-    .toString()
-    .padStart(2, "0")}`;
-  const timerUrgent = remaining <= 10;
-
   const alreadySubmitted =
     (isAdPhase && adBidsSubmitted) || (isChefPhase && chefBidsSubmitted);
 
@@ -484,13 +464,6 @@ export function AuctionPage() {
           >
             Chef Hiring
           </button>
-        </div>
-        <div
-          className={`auction-page__timer${
-            timerUrgent ? " auction-page__timer--urgent" : ""
-          }`}
-        >
-          {timerDisplay}
         </div>
         {alreadySubmitted && (
           <span
@@ -555,57 +528,81 @@ export function AuctionPage() {
             <p className="auction-page__hint">
               Bid on chefs to boost your bakery's output.
             </p>
-            <div className="auction-chefs__grid">
-              {chefPool.map((chef) => {
-                const skillCfg = SKILL_CONFIG[chef.skill];
-                return (
-                  <div
-                    key={chef.id}
-                    className={`auction-chef ${skillCfg.cssClass}`}
-                  >
-                    <div className="auction-chef__portrait">
-                      <img
-                        src={chefIcon(chef.nationality, chef.gender)}
-                        alt={chef.name}
-                        className="auction-chef__icon"
-                      />
-                    </div>
-                    <span
-                      className={`auction-chef__skill-tag auction-chef__skill-tag--${chef.skill}`}
-                    >
-                      {skillCfg.label}
-                    </span>
-                    <div className="auction-chef__info">
-                      <span className="auction-chef__name">{chef.name}</span>
-                    </div>
-                    <div className="auction-chef__top-bid">
-                      <span className="auction-chef__top-bid-label">Top Bid</span>
-                      <span className="auction-chef__top-bid-value">
-                        {typeof topBidsChef[chef.id] === "number"
-                          ? `$${topBidsChef[chef.id]!.toLocaleString()}`
-                          : "--"}
-                      </span>
-                    </div>
-                    <div className="auction-chef__bid">
-                      <label className="auction-chef__bid-label">
-                        Your Bid
-                      </label>
-                      <input
-                        type="number"
-                        className="auction-chef__bid-input"
-                        placeholder="$0"
-                        min={0}
-                        value={pendingChefBids[chef.id] ?? ""}
-                        disabled={bidsReadOnly}
-                        readOnly={bidsReadOnly}
-                        onChange={(e) =>
-                          setChefBid(chef.id, parseInt(e.target.value) || 0)
-                        }
-                      />
-                    </div>
-                  </div>
-                );
-              })}
+            {/* FE — dense table replaces the horizontal card strip. With 12
+             * chefs and 4 stat columns per row, cards were running off the
+             * right edge of any realistic viewport. The table scrolls the
+             * page itself (not a sideways strip) so every candidate is
+             * reachable without scrubbing. */}
+            <div className="auction-chefs__table-wrap">
+              <table className="auction-chefs__table">
+                <thead>
+                  <tr>
+                    <th>Chef</th>
+                    <th>Skill</th>
+                    <th>Top bid</th>
+                    <th>Your bid</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {chefPool.map((chef) => {
+                    const skillCfg = SKILL_CONFIG[chef.skill];
+                    const topBid = topBidsChef[chef.id];
+                    return (
+                      <tr
+                        key={chef.id}
+                        className={`auction-chefs__row auction-chefs__row--${chef.skill}`}
+                      >
+                        <td>
+                          <div className="auction-chefs__chef-cell">
+                            <span
+                              className="auction-chefs__portrait"
+                              aria-hidden
+                            >
+                              <img
+                                src={chefIcon(chef.nationality, chef.gender)}
+                                alt=""
+                              />
+                            </span>
+                            <span className="auction-chefs__name">
+                              {chef.name}
+                            </span>
+                          </div>
+                        </td>
+                        <td>
+                          <span
+                            className={`auction-chefs__skill auction-chefs__skill--${chef.skill}`}
+                          >
+                            {skillCfg.label}
+                          </span>
+                        </td>
+                        <td className="auction-chefs__top-bid-cell">
+                          {typeof topBid === "number"
+                            ? `$${topBid.toLocaleString()}`
+                            : "—"}
+                        </td>
+                        <td>
+                          <input
+                            type="number"
+                            className="auction-chefs__bid-input"
+                            placeholder="$0"
+                            min={0}
+                            value={pendingChefBids[chef.id] ?? ""}
+                            disabled={bidsReadOnly}
+                            readOnly={bidsReadOnly}
+                            aria-label={`Your bid for ${chef.name}`}
+                            onChange={(e) =>
+                              setChefBid(
+                                chef.id,
+                                parseInt(e.target.value) || 0,
+                              )
+                            }
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           </div>
         )}

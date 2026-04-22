@@ -983,48 +983,158 @@ async function runSimulationAndPersist(gameRef, round, config) {
     )
   );
 
-  // BE-19: compute disconnection state for each player before simulation.
-  // A player is considered "disconnected" if they have missed 2+ consecutive rounds.
+  // TEAM-MODE FIX: simulate ONCE PER TEAM instead of once per player.
+  //
+  // In team mode, the three roles (operations, advertising, finance) each
+  // own a different submission: operations writes `decisions/{roundId}`,
+  // advertising submits ad bids, finance submits chef bids. Previously the
+  // sim iterated per-player and read each player's own `decisions/{roundId}`
+  // doc — but only operations ever wrote one, so advertising and finance
+  // teammates were treated as "missed" players (empty menu, empty
+  // quantities, no chefs, no auction wins). That yielded 0 customers, 0
+  // aggregate satisfaction, and revenue that was just the $500 base plus
+  // noise. It also meant when three teammates were modelled as three
+  // independent bakeries, they collectively triple-counted demand and
+  // output.
+  //
+  // Solution: collapse each team to a single sim entity keyed on teamId.
+  // We pick a "primary" player per team (prefer operations, else any
+  // member) and use them as the canonical uid the sim reports under. Then
+  // we broadcast the one sim result to every teammate's player doc,
+  // rounds subcollection, and CSV row so all teammates see the shared
+  // bakery's outcome. Solo players keep one-sim-per-player behaviour.
+  const groups = new Map(); // groupKey -> group state
+  const playerGroupKey = new Map(); // uid -> groupKey (for write-back expansion)
+
+  for (let i = 0; i < playerDocs.length; i++) {
+    const pd = playerDocs[i];
+    const p = pd.data() || {};
+    const teamId = p.teamId || null;
+    // Teams group by teamId; solo players are their own "group" keyed on uid.
+    const key = teamId || `solo:${pd.id}`;
+
+    if (!groups.has(key)) {
+      groups.set(key, {
+        teamId,
+        memberUids: [],
+        memberSnaps: [],
+        memberDecisionSnaps: [],
+        decision: null,
+        primaryUid: null,
+        primaryDisplayName: 'Player',
+        primaryBakeryName: '',
+        specialtyChefs: [],
+        specialtyChefIds: new Set(),
+        auctionResults: { adWon: null, adBidPaid: 0, chefsWon: [], chefBidPaid: 0 },
+        budgetCurrent: 0,
+        returningCustomersPending: 0,
+        anyDecisionSubmitted: false,
+      });
+    }
+    const g = groups.get(key);
+    g.memberUids.push(pd.id);
+    g.memberSnaps.push(pd);
+    g.memberDecisionSnaps.push(decisionSnaps[i]);
+    playerGroupKey.set(pd.id, key);
+
+    // Prefer the operations-role player (or solo) as the sim's canonical
+    // identity — their uid becomes the playerId on the result and the
+    // leaderboard ranking entry (one per team, not one per teammate).
+    const role = p.role || 'solo';
+    const rolePriority = role === 'operations' || role === 'solo' ? 0 : 1;
+    const currentPriority = g.primaryUid
+      ? ((g.primaryRole === 'operations' || g.primaryRole === 'solo') ? 0 : 1)
+      : 99;
+    if (rolePriority < currentPriority) {
+      g.primaryUid = pd.id;
+      g.primaryRole = role;
+      g.primaryDisplayName = p.displayName || 'Player';
+      g.primaryBakeryName = p.bakeryName || '';
+    }
+
+    const dSnap = decisionSnaps[i];
+    if (dSnap.exists) {
+      g.anyDecisionSubmitted = true;
+      // Operations' decision wins if multiple teammates (legacy) submitted.
+      if (!g.decision || role === 'operations' || role === 'solo') {
+        g.decision = dSnap.data();
+      }
+    }
+
+    if (Array.isArray(p.specialtyChefs)) {
+      for (const chef of p.specialtyChefs) {
+        if (chef && chef.id && !g.specialtyChefIds.has(chef.id)) {
+          g.specialtyChefIds.add(chef.id);
+          g.specialtyChefs.push(chef);
+        }
+      }
+    }
+
+    const ar = auctionByPlayer.get(pd.id);
+    if (ar) {
+      if (!g.auctionResults.adWon && ar.adWon) {
+        g.auctionResults.adWon = ar.adWon;
+        g.auctionResults.adBidPaid = numberOrDefault(ar.adBidPaid, 0);
+      }
+      if (Array.isArray(ar.chefsWon) && ar.chefsWon.length > 0) {
+        g.auctionResults.chefsWon = g.auctionResults.chefsWon.concat(ar.chefsWon);
+        g.auctionResults.chefBidPaid += numberOrDefault(ar.chefBidPaid, 0);
+      }
+    }
+
+    // Budget + returning customers should be team-shared; in case they
+    // drifted (earlier rounds, before this fix, updated teammates
+    // independently) take the maximum so the team doesn't lose money.
+    const budget = numberOrDefault(p.budgetCurrent, 0);
+    if (budget > g.budgetCurrent || g.memberUids.length === 1) {
+      g.budgetCurrent = budget;
+    }
+    const rc = numberOrDefault(p.returningCustomersPending, 0);
+    if (rc > g.returningCustomersPending) g.returningCustomersPending = rc;
+  }
+
+  // BE-19: per-player disconnection tracking. Missed-ness is now
+  // evaluated at the group (team) level so role-only submitters aren't
+  // flagged disconnected just because they never personally write to
+  // /decisions/{roundId}.
   const disconnectionMap = new Map();
-  for (let _i = 0; _i < playerDocs.length; _i++) {
-    const _pd = playerDocs[_i];
-    const _p = _pd.data() || {};
-    const _dSnap = decisionSnaps[_i];
-    const _prevMissed = numberOrDefault(_p.consecutiveMissedRounds, 0);
-    const _missed = !_dSnap.exists;
-    disconnectionMap.set(_pd.id, {
-      consecutiveMissedRounds: _missed ? _prevMissed + 1 : 0,
-      disconnected: _missed ? _prevMissed + 1 >= 2 : false,
+  for (const pd of playerDocs) {
+    const p = pd.data() || {};
+    const key = playerGroupKey.get(pd.id);
+    const g = groups.get(key);
+    const prevMissed = numberOrDefault(p.consecutiveMissedRounds, 0);
+    const missed = !g.anyDecisionSubmitted;
+    disconnectionMap.set(pd.id, {
+      consecutiveMissedRounds: missed ? prevMissed + 1 : 0,
+      disconnected: missed ? prevMissed + 1 >= 2 : false,
     });
   }
 
-  // Assemble per-player input for the pure simulation engine.
-  const players = playerDocs.map((pd, i) => {
-    const p = pd.data() || {};
-    const dSnap = decisionSnaps[i];
-    // BE-19 / regression fix (c7c859f): missed players contribute zero
-    // quantities/menu to the sim — never replay stale pendingDecision.
-    const missed = !dSnap.exists;
-    const decision = missed ? {} : dSnap.data();
-    const ar = auctionByPlayer.get(pd.id) || {
-      adWon: null, adBidPaid: 0, chefsWon: [], chefBidPaid: 0,
-    };
-    return {
-      playerId: pd.id,
-      displayName: p.displayName || 'Player',
-      bakeryName: p.bakeryName || '',
+  // One sim input per group. playerId on the input is the primary uid so
+  // customer allocation, the leaderboard, and csvRows all key off a
+  // single entity per team.
+  const players = [];
+  for (const [key, g] of groups.entries()) {
+    const missed = !g.anyDecisionSubmitted;
+    const decision = g.decision || {};
+    players.push({
+      playerId: g.primaryUid,
+      teamId: g.teamId,
+      groupKey: key,
+      displayName: g.primaryDisplayName,
+      bakeryName: g.primaryBakeryName,
       decision: {
         menu: (decision && decision.menu) || {},
         quantities: (decision && decision.quantities) || {},
-        sousChefCount: missed ? 0 : numberOrDefault(decision && decision.sousChefCount, p.sousChefCount || 0),
+        sousChefCount: missed ? 0 : numberOrDefault(decision && decision.sousChefCount, 0),
         sousChefAssignments: (decision && decision.sousChefAssignments) || {},
       },
-      specialtyChefs: Array.isArray(p.specialtyChefs) ? p.specialtyChefs : [],
-      budgetCurrent: numberOrDefault(p.budgetCurrent, 0),
-      returningCustomersPending: numberOrDefault(p.returningCustomersPending, 0),
-      auctionResults: ar,
-    };
-  });
+      specialtyChefs: g.specialtyChefs,
+      budgetCurrent: g.budgetCurrent,
+      returningCustomersPending: g.returningCustomersPending,
+      auctionResults: g.auctionResults,
+    });
+  }
 
   // -----------------------------------------------------------------------
   // Mark sim as running
@@ -1043,58 +1153,27 @@ async function runSimulationAndPersist(gameRef, round, config) {
   // -----------------------------------------------------------------------
   // Write phase — chunked batches
   // -----------------------------------------------------------------------
-  // Each player writes 3 ops:
+  // Each result is written to every member of its group (teammates share
+  // one simulated outcome). Per-member we write 3 ops:
   //   1. update players/{uid}
   //   2. set  players/{uid}/rounds/{round}
   //   3. set  csvRows/{uid}/rounds/{round}
   const OPS_PER_PLAYER = 3;
+
+  // Look up the group for a given result by its primary uid.
+  const groupByPrimary = new Map();
+  for (const [key, g] of groups.entries()) {
+    if (g.primaryUid) groupByPrimary.set(g.primaryUid, { key, group: g });
+  }
 
   let batch = db.batch();
   let opsInBatch = 0;
   const batches = [];
 
   for (const r of results) {
-    const playerRef = gameRef.collection('players').doc(r.playerId);
-    const playerRoundRef = playerRef.collection('rounds').doc(roundId);
-    const csvRowRef = gameRef
-      .collection('csvRows')
-      .doc(r.playerId)
-      .collection('rounds')
-      .doc(roundId);
+    const groupEntry = groupByPrimary.get(r.playerId);
+    const members = groupEntry ? groupEntry.group.memberUids : [r.playerId];
 
-    if (opsInBatch + OPS_PER_PLAYER > BATCH_OP_LIMIT) {
-      batches.push(batch);
-      batch = db.batch();
-      opsInBatch = 0;
-    }
-
-    const dc = disconnectionMap.get(r.playerId) || { consecutiveMissedRounds: 0, disconnected: false };
-    batch.update(playerRef, {
-      budgetCurrent: r.budgetAfter,
-      cumulativeRevenue: FieldValue.increment(r.revenueNet),
-      returningCustomersPending: r.returningCustomersEarned,
-      sousChefCount: numberOrDefault(
-        (r.csvRow && r.csvRow.sous_chef_count),
-        0
-      ),
-      consecutiveMissedRounds: dc.consecutiveMissedRounds,  // BE-19
-      disconnected: dc.disconnected,                         // BE-19
-      lastRoundResult: {
-        round,
-        revenueGross: r.revenueGross,
-        revenueNet: r.revenueNet,
-        customerCount: r.customerCount,
-        aggregateSatisfactionPct: r.aggregateSatisfactionPct,
-        chefSatisfactionScore: r.chefSatisfactionScore,
-        amountBorrowed: r.amountBorrowed,
-        interestCharged: r.interestCharged,
-        selloutAnywhere: r.selloutAnywhere || false,
-      },
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-
-    // Extract perProductSold and selloutFlags as flat objects for easy
-    // frontend consumption (avoids nested digging into perProductSatisfaction).
     const perProductSold = {};
     const selloutFlags = {};
     for (const [product, pps] of Object.entries(r.perProductSatisfaction || {})) {
@@ -1102,36 +1181,84 @@ async function runSimulationAndPersist(gameRef, round, config) {
       selloutFlags[product] = !!(pps && pps.sellout);
     }
 
-    batch.set(playerRoundRef, {
-      round,
-      playerId: r.playerId,
-      displayName: r.displayName,
-      bakeryName: r.bakeryName,
-      revenueGross: r.revenueGross,
-      revenueNet: r.revenueNet,
-      amountBorrowed: r.amountBorrowed,
-      interestCharged: r.interestCharged,
-      totalSpent: r.totalSpent,
-      budgetAfter: r.budgetAfter,
-      customerCount: r.customerCount,
-      perProductCustomers: r.perProductCustomers,
-      aggregateSatisfactionPct: r.aggregateSatisfactionPct,
-      chefSatisfactionScore: r.chefSatisfactionScore,
-      perProductSatisfaction: r.perProductSatisfaction,
-      perProductSold,
-      selloutFlags,
-      returningCustomersEarned: r.returningCustomersEarned,
-      computedAt: FieldValue.serverTimestamp(),
-    });
+    for (const memberUid of members) {
+      const playerRef = gameRef.collection('players').doc(memberUid);
+      const playerRoundRef = playerRef.collection('rounds').doc(roundId);
+      const csvRowRef = gameRef
+        .collection('csvRows')
+        .doc(memberUid)
+        .collection('rounds')
+        .doc(roundId);
 
-    batch.set(csvRowRef, {
-      round,
-      playerId: r.playerId,
-      row: r.csvRow,
-      writtenAt: FieldValue.serverTimestamp(),
-    });
+      if (opsInBatch + OPS_PER_PLAYER > BATCH_OP_LIMIT) {
+        batches.push(batch);
+        batch = db.batch();
+        opsInBatch = 0;
+      }
 
-    opsInBatch += OPS_PER_PLAYER;
+      const dc = disconnectionMap.get(memberUid) || { consecutiveMissedRounds: 0, disconnected: false };
+      const playerUpdate = {
+        budgetCurrent: r.budgetAfter,
+        cumulativeRevenue: FieldValue.increment(r.revenueNet),
+        returningCustomersPending: r.returningCustomersEarned,
+        sousChefCount: numberOrDefault(
+          (r.csvRow && r.csvRow.sous_chef_count),
+          0
+        ),
+        consecutiveMissedRounds: dc.consecutiveMissedRounds,  // BE-19
+        disconnected: dc.disconnected,                         // BE-19
+        lastRoundResult: {
+          round,
+          revenueGross: r.revenueGross,
+          revenueNet: r.revenueNet,
+          customerCount: r.customerCount,
+          aggregateSatisfactionPct: r.aggregateSatisfactionPct,
+          chefSatisfactionScore: r.chefSatisfactionScore,
+          amountBorrowed: r.amountBorrowed,
+          interestCharged: r.interestCharged,
+          selloutAnywhere: r.selloutAnywhere || false,
+        },
+        updatedAt: FieldValue.serverTimestamp(),
+      };
+      // Mirror the team's specialty chefs to every teammate so each
+      // player's own doc reflects the shared roster (only sync when we
+      // actually have a group — solo players keep their own array).
+      if (groupEntry) {
+        playerUpdate.specialtyChefs = groupEntry.group.specialtyChefs;
+      }
+      batch.update(playerRef, playerUpdate);
+
+      batch.set(playerRoundRef, {
+        round,
+        playerId: memberUid,
+        displayName: r.displayName,
+        bakeryName: r.bakeryName,
+        revenueGross: r.revenueGross,
+        revenueNet: r.revenueNet,
+        amountBorrowed: r.amountBorrowed,
+        interestCharged: r.interestCharged,
+        totalSpent: r.totalSpent,
+        budgetAfter: r.budgetAfter,
+        customerCount: r.customerCount,
+        perProductCustomers: r.perProductCustomers,
+        aggregateSatisfactionPct: r.aggregateSatisfactionPct,
+        chefSatisfactionScore: r.chefSatisfactionScore,
+        perProductSatisfaction: r.perProductSatisfaction,
+        perProductSold,
+        selloutFlags,
+        returningCustomersEarned: r.returningCustomersEarned,
+        computedAt: FieldValue.serverTimestamp(),
+      });
+
+      batch.set(csvRowRef, {
+        round,
+        playerId: memberUid,
+        row: r.csvRow,
+        writtenAt: FieldValue.serverTimestamp(),
+      });
+
+      opsInBatch += OPS_PER_PLAYER;
+    }
   }
 
   // Aggregate writes (leaderboard + round doc completion) appended to the
