@@ -267,6 +267,67 @@ describe('pricing.js — snapPriceToStep / clampPrice', () => {
   });
 });
 
+describe('pricing.js — resolvePriceForSim (carry-over)', () => {
+  const { PRICE_ZONES, PRODUCT_CATALOG } = require('../config');
+  const coffeeCfg = PRICE_ZONES.coffee;
+  const coffeeBase = PRODUCT_CATALOG.coffee.fixedPrice; // 4.00
+
+  it('uses current round price when present', () => {
+    const price = pricing.resolvePriceForSim({
+      product: 'coffee',
+      submittedThisRound: 3.50,
+      priorSubmissions: [4.00, 4.25],
+      productCfg: coffeeCfg,
+      catalogBasePrice: coffeeBase,
+    });
+    near(price, 3.50, 0.001);
+  });
+
+  it('falls back to most recent prior when current is missing', () => {
+    const price = pricing.resolvePriceForSim({
+      product: 'coffee',
+      submittedThisRound: undefined,
+      priorSubmissions: [4.00, 4.25],
+      productCfg: coffeeCfg,
+      catalogBasePrice: coffeeBase,
+    });
+    near(price, 4.25, 0.001); // last element = most recent prior
+  });
+
+  it('falls back to catalog base when no submissions exist', () => {
+    const price = pricing.resolvePriceForSim({
+      product: 'coffee',
+      submittedThisRound: undefined,
+      priorSubmissions: [],
+      productCfg: coffeeCfg,
+      catalogBasePrice: coffeeBase,
+    });
+    near(price, 4.00, 0.001);
+  });
+
+  it('skips null/undefined entries in prior submissions', () => {
+    const price = pricing.resolvePriceForSim({
+      product: 'coffee',
+      submittedThisRound: undefined,
+      priorSubmissions: [4.00, undefined, null, 4.25, undefined],
+      productCfg: coffeeCfg,
+      catalogBasePrice: coffeeBase,
+    });
+    near(price, 4.25, 0.001);
+  });
+
+  it('always returns a snapped + clamped number', () => {
+    const price = pricing.resolvePriceForSim({
+      product: 'coffee',
+      submittedThisRound: 10.13,       // above ceiling (6.50) and off-grid
+      priorSubmissions: [],
+      productCfg: coffeeCfg,
+      catalogBasePrice: coffeeBase,
+    });
+    near(price, 6.50, 0.001); // clamped to ceiling; already on grid
+  });
+});
+
 // ============================================================================
 // 3. CHEF SYSTEM
 // ============================================================================

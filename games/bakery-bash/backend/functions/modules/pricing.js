@@ -68,9 +68,57 @@ function clampPrice(price, productCfg) {
   return price;
 }
 
+/**
+ * Resolve the price a simulation will use for one product × one player.
+ *
+ * Resolution order:
+ *   1. `submittedThisRound`, if a finite positive number
+ *   2. The last finite positive entry in `priorSubmissions` (most recent first
+ *      if you pass a reverse-chronological array — but this function scans
+ *      backwards through the array so callers may pass rounds in either
+ *      order; see test above where we pass chronological and the last entry
+ *      wins)
+ *   3. `catalogBasePrice`
+ *
+ * Always snapped to the $0.25 grid and clamped to [floor, ceiling].
+ *
+ * @param {object} args
+ * @param {string} args.product             product key (informational only)
+ * @param {number|undefined} args.submittedThisRound
+ * @param {Array<number|null|undefined>} args.priorSubmissions  chronological
+ * @param {object} args.productCfg          PRICE_ZONES entry
+ * @param {number} args.catalogBasePrice    final fallback
+ * @returns {number}
+ */
+function resolvePriceForSim({
+  product,
+  submittedThisRound,
+  priorSubmissions = [],
+  productCfg,
+  catalogBasePrice,
+}) {
+  const isValid = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0;
+
+  let chosen;
+  if (isValid(submittedThisRound)) {
+    chosen = submittedThisRound;
+  } else {
+    // Scan backwards to pick the most recent valid entry.
+    for (let i = priorSubmissions.length - 1; i >= 0; i -= 1) {
+      if (isValid(priorSubmissions[i])) {
+        chosen = priorSubmissions[i];
+        break;
+      }
+    }
+  }
+  if (chosen === undefined) chosen = catalogBasePrice;
+  return clampPrice(snapPriceToStep(chosen), productCfg);
+}
+
 module.exports = {
   classifyZone,
   calculatePriceDemandMultiplier,
   snapPriceToStep,
   clampPrice,
+  resolvePriceForSim,
 };
