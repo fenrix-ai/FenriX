@@ -111,7 +111,7 @@ function calculateProductRevenue(perProductQtySold, cfg = config, perPlayerPrice
   let total = 0;
   for (const [product, qty] of Object.entries(perProductQtySold || {})) {
     const catalogPrice = (catalog[product] && catalog[product].fixedPrice) || 0;
-    const override = perPlayerPrices && typeof perPlayerPrices[product] === 'number'
+    const override = perPlayerPrices && Number.isFinite(perPlayerPrices[product])
       ? perPlayerPrices[product]
       : null;
     const price = override != null ? override : catalogPrice;

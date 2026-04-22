@@ -755,6 +755,14 @@ describe('revenue.js — perPlayerPrices override (POST-01)', () => {
     // catalog: coffee 4.00, croissant 4.75
     near(totalProductRevenue, 10 * 4.00 + 20 * 4.75, 0.01);
   });
+
+  it('ignores NaN / Infinity override and falls back to catalog', () => {
+    const qtySold = { coffee: 10, croissant: 20 };
+    const prices  = { coffee: NaN, croissant: Infinity };
+    const { totalProductRevenue } = revenue.calculateProductRevenue(qtySold, undefined, prices);
+    // both fall back to catalog: coffee $4, croissant $4.75
+    near(totalProductRevenue, 10 * 4.00 + 20 * 4.75, 0.01);
+  });
 });
 
 // ============================================================================
