@@ -232,6 +232,41 @@ describe('pricing.js — calculatePriceDemandMultiplier', () => {
   });
 });
 
+describe('pricing.js — snapPriceToStep / clampPrice', () => {
+  const { PRICE_ZONES } = require('../config');
+  const coffee = PRICE_ZONES.coffee;
+
+  it('snapPriceToStep: exact $0.25 grid values unchanged', () => {
+    near(pricing.snapPriceToStep(4.00), 4.00, 0.0001);
+    near(pricing.snapPriceToStep(4.25), 4.25, 0.0001);
+  });
+  it('snapPriceToStep: rounds to nearest $0.25', () => {
+    near(pricing.snapPriceToStep(4.12), 4.00, 0.0001);
+    near(pricing.snapPriceToStep(4.13), 4.25, 0.0001);
+    near(pricing.snapPriceToStep(4.37), 4.25, 0.0001);
+    near(pricing.snapPriceToStep(4.38), 4.50, 0.0001);
+  });
+  it('snapPriceToStep: negative / zero pass through (clamp later)', () => {
+    near(pricing.snapPriceToStep(0), 0, 0.0001);
+    near(pricing.snapPriceToStep(-0.13), -0.25, 0.0001);
+  });
+  it('clampPrice: below floor → floor', () => {
+    near(pricing.clampPrice(1.00, coffee), 2.00, 0.0001);
+  });
+  it('clampPrice: above ceiling → ceiling', () => {
+    near(pricing.clampPrice(10.00, coffee), 6.50, 0.0001);
+  });
+  it('clampPrice: in range unchanged', () => {
+    near(pricing.clampPrice(4.00, coffee), 4.00, 0.0001);
+  });
+  it('clampPrice: exactly at floor unchanged', () => {
+    near(pricing.clampPrice(2.00, coffee), 2.00, 0.0001);
+  });
+  it('clampPrice: exactly at ceiling unchanged', () => {
+    near(pricing.clampPrice(6.50, coffee), 6.50, 0.0001);
+  });
+});
+
 // ============================================================================
 // 3. CHEF SYSTEM
 // ============================================================================

@@ -51,7 +51,26 @@ function calculatePriceDemandMultiplier(price, productCfg) {
   return Math.max(MULTIPLIER_FLOOR, 1 + floorBonus + elasticityEffect);
 }
 
+/**
+ * Snap a price to the nearest PRICE_STEP grid point ($0.25).
+ * Does NOT clamp — callers compose with clampPrice.
+ */
+function snapPriceToStep(price) {
+  return Math.round(price / PRICE_STEP) * PRICE_STEP;
+}
+
+/**
+ * Clamp a price to [productCfg.floor, productCfg.ceiling].
+ */
+function clampPrice(price, productCfg) {
+  if (price < productCfg.floor) return productCfg.floor;
+  if (price > productCfg.ceiling) return productCfg.ceiling;
+  return price;
+}
+
 module.exports = {
   classifyZone,
   calculatePriceDemandMultiplier,
+  snapPriceToStep,
+  clampPrice,
 };
