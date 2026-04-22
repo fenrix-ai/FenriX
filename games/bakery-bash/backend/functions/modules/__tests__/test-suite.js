@@ -2047,6 +2047,76 @@ describe('simulation.js — productPrices wiring (POST-01)', () => {
 });
 
 // ============================================================================
+// 15. DYNAMIC PRICING — floor vs ceiling smoke test (POST-01 Task 21)
+// ============================================================================
+describe('simulation.js — floor vs ceiling smoke test (POST-01)', () => {
+  const cfg = config.mergeConfig({});
+  const { PRICE_ZONES } = config;
+
+  const MENU = { croissant: true, cookie: true, bagel: true, sandwich: false, coffee: true, matcha: false };
+  const QTY  = { croissant: 60, cookie: 60, bagel: 60, sandwich: 0, coffee: 60, matcha: 0 };
+
+  const makePlayer = (id, prices) => ({
+    playerId: id,
+    displayName: id,
+    bakeryName: `${id} Bakery`,
+    budgetCurrent: 500000,
+    specialtyChefs: [],
+    returningCustomersPending: 0,
+    priorSubmittedPrices: [],
+    decision: {
+      menu: MENU,
+      quantities: QTY,
+      sousChefCount: 0,
+      sousChefAssignments: {},
+      productPrices: prices,
+    },
+    auctionResults: { adWon: null, adBidPaid: 0, chefBidPaid: 0 },
+  });
+
+  const floorPrices = {
+    croissant: PRICE_ZONES.croissant.floor,
+    cookie:    PRICE_ZONES.cookie.floor,
+    bagel:     PRICE_ZONES.bagel.floor,
+    coffee:    PRICE_ZONES.coffee.floor,
+  };
+  const ceilingPrices = {
+    croissant: PRICE_ZONES.croissant.ceiling,
+    cookie:    PRICE_ZONES.cookie.ceiling,
+    bagel:     PRICE_ZONES.bagel.ceiling,
+    coffee:    PRICE_ZONES.coffee.ceiling,
+  };
+
+  const roundPreferences = { modifiers: { croissant: 1.0, cookie: 1.0, bagel: 1.0, sandwich: 1.0, coffee: 1.0, matcha: 1.0 } };
+  const players = [makePlayer('floor_player', floorPrices), makePlayer('ceiling_player', ceilingPrices)];
+  const results = simulation.runSimulation(players, roundPreferences, cfg);
+  const floorR   = results.find((r) => r.playerId === 'floor_player');
+  const ceilingR = results.find((r) => r.playerId === 'ceiling_player');
+
+  it('floor player captures >60% of combined customers', () => {
+    const total = floorR.customerCount + ceilingR.customerCount;
+    ok(total > 0, 'combined customer count > 0');
+    const share = floorR.customerCount / total;
+    ok(share > 0.60, `floor share was ${(share * 100).toFixed(1)}% — expected > 60%`);
+  });
+
+  it('ceiling player captures <40% of combined customers', () => {
+    const total = floorR.customerCount + ceilingR.customerCount;
+    ok(ceilingR.customerCount / total < 0.40,
+      `ceiling share was ${(ceilingR.customerCount / total * 100).toFixed(1)}% — expected < 40%`);
+  });
+
+  it('floor player revenue per customer is lower than ceiling player', () => {
+    if (floorR.customerCount > 0 && ceilingR.customerCount > 0) {
+      const floorRpc  = floorR.revenueGross  / floorR.customerCount;
+      const ceilRpc   = ceilingR.revenueGross / ceilingR.customerCount;
+      ok(floorRpc < ceilRpc,
+        `floor $/cust ${floorRpc.toFixed(2)} should be < ceiling $/cust ${ceilRpc.toFixed(2)}`);
+    }
+  });
+});
+
+// ============================================================================
 // FINAL REPORT
 // ============================================================================
 console.log('\n\n========================================');
