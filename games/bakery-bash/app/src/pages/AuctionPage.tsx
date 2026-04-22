@@ -70,7 +70,7 @@ const AD_CARDS: readonly AdCard[] = [
 ];
 
 const TAB_DURATION_SECONDS = 60;
-const POOL_SIZE = 6;
+const POOL_SIZE = 12;
 
 // Skill-tier roll probabilities for the cosmetic placeholder pool. The roll
 // is a `Math.random()` value in [0, 1); cutoffs determine which tier the
