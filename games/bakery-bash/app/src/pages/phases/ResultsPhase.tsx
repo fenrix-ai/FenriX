@@ -93,15 +93,7 @@ export function ResultsPhase() {
   });
 
   useEffect(() => {
-    if (!gameId || !playerId || !currentRound) {
-      setLiveAuctionResult({
-        adWins: [],
-        adPaid: null,
-        chefsWon: [],
-        chefBidPaid: null,
-      });
-      return;
-    }
+    if (!gameId || !playerId || !currentRound) return;
     const roundRef = doc(db, "games", gameId, "rounds", `round_${currentRound}`);
     const unsubscribe = onSnapshot(roundRef, (snap) => {
       if (!snap.exists()) {
@@ -236,10 +228,10 @@ export function ResultsPhase() {
             </div>
           </div>
 
-          {(latest as any)?.burglary && (
+          {latest?.burglary && (
             <div className="results-phase__burglar-banner">
               🔓 Your bakery was broken into! A maintenance deficit left you vulnerable.
-              {(latest as any).burglaryAmount ? ` –$${(latest as any).burglaryAmount.toLocaleString()}` : ""}
+              {latest.burglaryAmount ? ` –$${latest.burglaryAmount.toLocaleString()}` : ""}
             </div>
           )}
 
@@ -459,8 +451,8 @@ export function ResultsPhase() {
       {leaderboard && leaderboard.length > 0 && (
         <div className="results-phase__leaderboard">
           <h3 className="results-phase__section-title">Standings</h3>
-          {leaderboard.map((entry: any, i: number) => (
-            <div key={entry.uid ?? i} className="results-phase__rank-row">
+          {leaderboard.map((entry, i) => (
+            <div key={entry.playerId} className="results-phase__rank-row">
               <span className="results-phase__rank">#{i + 1}</span>
               <span className="results-phase__team-name">{entry.displayName ?? "Team"}</span>
               <span className="results-phase__team-revenue">

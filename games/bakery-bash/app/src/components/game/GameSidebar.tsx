@@ -50,8 +50,9 @@ export function GameSidebar({ readOnly = false }: GameSidebarProps) {
       const result = await purchaseFn({ gameId, round: (currentRound ?? 1) - 1 });
       const data = result.data as { csv: string };
       setIntelCsv(data.csv);
-    } catch (err: any) {
-      alert(err.message || "Could not purchase insight.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Could not purchase insight.";
+      alert(msg);
     }
   };
 

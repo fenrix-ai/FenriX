@@ -418,6 +418,15 @@ export interface RoundResult {
   adPaid?: number;
   chefsWon?: Array<{ id?: string; name?: string }>;
   chefBidPaid?: number;
+  /**
+   * Legacy burglary fields written by pre-RoundEvent simulation paths.
+   * Kept optional because newer simulations emit burglaries via RoundEvent
+   * instead. The Results screen reads these as a fallback when no event
+   * data is available.
+   */
+  burglary?: boolean;
+  burglaryAmount?: number;
+  burglaryDays?: number[];
 }
 
 /**
