@@ -58,9 +58,9 @@
 
 ## 6. `PLAYER_ROLE_LABELS`-delegating owner-copy helpers
 
-**Status:** todo
-**Files:** `games/bakery-bash/app/src/types/game.ts` (or wherever the owner-copy helpers lived at `c348aed`).
-**What broke:** Helpers that turned role keys into user-facing "your team's X" copy delegated to `PLAYER_ROLE_LABELS`; after PR #58 the delegation is gone and any caller either falls through to raw role keys or has been locally duplicating strings.
+**Status:** in-progress (`fix/restore-owner-copy-helpers`)
+**Files:** `games/bakery-bash/app/src/types/game.ts`.
+**What broke:** The 4 `ownerOf*` helpers exist but return hardcoded strings instead of delegating to `PLAYER_ROLE_LABELS`. Most visibly, `ownerOfAdBids()` returns `"Advertising"` while `PLAYER_ROLE_LABELS.advertising` is `"Bidder"` — so the auction page tooltip says "Your Advertising teammate submits this decision" while the lobby role-picker and How-to-Play page call that same role "Bidder".
 **Acceptance:** All owner-copy strings (e.g., "Your Bidder is…", "Finance owns pricing", etc.) derive from one source of truth.
 
 ## 7. `GameProgressBar` component + mount in `RoundHeader`

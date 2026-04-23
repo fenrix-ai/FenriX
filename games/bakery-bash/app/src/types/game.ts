@@ -491,18 +491,22 @@ export function roleOwnsRoster(role: PlayerRole): boolean {
   return role === "operations" || role === "solo";
 }
 
-/** Human-readable owner copy used in the disabled-button tooltip. */
+/**
+ * Human-readable owner copy used in the disabled-button tooltip.
+ * Always delegates to `PLAYER_ROLE_LABELS` so the copy here stays in lockstep
+ * with the role-picker and the How-to-Play page (e.g. `advertising → "Bidder"`).
+ */
 export function ownerOfDecide(): string {
-  return "Operations";
+  return PLAYER_ROLE_LABELS.operations;
 }
 export function ownerOfAdBids(): string {
-  return "Advertising";
+  return PLAYER_ROLE_LABELS.advertising;
 }
 export function ownerOfChefBids(): string {
-  return "Finance";
+  return PLAYER_ROLE_LABELS.finance;
 }
 export function ownerOfRoster(): string {
-  return "Operations";
+  return PLAYER_ROLE_LABELS.operations;
 }
 
 export interface Player {
