@@ -202,6 +202,37 @@ function cleanGameId(value) {
 }
 
 /**
+ * BE-R01: validate a client-supplied teamId. Must match the same shape
+ * the `createTeam` slugifier produces (lowercase alphanumerics + dashes),
+ * OR the `team-{N}` pattern used by the legacy number-based join path.
+ * 2–60 chars keeps it bounded without rejecting legitimate names.
+ */
+function isValidTeamId(value) {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  return /^[a-z0-9-]{2,60}$/.test(trimmed);
+}
+
+/**
+ * BE-R01: slugify a team name into a stable Firestore doc id.
+ * Keeps alphanumerics + dashes; collapses whitespace; truncates to 50
+ * chars so the id stays well under Firestore's 1500-byte key limit.
+ * Appends a short random suffix on empty slugs (e.g. "🎂" alone).
+ */
+function slugifyTeamName(name) {
+  const base = cleanString(name)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .slice(0, 50);
+  if (base.length >= 2) return base;
+  // Fallback — caller should still uniqueness-check within the game.
+  return `team-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
  * Generate a 6-character join code from the restricted alphabet.
  */
 function generateJoinCode() {
@@ -449,6 +480,47 @@ async function loadAuctionResultsByPlayer(gameRef, round) {
   }
 
   return byPlayer;
+}
+
+/**
+ * BE-R04: Clear every player's round-scoped pending state so round N doesn't
+ * surface round N-1 data. Called from `advanceGamePhase` when entering any
+ * `email` phase. Uses dot-paths to preserve `pendingDecision.productPrices`
+ * (POST-01 carry-over) and any player fields that aren't round-scoped.
+ *
+ * Writes are chunked into batches of 400 to stay well under Firestore's
+ * 500-op batch limit for games with large rosters.
+ */
+async function resetPendingPlayerStateForRound(gameRef) {
+  const playersSnap = await gameRef.collection('players').get();
+  if (playersSnap.empty) return;
+
+  const BATCH_SIZE = 400;
+  let batch = db.batch();
+  let opsInBatch = 0;
+
+  for (const playerDoc of playersSnap.docs) {
+    batch.update(playerDoc.ref, {
+      'pendingDecision.submitted': false,
+      'pendingDecision.submittedAt': null,
+      'pendingDecision.round': null,
+      'pendingDecision.menu': {},
+      'pendingDecision.quantities': {},
+      'pendingDecision.sousChefCount': 0,
+      'pendingDecision.sousChefAssignments': {},
+      'pendingBids.ad': null,
+      'pendingBids.chef': null,
+      pendingRosterAction: false,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    opsInBatch++;
+    if (opsInBatch >= BATCH_SIZE) {
+      await batch.commit();
+      batch = db.batch();
+      opsInBatch = 0;
+    }
+  }
+  if (opsInBatch > 0) await batch.commit();
 }
 
 /**
@@ -739,6 +811,11 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
   const rawTeamNumber = data.teamNumber;
   const teamNumber = Number.isInteger(rawTeamNumber) && rawTeamNumber >= 1 && rawTeamNumber <= 8
     ? rawTeamNumber : null;
+  // BE-R01/R02: explicit named-team join path. When supplied, the team
+  // doc must already exist (created by `createTeam`) and is joined as-is.
+  // Falls back to the PR #45 `team-{N}` derivation otherwise so existing
+  // sessions keep working.
+  const explicitTeamId = isValidTeamId(data.teamId) ? data.teamId : null;
   const bakeryName = cleanString(data.bakeryName) || (teamNumber ? `Team ${teamNumber}` : `${displayName}'s Bakery`);
 
   if (!/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/.test(joinCode)) {
@@ -747,8 +824,8 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
   if (displayName.length < 2 || displayName.length > 40) {
     throw new HttpsError('invalid-argument', 'displayName must be 2–40 characters.');
   }
-  if (!teamNumber) {
-    throw new HttpsError('invalid-argument', 'teamNumber must be an integer between 1 and 8.');
+  if (!teamNumber && !explicitTeamId) {
+    throw new HttpsError('invalid-argument', 'Provide either teamNumber (1–8) or teamId.');
   }
   if (bakeryName.length > 60) {
     throw new HttpsError('invalid-argument', 'bakeryName must be 60 characters or fewer.');
@@ -766,8 +843,11 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
   const playerRef = gameRef.collection('players').doc(auth.uid);
   const rosterRef = gameRef.collection('roster').doc(auth.uid);
 
-  // teamId is derived from teamNumber for predictable grouping.
-  const teamId = `team-${teamNumber}`;
+  // teamId: explicit wins, else derived from teamNumber. The team doc
+  // for explicit ids must already exist (the createTeam callable writes
+  // it); we fail fast if it's missing rather than silently creating an
+  // orphan team.
+  const teamId = explicitTeamId || `team-${teamNumber}`;
   const teamRef = gameRef.collection('teams').doc(teamId);
 
   let playerId = auth.uid;
@@ -802,6 +882,24 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
       }
     }
 
+    // BE-R01: if the caller specified an explicit teamId, require the team
+    // to exist — don't silently create an orphan. The team-number path
+    // (below) still auto-creates the team doc on first join.
+    if (explicitTeamId && !tSnap.exists) {
+      throw new HttpsError('not-found', 'No team exists with that id. Ask the team creator to share the game code again.');
+    }
+
+    // BE-R01: when joining an existing named team and the client didn't
+    // send a bakeryName, mirror the team doc's name so the player's
+    // roster card and the team doc stay in sync.
+    let effectiveBakeryName = bakeryName;
+    if (explicitTeamId && tSnap.exists && !cleanString(data.bakeryName)) {
+      const teamName = tSnap.get('name');
+      if (typeof teamName === 'string' && teamName.length > 0) {
+        effectiveBakeryName = teamName;
+      }
+    }
+
     // BE-20: auto-assign role from team's available slots
     const ROLES_ORDER = ['finance', 'advertising', 'operations'];
     const existingRoleAssignments = tSnap.exists
@@ -825,14 +923,14 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
       // Rejoin: refresh display name / bakery name but do not reset progress.
       transaction.update(playerRef, {
         displayName,
-        bakeryName,
+        bakeryName: effectiveBakeryName,
         teamName,
         updatedAt: FieldValue.serverTimestamp(),
       });
       transaction.set(rosterRef, {
         uid: auth.uid,
         displayName,
-        bakeryName,
+        bakeryName: effectiveBakeryName,
         teamName,
         updatedAt: FieldValue.serverTimestamp(),
         ...(rSnap.exists ? {} : { joinedAt: FieldValue.serverTimestamp() }),
@@ -844,7 +942,7 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
       uid: auth.uid,
       playerId: auth.uid,
       displayName,
-      bakeryName,
+      bakeryName: effectiveBakeryName,
       teamName,
       teamId,                                    // BE-20
       role: autoRole,                            // BE-20
@@ -870,7 +968,7 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
     // BE-20: create or update the team doc with this player's role assignment
     if (!tSnap.exists) {
       transaction.set(teamRef, {
-        name: bakeryName,
+        name: effectiveBakeryName,
         teamId,
         roleAssignments: { [auth.uid]: autoRole },
         memberCount: 1,
@@ -888,7 +986,7 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
     transaction.set(rosterRef, {
       uid: auth.uid,
       displayName,
-      bakeryName,
+      bakeryName: effectiveBakeryName,
       teamName,
       teamId,
       role: autoRole,
@@ -903,6 +1001,241 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
   });
 
   return { gameId: gameRef.id, playerId };
+});
+
+// ===========================================================================
+// createTeam (BE-R01)
+// ===========================================================================
+//
+// Create a named team in the lobby and enroll the caller as its first
+// member. Complements `joinGame`: the team-creator path never passes through
+// the legacy `teamNumber → team-{N}` derivation and always produces a team
+// doc keyed by a stable slug of the team name.
+//
+// Input: { joinCode, teamName, displayName, logoUrl? }
+// Output: { gameId, playerId, teamId, teamName, logoUrl }
+
+exports.createTeam = onCall(CALLABLE_OPTS, async (request) => {
+  const auth = requireAuth(request, 'Sign in before creating a team.');
+  const data = request.data || {};
+
+  const joinCode = cleanString(data.joinCode).toUpperCase();
+  const teamName = cleanString(data.teamName);
+  const displayName = cleanString(data.displayName);
+  const rawLogoUrl = typeof data.logoUrl === 'string' ? data.logoUrl : null;
+  const logoUrl = rawLogoUrl && rawLogoUrl.startsWith('https://firebasestorage.googleapis.com')
+    ? rawLogoUrl
+    : null;
+
+  if (!/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/.test(joinCode)) {
+    throw new HttpsError('invalid-argument', 'joinCode must be a 6-character game code.');
+  }
+  if (teamName.length < 2 || teamName.length > 30) {
+    throw new HttpsError('invalid-argument', 'teamName must be 2–30 characters.');
+  }
+  if (displayName.length < 2 || displayName.length > 40) {
+    throw new HttpsError('invalid-argument', 'displayName must be 2–40 characters.');
+  }
+
+  const gameSnap = await db
+    .collection('games')
+    .where('joinCode', '==', joinCode)
+    .limit(1)
+    .get();
+  if (gameSnap.empty) {
+    throw new HttpsError('not-found', 'No game exists for that join code.');
+  }
+  const gameRef = gameSnap.docs[0].ref;
+
+  const baseSlug = slugifyTeamName(teamName);
+  const playerRef = gameRef.collection('players').doc(auth.uid);
+  const rosterRef = gameRef.collection('roster').doc(auth.uid);
+
+  let resolvedTeamId = baseSlug;
+
+  await db.runTransaction(async (transaction) => {
+    // Reset on every attempt so a Firestore transaction retry doesn't carry
+    // a stale suffix from a previous iteration into the slug-collision loop.
+    resolvedTeamId = baseSlug;
+
+    const [gSnap, cfgSnap, pSnap] = await Promise.all([
+      transaction.get(gameRef),
+      transaction.get(gameRef.collection('config').doc('params')),
+      transaction.get(playerRef),
+    ]);
+    if (!gSnap.exists) {
+      throw new HttpsError('not-found', 'No game exists for that join code.');
+    }
+
+    const config = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
+
+    // Mirror the joinGame ordering: phase + cap gates apply only to brand-new
+    // players. A returning player (same uid, existing player doc) accidentally
+    // hitting this path after the game started should get a precise error
+    // rather than being silently blocked on the phase check.
+    if (!pSnap.exists) {
+      if (gSnap.get('phase') !== 'lobby') {
+        throw new HttpsError('failed-precondition', 'Teams can only be created while the game is in the lobby.');
+      }
+      const playerCap = numberOrDefault(config.playerCap, 20);
+      const currentTotal = numberOrDefault(gSnap.get('totalPlayers'), 0);
+      if (currentTotal >= playerCap) {
+        throw new HttpsError('resource-exhausted', 'This game is full.');
+      }
+    } else if (gSnap.get('phase') !== 'lobby') {
+      throw new HttpsError('failed-precondition', 'You already joined this game. Refresh the page to rejoin your team.');
+    }
+
+    // Duplicate-name check: any existing team doc with the same name is a
+    // conflict. `name` isn't indexed in this collection so we'd need either
+    // a query-in-transaction (supported — single-doc result fine) or a
+    // deterministic id collision check. We do both: slug collision + query.
+    const dupSnap = await transaction.get(
+      gameRef.collection('teams').where('name', '==', teamName).limit(1)
+    );
+    if (!dupSnap.empty) {
+      throw new HttpsError('already-exists', 'A team with that name already exists in this game.');
+    }
+
+    // Slug-collision check: if `baseSlug` is taken by a different team,
+    // append a short suffix until we find a free id.
+    let teamRef = gameRef.collection('teams').doc(baseSlug);
+    let tSnap = await transaction.get(teamRef);
+    let attempts = 0;
+    while (tSnap.exists && attempts < 6) {
+      resolvedTeamId = `${baseSlug}-${Math.random().toString(36).slice(2, 5)}`;
+      teamRef = gameRef.collection('teams').doc(resolvedTeamId);
+      tSnap = await transaction.get(teamRef);
+      attempts++;
+    }
+    if (tSnap.exists) {
+      throw new HttpsError('aborted', 'Could not allocate a unique team id. Try a slightly different name.');
+    }
+
+    transaction.set(teamRef, {
+      name: teamName,
+      teamId: resolvedTeamId,
+      logoUrl,
+      createdBy: auth.uid,
+      roleAssignments: { [auth.uid]: 'finance' },  // first seat in ROLES_ORDER
+      memberCount: 1,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    // Player doc: mirror the `joinGame` shape so downstream writers
+    // (submitDecision, submitBids, resetPendingPlayerStateForRound) can't
+    // tell the two entry paths apart.
+    if (pSnap.exists) {
+      transaction.update(playerRef, {
+        displayName,
+        bakeryName: teamName,
+        teamId: resolvedTeamId,
+        role: 'finance',
+        teamLogoUrl: logoUrl,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    } else {
+      transaction.set(playerRef, {
+        uid: auth.uid,
+        playerId: auth.uid,
+        displayName,
+        bakeryName: teamName,
+        teamId: resolvedTeamId,
+        role: 'finance',
+        joinedAt: FieldValue.serverTimestamp(),
+        budgetCurrent: config.startingBudget,
+        cumulativeRevenue: 0,
+        specialtyChefs: [],
+        sousChefCount: 0,
+        returningCustomersPending: 0,
+        consecutiveMissedRounds: 0,
+        disconnected: false,
+        pendingDecision: { submitted: false },
+        pendingBids: { ad: null, chef: null },
+        pendingRosterAction: false,
+        lastRoundResult: null,
+        teamLogoUrl: logoUrl,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      transaction.set(rosterRef, {
+        uid: auth.uid,
+        displayName,
+        bakeryName: teamName,
+        joinedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      transaction.update(gameRef, {
+        totalPlayers: FieldValue.increment(1),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
+  });
+
+  return {
+    gameId: gameRef.id,
+    playerId: auth.uid,
+    teamId: resolvedTeamId,
+    teamName,
+    logoUrl,
+  };
+});
+
+// ===========================================================================
+// getTeamsInLobby (BE-R02)
+// ===========================================================================
+//
+// Return the list of teams currently in a game's lobby so the join-team
+// form can render a selectable grid. No professor auth required — the
+// lobby is public to anyone with the join code.
+//
+// Input:  { joinCode }
+// Output: { teams: [{ teamId, name, logoUrl, memberCount }] }
+
+exports.getTeamsInLobby = onCall(CALLABLE_OPTS, async (request) => {
+  const auth = requireAuth(request, 'Sign in before browsing teams.');
+  const joinCode = cleanString((request.data || {}).joinCode).toUpperCase();
+  if (!/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/.test(joinCode)) {
+    throw new HttpsError('invalid-argument', 'joinCode must be a 6-character game code.');
+  }
+
+  const gameSnap = await db
+    .collection('games')
+    .where('joinCode', '==', joinCode)
+    .limit(1)
+    .get();
+  if (gameSnap.empty) {
+    throw new HttpsError('not-found', 'No game exists for that join code.');
+  }
+
+  const gameRef = gameSnap.docs[0].ref;
+
+  // Surface "game already started" here instead of waiting for joinGame to
+  // reject after the student has already selected a team. Returning players
+  // (existing player doc) are exempt so they can still rejoin mid-game via
+  // the team picker — joinGame's rejoin path stays open at any phase.
+  if (gameSnap.docs[0].get('phase') !== 'lobby') {
+    const existingPlayer = await gameRef.collection('players').doc(auth.uid).get();
+    if (!existingPlayer.exists) {
+      throw new HttpsError('failed-precondition', 'This game has already started and isn\'t accepting new players.');
+    }
+  }
+
+  const teamsSnap = await gameRef.collection('teams').get();
+
+  const teams = teamsSnap.docs.map((d) => {
+    const data = d.data() || {};
+    const roleAssignments = (data.roleAssignments && typeof data.roleAssignments === 'object')
+      ? data.roleAssignments : {};
+    return {
+      teamId: d.id,
+      name: typeof data.name === 'string' ? data.name : d.id,
+      logoUrl: typeof data.logoUrl === 'string' ? data.logoUrl : null,
+      memberCount: numberOrDefault(data.memberCount, Object.keys(roleAssignments).length),
+    };
+  });
+
+  return { teams };
 });
 
 // ===========================================================================
@@ -1068,6 +1401,16 @@ exports.advanceGamePhase = onCall(CALLABLE_OPTS, async (request) => {
 
   try {
     if (basePhaseName === 'email' && round >= 1) {
+      // BE-R04: on every round transition into `email`, wipe round-scoped
+      // pending state on every player so Round N doesn't surface Round N-1
+      // submitted bids / decision flags. `productPrices` carries over on
+      // purpose (POST-01). `pendingRosterAction` is round-scoped — it's set
+      // when the chef auction leaves a player over the cap and should not
+      // survive into the next round's email screen. For round 1 this is a
+      // no-op since all fields are already at their join-time defaults, but
+      // it's idempotent and cheap so we run it unconditionally.
+      await resetPendingPlayerStateForRound(gameRef);
+
       // Write the market-insight email for the entering round.
       const prefs = await loadRoundPreferences(gameRef, round);
       const insight = marketInsightModule.buildMarketInsightEmail({ round, preferences: prefs, config });

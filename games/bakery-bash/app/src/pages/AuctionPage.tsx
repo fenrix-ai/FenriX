@@ -216,9 +216,14 @@ export function AuctionPage() {
   const dispatch = useGameDispatch();
 
   const [activeTab, setActiveTabLocal] = useState<AuctionTab>("ads");
-  const [placeholderPool] = useState<ChefListing[]>(() =>
+  // FE-R09: regenerate the cosmetic placeholder each round so the pre-
+  // backend-snapshot flash doesn't show last round's placeholder chefs.
+  const [placeholderPool, setPlaceholderPool] = useState<ChefListing[]>(() =>
     generateChefPool(currentRound)
   );
+  useEffect(() => {
+    setPlaceholderPool(generateChefPool(currentRound));
+  }, [currentRound]);
   // Backend pool (when present) takes priority over the cosmetic placeholder.
   // `null` means "not yet loaded"; `[]` means "loaded, but empty."
   const [backendPool, setBackendPool] = useState<ChefListing[] | null>(null);
@@ -256,9 +261,17 @@ export function AuctionPage() {
   // when it enters an auction phase. Until that doc materializes we render
   // the local placeholder; once it does, we render real chef IDs so the
   // `submitBids` callable accepts the bids.
+  //
+  // FE-R09: when `currentRound` changes, proactively clear all
+  // round-scoped local state (backend pool, live top-bids, per-chef input
+  // strings) so Round N's auction screen never flashes Round N-1's data
+  // before the new round's snapshot arrives.
   useEffect(() => {
+    setBackendPool(null);
+    setTopBidsAd({});
+    setTopBidsChef({});
+    setChefBidInputs({});
     if (!gameId || !currentRound) {
-      setBackendPool(null);
       return;
     }
     const roundRef = doc(db, "games", gameId, "rounds", `round_${currentRound}`);

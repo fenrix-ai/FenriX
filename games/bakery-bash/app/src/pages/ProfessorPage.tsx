@@ -632,9 +632,9 @@ export function ProfessorPage() {
           roster: roleOwnsRoster,
           lobby: null,
           email: null,
-          simulate: null,
-          results: null,
-          conclusion: null,
+          simulating: null,
+          results_ready: null,
+          game_over: null,
         };
         const check = currentBasePhase ? ownerCheck[currentBasePhase] : null;
         const teamOwnerUid = (team: ProfessorTeamEntry): string | null => {
@@ -833,9 +833,9 @@ export function ProfessorPage() {
                   roster: findOwnerUid(roleOwnsRoster),
                   lobby: null,
                   email: null,
-                  simulate: null,
-                  results: null,
-                  conclusion: null,
+                  simulating: null,
+                  results_ready: null,
+                  game_over: null,
                 };
                 return (
                   <tr key={team.teamId}>
