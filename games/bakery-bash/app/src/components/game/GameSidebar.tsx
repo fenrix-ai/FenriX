@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { httpsCallable } from "firebase/functions";
-import { useGame } from "../../contexts/GameContext";
+import { useGame, useGameDispatch } from "../../contexts/GameContext";
 import { functions } from "../../lib/firebase";
 import { StaffTab } from "./tabs/StaffTab";
 import { StatusTab } from "./tabs/StatusTab";
+import type { AcquiredCsv } from "../../types/game";
 
 /**
  * Right-hand control panel for the decide phase. Two tabs:
@@ -13,24 +14,20 @@ import { StatusTab } from "./tabs/StatusTab";
  *  - **Status**: read-only health/cleanliness bars. Product quantities live
  *    on the main BakeryView (station grid), not here.
  *
- * Note (FE-07, April 19): the prior `<BudgetSummary>` panel was removed
- * from the sidebar per the updated decide-phase spec ("no budget"). The
- * component file is retained in case the spec flips again, but it is no
- * longer mounted anywhere during play. Budget display is now restricted
- * to `/game/conclusion` and the professor leaderboard only (Hard UI
- * Rule #1, non-overridden).
+ * Data purchases (competitor intel + Tier 1/Tier 2 chef CSVs) live below
+ * the tabs and are role-gated to Finance. Each purchase drops an entry
+ * into `acquiredCsvs` on the game context so the CSV Inbox popup can
+ * redownload it later without re-charging the team.
  */
 const TABS = ["Hire", "Status"] as const;
 type Tab = (typeof TABS)[number];
 const tabId = (tab: Tab) => `game-sidebar-tab-${tab.toLowerCase()}`;
 const panelId = (tab: Tab) => `game-sidebar-panel-${tab.toLowerCase()}`;
 
-/**
- * FE-9 — `readOnly` is threaded into `StaffTab` so the steppers and
- * maintenance dropdowns lock once the player submits. The Status tab is
- * always read-only by nature (health bars, no inputs) so it ignores the
- * prop.
- */
+const TIER1_COST = 2500;
+const TIER2_COST = 7500;
+const COMPETITOR_INTEL_COST = 5000;
+
 export interface GameSidebarProps {
   readOnly?: boolean;
 }
@@ -38,22 +35,105 @@ export interface GameSidebarProps {
 export function GameSidebar({ readOnly = false }: GameSidebarProps) {
   const [activeTab, setActiveTab] = useState<Tab>("Hire");
   const [showIntelConfirm, setShowIntelConfirm] = useState(false);
-  const [intelCsv, setIntelCsv] = useState<string | null>(null);
+  const [pending, setPending] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const [purchasedThisSession, setPurchasedThisSession] = useState<
+    Record<string, boolean>
+  >({});
 
-  const { gameId, role, currentRound } = useGame();
+  const { gameId, role, currentRound, acquiredCsvs } = useGame();
+  const dispatch = useGameDispatch();
+
+  const addCsv = (entry: AcquiredCsv) => {
+    dispatch({ type: "ADD_ACQUIRED_CSV", payload: entry });
+  };
 
   const handlePurchaseIntel = async () => {
     if (!gameId) return;
     setShowIntelConfirm(false);
+    setPending("intel");
+    setError(null);
+    setInfo(null);
     try {
+      const prevRound = (currentRound ?? 1) - 1;
       const purchaseFn = httpsCallable(functions, "purchaseCompetitorInsight");
-      const result = await purchaseFn({ gameId, round: (currentRound ?? 1) - 1 });
+      const result = await purchaseFn({ gameId, round: prevRound });
       const data = result.data as { csv: string };
-      setIntelCsv(data.csv);
-    } catch (err: any) {
-      alert(err.message || "Could not purchase insight.");
+      // Stable, round-scoped id so ADD_ACQUIRED_CSV's dedupe-by-id actually
+      // collapses repeat purchases into a single inbox entry (no Date.now).
+      addCsv({
+        id: `competitor-intel-round-${prevRound}`,
+        kind: "competitor-intel",
+        label: `Round ${prevRound} competitor intel`,
+        round: prevRound,
+        acquiredAtMs: Date.now(),
+        csv: data.csv,
+        filename: `competitor-intel-round-${prevRound}.csv`,
+      });
+      setInfo("Intel added to your CSV Inbox.");
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Could not purchase insight.";
+      setError(message);
+    } finally {
+      setPending(null);
     }
   };
+
+  const handlePurchaseChefData = async (tier: 1 | 2) => {
+    if (!gameId) return;
+    setPending(`chef-tier${tier}`);
+    setError(null);
+    setInfo(null);
+    try {
+      const purchaseFn = httpsCallable(functions, "purchaseChefData");
+      const result = await purchaseFn({ gameId, tier });
+      const data = result.data as { csv: string };
+      // Stable id — one inbox entry per tier, no Date.now sprinkle that would
+      // bypass ADD_ACQUIRED_CSV dedupe on accidental double-submits.
+      addCsv({
+        id: `chef-tier${tier}`,
+        kind: tier === 1 ? "chef-tier1" : "chef-tier2",
+        label:
+          tier === 1
+            ? "Specialty chef nationality → product map"
+            : "Full chef profile dump",
+        round: currentRound ?? undefined,
+        acquiredAtMs: Date.now(),
+        csv: data.csv,
+        filename:
+          tier === 1
+            ? "chef-specialties.csv"
+            : "chef-profiles.csv",
+      });
+      setPurchasedThisSession((prev) => ({ ...prev, [`tier${tier}`]: true }));
+      setInfo(`Tier ${tier} chef data added to your CSV Inbox.`);
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Could not purchase chef data.";
+      setError(message);
+    } finally {
+      setPending(null);
+    }
+  };
+
+  const isFinance = role === "finance" || role === "solo";
+  const canPurchase = isFinance && !readOnly && !!gameId;
+  const prevRound = (currentRound ?? 1) - 1;
+  // Intel is round-scoped; "already bought" means specifically for the round
+  // the button would purchase, so navigating to a new round re-enables it.
+  const hasIntelForPrevRound = acquiredCsvs.some(
+    (c) => c.kind === "competitor-intel" && c.round === prevRound,
+  );
+  const hasTier1 =
+    purchasedThisSession.tier1 ||
+    acquiredCsvs.some((c) => c.kind === "chef-tier1");
+  const hasTier2 =
+    purchasedThisSession.tier2 ||
+    acquiredCsvs.some((c) => c.kind === "chef-tier2");
 
   return (
     <aside className="game-sidebar">
@@ -86,26 +166,95 @@ export function GameSidebar({ readOnly = false }: GameSidebarProps) {
         {activeTab === "Status" && <StatusTab />}
       </div>
 
-      {role === "finance" && (currentRound ?? 0) > 1 && (
-        <div className="sidebar__intel-section">
-          <button
-            className="btn btn--secondary btn--small sidebar__intel-btn"
-            onClick={() => setShowIntelConfirm(true)}
-          >
-            Buy Competitor Intel — $5,000
-          </button>
-          {showIntelConfirm && (
-            <div className="sidebar__intel-confirm">
-              <p>Spend $5,000 to see all teams' submitted quantities and prices from last round?</p>
-              <button className="btn btn--primary btn--small" onClick={handlePurchaseIntel}>Confirm</button>
-              <button className="btn btn--ghost btn--small" onClick={() => setShowIntelConfirm(false)}>Cancel</button>
+      {canPurchase && (
+        <div className="sidebar__data-section">
+          <h3 className="sidebar__data-title">Purchasable Data</h3>
+
+          {(currentRound ?? 0) > 1 && (
+            <div className="sidebar__intel-section">
+              <button
+                className="btn btn--secondary btn--small sidebar__intel-btn"
+                onClick={() => setShowIntelConfirm(true)}
+                disabled={pending !== null || hasIntelForPrevRound}
+                title={
+                  hasIntelForPrevRound
+                    ? `Round ${prevRound} intel is already in your CSV Inbox.`
+                    : undefined
+                }
+              >
+                {hasIntelForPrevRound
+                  ? `Competitor Intel (R${prevRound}) ✓ Purchased`
+                  : `Buy Competitor Intel — $${COMPETITOR_INTEL_COST.toLocaleString()}`}
+              </button>
+              {showIntelConfirm && !hasIntelForPrevRound && (
+                <div className="sidebar__intel-confirm">
+                  <p>
+                    Spend ${COMPETITOR_INTEL_COST.toLocaleString()} to see all
+                    teams' submitted quantities and prices from last round?
+                  </p>
+                  <button
+                    className="btn btn--primary btn--small"
+                    onClick={handlePurchaseIntel}
+                    disabled={pending !== null}
+                  >
+                    Confirm
+                  </button>
+                  <button
+                    className="btn btn--ghost btn--small"
+                    onClick={() => setShowIntelConfirm(false)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
             </div>
           )}
-          {intelCsv && (
-            <div className="sidebar__intel-result">
-              <p>Intel purchased! <a download="competitor-intel.csv" href={`data:text/csv;charset=utf-8,${encodeURIComponent(intelCsv)}`}>Download CSV</a></p>
-              <button className="btn btn--ghost btn--small" onClick={() => setIntelCsv(null)}>Close</button>
-            </div>
+
+          <div className="sidebar__chef-data">
+            <button
+              type="button"
+              className="btn btn--secondary btn--small sidebar__chef-data-btn"
+              onClick={() => void handlePurchaseChefData(1)}
+              disabled={pending !== null || hasTier1}
+              title={
+                hasTier1
+                  ? "Tier 1 chef data is already in your CSV Inbox."
+                  : "Table of chef nationalities → product specialties."
+              }
+            >
+              {hasTier1
+                ? "Chef Specialties (T1) ✓ Purchased"
+                : `Buy Chef Specialties (T1) — $${TIER1_COST.toLocaleString()}`}
+            </button>
+            <p className="sidebar__chef-data-hint">
+              Tier 1 — See which nationality bakes which products best.
+            </p>
+
+            <button
+              type="button"
+              className="btn btn--secondary btn--small sidebar__chef-data-btn"
+              onClick={() => void handlePurchaseChefData(2)}
+              disabled={pending !== null || hasTier2}
+              title={
+                hasTier2
+                  ? "Tier 2 chef data is already in your CSV Inbox."
+                  : "Full profile dump: skill, satisfaction, avg production + revenue, 30+ chefs per nationality."
+              }
+            >
+              {hasTier2
+                ? "Chef Profiles (T2) ✓ Purchased"
+                : `Buy Chef Profiles (T2) — $${TIER2_COST.toLocaleString()}`}
+            </button>
+            <p className="sidebar__chef-data-hint">
+              Tier 2 — Full chef-by-chef profile CSV (30+ per nationality).
+            </p>
+          </div>
+
+          {info && <p className="sidebar__data-info">{info}</p>}
+          {error && (
+            <p className="sidebar__data-error" role="alert">
+              {error}
+            </p>
           )}
         </div>
       )}

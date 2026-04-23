@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" shape-rendering="crispEdges">
+  <!-- Placeholder pixel-art food safety inspector. Replace with the final asset once the art team delivers. -->
+  <rect width="64" height="64" fill="#e6f4ea"/>
+  <!-- Head -->
+  <rect x="20" y="12" width="24" height="22" fill="#f1c27d"/>
+  <!-- Hair -->
+  <rect x="18" y="10" width="28" height="6" fill="#4a2c0a"/>
+  <!-- Glasses -->
+  <rect x="22" y="20" width="8" height="6" fill="none" stroke="#111" stroke-width="1.5"/>
+  <rect x="34" y="20" width="8" height="6" fill="none" stroke="#111" stroke-width="1.5"/>
+  <line x1="30" y1="22" x2="34" y2="22" stroke="#111" stroke-width="1.5"/>
+  <!-- Mustache -->
+  <rect x="26" y="28" width="12" height="2" fill="#4a2c0a"/>
+  <!-- Body: white lab coat -->
+  <rect x="14" y="34" width="36" height="24" fill="#ffffff" stroke="#111" stroke-width="1"/>
+  <!-- Clipboard -->
+  <rect x="40" y="40" width="14" height="18" fill="#cdb38e" stroke="#111" stroke-width="1"/>
+  <rect x="44" y="38" width="6" height="4" fill="#888"/>
+  <line x1="42" y1="45" x2="52" y2="45" stroke="#111" stroke-width="0.5"/>
+  <line x1="42" y1="49" x2="52" y2="49" stroke="#111" stroke-width="0.5"/>
+  <line x1="42" y1="53" x2="52" y2="53" stroke="#111" stroke-width="0.5"/>
+  <!-- Badge -->
+  <rect x="18" y="38" width="6" height="3" fill="#1f8b4c"/>
+</svg>

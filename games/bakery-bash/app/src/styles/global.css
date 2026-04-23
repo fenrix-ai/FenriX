@@ -250,6 +250,205 @@ h3 { font-size: 0.7rem; }
   border: 2px solid var(--berry);
 }
 
+/* Apr 22 — primary Create/Join buttons + created-team card. */
+.landing-page__shared-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  text-align: left;
+}
+
+.landing-page__primary-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.landing-page__primary-actions .btn {
+  width: 100%;
+  margin: 0;
+}
+
+.landing-page__created-team {
+  background: rgba(255, 244, 214, 0.85);
+  border: 2px solid var(--caramel);
+  border-radius: 10px;
+  padding: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.landing-page__created-team-label {
+  font-family: var(--font-pixel);
+  font-size: 0.45rem;
+  color: var(--caramel);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.35rem;
+}
+
+.landing-page__created-team-card {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.landing-page__created-team-logo {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: var(--cream);
+  border: 2px solid var(--caramel);
+}
+
+.landing-page__created-team-logo--placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+}
+
+.landing-page__created-team-name {
+  font-family: var(--font-body);
+  font-weight: 700;
+  color: var(--dark-roast);
+}
+
+/* Landing modals (Create Team / Join Team popups). */
+.landing-modal__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(38, 24, 12, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  z-index: 1000;
+}
+
+.landing-modal__panel {
+  background: var(--cream);
+  border: 3px solid var(--caramel);
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  padding: 1.5rem;
+  width: min(420px, 100%);
+  max-height: 80vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.landing-modal__panel--wide {
+  width: min(520px, 100%);
+}
+
+.landing-modal__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.landing-modal__title {
+  font-family: var(--font-pixel);
+  font-size: 0.85rem;
+  margin: 0;
+  color: var(--dark-roast);
+}
+
+.landing-modal__actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.landing-modal__actions .btn {
+  flex: 1;
+}
+
+.landing-modal__team-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.landing-modal__team-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  background: rgba(255, 244, 214, 0.8);
+  border: 2px solid var(--caramel);
+  border-radius: 10px;
+  cursor: pointer;
+  font-family: var(--font-body);
+  text-align: left;
+  transition: transform 0.12s, background 0.12s;
+}
+
+.landing-modal__team-btn:hover:not(:disabled) {
+  background: var(--cream);
+  transform: translateY(-1px);
+}
+
+.landing-modal__team-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.landing-modal__team-index {
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  background: var(--caramel);
+  color: var(--cream);
+  padding: 0.3rem 0.45rem;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.landing-modal__team-logo {
+  width: 42px;
+  height: 42px;
+  object-fit: cover;
+  border-radius: 8px;
+  background: var(--cream);
+  border: 2px solid var(--caramel);
+  flex-shrink: 0;
+}
+
+.landing-modal__team-logo--placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+}
+
+.landing-modal__team-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.landing-modal__team-name {
+  font-weight: 700;
+  color: var(--dark-roast);
+}
+
+.landing-modal__team-count {
+  font-size: 0.8rem;
+  color: var(--espresso);
+}
+
 /* FE-R01 — Create-Team vs Join-Team two-path flow */
 .landing-page__path-toggle {
   display: flex;
@@ -494,6 +693,138 @@ h3 { font-size: 0.7rem; }
   image-rendering: pixelated;
 }
 
+.round-header__csv-inbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.65rem;
+  background: var(--caramel);
+  color: var(--cream);
+  border: 2px solid var(--dark-roast);
+  border-radius: 8px;
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  box-shadow: 0 2px 0 var(--dark-roast);
+}
+
+.round-header__csv-inbox:hover {
+  background: var(--dark-roast);
+  transform: scale(1.05);
+}
+
+.round-header__csv-inbox-icon {
+  width: 20px !important;
+  height: 20px !important;
+  filter: brightness(2) invert(0);
+}
+
+.round-header__csv-inbox-label {
+  white-space: nowrap;
+}
+
+/* ─── CSV Inbox modal ─────────────────────────────────── */
+
+.csv-inbox__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(38, 24, 12, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1.5rem;
+}
+
+.csv-inbox__panel {
+  background: var(--cream);
+  border: 3px solid var(--caramel);
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  width: min(560px, 100%);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  padding: 1.25rem 1.25rem 1rem;
+}
+
+.csv-inbox__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.csv-inbox__title {
+  font-family: var(--font-pixel);
+  font-size: 0.85rem;
+  color: var(--dark-roast);
+  margin: 0;
+}
+
+.csv-inbox__hint {
+  font-family: var(--font-body);
+  color: var(--espresso);
+  font-size: 0.85rem;
+  margin: 0 0 0.75rem;
+}
+
+.csv-inbox__list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.csv-inbox__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  background: rgba(255, 244, 214, 0.9);
+  border: 2px solid var(--caramel);
+  border-radius: 10px;
+}
+
+.csv-inbox__item--empty {
+  justify-content: center;
+  font-family: var(--font-body);
+  color: var(--dark-roast);
+  text-align: center;
+}
+
+.csv-inbox__item-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.csv-inbox__kind {
+  font-family: var(--font-pixel);
+  font-size: 0.45rem;
+  color: var(--caramel);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.csv-inbox__label {
+  font-family: var(--font-body);
+  font-weight: 600;
+  color: var(--dark-roast);
+}
+
+.csv-inbox__sub {
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  color: var(--espresso);
+}
+
 .round-header__round {
   font-family: var(--font-pixel);
   font-size: 0.6rem;
@@ -509,6 +840,14 @@ h3 { font-size: 0.7rem; }
 .round-header__timer--urgent {
   color: var(--berry);
   animation: blink 0.6s step-end infinite;
+}
+
+.round-header__timer-label {
+  display: block;
+  font-size: 0.5rem;
+  color: var(--dark-roast);
+  letter-spacing: 0.04em;
+  margin-bottom: 0.15rem;
 }
 
 @keyframes blink {
@@ -1595,6 +1934,83 @@ h3 { font-size: 0.7rem; }
   border-color: var(--caramel);
 }
 
+/* Horizontal chef card — character asset on the left, details on the right. */
+.auction-chef--horizontal {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 1rem;
+  text-align: left;
+}
+
+.auction-chef__portrait--side {
+  flex: 0 0 auto;
+  width: 96px;
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--cream);
+  border-right: 2px solid var(--caramel);
+  padding: 0.5rem;
+}
+
+.auction-chef--horizontal .auction-chef__portrait--side .auction-chef__icon {
+  max-width: 80px;
+  max-height: 100px;
+}
+
+.auction-chef__body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  min-width: 0;
+}
+
+.auction-chef__header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.auction-chef__bids-row {
+  display: flex;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.auction-chef__min-bid {
+  display: flex;
+  flex-direction: column;
+}
+
+.auction-chef__min-bid-label {
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  color: var(--dark-roast);
+}
+
+.auction-chef__min-bid-value {
+  font-family: var(--font-body);
+  font-weight: 600;
+  color: var(--espresso);
+}
+
+.auction-chef__bid-input--error {
+  border-color: var(--berry) !important;
+  background: rgba(220, 58, 90, 0.08);
+}
+
+.auction-chef__bid-error {
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  color: var(--berry);
+  margin: 0.2rem 0 0;
+}
+
 /* ─── Advertisements Grid ───────────────────────────────── */
 
 .auction-ads__grid {
@@ -1863,6 +2279,20 @@ h3 { font-size: 0.7rem; }
 
 .professor-page {
   align-items: center;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 244, 214, 0.96) 0%,
+    rgba(248, 223, 180, 0.96) 100%
+  );
+  border: 2px solid var(--caramel);
+  border-radius: 16px;
+  padding: 2rem 1.5rem;
+  box-shadow: 0 8px 24px rgba(104, 70, 30, 0.15);
+}
+
+.professor-page--standalone {
+  margin: 1.5rem auto;
+  max-width: 960px;
 }
 
 .professor-page__title {
@@ -3351,6 +3781,51 @@ h3 { font-size: 0.7rem; }
 .how-to-play__card-label   { display: inline-block; background: var(--caramel, #d97706); color: #fff; font-size: 0.75rem; font-weight: bold; padding: 0.2rem 0.6rem; border-radius: 4px; margin-bottom: 0.6rem; text-transform: uppercase; letter-spacing: 0.05em; }
 .how-to-play__card-tagline { font-size: 1.1rem; font-weight: bold; margin: 0 0 0.5rem; }
 .how-to-play__card-body    { font-size: 0.9rem; line-height: 1.6; margin: 0; color: #444; }
+
+.how-to-play__chef-tiers {
+  margin-top: 1.5rem;
+  background: var(--cream, #fff7e6);
+  border: 2px solid var(--caramel, #d97706);
+  border-radius: 10px;
+  padding: 1.25rem;
+}
+
+.how-to-play__chef-tiers-title {
+  font-family: var(--font-pixel);
+  font-size: 0.75rem;
+  color: var(--dark-roast);
+  margin: 0 0 0.4rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.how-to-play__chef-tiers-hint {
+  font-size: 0.9rem;
+  color: #444;
+  margin: 0 0 0.75rem;
+}
+
+.how-to-play__chef-tier-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.how-to-play__chef-tier-table th,
+.how-to-play__chef-tier-table td {
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid var(--caramel, #d97706);
+  text-align: left;
+}
+
+.how-to-play__chef-tier-table th {
+  font-family: var(--font-pixel);
+  font-size: 0.55rem;
+  color: var(--dark-roast);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
 .landing-page__how-to-play-link { display: block; text-align: center; font-size: 0.85rem; color: var(--caramel, #d97706); margin-top: 0.5rem; text-decoration: underline; }
 
 /* ── Phase banner ───────────────────────────────────────────────────── */
@@ -3385,10 +3860,60 @@ h3 { font-size: 0.7rem; }
 .round-header__timer-expired { font-size: 0.85rem; color: var(--berry, #ef4444); font-weight: bold; }
 
 /* ── FE-N09: Competitor intel sidebar section ────────────────────────── */
-.sidebar__intel-section { padding: 0.75rem; border-top: 1px solid #eee; }
+.sidebar__intel-section { padding: 0.75rem 0; }
 .sidebar__intel-btn     { width: 100%; font-size: 0.8rem; }
 .sidebar__intel-confirm { background: var(--cream, #fff7e6); border-radius: 6px; padding: 0.75rem; margin-top: 0.5rem; font-size: 0.85rem; }
 .sidebar__intel-result  { margin-top: 0.5rem; font-size: 0.85rem; }
+
+.sidebar__data-section {
+  padding: 0.75rem;
+  border-top: 2px solid var(--caramel);
+  margin-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.sidebar__data-title {
+  font-family: var(--font-pixel);
+  font-size: 0.55rem;
+  color: var(--dark-roast);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 0.25rem;
+  text-align: center;
+}
+
+.sidebar__chef-data {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.sidebar__chef-data-btn {
+  width: 100%;
+  font-size: 0.75rem;
+}
+
+.sidebar__chef-data-hint {
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  color: var(--espresso);
+  margin: 0 0 0.25rem;
+  line-height: 1.3;
+}
+
+.sidebar__data-info {
+  color: var(--sage);
+  font-size: 0.8rem;
+  margin: 0.25rem 0 0;
+}
+
+.sidebar__data-error {
+  color: var(--berry);
+  font-size: 0.8rem;
+  margin: 0.25rem 0 0;
+}
 
 /* ── Results phase — metric cards ───────────────────────────────────── */
 .results-phase__metric-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
@@ -3408,6 +3933,95 @@ h3 { font-size: 0.7rem; }
 .results-phase__team-revenue    { font-weight: bold; }
 /* ── Burglar banner ─────────────────────────────────────────────────── */
 .results-phase__burglar-banner  { background: #fee2e2; border: 2px solid #ef4444; border-radius: 6px; padding: 0.75rem 1rem; color: #991b1b; font-weight: bold; margin: 1rem 0; }
+
+/* Curveball event cards (Results page). */
+.results-phase__events {
+  margin-top: 1rem;
+}
+
+.results-phase__event-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.event-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border-radius: 10px;
+  border: 2px solid var(--caramel);
+  background: var(--cream);
+}
+
+.event-card--burglary {
+  border-color: #ef4444;
+  background: #fff1f1;
+}
+
+.event-card--inspection {
+  border-color: var(--caramel);
+  background: rgba(255, 244, 214, 0.9);
+}
+
+.event-card--inspection-poor {
+  border-color: #ef4444;
+  background: #fff1f1;
+}
+
+.event-card--inspection-sufficient {
+  border-color: var(--honey);
+  background: #fff7e6;
+}
+
+.event-card--inspection-good {
+  border-color: var(--lime);
+  background: #f0fff4;
+}
+
+.event-card--inspection-excellent {
+  border-color: var(--sage);
+  background: #ecfdf5;
+}
+
+.event-card__asset {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  image-rendering: pixelated;
+}
+
+.event-card__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.event-card__title {
+  font-family: var(--font-pixel);
+  font-size: 0.7rem;
+  color: var(--dark-roast);
+  margin: 0 0 0.3rem;
+}
+
+.event-card__meta {
+  margin: 0.15rem 0;
+  font-size: 0.85rem;
+  color: var(--espresso);
+}
+
+.event-card__meta--loss {
+  color: #b91c1c;
+  font-weight: 700;
+}
+
+.event-card__hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.78rem;
+  color: #6b4b28;
+  font-style: italic;
+}
 
 /* ── Simulate phase ─────────────────────────────────────────────────── */
 .simulate-phase__burglar-banner { background: #fee2e2; border: 2px solid #ef4444; border-radius: 6px; padding: 0.75rem 1rem; color: #991b1b; font-weight: bold; margin: 0.75rem 1rem; }
@@ -3447,3 +4061,757 @@ h3 { font-size: 0.7rem; }
 .simulate-phase__bar-pct       { font-size: 0.75rem; }
 .simulate-phase__waiting       { font-size: 0.8rem; color: #999; margin-top: 1rem; }
 @media (prefers-reduced-motion: reduce) { .simulate-phase__customer { animation: none; } }
+
+/* ─── Bakery interior (Apr 22 simulation rework) ───────── */
+.simulate-phase__month-label {
+  font-family: var(--font-pixel);
+  font-size: 0.7rem;
+  color: var(--honey);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.simulate-phase__bakery-interior {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: auto auto auto auto;
+  grid-template-areas:
+    "back    back"
+    "stations stations"
+    "case    case"
+    "front   front";
+  gap: 1rem;
+  padding: 1rem 1.5rem 1.5rem;
+  background: linear-gradient(180deg, #d2b48c 0%, #a98155 50%, #8b5e34 100%);
+  border-radius: 12px;
+  margin: 0 1.5rem;
+  color: #2a1a0a;
+}
+
+.simulate-phase--night .simulate-phase__bakery-interior {
+  filter: brightness(0.75) saturate(0.9);
+}
+
+.bakery-interior__back-wall {
+  grid-area: back;
+  display: grid;
+  grid-template-columns: 1fr 2fr 1fr;
+  gap: 1rem;
+  align-items: stretch;
+  background: #7a522d;
+  border: 3px solid #3b230e;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.bakery-interior__oven {
+  background: #2e1a0a;
+  border: 3px solid #1a0b03;
+  border-radius: 6px;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  color: #ffd49a;
+  font-family: var(--font-pixel);
+  font-size: 0.6rem;
+}
+
+.bakery-interior__oven-glow {
+  width: 60%;
+  height: 24px;
+  background: radial-gradient(ellipse at center, #ff9a3c 0%, #c94a1a 60%, #3b1106 100%);
+  border-radius: 4px;
+  box-shadow: 0 0 12px #ff9a3c;
+  margin-bottom: 0.4rem;
+  animation: ovenPulse 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes ovenPulse {
+  from { filter: brightness(0.9); }
+  to   { filter: brightness(1.2); }
+}
+
+.bakery-interior__prep-line {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 0.35rem;
+  background: #b98c5a;
+  border: 2px solid #4b2d10;
+  border-radius: 6px;
+  padding: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.bakery-interior__chef {
+  width: 36px;
+  height: auto;
+  image-rendering: pixelated;
+}
+
+.bakery-interior__barista-bar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-around;
+  background: #3b230e;
+  border: 3px solid #1a0b03;
+  border-radius: 6px;
+  padding: 0.4rem;
+  gap: 0.3rem;
+  color: #f4d7a6;
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+}
+
+.bakery-interior__barista-machine {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: #5a3a1c;
+  padding: 0.3rem 0.5rem;
+  border-radius: 4px;
+  font-size: 1.3rem;
+}
+
+.bakery-interior__barista-machine small {
+  font-size: 0.45rem;
+  margin-top: 0.1rem;
+  letter-spacing: 0.05em;
+}
+
+.bakery-interior__sous-chef {
+  width: 30px;
+  height: auto;
+  image-rendering: pixelated;
+}
+
+.bakery-interior__stations {
+  grid-area: stations;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.bakery-interior__station {
+  background: rgba(255, 244, 214, 0.7);
+  border: 2px solid #4b2d10;
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.bakery-interior__station-label {
+  font-family: var(--font-pixel);
+  font-size: 0.55rem;
+  color: #3b230e;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.bakery-interior__station-staff {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+  justify-content: center;
+  min-height: 36px;
+}
+
+.bakery-interior__maintenance-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(42, 66, 110, 0.2);
+  border: 2px dashed #1a2f55;
+  border-radius: 8px;
+  padding: 0.4rem;
+  min-height: 44px;
+}
+
+.bakery-interior__maintenance {
+  width: 32px;
+  height: auto;
+  image-rendering: pixelated;
+}
+
+.bakery-interior__display-case {
+  grid-area: case;
+  background: rgba(255, 255, 255, 0.9);
+  border: 3px solid #4b2d10;
+  border-radius: 10px;
+  padding: 0.75rem;
+  color: #3b230e;
+}
+
+.bakery-interior__display-case-label {
+  font-family: var(--font-pixel);
+  font-size: 0.6rem;
+  margin-bottom: 0.4rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.bakery-interior__menu {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 0.5rem;
+}
+
+.bakery-interior__menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #fff3d6;
+  border: 2px solid #d9a157;
+  border-radius: 6px;
+  padding: 0.4rem 0.55rem;
+  position: relative;
+  overflow: hidden;
+  transition: opacity 0.3s;
+}
+
+.bakery-interior__menu-icon {
+  width: 28px;
+  height: 28px;
+  image-rendering: pixelated;
+  flex-shrink: 0;
+}
+
+.bakery-interior__menu-name {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.85rem;
+  flex: 1;
+}
+
+.bakery-interior__menu-qty {
+  font-family: var(--font-pixel);
+  font-size: 0.55rem;
+  color: #5a3a1c;
+}
+
+.bakery-interior__menu-item--soldout {
+  opacity: 0.55;
+}
+
+.bakery-interior__soldout-stamp {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-12deg);
+  font-family: var(--font-pixel);
+  font-size: 0.75rem;
+  color: #b91c1c;
+  border: 3px solid #b91c1c;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.55);
+  letter-spacing: 0.08em;
+  pointer-events: none;
+  animation: soldOutStamp 0.4s ease-out;
+}
+
+@keyframes soldOutStamp {
+  from { transform: translate(-50%, -50%) rotate(-45deg) scale(2); opacity: 0; }
+  to   { transform: translate(-50%, -50%) rotate(-12deg) scale(1); opacity: 1; }
+}
+
+.bakery-interior__front {
+  grid-area: front;
+  display: grid;
+  grid-template-columns: 110px 1fr 120px;
+  gap: 0.75rem;
+  align-items: stretch;
+  background: #b98c5a;
+  border: 3px solid #4b2d10;
+  border-radius: 10px;
+  padding: 0.75rem;
+}
+
+.bakery-interior__register {
+  background: #3b230e;
+  border: 2px solid #1a0b03;
+  border-radius: 6px;
+  color: #f4d7a6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-pixel);
+  font-size: 0.6rem;
+  padding: 0.4rem;
+}
+
+.bakery-interior__register-top {
+  font-size: 1.5rem;
+  margin-bottom: 0.2rem;
+}
+
+.bakery-interior__customer-floor {
+  position: relative;
+  background: rgba(255, 244, 214, 0.8);
+  border: 2px dashed #4b2d10;
+  border-radius: 6px;
+  min-height: 80px;
+  overflow: hidden;
+}
+
+.bakery-interior__customer {
+  position: absolute;
+  bottom: 0.25rem;
+  width: 40px;
+  height: auto;
+  image-rendering: pixelated;
+  animation: customerWalk 1.6s ease-in-out infinite alternate;
+}
+
+.bakery-interior__closed {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-pixel);
+  font-size: 0.8rem;
+  color: #4b2d10;
+}
+
+.bakery-interior__ad {
+  background: #fff3d6;
+  border: 2px solid #4b2d10;
+  border-radius: 6px;
+  padding: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  color: #3b230e;
+}
+
+.bakery-interior__ad img {
+  width: 56px;
+  height: 56px;
+  margin-bottom: 0.3rem;
+}
+
+/* ─── Conclusion / Game Over page (Apr 22 polish pass) ─── */
+.conclusion-page {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 3rem;
+  position: relative;
+  overflow-x: hidden;
+}
+
+.conclusion-page__confetti {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.conclusion-page__confetti-piece {
+  position: absolute;
+  top: -10%;
+  width: 8px;
+  height: 16px;
+  border-radius: 2px;
+  opacity: 0.85;
+  animation: confettiFall 5s linear infinite;
+  transform-origin: center;
+}
+
+@keyframes confettiFall {
+  0%   { transform: translateY(-20px) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(120vh) rotate(720deg); opacity: 0.4; }
+}
+
+.conclusion-page > *:not(.conclusion-page__confetti) {
+  position: relative;
+  z-index: 1;
+}
+
+.conclusion-page__hero {
+  text-align: center;
+  margin-bottom: 2rem;
+  padding: 2rem 1rem 1.5rem;
+  background: linear-gradient(135deg, #fff3d6 0%, #f59e0b 100%);
+  border: 3px solid var(--caramel);
+  border-radius: 20px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+.conclusion-page__eyebrow {
+  font-family: var(--font-pixel);
+  font-size: 0.6rem;
+  color: var(--dark-roast);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 0.35rem;
+}
+
+.conclusion-page__title {
+  font-size: 1.8rem;
+  color: var(--dark-roast);
+  text-shadow: 3px 3px 0 rgba(255, 255, 255, 0.6);
+  margin: 0 0 0.4rem;
+}
+
+.conclusion-page__tagline {
+  font-family: var(--font-body);
+  color: var(--espresso);
+  font-size: 1rem;
+  margin: 0;
+}
+
+.conclusion-page__winner--hero {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 1.5rem;
+  background: linear-gradient(135deg, #fef3c7 0%, #f59e0b 100%);
+  border: 3px solid #b45309;
+  border-radius: 16px;
+  box-shadow: 0 6px 18px rgba(245, 158, 11, 0.3);
+  margin-bottom: 2rem;
+}
+
+.conclusion-page__winner-crown {
+  font-size: 3.5rem;
+  animation: crownBob 2.2s ease-in-out infinite alternate;
+}
+
+@keyframes crownBob {
+  from { transform: translateY(0) rotate(-4deg); }
+  to   { transform: translateY(-8px) rotate(4deg); }
+}
+
+.conclusion-page__winner-label {
+  font-family: var(--font-pixel);
+  font-size: 0.55rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #7c2d12;
+}
+
+.conclusion-page__winner-name {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--dark-roast);
+  margin: 0.2rem 0;
+}
+
+.conclusion-page__winner-you {
+  color: #b91c1c;
+}
+
+.conclusion-page__winner-revenue {
+  font-family: var(--font-body);
+  font-size: 1rem;
+  color: #7c2d12;
+}
+
+/* Podium row */
+.conclusion-page__podium {
+  margin: 1rem 0 2rem;
+}
+
+.conclusion-page__podium-row {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr 1fr;
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.podium {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.75rem 0.5rem 0;
+  border-radius: 10px 10px 0 0;
+  text-align: center;
+  min-width: 0;
+}
+
+.podium--gold   { background: linear-gradient(180deg, #fde68a, #f59e0b); order: 2; }
+.podium--silver { background: linear-gradient(180deg, #e5e7eb, #9ca3af); order: 1; }
+.podium--bronze { background: linear-gradient(180deg, #fcd9b6, #b45309); order: 3; }
+
+.podium__medal {
+  font-size: 2.3rem;
+  margin-bottom: 0.25rem;
+}
+
+.podium__bakery {
+  font-family: var(--font-body);
+  font-weight: 700;
+  color: var(--dark-roast);
+  font-size: 0.95rem;
+  line-height: 1.15;
+  margin-bottom: 0.15rem;
+  word-break: break-word;
+}
+
+.podium__revenue {
+  font-family: var(--font-pixel);
+  font-size: 0.6rem;
+  color: #3b230e;
+  margin-bottom: 0.5rem;
+}
+
+.podium__block {
+  width: 100%;
+  padding: 0.9rem 0;
+  background: rgba(0, 0, 0, 0.18);
+  color: var(--cream);
+  font-family: var(--font-pixel);
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+}
+
+.podium--gold   .podium__block { padding: 1.6rem 0; background: #b45309; }
+.podium--silver .podium__block { padding: 1.1rem 0; background: #374151; }
+.podium--bronze .podium__block { padding: 0.7rem 0; background: #78350f; }
+
+.podium--mine {
+  outline: 3px solid #ef4444;
+  outline-offset: 2px;
+}
+
+.conclusion-page__section-title {
+  font-family: var(--font-pixel);
+  font-size: 0.75rem;
+  color: var(--dark-roast);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin: 0 0 0.75rem;
+}
+
+.conclusion-page__yours-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 2rem;
+}
+
+.conclusion-page__stat {
+  background: var(--cream);
+  border: 2px solid var(--caramel);
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  text-align: center;
+  box-shadow: 0 2px 0 var(--caramel);
+}
+
+.conclusion-page__stat-label {
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  color: var(--caramel);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-bottom: 0.25rem;
+}
+
+.conclusion-page__stat-value {
+  font-family: var(--font-body);
+  font-weight: 800;
+  color: var(--dark-roast);
+  font-size: 1.15rem;
+}
+
+.conclusion-page__leaderboard,
+.conclusion-page__rounds {
+  background: var(--cream);
+  border: 2px solid var(--caramel);
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.conclusion-page__board-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.conclusion-page__board-table th,
+.conclusion-page__board-table td {
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid rgba(217, 161, 87, 0.4);
+  text-align: left;
+}
+
+.conclusion-page__board-table th {
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  color: var(--dark-roast);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.conclusion-page__board-row--you {
+  background: rgba(245, 158, 11, 0.18);
+  font-weight: 700;
+}
+
+.conclusion-page__round-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.conclusion-page__round-header {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.55rem 0.75rem;
+  background: #fff3d6;
+  border: 2px solid var(--caramel);
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-weight: 600;
+  color: var(--dark-roast);
+}
+
+.conclusion-page__round-num {
+  text-align: left;
+}
+
+.conclusion-page__round-rev {
+  font-family: var(--font-pixel);
+  font-size: 0.55rem;
+  color: var(--caramel);
+}
+
+.conclusion-page__round-body {
+  padding: 0.6rem 0.25rem 0;
+}
+
+.conclusion-page__round-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 0.4rem;
+}
+
+.conclusion-page__mini-kpi {
+  background: rgba(255, 244, 214, 0.8);
+  border: 1px solid var(--caramel);
+  border-radius: 6px;
+  padding: 0.35rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.conclusion-page__mini-kpi--warn {
+  background: #fef2f2;
+  border-color: #ef4444;
+  color: #b91c1c;
+}
+
+.conclusion-page__mini-kpi-label {
+  font-family: var(--font-pixel);
+  font-size: 0.45rem;
+  color: var(--caramel);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.conclusion-page__mini-kpi-value {
+  font-family: var(--font-body);
+  font-weight: 700;
+  color: var(--dark-roast);
+}
+
+.conclusion-page__footer {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+
+/* ─── Game progress bar (Apr 22) ───────────────────────── */
+.round-header__progress {
+  grid-column: 1 / -1;
+  margin-top: 0.5rem;
+  width: 100%;
+}
+
+.game-progress {
+  width: 100%;
+}
+
+.game-progress__track {
+  display: flex;
+  gap: 0.35rem;
+  align-items: stretch;
+  padding: 0.25rem;
+  background: rgba(255, 244, 214, 0.4);
+  border: 2px solid var(--caramel);
+  border-radius: 999px;
+}
+
+.game-progress__segment {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem 0.25rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.4);
+  opacity: 0.55;
+  transition: background 0.25s, opacity 0.25s, transform 0.25s;
+  min-width: 0;
+}
+
+.game-progress__segment--complete {
+  background: linear-gradient(135deg, #fde68a, #f59e0b);
+  opacity: 1;
+}
+
+.game-progress__segment--current {
+  background: linear-gradient(135deg, #fef3c7, #f97316);
+  opacity: 1;
+  transform: scale(1.08);
+  box-shadow: 0 0 0 2px var(--dark-roast);
+}
+
+.game-progress__croissant {
+  font-size: 1rem;
+  line-height: 1;
+  filter: grayscale(1);
+  opacity: 0.5;
+}
+
+.game-progress__segment--complete .game-progress__croissant,
+.game-progress__segment--current  .game-progress__croissant {
+  filter: none;
+  opacity: 1;
+}
+
+.game-progress__label {
+  font-family: var(--font-pixel);
+  font-size: 0.4rem;
+  color: var(--dark-roast);
+  letter-spacing: 0.05em;
+  margin-top: 0.1rem;
+}
