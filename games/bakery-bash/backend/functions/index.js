@@ -280,61 +280,59 @@ async function updateTopBids(gameRef, round, bidType /* , validated */) {
   const roundRef = gameRef.collection('rounds').doc(`round_${round}`);
   const roundId = `round_${round}`;
   try {
-    // Read every player's round-scoped bid doc. This is O(players) per
-    // submit — acceptable for class-sized games (<= ~40 students).
-    const playersSnap = await gameRef.collection('players').get();
-    const bidSnaps = await Promise.all(
-      playersSnap.docs.map((pd) => pd.ref.collection('bids').doc(roundId).get())
-    );
+    // Wrap the read-all-then-write in a Firestore transaction so that two
+    // concurrent `submitBids` calls can't each read stale per-player bid
+    // state and race to stomp `topBids` — Firestore will retry one of them
+    // if any of the reads are modified before the write commits.
+    await db.runTransaction(async (tx) => {
+      const playersSnap = await tx.get(gameRef.collection('players'));
+      const bidSnaps = await Promise.all(
+        playersSnap.docs.map((pd) => tx.get(pd.ref.collection('bids').doc(roundId)))
+      );
+      const roundSnap = await tx.get(roundRef);
 
-    const adTopBids = {};   // adType -> max amount
-    const chefTopBids = {}; // chefId -> max amount
+      const adTopBids = {};   // adType -> max amount
+      const chefTopBids = {}; // chefId -> max amount
 
-    for (const bSnap of bidSnaps) {
-      if (!bSnap.exists) continue;
-      const bData = bSnap.data() || {};
+      for (const bSnap of bidSnaps) {
+        if (!bSnap.exists) continue;
+        const bData = bSnap.data() || {};
 
-      if (bidType === 'ad' || bidType === 'all') {
-        const ad = (bData && bData.ad) || {};
-        for (const [slot, amount] of Object.entries(ad)) {
-          const a = numberOrDefault(amount, 0);
-          if (a > 0 && a > numberOrDefault(adTopBids[slot], 0)) {
-            adTopBids[slot] = a;
+        if (bidType === 'ad' || bidType === 'all') {
+          const ad = (bData && bData.ad) || {};
+          for (const [slot, amount] of Object.entries(ad)) {
+            const a = numberOrDefault(amount, 0);
+            if (a > 0 && a > numberOrDefault(adTopBids[slot], 0)) {
+              adTopBids[slot] = a;
+            }
+          }
+        }
+
+        if (bidType === 'chef' || bidType === 'all') {
+          const chefArr = Array.isArray(bData && bData.chef) ? bData.chef : [];
+          for (const cb of chefArr) {
+            const chefId = cb && cb.chefId;
+            const amount = numberOrDefault(cb && cb.amount, 0);
+            if (chefId && amount > 0 && amount > numberOrDefault(chefTopBids[chefId], 0)) {
+              chefTopBids[chefId] = amount;
+            }
           }
         }
       }
 
-      if (bidType === 'chef' || bidType === 'all') {
-        const chefArr = Array.isArray(bData && bData.chef) ? bData.chef : [];
-        for (const cb of chefArr) {
-          const chefId = cb && cb.chefId;
-          const amount = numberOrDefault(cb && cb.amount, 0);
-          if (chefId && amount > 0 && amount > numberOrDefault(chefTopBids[chefId], 0)) {
-            chefTopBids[chefId] = amount;
-          }
+      if (roundSnap.exists) {
+        // Fully replace the recomputed side (dotted-key update) so stale
+        // entries from previously-leading bidders — who then reduced their
+        // bid — are actually cleared.
+        const updates = { updatedAt: FieldValue.serverTimestamp() };
+        if (bidType === 'ad' || bidType === 'all') {
+          updates['topBids.ad'] = adTopBids;
         }
-      }
-    }
-
-    // Fully replace the recomputed side (dotted-key `update`) so stale
-    // entries from previously-leading bidders — who then reduced their
-    // bid — are actually cleared. Firestore's set+merge on nested objects
-    // deep-merges and would preserve obsolete keys, hence `update` here.
-    // We attempt update first; if the round doc doesn't exist yet (early
-    // bid phase), we fall back to a one-shot set.
-    const updates = { updatedAt: FieldValue.serverTimestamp() };
-    if (bidType === 'ad' || bidType === 'all') {
-      updates['topBids.ad'] = adTopBids;
-    }
-    if (bidType === 'chef' || bidType === 'all') {
-      updates['topBids.chef'] = chefTopBids;
-    }
-    try {
-      await roundRef.update(updates);
-    } catch (updateErr) {
-      // NOT_FOUND (code 5) when doc doesn't exist yet — safe to fall back.
-      const code = updateErr && (updateErr.code || updateErr.status);
-      if (code === 5 || updateErr.code === 'not-found') {
+        if (bidType === 'chef' || bidType === 'all') {
+          updates['topBids.chef'] = chefTopBids;
+        }
+        tx.update(roundRef, updates);
+      } else {
         const seed = {
           round,
           topBids: {},
@@ -342,11 +340,9 @@ async function updateTopBids(gameRef, round, bidType /* , validated */) {
         };
         if (bidType === 'ad' || bidType === 'all') seed.topBids.ad = adTopBids;
         if (bidType === 'chef' || bidType === 'all') seed.topBids.chef = chefTopBids;
-        await roundRef.set(seed, { merge: true });
-      } else {
-        throw updateErr;
+        tx.set(roundRef, seed, { merge: true });
       }
-    }
+    });
   } catch (err) {
     logger.warn('updateTopBids side-effect failed — non-fatal.', {
       gameId: gameRef.id, round, bidType, error: err && err.message,
@@ -605,13 +601,24 @@ async function resolveAndApplyAdAuction(gameRef, round /* , config */) {
     if (!bSnap.exists) continue;
     const bData = bSnap.data() || {};
     const ad = (bData && bData.ad) || {};
-    const submittedAtMs = (bData.adSubmittedAt && typeof bData.adSubmittedAt.toMillis === 'function')
+    const slotClaims = (bData.adSlotClaims && typeof bData.adSlotClaims === 'object')
+      ? bData.adSlotClaims
+      : {};
+    // Fallback for bid docs written before per-slot claim timestamps existed.
+    const legacySubmittedAtMs = (bData.adSubmittedAt && typeof bData.adSubmittedAt.toMillis === 'function')
       ? bData.adSubmittedAt.toMillis()
       : Number.POSITIVE_INFINITY;
 
     for (const slot of AD_SLOTS) {
       const amount = numberOrDefault(ad[slot], 0);
       if (amount > 0) {
+        // Prefer the per-slot first-claim timestamp — it represents when
+        // the player first claimed this price for this slot and doesn't
+        // get reset by resubmits that leave the slot amount unchanged.
+        const claim = slotClaims[slot];
+        const submittedAtMs = (claim && claim.firstClaimedAt && typeof claim.firstClaimedAt.toMillis === 'function')
+          ? claim.firstClaimedAt.toMillis()
+          : legacySubmittedAtMs;
         bidsBySlot.get(slot).push({ playerId: pd.id, amount, submittedAtMs });
       }
     }
@@ -1779,8 +1786,34 @@ exports.submitBids = onCall(CALLABLE_OPTS, async (request) => {
     const existing = await transaction.get(bidsRef);
     const merged = existing.exists ? existing.data() : { round };
 
-    if (bidType === 'ad') merged.ad = validated;
-    else merged.chef = validated;
+    if (bidType === 'ad') {
+      // Preserve per-slot first-claim timestamps: if the amount for a given
+      // slot is unchanged from the prior submission, keep the original
+      // timestamp so the ad-auction tie-break ("earliest claim at this
+      // price wins") isn't reset just because the player resubmitted other
+      // slots. A new amount (including newly non-zero) resets the stamp.
+      const prevAd = (merged.ad && typeof merged.ad === 'object') ? merged.ad : {};
+      const prevClaims = (merged.adSlotClaims && typeof merged.adSlotClaims === 'object')
+        ? merged.adSlotClaims
+        : {};
+      const nextClaims = {};
+      const nowStamp = FieldValue.serverTimestamp();
+      for (const slot of Object.keys(validated || {})) {
+        const newAmount = numberOrDefault(validated[slot], 0);
+        if (newAmount <= 0) continue;
+        const prior = prevClaims[slot];
+        const priorAmount = numberOrDefault(prior && prior.amount, numberOrDefault(prevAd[slot], 0));
+        if (prior && prior.firstClaimedAt && priorAmount === newAmount) {
+          nextClaims[slot] = { amount: newAmount, firstClaimedAt: prior.firstClaimedAt };
+        } else {
+          nextClaims[slot] = { amount: newAmount, firstClaimedAt: nowStamp };
+        }
+      }
+      merged.ad = validated;
+      merged.adSlotClaims = nextClaims;
+    } else {
+      merged.chef = validated;
+    }
 
     merged.round = round;
     merged[`${bidType}SubmittedAt`] = FieldValue.serverTimestamp();
