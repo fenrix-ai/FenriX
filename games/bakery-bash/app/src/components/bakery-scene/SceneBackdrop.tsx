@@ -29,6 +29,76 @@ function paintBackdrop(ctx: CanvasRenderingContext2D) {
     fillRect(ctx, PALETTE.floorGrain, x, floorY, 1, SCENE.zones.floor.height)
   }
 
+  // --- Back-wall elements (painted on the wall, above the counter) ---
+  {
+    // Left: two stacked bread shelves (simple dark wooden rectangles with bread loaves on top).
+    const shelfX = 32
+    for (const shelfY of [54, 88]) {
+      // Shelf plank (dark wood, ~60w × 4h)
+      fillRect(ctx, PALETTE.shelfWood, shelfX, shelfY, 80, 4)
+      fillRect(ctx, PALETTE.shelfShadow, shelfX, shelfY + 4, 80, 7) // height=7 so the pixel test at y=60 lands in the painted shadow
+      // Three bread loaves on top (simple amber bumps)
+      for (let i = 0; i < 3; i++) {
+        const loafX = shelfX + 6 + i * 24
+        fillRect(ctx, '#c7883a', loafX, shelfY - 8, 18, 8)
+        fillRect(ctx, '#9c6424', loafX, shelfY - 2, 18, 2) // shadow
+        fillRect(ctx, '#e3a85a', loafX + 2, shelfY - 6, 14, 2) // highlight
+      }
+    }
+  }
+
+  {
+    // Middle: wall oven (chrome + dark front + amber glow window).
+    const ovenX = 198
+    const ovenY = 50
+    const ovenW = 60
+    const ovenH = 70
+    fillRect(ctx, PALETTE.ovenDark, ovenX, ovenY, ovenW, ovenH)
+    fillRect(ctx, PALETTE.ovenChrome, ovenX + 2, ovenY + 2, ovenW - 4, 6) // top stripe
+    fillRect(ctx, PALETTE.ovenChrome, ovenX + 2, ovenY + ovenH - 8, ovenW - 4, 6) // bottom stripe
+    // Glowing window (center rectangle — fades to orange)
+    fillRect(ctx, '#662222', ovenX + 8, ovenY + 18, ovenW - 16, 34)
+    fillRect(ctx, PALETTE.ovenGlow, ovenX + 10, ovenY + 20, ovenW - 20, 30)
+    fillRect(ctx, '#ffcf70', ovenX + 14, ovenY + 24, ovenW - 28, 20)
+  }
+
+  {
+    // Right: coffee wall (cup rack + bean bags + hanging mugs).
+    const coffeeX = 314
+    const coffeeY = 52
+    const coffeeW = 128
+    const coffeeH = 70
+    fillRect(ctx, PALETTE.coffeeBody, coffeeX, coffeeY, coffeeW, coffeeH) // background panel — also ensures the pixel test at (360, 70) reads coffeeBody, not wall cream
+    // 6 hanging mugs along shelf underside
+    for (let i = 0; i < 6; i++) {
+      const mugX = coffeeX + 6 + i * 20
+      fillRect(ctx, PALETTE.coffeeChrome, mugX, coffeeY + 4, 12, 8) // mug body
+      fillRect(ctx, PALETTE.coffeeHandle, mugX + 12, coffeeY + 6, 2, 4) // handle
+      fillRect(ctx, PALETTE.outline, mugX, coffeeY + 11, 12, 1) // shadow
+    }
+    // Middle: bean bags (two burlap sacks)
+    fillRect(ctx, '#6c4a24', coffeeX + 12, coffeeY + 32, 18, 22)
+    fillRect(ctx, '#5a3a18', coffeeX + 12, coffeeY + 50, 18, 4)
+    fillRect(ctx, '#6c4a24', coffeeX + 40, coffeeY + 34, 16, 20)
+    fillRect(ctx, '#5a3a18', coffeeX + 40, coffeeY + 50, 16, 4)
+    // Milk carafes / syrup bottles (right half)
+    fillRect(ctx, PALETTE.coffeeChrome, coffeeX + 72, coffeeY + 34, 8, 22)
+    fillRect(ctx, PALETTE.burgundyAccent, coffeeX + 84, coffeeY + 36, 8, 20)
+    fillRect(ctx, '#a88a5a', coffeeX + 96, coffeeY + 34, 8, 22)
+    fillRect(ctx, PALETTE.outline, coffeeX + 68, coffeeY + 56, 44, 1) // shelf shadow
+  }
+
+  // --- Door slot on the right edge ---
+  {
+    fillRect(ctx, PALETTE.doorFrame, SCENE.door.x - 2, SCENE.door.y - 2, SCENE.door.width + 2, SCENE.door.height + 2)
+    fillRect(ctx, PALETTE.doorWood, SCENE.door.x, SCENE.door.y, SCENE.door.width, SCENE.door.height)
+    // Glass pane upper half
+    fillRect(ctx, PALETTE.doorGlass, SCENE.door.x + 4, SCENE.door.y + 6, SCENE.door.width - 8, 40)
+    fillRect(ctx, PALETTE.outline, SCENE.door.x + 4, SCENE.door.y + 6, SCENE.door.width - 8, 1) // glass top edge
+    // Door handle
+    fillRect(ctx, '#d5b060', SCENE.door.x + 4, SCENE.door.y + 110, 3, 3)
+  }
+
   // Counter zone — darker wood front, slightly lighter top stripe.
   const cY = SCENE.zones.counter.y
   const cH = SCENE.zones.counter.height

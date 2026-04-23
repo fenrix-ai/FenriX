@@ -168,6 +168,55 @@ describe('<SceneBackdrop>', () => {
   })
 })
 
+describe('<SceneBackdrop> back-wall elements', () => {
+  let setup: ReturnType<typeof setupCanvasFake>
+
+  beforeEach(() => {
+    setup = setupCanvasFake()
+  })
+
+  afterEach(() => {
+    setup.cleanup()
+  })
+
+  it('paints bread shelves on the left of the mid band', () => {
+    const { container } = render(<SceneBackdrop />)
+    const ctx = (container.querySelector('canvas')! as HTMLCanvasElement).getContext('2d')!
+    // Shelf is a dark wood rectangle around x=40 y=55 per our layout
+    const p = ctx.getImageData(40, 60, 1, 1).data
+    // Expect dark wood (R<150, and brownish R>G>B)
+    expect(p[0]).toBeLessThan(180)
+    expect(p[0]).toBeGreaterThan(p[2])
+  })
+
+  it('paints the oven silhouette in the mid-band middle', () => {
+    const { container } = render(<SceneBackdrop />)
+    const ctx = (container.querySelector('canvas')! as HTMLCanvasElement).getContext('2d')!
+    // Oven body around x=220 y=70 — should be chrome/dark gray, not cream wall
+    const p = ctx.getImageData(220, 70, 1, 1).data
+    const isCream = p[0] > 200 && p[1] > 180 && p[2] > 140
+    expect(isCream).toBe(false)
+  })
+
+  it('paints the coffee wall (cup rack + machine body) on the right of mid-band', () => {
+    const { container } = render(<SceneBackdrop />)
+    const ctx = (container.querySelector('canvas')! as HTMLCanvasElement).getContext('2d')!
+    // Coffee area around x=360 y=70 — should be darker than cream wall
+    const p = ctx.getImageData(360, 70, 1, 1).data
+    const isCream = p[0] > 200 && p[1] > 180 && p[2] > 140
+    expect(isCream).toBe(false)
+  })
+
+  it('paints the door slot on the right edge', () => {
+    const { container } = render(<SceneBackdrop />)
+    const ctx = (container.querySelector('canvas')! as HTMLCanvasElement).getContext('2d')!
+    // Door is at x=456..480, y=80..280; sample the middle
+    const p = ctx.getImageData(465, 150, 1, 1).data
+    const isCream = p[0] > 200 && p[1] > 180 && p[2] > 140
+    expect(isCream).toBe(false)
+  })
+})
+
 describe('<SceneBackdrop> counter', () => {
   let setup: ReturnType<typeof setupCanvasFake>
 
