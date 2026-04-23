@@ -1,8 +1,6 @@
 # Bakery Bash — Playtesting (Apr 22) Supplement
 
-> **Read [playtesting-apr22-remaining-tasks.md](playtesting-apr22-remaining-tasks.md) first.** Dylan's consolidated doc is the source of truth for the May 1 session. This file only adds items from a separate playtesting review that are **not already covered** there.
->
-> Task IDs use the `-S##` suffix ("supplement") to avoid collision with Dylan's `-R##` IDs.
+> **Read [playtesting-apr22-remaining-tasks.md](playtesting-apr22-remaining-tasks.md) first.** Dylan's consolidated doc is the source of truth for the May 1 session. This file only describes items from a separate playtesting review that are **not already covered** there.
 
 **Date:** 2026-04-22
 **Branch base:** `feat/playtesting-apr22-tasks`
@@ -10,519 +8,252 @@
 
 ---
 
-## Contradictions / Coordination Points (Read Before Starting)
+## Coordination Points (Read Before Starting)
 
-Three items from the playtesting review conflict with decisions already made in Dylan's doc or recently-shipped PRs. Resolve these before picking up the related supplement tasks.
+Three items conflict with decisions already made in Dylan's doc or recently-shipped PRs. Resolve before picking up related tasks.
 
-### C-1 — Mail icon removal vs. CSV archive modal
-**Dylan's FE-R08** removes the CSV mail icon from `RoundHeader` entirely and keeps only the Results-screen Download CSV button. The supplement's **FE-S01 (Data Purchase Store)** introduces *purchased* CSVs (Tier 1 / Tier 2 chef datasets) that need somewhere to be re-downloaded after purchase.
+**C-1 — CSV archive needs a home.** Dylan's doc removes the header mail icon and keeps only the Results-screen download button. The supplement introduces *purchased* CSVs (data store) that need somewhere to be re-downloaded. Recommendation: surface purchased datasets on the Results screen next to the existing download button, and also inside the Data Store panel itself. Do not reinstate the header icon.
 
-**Resolution (recommended):** Do NOT reinstate the header mail icon. Instead, surface purchased CSVs as a small expandable list on the **Results screen** next to the existing Download CSV button, and also as a persistent list inside the Data Store panel itself (FE-S01) labeled `"Your Purchased Datasets"`. Confirm with product before implementing.
+**C-2 — Burglar trigger model.** The current build fires burglars when cleanliness drops below 40%. Playtesting review asks for a rank-scaled probability model instead — top-of-leaderboard teams get robbed more often than bottom ones ("successful bakeries attract attention"). These are different mechanics entirely. Recommendation: replace the cleanliness trigger with rank-scaling; keep cleanliness tied to the new Food Safety Inspection mechanic.
 
-### C-2 — Burglar trigger: cleanliness-threshold vs. rank-scaled probability
-Currently shipped (commits `438ce4a` + `6d4868c`): Burglar fires when cleanliness ≤ 40%. Fixed probability above that threshold, tied to hygiene.
-
-Playtesting review asked for a **rank-scaled probability** model: top-of-leaderboard team has ~8% chance; bottom has ~0.05% chance. Motivation: *"Successful bakeries get robbed."*
-
-**Resolution (recommended):** Replace the cleanliness-threshold model with the rank-scaled model — see **BE-S02**. The cleanliness → foot-traffic penalty stays, but becomes part of **Food Safety Inspection** (BE-S01), not burglary. Confirm with product before changing the existing mechanic.
-
-### C-3 — "Reset Game" button removal
-Dylan's doc lists `resetGame` + its UI button as shipped via PR #42. Playtesting review asked to **remove** the Reset Game button because it is redundant with End Game.
-
-**Resolution:** Straightforward — see **FE-S10** and **BE-S06**. Just call out that this undoes recent PR #42 work so the author is aware.
+**C-3 — Reset Game button removal.** Dylan's doc lists the Reset Game button as shipped in PR #42. Playtesting review asks to remove it as redundant with End Game. Straightforward, but notify PR #42's author that this undoes part of their work.
 
 ---
 
-## 🚧 Frontend — Supplement Tasks
+## Frontend — Supplement Tasks
 
-Stack + CSS conventions: same as Dylan's doc.
+### FE-S01 — Data Purchase Store (Decisions phase)  · P1
 
-### FE-S01 — Data Purchase Store (Decisions phase)  (P1)
+Add a "Buy Data" button to the Decisions sidebar that opens a store modal. The modal offers two purchasable datasets:
 
-**New feature.** Teams spend in-game budget to buy one-time CSV datasets during the Decisions phase.
+- **Tier 1 — Chef Specialty Guide** at **$15,000.** A lightweight reference showing which chef nationalities specialize in which products. Includes male and female portraits per nationality.
+- **Tier 2 — Comprehensive Chef Profiles** at **$60,000.** A large dataset — at least 30 chef profiles per nationality — with monthly production per product, satisfaction scores, sous chef counts, cleanliness averages, purchase prices, and monthly revenue. Enough data for players to build a real predictive model.
 
-**Files:**
-- New: `app/src/components/game/DataStorePanel.tsx`
-- `app/src/pages/GamePage.tsx` — mount the panel and its trigger
-- `app/src/lib/csv.ts` — reuse download helper
+Each card shows its price and a purchase button. If the team already owns a tier, the button should read "Owned" and be disabled. If the team's current budget is below the price, the button should read "Insufficient budget." On successful purchase, the team's budget is reduced and the CSV downloads immediately.
 
-**Steps:**
-1. Add a `"Buy Data"` button in the Decisions sidebar (below the budget summary). Clicking opens `DataStorePanel` modal.
-2. Modal contains two cards:
-   - **Tier 1 — Chef Specialty Guide — $15,000**
-     Body: *"Reveals which chef nationalities specialize in which products (male/female portraits included)."*
-   - **Tier 2 — Comprehensive Chef Profiles — $60,000**
-     Body: *"30+ chef profiles per nationality with monthly production, satisfaction, sous chef count, cleanliness, and revenue stats. Build a real predictive model."*
-3. Each card's purchase button:
-   - Disabled + reads `"Owned ✓"` if the team already owns the tier (`team.purchasedDatasets` contains it).
-   - Disabled + reads `"Insufficient budget"` if `budgetCurrent < price`.
-   - On click, calls `purchaseDataset` callable (see **BE-S04**) with `{ gameId, teamId, tier }`.
-   - On success: update local budget from the returned `{ budgetCurrent }`, download the returned `csvContent` via `src/lib/csv.ts`, show a toast `"Dataset purchased"`.
-4. Below the two cards, render a `"Your Purchased Datasets"` list with a re-download button for each owned tier (see C-1).
-5. Do **not** hardcode `15000` / `60000` in the component. Read prices from the game document's `dataStorePrices` (mirrored from backend config).
+Include a "Your Purchased Datasets" list inside the modal so teams can re-download what they've bought at any time during the Decisions phase.
 
-**Acceptance:** During a `decide` phase, the "Buy Data" button opens the panel. Purchases deduct budget, trigger a CSV download, and persist as owned across the rest of the game (no double-purchase). Unowned tiers show the correct price.
-
-**Depends on:** BE-S04.
+Do not hardcode the prices in the component — read them from game config values that the backend exposes.
 
 ---
 
-### FE-S02 — Date System Display on Email / Briefing + Event Cards  (P0)
+### FE-S02 — Date Display on Email Screen and Event Cards  · P0
 
-**Files:**
-- `app/src/pages/EmailPhasePage.tsx` — show month name
-- `app/src/pages/phases/ResultsPhase.tsx` — show event dates (used by FE-S03)
-
-**Steps:**
-1. On the email/briefing screen, render the round's month name below the `"Round N"` hero, e.g. `"Entering January"`. Source: new `roundResults[currentRound - 1].month` field (see **BE-S07**) or direct lookup from `ROUND_MONTHS` config shared with the client.
-2. Wherever a curveball event is shown (FE-S03), display the event's `date` string (e.g., `"January 14"`) prominently on the card.
-
-**Acceptance:** Each round's briefing shows `"Entering {Month}"`. Event cards show the actual calendar date of the event, not the day number.
-
-**Depends on:** BE-S07.
+Each round corresponds to a calendar month (Round 1 = January, Round 2 = February, etc.). On the email/briefing screen, display the month name just below the "Round N" hero text — e.g., "Entering January." On any event card that references a specific day, show the formatted date (e.g., "January 14") instead of a raw day number.
 
 ---
 
-### FE-S03 — Results Screen: Events Section (Food Inspector + Burglar Cards)  (P0)
+### FE-S03 — Results Screen: Events Section with Event Cards  · P0
 
-Dylan notes a burglar *banner* on Simulate + Results already. This task replaces/augments that with a dedicated **Events** section on the Results page that renders **cards** for each curveball.
+Replace the current flat burglar banner on the Results screen with a dedicated "Events" section below the metric cards. The section renders one card per curveball event that occurred during the round:
 
-**File:** `app/src/pages/phases/ResultsPhase.tsx`
-**Assets:** new — see ASSETS section.
+- **Food Safety Inspection card** — inspector character asset, the date of inspection, the cleanliness percentage reported, a color-coded rating badge (Excellent green / Compliant yellow / Needs Improvement orange / Hazardous red), and the foot traffic penalty applied.
+- **Burglary card** — burglar character asset, the date of robbery, and the amount stolen.
 
-**Steps:**
-1. Below the existing metric cards, add a section heading `"Events"`. Show only if `roundResults[current].events?.length > 0`.
-2. For each entry in `events`, render a card:
-   - **`food_inspection`:** asset = `/assets/events/food-inspector.svg`, title `"Food Safety Inspection"`, body = date, cleanliness %, rating badge (Excellent green / Compliant yellow / Needs Improvement orange / Hazardous red), and traffic penalty (e.g., `"-10% foot traffic"`).
-   - **`burglary`:** asset = `/assets/events/burglar.svg`, title `"Burglary"`, body = date of robbery + amount stolen (currency-formatted).
-3. Replace the existing flat burglar banner with these cards (keep the Simulate-screen banner from commit `6d4868c` unchanged — it's live during the sim animation).
-
-**Acceptance:** If a round triggers an inspection and/or burglary, the Results page shows one card per event with the matching asset, date, and details.
-
-**Depends on:** BE-S01, BE-S02, BE-S05.
+If no events occurred, hide the Events section entirely. Keep the existing Simulation-screen burglar banner unchanged.
 
 ---
 
-### FE-S04 — Results Timer Text Fix  (P0)
+### FE-S04 — Results Timer Text Fix  · P0
 
-**File:** `app/src/pages/phases/ResultsPhase.tsx`
-
-**Steps:**
-1. Change the pre-advance countdown string from `"Last Chance to Submit: __ s"` to `"Seconds until next round: __ s"`. There are no submissions on Results.
-
-**Acceptance:** Countdown on Results reads `"Seconds until next round: …"`.
+The countdown on the Results screen currently reads "Last Chance to Submit: Ns." There are no submissions on Results, so this wording is misleading. Change it to "Seconds until next round: Ns."
 
 ---
 
-### FE-S05 — Progress Bar (game-loop indicator)  (P1)
+### FE-S05 — Progress Bar with Croissant Tracker  · P1
 
-**New component.** Horizontal progress bar with a croissant tracker that advances through major milestones.
+Add a persistent horizontal progress bar across the top of the screen (below the phase banner). The bar is divided into four milestones per round — Auction, Decisions, Simulation, Results — repeating for each round in the game. Completed milestones fill with solid yellow and show a full-opacity croissant icon; upcoming milestones show a low-opacity yellow fill with a low-opacity croissant. A larger, slightly animated croissant serves as the current-position tracker.
 
-**Files:**
-- New: `app/src/components/game/ProgressBar.tsx`
-- `app/src/components/game/RoundHeader.tsx` — mount below the phase banner
-- `app/public/assets/products/croissant.svg` — reuse
-
-**Steps:**
-1. Bar is divided into `4 × totalRounds` sections. Per round: **Auction → Decisions → Simulation → Results**.
-2. Completed milestones = solid yellow fill + full-opacity croissant icon. Upcoming = low-opacity yellow + low-opacity croissant. Between sections place a divider croissant at low opacity.
-3. Map `phase` to milestone:
-   - `bid_ad`, `bid_chef` → Auction
-   - `decide` → Decisions
-   - `simulating` → Simulation
-   - `results_ready` → Results
-   - `email`, `roster` → roll into the adjacent milestone (do not render their own section).
-4. Hide on `LandingPage`, `LobbyPage`, `TeamPage`, `ConclusionPage`.
-
-**Acceptance:** Throughout gameplay, a yellow progress bar with croissant icons visually shows which milestone of which round the team is in.
+Hide the progress bar on the landing, lobby, team, and game-over screens.
 
 ---
 
-### FE-S06 — How to Play: Simulation Card + Results Curveball Recap + "Bidder" Copy Audit  (P1)
+### FE-S06 — How to Play: New Simulation Card + Copy Additions  · P1
 
-**File:** `app/src/pages/HowToPlayPage.tsx`
+The How to Play page already exists with four cards in the correct order. Add a fifth card for the Simulation phase with copy along the lines of: *"See your bakery come to life — spectate a simulation of your bakery running over the course of a month."*
 
-Dylan confirms the page exists with 4 cards and the role label is already "Bidder". This task only adds the missing content beats from the playtesting review.
+Add brief copy to the existing cards:
 
-**Steps:**
-1. Add a 5th card **Simulation** between Chef Auction and Results: *"See your bakery come to life! Spectate a simulation of your bakery running over the course of a month."*
-2. In the Ad Auction card, add a one-liner: *"Each ad type attracts a different level of foot traffic — factor this into your model."*
-3. In the Chef Auction card, add: *"Specialty chefs are not assigned to a station — their production contributes to overall output. Only sous chefs work stations."*
-4. In the Results card, add: *"Curveball events may appear here — including Food Safety Inspections and Burglaries. Download your round CSV for one row per simulated day."*
-5. Audit the page for any remaining `"Your Advertising Teammate…"` copy and change it to `"Your Bidder Teammate…"`.
+- Ad Auction: note that each ad type attracts a different level of foot traffic, and this is something the team needs to figure out from their predictive model.
+- Chef Auction: clarify that specialty chefs are not assigned to stations — their output contributes to the overall bakery — and that only sous chefs work stations. Note that specialties can be discovered by purchasing a chef dataset.
+- Results: mention that curveball events (Food Safety Inspection, Burglary) may appear here, and that the CSV download includes one row per simulated day.
 
-**Acceptance:** 5 cards in order: Ad Auction → Chef Auction → Simulation → Decisions → Results. Copy additions above are visible. No `"Advertising Teammate"` string remains.
-
-> **Note:** Verify the current order of Decisions vs. Simulation — Dylan's `PHASE_ORDER` is `bid_ad → bid_chef → roster → decide → simulating`. How-to-Play should match that flow: **Ad Auction → Chef Auction → Decisions → Simulation → Results**.
+Audit the page for any remaining "Your Advertising Teammate" copy and replace it with "Your Bidder Teammate" for consistency with the role rename already shipped.
 
 ---
 
-### FE-S07 — Professor Panel: +1 Minute Pre-Game Disable + Colored Background  (P0)
+### FE-S07 — Professor Panel: Pre-Game Button State and Background Polish  · P0
 
-**File:** `app/src/pages/ProfessorPage.tsx`
+The "+1 Minute" button is currently clickable before the game starts, which is inconsistent with other pre-game buttons that are visibly disabled. Apply the same disabled/opaque styling to this button when no game is active.
 
-**Steps:**
-1. Disable the `"+1 Minute"` button when `phase === 'lobby'` or no game exists. Apply the same opaque / `:disabled` styling used on other pre-game-unavailable buttons.
-2. Add a solid warm-cream background panel (e.g., `background: var(--cream)`) behind the control panel content so text stops washing out against the page background.
-
-**Acceptance:** `"+1 Minute"` is visibly disabled pre-game; professor text is legible against a distinct panel background.
+Separately, the professor panel text currently washes out against the page background. Add a solid warm-cream background panel (matching the bakery color theme) behind the control content to improve legibility.
 
 ---
 
-### FE-S08 — Professor Panel: Remove Round-Transition Lock  (P0)
+### FE-S08 — Remove Round-Transition Lock from Professor Panel  · P0
 
-**File:** `app/src/pages/ProfessorPage.tsx`
-
-**Problem:** The professor panel currently disables controls during the round grace/freeze window (shared with the player timer). The professor should never be locked.
-
-**Steps:**
-1. Audit every button for `isPhaseLocked` / `phaseTransitioning` / `graceActive` gating and remove it from professor-only actions (`advance`, `pause`, `resume`, `extend`, `end`).
-2. Keep the read-only `"Phase transitioning…"` banner if useful for context, but do not disable controls.
-
-**Acceptance:** The professor can hit Advance / Pause / Resume / +1 Min / End at any point, including during the 5s grace and 10s freeze windows.
+The professor panel is currently locked during the round grace/freeze window that applies to player-facing screens. The professor should never be locked. Remove every `isLocked`/`phaseTransitioning` gate from professor-only actions (Advance, Pause, Resume, +1 Min, End Game) so the professor has full control at all times, including during round transitions.
 
 ---
 
-### FE-S09 — Round 1 Email Auto-Advance (5s)  (P1)
+### FE-S09 — Round 1 Email Auto-Advance After 5 Seconds  · P1
 
-**File:** `app/src/pages/EmailPhasePage.tsx`
-
-**Problem:** Round 1's email screen stalls until the backend auto-advances (~30s depending on phase duration). Players want it to skip quickly.
-
-**Steps:**
-1. On mount during `currentRound === 1 && basePhase === 'email'`, start a 5s countdown.
-2. When the countdown hits zero, either (a) trigger the existing advance-phase callable if the client can (preferred), or (b) show a `"Ready to start — waiting for professor…"` message and rely on backend auto-advance at the phase duration.
-3. Render a visible `"Starting in Ns…"` text during the countdown.
-
-**Acceptance:** Round 1 email screen advances (or surfaces a ready state) 5s after it renders.
-
-> Confirm with backend team whether FE can trigger phase advance or whether this requires shortening Round 1's `email` phase duration in config (e.g., `phaseDurations.email_r1: 5`).
+Round 1's email/briefing screen currently stalls until the backend auto-advances. Add a 5-second countdown on mount for Round 1 only, and auto-advance when it hits zero. Show a visible "Starting in Ns..." message during the countdown. Check with backend whether the client can trigger advance directly, or whether this requires shortening Round 1's email phase duration in config.
 
 ---
 
-### FE-S10 — Remove "Reset Game" Button  (P0)
+### FE-S10 — Remove "Reset Game" Button  · P0
 
-**File:** `app/src/pages/ProfessorPage.tsx`
-
-**Problem:** Reset Game and End Game serve the same purpose (wipe round state, close the game). Having two buttons confused playtesters.
-
-**Steps:**
-1. Delete the Reset Game button and any handler it calls.
-2. Keep End Game and verify its handler cleanly finalizes the game (transitions to `game_over`, finalizes leaderboard).
-
-**Note:** This undoes part of PR #42. Notify that PR's author.
-
-**Acceptance:** Only End Game is visible in the professor panel.
-
-**Depends on:** BE-S06.
+Remove the Reset Game button from the professor panel. End Game serves the same function and the redundancy confuses playtesters. Keep End Game and ensure its handler cleans up everything Reset Game did. (See C-3 — notify PR #42's author.)
 
 ---
 
-### FE-S11 — Team Page: Multi-Role Claim  (P1)
+### FE-S11 — Team Page: Allow Multi-Role Claim  · P1
 
-**File:** `app/src/pages/TeamPage.tsx`
+Role deselection is already shipped. This task adds multi-role support: a single player can hold multiple roles simultaneously as long as no teammate already holds them. This matters for two-person teams who need to cover all three roles.
 
-Dylan's doc confirms **deselection** is already shipped (`× Clear`). This task adds **multi-role** support so a 2-person team can cover all three roles.
-
-**Steps:**
-1. Allow a single player to hold multiple roles *simultaneously* as long as each role isn't already held by a teammate.
-2. Render three states per role button:
-   - **Owned by current player:** filled + checkmark. Clicking deselects (existing behavior).
-   - **Owned by another teammate:** greyed out + teammate's display name.
-   - **Unclaimed:** default clickable.
-3. Update `GameContext`'s `player.role` usage — it becomes `PlayerRole[]`. Wrap single-role reads at the boundary: `roles = Array.isArray(player.role) ? player.role : player.role ? [player.role] : []`.
-4. Update `SubmissionLock` and any phase-gating components to check membership (`roles.includes('advertising')`) rather than equality.
-
-**Acceptance:** On a 2-player team, one player can claim both "Bidder" and "Finance" while the other claims "Operations". Phase-gating permits either player to submit for any role they hold.
-
-**Depends on:** BE-S08.
+Each role button should render in one of three states: owned by the current player (filled + checkmark, clickable to deselect), owned by another teammate (greyed out, shows that teammate's name), or unclaimed (default clickable). Downstream components that gate submission by role (SubmissionLock, phase-permission checks) need to check membership in the player's role array rather than a single-value equality.
 
 ---
 
-### FE-S12 — Chef Auction Card: Horizontal Layout with Portrait + Name  (P1)
+### FE-S12 — Chef Auction Card: Horizontal Layout with Portrait on Left  · P1
 
-**File:** `app/src/components/game/ChefCard.tsx`
+Restructure the chef auction card into a two-column horizontal layout. The left column shows the chef's portrait SVG (sourced from the existing nationality/gender asset set). The right column shows the chef's name at the top, followed by the sequential number badge, flag, nationality, skill tier, and multiplier table — all of which come from Dylan's FE-R03 and FE-R04.
 
-Dylan's FE-R03/R04 add sequential numbering and a multiplier table to the card but don't specify layout. Playtesting review asks for a **horizontal** card with the chef's portrait asset on the **left** and text on the right.
-
-**Steps:**
-1. Switch `.chef-card` from the current vertical layout to a two-column horizontal grid: left column = chef portrait SVG from `/assets/chefs/{nationality}-{gender}.svg`, right column = existing content (number badge, name, flag, nationality, skill badge, multiplier table from FE-R04).
-2. Display the chef's name prominently at the top of the right column.
-3. Keep specialties hidden (backend sanitation unchanged).
-4. Ensure the card remains compatible with the grid used on `AuctionPage`; adjust `grid-template-columns` if the wider card breaks the layout (e.g., switch to `minmax(280px, 1fr)`).
-
-**Acceptance:** Chef cards on the Auction page show the portrait on the left and all text info on the right. All existing FE-R03/R04 features remain visible.
+Keep specialties hidden (backend sanitation is unchanged). If the wider card breaks the auction page grid, widen the grid column minimum to accommodate.
 
 ---
 
-### FE-S13 — Simulation Overhaul: Bakery Scene + Neutral Customers + Sellout Stamps  (P1)
+### FE-S13 — Simulation Phase Visual Overhaul  · P1
 
-**File:** `app/src/pages/phases/SimulatePhase.tsx`
+The 30-day simulation animation, maintenance bars, and SOLD OUT stamps are already shipped. This task adds a fuller visual treatment:
 
-Dylan confirms the 30-day animation and SOLD OUT stamps are already shipped. Playtesting review adds a fuller visual treatment.
+- A composed bakery-interior background with a register, counter, pastry display case, oven, and a barista bar with coffee and matcha setups.
+- Specialty chef portraits placed inside the kitchen area, with small count badges or figures representing sous chefs per station, and a single maintenance figure.
+- Gender/race neutral customer figures animating through the counter area. Density should scale roughly with that day's foot traffic.
+- Existing menu display and SOLD OUT stamps remain in place alongside the scene.
+- Review the current per-day animation pacing. Target roughly 6–9 seconds for a 30-day month — adjust if the current duration feels too fast or too slow.
 
-**Steps:**
-1. Add a composed bakery-scene background (register, counter, pastry display case, oven, barista bar with coffee + matcha) — new asset `/assets/scene/bakery-interior.svg`.
-2. Place specialty chef portrait SVGs inside the kitchen area of the scene; scale with `staffCounts` (tiny count badges for sous chefs per station; a single maintenance figure using the existing `maintenance-guy.svg`).
-3. Animate neutral customer figures moving through the counter area. New asset: `/assets/characters/customer.svg` (gender/race neutral). Density proportional to that day's foot traffic.
-4. Keep the existing SOLD OUT stamp behavior. Verify menu quantity display is visible alongside the scene.
-5. Tune animation pacing: ~200–300ms per simulated day so a 30-day month lasts 6–9 seconds (Dylan notes 2min elsewhere; confirm current duration and adjust if it feels too long or too short).
-
-**Acceptance:** Simulate phase shows a full bakery interior with chefs, sous chef counts, maintenance, and animated customers. Menu items + SOLD OUT stamps still work.
-
-> If art assets aren't ready, stub with labeled colored rectangles so layout + animation logic can land now and swap assets later.
+If art assets aren't ready when implementation starts, stub with labeled colored rectangles so layout and animation logic can land first.
 
 ---
 
-### FE-S14 — Game Over Screen UI Polish  (P1)
+### FE-S14 — Game Over Screen UI Polish  · P1
 
-**File:** `app/src/pages/ConclusionPage.tsx`
-
-**Steps:**
-1. Add a prominent winner announcement — trophy icon or celebratory banner above the winning team's name + logo.
-2. Show full leaderboard with all teams ranked by cumulative revenue.
-3. Expandable per-team per-round revenue breakdown.
-4. Bakery-themed visual polish (confetti / pastry particles, warm palette, gentle animations).
-5. Route any CSV download through the same helper used elsewhere (`src/lib/csv.ts`).
-
-**Acceptance:** Game Over screen reads as a finished, polished endgame — not a debug summary.
+The Game Over screen is functional but visually underdeveloped. Add a prominent winner announcement with a trophy or celebratory banner above the winning team's name and logo. Show the final leaderboard with all teams ranked by cumulative revenue, and make each row expandable to reveal a per-round revenue breakdown. Add bakery-themed polish — confetti or pastry particles, warm palette, gentle entry animations. Route any CSV download on this screen through the same helper used elsewhere for consistency.
 
 ---
 
-## 🛠️ Backend — Supplement Tasks
+## Backend — Supplement Tasks
 
-### BE-S01 — Food Safety Inspection: 4-Tier Penalty Scale  (P0)
+### BE-S01 — Food Safety Inspection with Four-Tier Penalty Scale  · P0
 
-**New mechanic.** Cleanliness score drives a 4-tier rating that applies a foot-traffic penalty and generates an event for the Results screen.
+Add a cleanliness-based rating system that applies a foot traffic penalty and generates an event for the Results screen. The four tiers are:
 
-**Files:**
-- New: `backend/functions/modules/curveballs.js` (or extend whatever module currently owns burglar logic)
-- `backend/functions/modules/simulation.js` — invoke pre-customer-allocation
-- `backend/functions/modules/config.js` — tier constants
+- **Excellent** (95–100% cleanliness) — no foot traffic penalty.
+- **Compliant** (80–94%) — 5% penalty.
+- **Needs Improvement** (60–79%) — 10% penalty.
+- **Hazardous** (below 60%) — 15% penalty.
 
-**Steps:**
-1. Add to `config.js`:
-   ```js
-   FOOD_INSPECTION_TIERS: [
-     { min: 95, max: 100, rating: 'Excellent',         trafficPenalty: 0.00 },
-     { min: 80, max: 94,  rating: 'Compliant',         trafficPenalty: 0.05 },
-     { min: 60, max: 79,  rating: 'Needs Improvement', trafficPenalty: 0.10 },
-     { min: 0,  max: 59,  rating: 'Hazardous',         trafficPenalty: 0.15 },
-   ]
-   ```
-2. Export `evaluateFoodInspection(cleanlinessPct, round, monthDays)`:
-   - Compute tier from cleanliness.
-   - Pick a random inspection day within the month (always run; even "Excellent" produces a clean card).
-   - Return `{ type: 'food_inspection', date: getGameDate(round, day), cleanlinessPct, rating, trafficPenalty }`.
-3. In `simulation.js`, apply `trafficPenalty` multiplicatively to foot traffic **before** customer allocation runs.
-4. Push the event into `roundResults[].events` (see BE-S05).
-5. Calibrate maintenance decay so that 1 "clean" maintenance guy reliably keeps cleanliness in Compliant range, and 2 keeps it Excellent.
+Every round, evaluate the team's cleanliness at simulation time, determine the tier, and pick a random inspection day within the month. Emit a `food_inspection` event with the date, cleanliness percentage, rating, and penalty. The penalty should be applied multiplicatively to foot traffic *before* customer allocation runs. All tiers produce an event card (yes, including Excellent — teams like seeing their win).
 
-**Acceptance:** Cleanliness 72% → rating "Needs Improvement", −10% foot traffic, event card on Results.
+Calibrate the maintenance-guy effect so that one cleaning maintenance guy reliably keeps cleanliness in the Compliant range, and two keep it Excellent.
 
 ---
 
-### BE-S02 — Burglar: Rank-Scaled Probability  (P1)
+### BE-S02 — Rank-Scaled Burglar Probability  · P1
 
-**Replaces** the current cleanliness-threshold burglar mechanic (commits `438ce4a` + `6d4868c`). See **C-2** above and confirm with product before shipping.
+Replace the current cleanliness-triggered burglar mechanic with a rank-based probability model. See C-2 and confirm with product before shipping.
 
-**Files:** `backend/functions/modules/curveballs.js`, `backend/functions/modules/simulation.js`, `backend/functions/modules/config.js`
+Each round, after gross revenue is computed, roll for burglary. The probability scales with the team's pre-simulation leaderboard rank: the top team has an 8% chance, the bottom team has a 0.05% chance, with linear interpolation in between. If the roll hits, pick a random day in the month and steal a uniformly random 5–15% of that round's gross revenue. Subtract the stolen amount from net revenue and emit a `burglary` event with the date and amount.
 
-**Steps:**
-1. Add to `config.js`:
-   ```js
-   BURGLARY: {
-     probTop: 0.08,        // rank 1
-     probBottom: 0.0005,   // last rank
-     stealPctMin: 0.05,
-     stealPctMax: 0.15,
-   }
-   ```
-2. Export `rollBurglar(rank, totalTeams, grossRevenue, round, monthDays, rng = Math.random)`:
-   - Probability = linear interpolation between `probTop` and `probBottom` based on rank.
-   - If rolled: random day in month, steal uniform random fraction between `stealPctMin` and `stealPctMax` of gross revenue. Return `{ type: 'burglary', date, amountStolen }`. Else return `null`.
-3. `rank` input = **pre-simulation** rank (leaderboard entering the round). Tie-break by prior cumulative revenue.
-4. In `simulation.js`, after gross revenue is computed, call `rollBurglar`, subtract `amountStolen` from `revenueNet`, append event to `roundResults[].events`.
-5. Remove the cleanliness-triggered burglar path from `simulation.js` + the related config knobs added in commit `6d4868c`.
-6. Unit tests with a seeded RNG across 10,000 rolls confirm probabilities within ±0.5% of spec.
-
-**Acceptance:** Top-ranked team is burgled ~8% of rounds; bottom ~0.05%. Stolen amount always 5–15% of that round's gross. Cleanliness no longer triggers burglary.
+Remove the existing cleanliness-threshold burglary path and its related config knobs. Seed the randomness for testability — a deterministic test run with thousands of rolls should confirm probabilities land within a reasonable tolerance of the spec.
 
 ---
 
-### BE-S03 — Date System: Month-Length Days + `date` Column in CSV  (P0)
+### BE-S03 — Date System: Calendar Months and Date Column in CSV  · P0
 
-**Files:**
-- New: `backend/functions/modules/date-utils.js`
-- `backend/functions/modules/config.js` — `ROUND_MONTHS`
-- `backend/functions/modules/simulation.js` — use month-length day count
-- `backend/functions/modules/csv-export.js` — add `date` column
+Each round corresponds to a real calendar month. Round 1 is January (31 days), Round 2 February (28 days), Round 3 March (31 days), Round 4 April (30 days), Round 5 May (31 days). Replace the hardcoded 30-day simulation loop with a lookup that uses the round's actual month length. Adjust any downstream per-day averages that assumed 30.
 
-**Steps:**
-1. Add to `config.js`:
-   ```js
-   ROUND_MONTHS: [
-     { name: 'January',  days: 31 },
-     { name: 'February', days: 28 },
-     { name: 'March',    days: 31 },
-     { name: 'April',    days: 30 },
-     { name: 'May',      days: 31 },
-   ]
-   ```
-2. Create `date-utils.js` with `getMonthForRound(round)` and `getGameDate(round, day)` (returns `"Month Day"`).
-3. In `simulation.js`, replace the hardcoded 30-day loop with `getMonthForRound(round).days`. Adjust any downstream per-day averages that assumed 30.
-4. In `csv-export.js`, make `date` the **first column** of each row, populated via `getGameDate(round, dayIndex + 1)`.
-5. Attach `month` to the written round result so the frontend can show `"Entering {Month}"` (see FE-S02).
-6. Update existing CSV snapshot tests for the new column and variable row counts.
+Add a `date` column as the first column of every CSV row, formatted as "Month Day" (e.g., "January 1" through "January 31" for Round 1). Attach the month name to the written round result so the frontend can display "Entering {Month}" on the briefing screen.
 
-**Acceptance:** Round 1 CSV has 31 rows starting `"January 1"`. Round 2 has 28 starting `"February 1"`. `roundResults[].month` is set.
+Update existing CSV snapshot tests to reflect the new column and variable row counts.
 
 ---
 
-### BE-S04 — `purchaseDataset` Callable + Tier 1/2 CSV Generators  (P1)
+### BE-S04 — Data Purchase Store: `purchaseDataset` Callable and CSV Generators  · P1
 
-**New feature.** Backend for FE-S01.
+Backend counterpart to FE-S01. Add prices for the two tiers to config ($15,000 and $60,000, exposed through the existing config override pattern so professors can tune without redeploying).
 
-**Files:**
-- New: `backend/functions/modules/data-store.js`
-- `backend/functions/index.js` — `exports.purchaseDataset`
-- `backend/functions/modules/config.js` — prices
+**Tier 1** is a small static CSV mapping each chef nationality to its specialty products and portrait asset paths. Fixed content — generate once at module load.
 
-**Steps:**
+**Tier 2** is generated programmatically with at least 30 rows per nationality (120+ total). Columns cover nationality, skill level, average monthly quantities per product, average satisfaction score, average sous chef count, average cleanliness, purchase price, and average monthly revenue. Production values should reflect the existing skill-tier and specialty multipliers, with roughly ±15% jitter seeded by the game ID so the dataset is deterministic if re-downloaded within the same game.
 
-1. Add to `config.js`:
-   ```js
-   dataStorePrices: {
-     tier1_chefOverview: 15000,    // ~3% of $500k starting budget
-     tier2_chefProfiles: 60000,    // ~12% of starting budget, ≈ advanced chef minBidFloor
-   }
-   ```
-   Expose via the existing `numberOrDefault` override pattern.
+The `purchaseDataset` callable accepts a game ID, team ID, and tier. It requires authentication and verifies the caller belongs to the team. It rejects if the current phase isn't a Decisions phase, or if the team already owns the tier (returning the existing CSV in that case for re-download), or if the team's budget is below the price. On success, it deducts the price from the team's budget, persists ownership, and returns the CSV content and suggested filename. All state changes happen in a single Firestore transaction.
 
-2. **Tier 1 CSV** (static): columns `nationality, male_asset, female_asset, specialties`. Rows map directly to `CHEF_NATIONALITIES` in config (French → croissant, coffee; Japanese → matcha, croissant; Italian → sandwich, coffee; American → bagel, cookie).
-
-3. **Tier 2 CSV** (generated): ≥120 rows (≥30 per nationality). Columns: `nationality, skill_level, avg_monthly_quantity_{product×6}, avg_satisfaction_score, avg_sous_chefs_worked_with, avg_cleanliness_score, purchase_price, avg_monthly_revenue`. Production per product reflects existing multipliers (novel/intermediate/advanced × specialty/nonSpecialty × base 30 u/day × 30 days), plus ±15% jitter seeded by `gameId` for deterministic re-downloads.
-
-4. **Callable contract:**
-   ```js
-   exports.purchaseDataset = onCall(async (request) => {
-     // input: { gameId, teamId, tier: 'tier1' | 'tier2' }
-     // auth: caller must belong to teamId
-     // phase: must be *_decide; else failed-precondition
-     // budget: budgetCurrent >= price; else failed-precondition (no loan shark for data)
-     // idempotency: if already owned, return { alreadyOwned: true, csvContent, ... }
-     // on success: decrement budgetCurrent; push to team.purchasedDatasets
-     // return: { budgetCurrent, csvContent, filename }
-   });
-   ```
-   All mutation in a single Firestore transaction.
-
-5. Data purchases **do not** count toward `totalSpent` for loan-shark purposes.
-
-**Acceptance:** Calling `purchaseDataset` during a decide phase succeeds once per tier per team, decrements budget, persists ownership, and returns the CSV. Second call returns `alreadyOwned: true` with the same CSV content.
+Data purchases do not count toward the round's `totalSpent` for loan-shark purposes — this is a cash-only transaction.
 
 ---
 
-### BE-S05 — Event Persistence Shape for Results Cards  (P0)
+### BE-S05 — Event Persistence for Results Cards  · P0
 
-**File:** `backend/firestore-schema.js`, `backend/functions/modules/simulation.js`
+Extend the round-result shape with an `events` array that the Results screen reads from. Each event is either a `food_inspection` (date, cleanliness percentage, rating, foot traffic penalty) or a `burglary` (date, amount stolen). Events are written to Firestore atomically with the rest of the round result. Document the new field in the Firestore schema reference.
 
-**Steps:**
-1. Extend `RoundResult` with:
-   ```ts
-   events: Array<
-     | { type: 'food_inspection', date: string, cleanlinessPct: number, rating: string, trafficPenalty: number }
-     | { type: 'burglary', date: string, amountStolen: number }
-   >
-   ```
-2. Write events atomically with the rest of the round result in `simulation.js` (same transaction as revenue / satisfaction).
-3. Document the shape in `firestore-schema.js`.
-
-**Acceptance:** Each player's round result contains an `events` array; FE-S03 can render cards directly from it.
-
-**Depends on:** BE-S01, BE-S02, BE-S03.
+This is the persistence contract for FE-S03, BE-S01, and BE-S02.
 
 ---
 
-### BE-S06 — Remove `resetGame` Callable  (P0)
+### BE-S06 — Remove `resetGame` Callable  · P0
 
-**File:** `backend/functions/index.js`
-
-**Steps:**
-1. Delete `exports.resetGame` and its implementation (shipped in PR #42).
-2. Confirm `endGame` fully handles lifecycle cleanup (transition → `game_over`, finalize leaderboard, settle budgets). If not, port any missing logic from `resetGame` into `endGame` before deletion.
-3. Remove `resetGame` references from `firestore.rules` if any.
-
-**Acceptance:** `resetGame` no longer exists; `endGame` handles all end-of-game cleanup.
+Delete the `resetGame` callable that was shipped in PR #42. Before deletion, audit `endGame` to confirm it handles the full end-of-game cleanup (transition to `game_over`, leaderboard finalization, budget settlement). If `resetGame` did anything `endGame` doesn't, port that logic into `endGame` first. Remove any references to `resetGame` from security rules.
 
 ---
 
-### BE-S07 — Attach Month Name to Round Results  (P0)
+### BE-S07 — Attach Month Name to Round Results  · P0
 
-Small task — spin-off of BE-S03 for frontend integration.
-
-**File:** `backend/functions/modules/simulation.js`
-
-**Steps:** When writing a round result, include `month: getMonthForRound(round).name`. Used by FE-S02.
-
-**Acceptance:** `roundResults[N-1].month === 'January'` for round 1, etc.
+Small spin-off of BE-S03. When writing each round's result, include a `month` string field set to the calendar month name (January, February, etc.). The frontend (FE-S02) reads this directly to render "Entering {Month}" on the briefing screen.
 
 ---
 
-### BE-S08 — Multi-Role Support (role array + permission updates)  (P1)
+### BE-S08 — Multi-Role Support  · P1
 
-**Files:**
-- `backend/firestore-schema.js` — update `PlayerDocument.role` to `PlayerRole[]`
-- `backend/functions/index.js` — role claim/toggle callable
-- `backend/functions/modules/phases.js` — `canSubmitDecision`, `canSubmitBids`, etc.
+Change the player's `role` field from a single value to an array. No data migration is required — games are short-lived; wrap any legacy single-value reads at the boundary.
 
-**Steps:**
-1. Schema: `role: PlayerRole[]` (previously singular). No data migration required — games are short-lived; wrap reads at the boundary: `roles = Array.isArray(r) ? r : r ? [r] : []`.
-2. Role toggle callable:
-   - **Claim:** only if no other teammate holds the role. Append to caller's roles.
-   - **Release:** remove from caller's roles.
-   - **Blocked:** if another teammate holds the role, throw `already-exists`.
-   - `solo` stays a special case (one player, all roles).
-3. Update `phases.js` permission helpers to accept `roles: PlayerRole[]` and return true if **any** role in the array is permitted for the current phase.
-4. Tests: claim, toggle-off, blocked-by-other-player, multi-role player submitting for multiple phases.
+Update the role claim/release logic so a player can add a role only if no teammate holds it, and can release any role they currently hold. If another teammate already holds the role, the claim fails with an `already-exists` error. The `solo` role remains a special case (one player, all roles).
 
-**Acceptance:** Two-player team can distribute 3 roles between them with any combination of ownership.
+Update phase permission helpers (which currently check equality like `role === 'advertising'`) to check membership in the array instead, so a player holding multiple roles can submit for any phase owned by any of their roles. Add tests covering claim, release, blocked-by-teammate, and multi-role submission flows.
 
 ---
 
-## ASSETS — New SVGs Required
+## Assets to Create
 
-| Asset | Path | Used By | Notes |
-|-------|------|---------|-------|
-| Food Inspector character | `app/public/assets/events/food-inspector.svg` | FE-S03 | Match existing chef illustration style. |
-| Burglar character | `app/public/assets/events/burglar.svg` | FE-S03 | Playful/cartoony; on-theme with bakery. |
-| Neutral customer | `app/public/assets/characters/customer.svg` | FE-S13 | Gender/race neutral; simple enough to repeat in a crowd animation. |
-| Bakery interior scene | `app/public/assets/scene/bakery-interior.svg` | FE-S13 | Composite: register, counter, pastry case, oven, barista bar. |
+Four new SVGs are required:
 
-If art isn't ready, stub with labeled colored rectangles so layout + animation can land now.
+- **Food Inspector character** — rendered on the Food Safety Inspection event card. Should match the existing chef illustration style.
+- **Burglar character** — rendered on the Burglary event card. Playful/cartoony to stay on theme.
+- **Neutral customer** — used in the simulation animation to represent foot traffic. Gender and race neutral, simple enough to repeat in a crowd.
+- **Bakery interior scene** — the composed background for the Simulation phase, with register, counter, pastry display case, oven, and barista bar.
+
+If art isn't ready when implementation starts, stub with labeled colored rectangles so layout and animation can be built now and assets swapped in later.
 
 ---
 
-## Dependency Graph
+## Dependencies
 
-- FE-S01 ⟵ BE-S04
-- FE-S02 ⟵ BE-S07 (⟵ BE-S03)
-- FE-S03 ⟵ BE-S01, BE-S02, BE-S05
-- FE-S10 ⟵ BE-S06
-- FE-S11 ⟵ BE-S08
+- FE-S01 depends on BE-S04.
+- FE-S02 depends on BE-S07 (which depends on BE-S03).
+- FE-S03 depends on BE-S01, BE-S02, and BE-S05.
+- FE-S10 depends on BE-S06.
+- FE-S11 depends on BE-S08.
 
 Independent of backend (safe to parallelize): FE-S04, FE-S05, FE-S06, FE-S07, FE-S08, FE-S09, FE-S12, FE-S13, FE-S14.
 
-Backend-only (no frontend dep): BE-S01 (can be paired with FE-S03 later), BE-S02, BE-S03, BE-S05, BE-S06, BE-S07, BE-S08.
+Backend-only (no frontend dependency): BE-S02, BE-S03, BE-S05, BE-S06, BE-S07, BE-S08. BE-S01 pairs naturally with FE-S03.
 
 ---
 
 ## Priority Summary
 
-**P0 (must ship by May 1):**
-- FE-S02, FE-S03, FE-S04, FE-S07, FE-S08, FE-S10
-- BE-S01, BE-S03, BE-S05, BE-S06, BE-S07
+**P0 (must ship by May 1):** FE-S02, FE-S03, FE-S04, FE-S07, FE-S08, FE-S10, BE-S01, BE-S03, BE-S05, BE-S06, BE-S07.
 
-**P1 (ship if time):**
-- FE-S01, FE-S05, FE-S06, FE-S09, FE-S11, FE-S12, FE-S13, FE-S14
-- BE-S02, BE-S04, BE-S08
+**P1 (ship if time):** FE-S01, FE-S05, FE-S06, FE-S09, FE-S11, FE-S12, FE-S13, FE-S14, BE-S02, BE-S04, BE-S08.
