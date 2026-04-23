@@ -153,3 +153,36 @@ describe('<SceneBackdrop>', () => {
     expect(canvas.style.imageRendering).toBe('pixelated')
   })
 })
+
+describe('<SceneBackdrop> counter', () => {
+  let contextStub: ReturnType<typeof stubCanvasContext>
+  let originalImageData: typeof ImageData | undefined
+
+  beforeEach(() => {
+    contextStub = stubCanvasContext()
+    originalImageData = globalThis.ImageData
+    ;(globalThis as { ImageData: typeof ImageData }).ImageData =
+      FakeImageData as unknown as typeof ImageData
+  })
+
+  afterEach(() => {
+    contextStub.spy.mockRestore()
+    if (originalImageData) {
+      ;(globalThis as { ImageData: typeof ImageData }).ImageData = originalImageData
+    } else {
+      delete (globalThis as Partial<{ ImageData: typeof ImageData }>).ImageData
+    }
+  })
+
+  it('paints the counter band in wood tones below the wainscoting', () => {
+    const { container } = render(<SceneBackdrop />)
+    const canvas = container.querySelector('canvas')! as HTMLCanvasElement
+    const ctx = canvas.getContext('2d')!
+    // Top of counter zone (y=140 per SCENE.zones.counter.y) should be the counter top stripe
+    const top = ctx.getImageData(10, SCENE.zones.counter.y, 1, 1).data
+    const mid = ctx.getImageData(10, SCENE.zones.counter.y + 10, 1, 1).data
+    // Both warm brown (R>G>B), mid darker than top or vice versa — just assert warm brown.
+    expect(top[0]).toBeGreaterThan(top[2])
+    expect(mid[0]).toBeGreaterThan(mid[2])
+  })
+})

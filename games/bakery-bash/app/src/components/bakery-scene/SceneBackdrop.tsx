@@ -28,6 +28,19 @@ function paintBackdrop(ctx: CanvasRenderingContext2D) {
   for (let x = 30; x < SCENE.width; x += 60) {
     fillRect(ctx, PALETTE.floorGrain, x, floorY, 1, SCENE.zones.floor.height)
   }
+
+  // Counter zone — darker wood front, slightly lighter top stripe.
+  const cY = SCENE.zones.counter.y
+  const cH = SCENE.zones.counter.height
+  fillRect(ctx, PALETTE.counterWood, 0, cY, SCENE.width, cH)
+  // Counter top stripe (1px lighter band).
+  fillRect(ctx, '#a87048', 0, cY, SCENE.width, 2)
+  // Counter base shadow (2px darker at bottom where it meets floor).
+  fillRect(ctx, PALETTE.counterTop, 0, cY + cH - 2, SCENE.width, 2)
+  // Vertical joins every 80 px for a paneled-counter feel.
+  for (let x = 40; x < SCENE.width; x += 80) {
+    fillRect(ctx, PALETTE.counterTop, x, cY + 2, 1, cH - 4)
+  }
 }
 
 /**
