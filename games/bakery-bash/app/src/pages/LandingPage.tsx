@@ -231,7 +231,15 @@ export function LandingPage() {
       return;
     }
 
+    // The polling useEffect keeps refetching lobbyTeams, so the team the user
+    // picked could be gone by submit time (creator left, backend refreshed).
+    // Fail loudly here instead of sending an empty bakeryName through.
     const selectedTeam = lobbyTeams?.find((t) => t.teamId === selectedTeamId);
+    if (!selectedTeam) {
+      setSelectedTeamId(null);
+      setError("That team is no longer available. Please pick another.");
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -242,8 +250,8 @@ export function LandingPage() {
       const result = await joinGame({
         joinCode: normalizedCode,
         displayName: trimmedPlayer,
-        teamId: selectedTeamId,
-        ...(selectedTeam ? { bakeryName: selectedTeam.name } : {}),
+        teamId: selectedTeam.teamId,
+        bakeryName: selectedTeam.name,
       });
       const { gameId, playerId } = result.data;
 
@@ -256,13 +264,13 @@ export function LandingPage() {
           player: {
             id: playerId,
             name: trimmedPlayer,
-            bakeryName: selectedTeam?.name ?? "",
+            bakeryName: selectedTeam.name,
             budget: 0,
             cumulativeRevenue: 0,
           },
         },
       });
-      navigate("/team", { state: { teamId: selectedTeamId } });
+      navigate("/team", { state: { teamId: selectedTeam.teamId } });
     } catch (err) {
       setError(humanizeJoinError(err));
     } finally {

@@ -10,6 +10,10 @@
  *   4. getTeamsInLobby — returns every team with correct memberCount
  *   5. joinGame with explicit teamId — second player lands on the same
  *      team and appears in roleAssignments
+ *   6. createTeam after phase != lobby (new uid) — `failed-precondition`
+ *   7. getTeamsInLobby after phase != lobby (new uid) — `failed-precondition`
+ *   8. getTeamsInLobby after phase != lobby (existing player) — still returns
+ *      team list so rejoin path stays open
  */
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
@@ -222,6 +226,31 @@ async function main() {
       'post-lobby create → failed-precondition'
     );
   }
+
+  // ------- 7. getTeamsInLobby after phase != lobby (new caller) -------
+  // Still signed in as 'create-join-late' — no player doc exists for this
+  // uid, so the guard should fire.
+  try {
+    await getTeamsInLobby({ joinCode: JOIN_CODE });
+    assert.fail('expected getTeamsInLobby after lobby to throw for new caller');
+  } catch (err) {
+    assert.match(
+      err.code || err.message,
+      /failed-precondition/,
+      'post-lobby getTeamsInLobby (new caller) → failed-precondition'
+    );
+  }
+
+  // ------- 8. getTeamsInLobby after phase != lobby (existing player) -------
+  // Returning player should still be able to see the team list so they can
+  // rejoin via joinGame's rejoin path.
+  await signIn(auth, adminAuth, CREATOR_A_UID);
+  const rejoinLobby = await getTeamsInLobby({ joinCode: JOIN_CODE });
+  assert.strictEqual(
+    rejoinLobby.data.teams.length,
+    2,
+    'existing player can list teams post-lobby'
+  );
 
   console.log('PASS: createTeam + getTeamsInLobby + joinGame(teamId) all green');
 }

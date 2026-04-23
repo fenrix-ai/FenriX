@@ -893,6 +893,10 @@ exports.createTeam = onCall(CALLABLE_OPTS, async (request) => {
   let resolvedTeamId = baseSlug;
 
   await db.runTransaction(async (transaction) => {
+    // Reset on every attempt so a Firestore transaction retry doesn't carry
+    // a stale suffix from a previous iteration into the slug-collision loop.
+    resolvedTeamId = baseSlug;
+
     const [gSnap, cfgSnap, pSnap] = await Promise.all([
       transaction.get(gameRef),
       transaction.get(gameRef.collection('config').doc('params')),
@@ -901,18 +905,24 @@ exports.createTeam = onCall(CALLABLE_OPTS, async (request) => {
     if (!gSnap.exists) {
       throw new HttpsError('not-found', 'No game exists for that join code.');
     }
-    if (gSnap.get('phase') !== 'lobby') {
-      throw new HttpsError('failed-precondition', 'Teams can only be created while the game is in the lobby.');
-    }
 
     const config = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
 
+    // Mirror the joinGame ordering: phase + cap gates apply only to brand-new
+    // players. A returning player (same uid, existing player doc) accidentally
+    // hitting this path after the game started should get a precise error
+    // rather than being silently blocked on the phase check.
     if (!pSnap.exists) {
+      if (gSnap.get('phase') !== 'lobby') {
+        throw new HttpsError('failed-precondition', 'Teams can only be created while the game is in the lobby.');
+      }
       const playerCap = numberOrDefault(config.playerCap, 20);
       const currentTotal = numberOrDefault(gSnap.get('totalPlayers'), 0);
       if (currentTotal >= playerCap) {
         throw new HttpsError('resource-exhausted', 'This game is full.');
       }
+    } else if (gSnap.get('phase') !== 'lobby') {
+      throw new HttpsError('failed-precondition', 'You already joined this game. Refresh the page to rejoin your team.');
     }
 
     // Duplicate-name check: any existing team doc with the same name is a
@@ -1022,7 +1032,7 @@ exports.createTeam = onCall(CALLABLE_OPTS, async (request) => {
 // Output: { teams: [{ teamId, name, logoUrl, memberCount }] }
 
 exports.getTeamsInLobby = onCall(CALLABLE_OPTS, async (request) => {
-  requireAuth(request, 'Sign in before browsing teams.');
+  const auth = requireAuth(request, 'Sign in before browsing teams.');
   const joinCode = cleanString((request.data || {}).joinCode).toUpperCase();
   if (!/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/.test(joinCode)) {
     throw new HttpsError('invalid-argument', 'joinCode must be a 6-character game code.');
@@ -1038,6 +1048,18 @@ exports.getTeamsInLobby = onCall(CALLABLE_OPTS, async (request) => {
   }
 
   const gameRef = gameSnap.docs[0].ref;
+
+  // Surface "game already started" here instead of waiting for joinGame to
+  // reject after the student has already selected a team. Returning players
+  // (existing player doc) are exempt so they can still rejoin mid-game via
+  // the team picker — joinGame's rejoin path stays open at any phase.
+  if (gameSnap.docs[0].get('phase') !== 'lobby') {
+    const existingPlayer = await gameRef.collection('players').doc(auth.uid).get();
+    if (!existingPlayer.exists) {
+      throw new HttpsError('failed-precondition', 'This game has already started and isn\'t accepting new players.');
+    }
+  }
+
   const teamsSnap = await gameRef.collection('teams').get();
 
   const teams = teamsSnap.docs.map((d) => {
