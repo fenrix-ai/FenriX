@@ -56,15 +56,14 @@ export function GameSidebar({ readOnly = false }: GameSidebarProps) {
     setError(null);
     setInfo(null);
     try {
-      const purchaseFn = httpsCallable(functions, "purchaseCompetitorInsight");
-      const result = await purchaseFn({
-        gameId,
-        round: (currentRound ?? 1) - 1,
-      });
-      const data = result.data as { csv: string };
       const prevRound = (currentRound ?? 1) - 1;
+      const purchaseFn = httpsCallable(functions, "purchaseCompetitorInsight");
+      const result = await purchaseFn({ gameId, round: prevRound });
+      const data = result.data as { csv: string };
+      // Stable, round-scoped id so ADD_ACQUIRED_CSV's dedupe-by-id actually
+      // collapses repeat purchases into a single inbox entry (no Date.now).
       addCsv({
-        id: `competitor-intel-round-${prevRound}-${Date.now()}`,
+        id: `competitor-intel-round-${prevRound}`,
         kind: "competitor-intel",
         label: `Round ${prevRound} competitor intel`,
         round: prevRound,
@@ -88,15 +87,13 @@ export function GameSidebar({ readOnly = false }: GameSidebarProps) {
     setError(null);
     setInfo(null);
     try {
-      // Backend implementation (chef CSV tiers) is tracked separately; we
-      // try the callable but fall back to a clear error if it isn't
-      // deployed yet so the UI doesn't look silently broken.
       const purchaseFn = httpsCallable(functions, "purchaseChefData");
       const result = await purchaseFn({ gameId, tier });
       const data = result.data as { csv: string };
-      const id = `chef-tier${tier}-round-${currentRound ?? 1}-${Date.now()}`;
+      // Stable id — one inbox entry per tier, no Date.now sprinkle that would
+      // bypass ADD_ACQUIRED_CSV dedupe on accidental double-submits.
       addCsv({
-        id,
+        id: `chef-tier${tier}`,
         kind: tier === 1 ? "chef-tier1" : "chef-tier2",
         label:
           tier === 1
@@ -116,7 +113,7 @@ export function GameSidebar({ readOnly = false }: GameSidebarProps) {
       const message =
         err instanceof Error
           ? err.message
-          : "Could not purchase chef data. Backend may not be live yet.";
+          : "Could not purchase chef data.";
       setError(message);
     } finally {
       setPending(null);
@@ -125,7 +122,18 @@ export function GameSidebar({ readOnly = false }: GameSidebarProps) {
 
   const isFinance = role === "finance" || role === "solo";
   const canPurchase = isFinance && !readOnly && !!gameId;
-  const hasIntel = acquiredCsvs.some((c) => c.kind === "competitor-intel");
+  const prevRound = (currentRound ?? 1) - 1;
+  // Intel is round-scoped; "already bought" means specifically for the round
+  // the button would purchase, so navigating to a new round re-enables it.
+  const hasIntelForPrevRound = acquiredCsvs.some(
+    (c) => c.kind === "competitor-intel" && c.round === prevRound,
+  );
+  const hasTier1 =
+    purchasedThisSession.tier1 ||
+    acquiredCsvs.some((c) => c.kind === "chef-tier1");
+  const hasTier2 =
+    purchasedThisSession.tier2 ||
+    acquiredCsvs.some((c) => c.kind === "chef-tier2");
 
   return (
     <aside className="game-sidebar">
@@ -167,13 +175,18 @@ export function GameSidebar({ readOnly = false }: GameSidebarProps) {
               <button
                 className="btn btn--secondary btn--small sidebar__intel-btn"
                 onClick={() => setShowIntelConfirm(true)}
-                disabled={pending !== null}
+                disabled={pending !== null || hasIntelForPrevRound}
+                title={
+                  hasIntelForPrevRound
+                    ? `Round ${prevRound} intel is already in your CSV Inbox.`
+                    : undefined
+                }
               >
-                {hasIntel
-                  ? `Buy Competitor Intel (again) — $${COMPETITOR_INTEL_COST.toLocaleString()}`
+                {hasIntelForPrevRound
+                  ? `Competitor Intel (R${prevRound}) ✓ Purchased`
                   : `Buy Competitor Intel — $${COMPETITOR_INTEL_COST.toLocaleString()}`}
               </button>
-              {showIntelConfirm && (
+              {showIntelConfirm && !hasIntelForPrevRound && (
                 <div className="sidebar__intel-confirm">
                   <p>
                     Spend ${COMPETITOR_INTEL_COST.toLocaleString()} to see all
@@ -202,28 +215,38 @@ export function GameSidebar({ readOnly = false }: GameSidebarProps) {
               type="button"
               className="btn btn--secondary btn--small sidebar__chef-data-btn"
               onClick={() => void handlePurchaseChefData(1)}
-              disabled={pending !== null}
-              title="Table of chef nationalities → product specialties."
+              disabled={pending !== null || hasTier1}
+              title={
+                hasTier1
+                  ? "Tier 1 chef data is already in your CSV Inbox."
+                  : "Table of chef nationalities → product specialties."
+              }
             >
-              Buy Chef Specialties (T1) — ${TIER1_COST.toLocaleString()}
+              {hasTier1
+                ? "Chef Specialties (T1) ✓ Purchased"
+                : `Buy Chef Specialties (T1) — $${TIER1_COST.toLocaleString()}`}
             </button>
             <p className="sidebar__chef-data-hint">
               Tier 1 — See which nationality bakes which products best.
-              {purchasedThisSession.tier1 ? " ✓ Purchased" : ""}
             </p>
 
             <button
               type="button"
               className="btn btn--secondary btn--small sidebar__chef-data-btn"
               onClick={() => void handlePurchaseChefData(2)}
-              disabled={pending !== null}
-              title="Full profile dump: skill, satisfaction, avg production + revenue, 30+ chefs per nationality."
+              disabled={pending !== null || hasTier2}
+              title={
+                hasTier2
+                  ? "Tier 2 chef data is already in your CSV Inbox."
+                  : "Full profile dump: skill, satisfaction, avg production + revenue, 30+ chefs per nationality."
+              }
             >
-              Buy Chef Profiles (T2) — ${TIER2_COST.toLocaleString()}
+              {hasTier2
+                ? "Chef Profiles (T2) ✓ Purchased"
+                : `Buy Chef Profiles (T2) — $${TIER2_COST.toLocaleString()}`}
             </button>
             <p className="sidebar__chef-data-hint">
               Tier 2 — Full chef-by-chef profile CSV (30+ per nationality).
-              {purchasedThisSession.tier2 ? " ✓ Purchased" : ""}
             </p>
           </div>
 
