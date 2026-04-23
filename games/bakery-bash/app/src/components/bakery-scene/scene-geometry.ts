@@ -37,6 +37,14 @@ export const SCENE = {
     height: 200,
   },
 
+  /** Team-sign frame — position + size of the wooden sign on the back wall. */
+  signFrame: {
+    x: 180,
+    y: 4,
+    width: 120,
+    height: 22,
+  },
+
   /** Chef station X centers (mid of chef sprite). Stations stay left of door. */
   stations: {
     bakery: 90,

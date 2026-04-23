@@ -1,19 +1,9 @@
 import { useEffect, useRef } from 'react'
-import { textToImageData, measureText } from './pixel-font'
+import { textToImageData, measureText, GLYPH_HEIGHT } from './pixel-font'
+import { SCENE } from './scene-geometry'
 
 interface Props {
   teamName: string
-}
-
-/**
- * Sign frame bounds match the silhouette painted by SceneBackdrop.
- * Keep in sync with paintBackdrop's sign rect (x=180, y=4, w=120, h=22).
- */
-const SIGN = {
-  x: 180,
-  y: 4,
-  width: 120,
-  height: 22,
 }
 
 const SIGN_TEXT_COLOR = '#f3e2b8'
@@ -39,6 +29,8 @@ function fitText(text: string, maxWidth: number): string {
   return upper.slice(0, lo) + '.'
 }
 
+const SIGN = SCENE.signFrame
+
 export function TeamSign({ teamName }: Props) {
   const ref = useRef<HTMLCanvasElement | null>(null)
 
@@ -53,7 +45,7 @@ export function TeamSign({ teamName }: Props) {
     const displayText = fitText(teamName, SIGN.width - 8) // 4 px padding each side
     const textWidth = measureText(displayText)
     const xOffset = Math.floor((SIGN.width - textWidth) / 2)
-    const yOffset = Math.floor((SIGN.height - 8) / 2) // 8 = GLYPH_HEIGHT
+    const yOffset = Math.floor((SIGN.height - GLYPH_HEIGHT) / 2)
 
     // Shadow layer (1px down, dark)
     const shadowData = textToImageData(displayText, SIGN_SHADOW_COLOR)

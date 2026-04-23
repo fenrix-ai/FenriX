@@ -167,10 +167,7 @@ function paintBackdrop(ctx: CanvasRenderingContext2D) {
     fillRect(ctx, PALETTE.outline, clockX, clockY - 4, 1, 4) // hour hand
 
     // Sign silhouette — wooden frame with burgundy trim. (Text fills in Phase 3 via <TeamSign>.)
-    const sX = 180
-    const sY = 4
-    const sW = 120
-    const sH = 22
+    const { x: sX, y: sY, width: sW, height: sH } = SCENE.signFrame
     fillRect(ctx, PALETTE.burgundyAccent, sX - 2, sY - 2, sW + 4, sH + 4) // burgundy backing
     fillRect(ctx, '#8a5c2e', sX, sY, sW, sH) // wood face
     fillRect(ctx, '#6c4420', sX, sY + sH - 2, sW, 2) // bottom shadow
