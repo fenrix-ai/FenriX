@@ -1,0 +1,480 @@
+/* =========================================================================
+   Pixel Bakery Scene — scoped styles for the SimulatePhase interior scene.
+   See components/simulate/PixelBakeryScene.tsx.
+   ========================================================================= */
+
+.pixel-scene {
+  position: relative;
+  width: 100%;
+  max-width: 720px;
+  aspect-ratio: 16 / 9;
+  margin: 0 auto;
+  background: #F4E4C1;
+  overflow: hidden;
+  border: 4px solid #5A3A20;
+  border-radius: 4px;
+  box-shadow:
+    4px 4px 0 rgba(0, 0, 0, 0.25),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  font-family: 'Courier New', 'Lucida Console', monospace;
+  contain: layout paint style;
+}
+
+.pixel-scene * {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* Backdrop layering (back to front) */
+.pixel-scene__backwall,
+.pixel-scene__counter,
+.pixel-scene__floor,
+.pixel-scene__door {
+  position: absolute;
+  pointer-events: none;
+}
+
+/* 480 x 270 logical units — we anchor by % within the scene box */
+.pixel-scene__backwall {
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 60%;
+}
+
+.pixel-scene__counter {
+  top: 60%;
+  left: 0;
+  right: 0;
+  height: 22%;
+  z-index: 3;
+}
+
+.pixel-scene__floor {
+  top: 82%;
+  left: 0;
+  right: 0;
+  height: 18%;
+  z-index: 1;
+}
+
+.pixel-scene__door {
+  top: 42%;
+  right: 0;
+  width: 8%;
+  height: 35%;
+  z-index: 2;
+}
+
+.pixel-scene__backwall img,
+.pixel-scene__counter img,
+.pixel-scene__floor img,
+.pixel-scene__door img {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Welcome sign */
+.pixel-scene__sign {
+  position: absolute;
+  top: 4%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 40%;
+  z-index: 4;
+  pointer-events: none;
+}
+
+.pixel-scene__sign img {
+  width: 100%;
+  display: block;
+}
+
+.pixel-scene__sign-text {
+  position: absolute;
+  inset: 28% 12% 14% 12%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  color: #3B2A1A;
+  font-size: clamp(0.6rem, 1.7vw, 1.05rem);
+  line-height: 1;
+  text-align: center;
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  white-space: nowrap;
+  text-shadow: 1px 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+/* Shelves layer */
+.pixel-scene__shelves {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.pixel-scene__shelf-item {
+  position: absolute;
+  width: 6%;
+  height: auto;
+  image-rendering: pixelated;
+}
+
+/* Ad poster on back wall */
+.pixel-scene__ad {
+  position: absolute;
+  top: 12%;
+  left: 5%;
+  width: 14%;
+  height: 28%;
+  border: 2px solid #5A3A20;
+  background: #FFFFFF;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.2);
+}
+
+.pixel-scene__ad img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.pixel-scene__ad-label {
+  position: absolute;
+  bottom: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.5rem;
+  color: #5A3A20;
+  background: #F4E4C1;
+  padding: 0 2px;
+  white-space: nowrap;
+}
+
+/* Chef layer */
+.pixel-scene__chef-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+
+.pixel-chef {
+  position: absolute;
+  bottom: 20%;
+  width: 36px;
+  height: 54px;
+  image-rendering: pixelated;
+  transform-origin: bottom center;
+}
+
+.pixel-chef img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  animation: pixel-chef-bob 1.8s ease-in-out infinite;
+}
+
+@keyframes pixel-chef-bob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-2px); }
+}
+
+/* Customers (on the floor strip, foreground) */
+.pixel-scene__customer-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.pixel-customer {
+  position: absolute;
+  bottom: 16%;
+  width: 36px;
+  height: 52px;
+  image-rendering: pixelated;
+  transform-origin: bottom center;
+  transition: none;
+}
+
+.pixel-customer img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  animation: pixel-customer-walk 0.5s ease-in-out infinite;
+}
+
+.pixel-customer[data-facing='right'] img {
+  transform: scaleX(-1);
+}
+
+.pixel-customer[data-phase='AT_COUNTER'] img {
+  animation: pixel-customer-bob 0.8s ease-in-out infinite;
+}
+
+@keyframes pixel-customer-walk {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25%      { transform: translateY(-1px) rotate(-1deg); }
+  75%      { transform: translateY(-1px) rotate(1deg); }
+}
+
+@keyframes pixel-customer-bob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-1px); }
+}
+
+/* Dollar popup layer */
+.pixel-scene__dollar-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.pixel-dollar {
+  position: absolute;
+  width: 22px;
+  height: 13px;
+  image-rendering: pixelated;
+  animation: pixel-dollar-float 0.9s ease-out forwards;
+  filter: drop-shadow(1px 1px 0 rgba(0, 0, 0, 0.35));
+}
+
+.pixel-dollar--var-0 { animation-delay: 0ms; }
+.pixel-dollar--var-1 { animation-delay: 60ms; transform: rotate(4deg); }
+.pixel-dollar--var-2 { animation-delay: 120ms; transform: rotate(-3deg); }
+.pixel-dollar--var-3 { animation-delay: 180ms; transform: rotate(6deg); }
+.pixel-dollar--var-4 { animation-delay: 240ms; transform: rotate(-5deg); }
+.pixel-dollar--var-5 { animation-delay: 300ms; transform: rotate(2deg); }
+
+@keyframes pixel-dollar-float {
+  0% {
+    transform: translate(0, 0) rotate(0deg) scale(0.6);
+    opacity: 0;
+  }
+  15% {
+    transform: translate(0, -6px) rotate(-8deg) scale(1.05);
+    opacity: 1;
+  }
+  60% {
+    transform: translate(0, -28px) rotate(6deg) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(0, -52px) rotate(-12deg) scale(0.95);
+    opacity: 0;
+  }
+}
+
+/* Day/night overlay */
+.pixel-scene__nightveil {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  background: linear-gradient(180deg,
+    rgba(15, 22, 65, 0.55),
+    rgba(30, 20, 60, 0.45)
+  );
+  opacity: 0;
+  transition: opacity 600ms ease;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+}
+
+.pixel-scene--night .pixel-scene__nightveil {
+  opacity: 1;
+}
+
+/* Warm window glow during night */
+.pixel-scene--night .pixel-scene__nightveil::after {
+  content: '';
+  position: absolute;
+  top: 9%;
+  left: 6%;
+  width: 20%;
+  height: 42%;
+  background: radial-gradient(ellipse at center,
+    rgba(255, 210, 100, 0.4) 0%,
+    transparent 70%
+  );
+  pointer-events: none;
+}
+
+/* Reduced-motion text (only visible when we short-circuit) */
+.pixel-scene__rm-text {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Courier New', monospace;
+  font-size: 1.1rem;
+  color: #3B2A1A;
+  background: rgba(244, 228, 193, 0.82);
+  font-weight: bold;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pixel-chef img,
+  .pixel-customer img {
+    animation: none !important;
+  }
+  .pixel-dollar {
+    animation: none !important;
+    display: none;
+  }
+  .pixel-scene__nightveil {
+    transition: none;
+  }
+}
+
+/* =========================================================================
+   Side-panel pixel reskin — applied when SimulatePhase gets the pixel class.
+   ========================================================================= */
+
+.simulate-phase--pixel .simulate-phase__menu-panel,
+.simulate-phase--pixel .simulate-phase__status-panel {
+  background: #F4E4C1;
+  border: 3px solid #5A3A20;
+  border-radius: 2px;
+  box-shadow:
+    3px 3px 0 rgba(0, 0, 0, 0.18),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+  padding: 0.25rem;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.simulate-phase--pixel .simulate-phase__panel-title {
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  color: #F4E4C1;
+  background: #8B5E3C;
+  padding: 0.35rem 0.6rem;
+  margin: -0.25rem -0.25rem 0.5rem -0.25rem;
+  border-bottom: 2px solid #5A3A20;
+  letter-spacing: 0.05em;
+  text-shadow: 1px 1px 0 #5A3A20;
+}
+
+.simulate-phase--pixel .simulate-phase__menu-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.simulate-phase--pixel .simulate-phase__menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.3rem;
+  border-bottom: 1px dashed #B8865C;
+  font-family: 'Courier New', monospace;
+  color: #3B2A1A;
+}
+
+.simulate-phase--pixel .simulate-phase__menu-item:last-child {
+  border-bottom: none;
+}
+
+.simulate-phase--pixel .simulate-phase__menu-item--soldout {
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+
+.simulate-phase--pixel .simulate-phase__menu-icon {
+  width: 22px;
+  height: 22px;
+  image-rendering: pixelated;
+}
+
+.simulate-phase--pixel .simulate-phase__sold-out-badge {
+  margin-left: auto;
+  background: #8B2F2F;
+  color: #FFEDED;
+  font-family: 'Courier New', monospace;
+  font-size: 0.6rem;
+  font-weight: bold;
+  padding: 0.1rem 0.35rem;
+  border: 1px solid #5A1F1F;
+  letter-spacing: 0.1em;
+}
+
+.simulate-phase--pixel .simulate-phase__bar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.45rem 0;
+  font-family: 'Courier New', monospace;
+  font-size: 0.8rem;
+  color: #3B2A1A;
+}
+
+.simulate-phase--pixel .simulate-phase__bar-label {
+  min-width: 80px;
+  font-weight: bold;
+}
+
+.simulate-phase--pixel .simulate-phase__bar-track {
+  flex: 1;
+  height: 12px;
+  background: #5A3A20;
+  border: 2px solid #3B2A1A;
+  border-radius: 0;
+  overflow: hidden;
+}
+
+.simulate-phase--pixel .simulate-phase__bar-fill {
+  height: 100%;
+  transition: width 400ms ease;
+  image-rendering: pixelated;
+}
+
+.simulate-phase--pixel .simulate-phase__bar-pct {
+  min-width: 40px;
+  font-weight: bold;
+  text-align: right;
+}
+
+.simulate-phase--pixel .simulate-phase__waiting {
+  font-family: 'Courier New', monospace;
+  font-size: 0.75rem;
+  color: #5A3A20;
+  text-align: center;
+  margin-top: 1rem;
+  font-style: italic;
+  opacity: 0.75;
+}
+
+.simulate-phase--pixel .simulate-phase__topbar {
+  background: linear-gradient(180deg, #5A3A20, #3B2A1A);
+  color: #F4E4C1;
+  font-family: 'Courier New', monospace;
+  border-top: 2px solid #8B5E3C;
+  border-bottom: 2px solid #1F110A;
+  padding: 0.6rem 1.2rem;
+}
+
+.simulate-phase--pixel .simulate-phase__day-counter,
+.simulate-phase--pixel .simulate-phase__revenue-counter {
+  font-weight: bold;
+  letter-spacing: 0.05em;
+  text-shadow: 1px 1px 0 #1F110A;
+}
+
+.simulate-phase--pixel .simulate-phase__revenue-counter strong {
+  color: #E5C547;
+}
