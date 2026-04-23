@@ -276,3 +276,31 @@ describe('<SceneBackdrop> wall mounts', () => {
     expect(isCream).toBe(false)
   })
 })
+
+describe('<SceneBackdrop> counter furniture', () => {
+  let setup: ReturnType<typeof setupCanvasFake>
+
+  beforeEach(() => {
+    setup = setupCanvasFake()
+  })
+
+  afterEach(() => {
+    setup.cleanup()
+  })
+
+  it('paints the bread display case above the counter on the left', () => {
+    const { container } = render(<SceneBackdrop />)
+    const ctx = (container.querySelector('canvas')! as HTMLCanvasElement).getContext('2d')!
+    const p = ctx.getImageData(60, 130, 1, 1).data
+    const isCream = p[0] > 200 && p[1] > 180 && p[2] > 140
+    expect(isCream).toBe(false)
+  })
+
+  it('paints the espresso machine on the counter right', () => {
+    const { container } = render(<SceneBackdrop />)
+    const ctx = (container.querySelector('canvas')! as HTMLCanvasElement).getContext('2d')!
+    const p = ctx.getImageData(340, 135, 1, 1).data
+    const isCream = p[0] > 200 && p[1] > 180 && p[2] > 140
+    expect(isCream).toBe(false)
+  })
+})
