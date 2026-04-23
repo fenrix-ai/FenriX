@@ -98,19 +98,48 @@ function getQuantity(decision, product) {
 }
 
 /**
- * Pull the ad name (or null) from a player's auction results.
+ * Pull the list of ad slots a player won this round. Handles both the
+ * new `adWins: [{adType, amount}, ...]` shape and the legacy scalar
+ * `adWon: 'TV'` shape so existing simulation tests keep passing.
+ */
+function getAdWins(player) {
+  const ar = player && player.auctionResults;
+  if (!ar) return [];
+  if (Array.isArray(ar.adWins) && ar.adWins.length > 0) {
+    return ar.adWins
+      .map((w) => ({
+        adType: (w && w.adType) || null,
+        amount: Number((w && w.amount) || 0),
+      }))
+      .filter((w) => w.adType);
+  }
+  if (typeof ar.adWon === 'string' && ar.adWon) {
+    // Legacy single-win fallback — amount lives on adBidPaid as a scalar.
+    return [{ adType: ar.adWon, amount: Number(ar.adBidPaid) || 0 }];
+  }
+  return [];
+}
+
+/**
+ * Legacy single-string accessor kept for the small number of consumers
+ * that still expect a scalar (e.g. CSV export). Returns the first slot
+ * from adWins or null.
  */
 function getAdWon(player) {
-  const ar = player && player.auctionResults;
-  if (!ar) return null;
-  return typeof ar.adWon === 'string' && ar.adWon ? ar.adWon : null;
+  const wins = getAdWins(player);
+  return wins.length > 0 ? wins[0].adType : null;
 }
 
 function getAdBidPaid(player) {
   const ar = player && player.auctionResults;
   if (!ar) return 0;
-  const v = Number(ar.adBidPaid);
-  return Number.isFinite(v) && v > 0 ? v : 0;
+  // Prefer explicit adBidPaid (set by loader as the sum across wins), else
+  // sum adWins amounts directly as a safety net.
+  const explicit = Number(ar.adBidPaid);
+  if (Number.isFinite(explicit) && explicit > 0) return explicit;
+  const wins = getAdWins(player);
+  const summed = wins.reduce((s, w) => s + (Number.isFinite(w.amount) ? w.amount : 0), 0);
+  return summed > 0 ? summed : 0;
 }
 
 function getChefBidPaid(player) {
@@ -118,6 +147,21 @@ function getChefBidPaid(player) {
   if (!ar) return 0;
   const v = Number(ar.chefBidPaid);
   return Number.isFinite(v) && v > 0 ? v : 0;
+}
+
+/**
+ * Sum the flat ad-winner bonuses across every slot the player won this
+ * round. Each of the 4 slots has its own fixed bonus in `config.adBonuses`.
+ */
+function sumAdBonuses(player, config) {
+  const bonuses = (config && config.adBonuses) || {};
+  const wins = getAdWins(player);
+  let total = 0;
+  for (const w of wins) {
+    const b = Number(bonuses[w.adType]);
+    if (Number.isFinite(b) && b > 0) total += b;
+  }
+  return total;
 }
 
 // ---------------------------------------------------------------------------
@@ -401,12 +445,12 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
       ? decision.sousChefCount
       : Number(p.sousChefCount) || 0;
     const adBidPaid = getAdBidPaid(p);
-    const adWon = getAdWon(p);
+    const adWins = getAdWins(p);
 
     // DEC-03/DEC-04: flat ad-winner bonus added to gross revenue.
     // TV $50k, Billboard $37.5k, Radio $25k, Newspaper $18.75k (config.adBonuses).
-    const adWinnerBonus =
-      (adWon && config && config.adBonuses && config.adBonuses[adWon]) || 0;
+    // A team can now win multiple slots; sum the bonuses for each win.
+    const adWinnerBonus = sumAdBonuses(p, config);
 
     let revenueGross = computeGrossRevenue({
       sousChefCount,
@@ -508,6 +552,14 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
       revenueBreakdown,
       burglary,
       burglaryAmount: burglary ? actualBurglaryAmount : 0,
+      // Auction outcomes surfaced for `lastRoundResult` / `rounds/{round}` docs.
+      adWins,                                                 // [{adType, amount}]
+      adWon: adWins.length > 0 ? adWins[0].adType : null,     // legacy scalar
+      adBidPaid,
+      chefsWon: Array.isArray(p.auctionResults && p.auctionResults.chefsWon)
+        ? p.auctionResults.chefsWon
+        : [],
+      chefBidPaid: getChefBidPaid(p),
     });
   }
 

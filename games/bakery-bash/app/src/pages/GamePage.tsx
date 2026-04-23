@@ -16,6 +16,7 @@ import { SimulatePhase } from "./phases/SimulatePhase";
 import { ResultsPhase } from "./phases/ResultsPhase";
 import { db, functions } from "../lib/firebase";
 import { humanizeFunctionError } from "../lib/errors";
+import { computeRoundCost, formatMoney } from "../lib/cost";
 import {
   PRODUCT_KEYS,
   PRODUCT_STATION,
@@ -24,6 +25,7 @@ import {
   roleOwnsDecide,
   roleOwnsPricing,
   totalSousChefs,
+  type AdType,
   type GameConfigParams,
   type MaintenanceBars,
   type MaintenanceTask,
@@ -106,9 +108,13 @@ export function GamePage() {
     phase,
     currentRound,
     pendingDecision,
+    pendingAdBids,
+    pendingChefBids,
     decisionSubmitted,
     pricesSubmitted,
     role,
+    config,
+    budgetCurrent,
   } = useGame();
   const dispatch = useGameDispatch();
   const navigate = useNavigate();
@@ -317,12 +323,39 @@ export function GamePage() {
                   : undefined,
               adWon: lrr.adWon ?? null,
               adPaid: typeof lrr.adPaid === "number" ? lrr.adPaid : undefined,
+              chefBidPaid:
+                typeof lrr.chefBidPaid === "number" ? lrr.chefBidPaid : undefined,
               auctionResults: {
+                adWins: Array.isArray(lrr.adWins)
+                  ? (lrr.adWins as Array<{ adType: string; amount: number }>)
+                      .filter((w) => w && typeof w.adType === "string")
+                      .map((w) => ({
+                        adType: w.adType as AdType,
+                        amount: typeof w.amount === "number" ? w.amount : 0,
+                      }))
+                  : lrr.adWon
+                    ? [
+                        {
+                          adType: lrr.adWon as AdType,
+                          amount:
+                            typeof lrr.adPaid === "number" ? lrr.adPaid : 0,
+                        },
+                      ]
+                    : [],
+                chefsWon: Array.isArray(lrr.chefsWon)
+                  ? (lrr.chefsWon as string[]).filter(
+                      (c): c is string => typeof c === "string",
+                    )
+                  : typeof lrr.chefWon === "string"
+                    ? [lrr.chefWon]
+                    : [],
                 adWon: lrr.adWon ?? null,
                 chefWon:
                   typeof lrr.chefWon === "string"
                     ? lrr.chefWon
-                    : lrr.chefWon ?? null,
+                    : Array.isArray(lrr.chefsWon) && lrr.chefsWon.length > 0
+                      ? String(lrr.chefsWon[0])
+                      : lrr.chefWon ?? null,
               },
               maintenanceBars:
                 lrr.maintenanceBars && typeof lrr.maintenanceBars === "object"
@@ -490,6 +523,21 @@ export function GamePage() {
   // DEC-21: only the Operations role (or solo) may submit Decide.
   const canSubmit = roleOwnsDecide(role);
   const ownerLabel = ownerOfDecide();
+
+  // Total Cost This Round — players asked for a single number showing how
+  // much the decide-phase submit (plus any still-open auction bids) will
+  // cost them. We reuse `computeRoundCost` so this line and the old
+  // BudgetSummary (if ever re-enabled) can never drift. Chef bid spend is
+  // included as a conservative worst-case; actual auctions may award a
+  // player fewer chefs than they bid on.
+  const roundCost = computeRoundCost(
+    pendingDecision,
+    pendingAdBids,
+    config,
+    pendingChefBids,
+  );
+  const overBudget =
+    typeof budgetCurrent === "number" && roundCost.total > budgetCurrent;
   const submitDisabled =
     submitting || decisionSubmitted || !gameId || !canSubmit;
   const submitLabel = !canSubmit
@@ -518,6 +566,30 @@ export function GamePage() {
           {submitError}
         </p>
       )}
+
+      {/* Total Cost This Round — a single line above Submit so the
+          player sees the projected spend (staffing + ingredients + ad
+          bids + chef bids) before they commit. Deliberately minimal to
+          respect the "no budget panel in sidebar" spec. */}
+      <div
+        className={`game-page__round-cost${
+          overBudget ? " game-page__round-cost--over" : ""
+        }`}
+        aria-label="Total cost this round"
+      >
+        <span className="game-page__round-cost-label">
+          Total Cost This Round
+        </span>
+        <span className="game-page__round-cost-value">
+          {formatMoney(roundCost.total)}
+        </span>
+        <span className="game-page__round-cost-breakdown">
+          Staff {formatMoney(roundCost.staff)} · Stock{" "}
+          {formatMoney(roundCost.product)} · Ad bids{" "}
+          {formatMoney(roundCost.ad)} · Chef bids{" "}
+          {formatMoney(roundCost.chef)}
+        </span>
+      </div>
 
       {/* FE-17 — timer + live submission counter + role-gated submit. */}
       <SubmissionLock

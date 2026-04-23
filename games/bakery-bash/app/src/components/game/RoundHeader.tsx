@@ -147,9 +147,13 @@ export function RoundHeader() {
     return `${m}:${s.toString().padStart(2, "0")}`;
   };
 
-  // Team label preference: explicit team name → bakery name → display name.
+  // Team label preference: explicit team name (canonical, mirrored onto
+  // players/{uid}.teamName by the backend). We only fall back to the
+  // player's own display name for true-solo sessions (no teamId / pre-
+  // assignment). `bakeryName` is legacy and no longer considered a valid
+  // identity for the header.
   const teamLabel =
-    teamName ?? player?.bakeryName ?? player?.name ?? null;
+    teamName ?? (teamId ? null : player?.name ?? null);
 
   const parsed = parseGamePhase(phase ?? "lobby", currentRound ?? 1);
   const phaseBannerLabel = PHASE_LABELS[parsed.base] ?? phase ?? "";

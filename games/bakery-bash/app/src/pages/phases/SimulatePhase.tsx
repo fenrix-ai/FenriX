@@ -107,7 +107,14 @@ export function SimulatePhase() {
   const { roundResults, maintenanceBars, currentRound } = useGame();
   const latest = roundResults[roundResults.length - 1];
 
-  const adWon = latest?.auctionResults?.adWon ?? latest?.adWon ?? null;
+  // Multi-ad: prefer the first slot from `adWins[]` (multi-slot-aware);
+  // fall back to the legacy scalars for pre-migration round docs.
+  const firstAdWin = latest?.auctionResults?.adWins?.[0]?.adType;
+  const adWon =
+    firstAdWin ??
+    latest?.auctionResults?.adWon ??
+    latest?.adWon ??
+    null;
   const targetRevenue =
     typeof latest?.revenueNet === "number"
       ? latest.revenueNet

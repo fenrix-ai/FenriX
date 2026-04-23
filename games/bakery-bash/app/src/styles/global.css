@@ -888,6 +888,49 @@ h3 { font-size: 0.7rem; }
   text-align: center;
 }
 
+.game-page__round-cost {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem 1rem;
+  margin: 0.75rem 0 0.25rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.game-page__round-cost--over {
+  border-color: var(--berry, #b63a3a);
+  background: rgba(182, 58, 58, 0.08);
+}
+
+.game-page__round-cost-label {
+  font-family: var(--font-pixel);
+  font-size: 0.55rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted, #444);
+}
+
+.game-page__round-cost-value {
+  font-family: var(--font-pixel);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--ink, #111);
+}
+
+.game-page__round-cost--over .game-page__round-cost-value {
+  color: var(--berry, #b63a3a);
+}
+
+.game-page__round-cost-breakdown {
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  color: var(--ink-muted, #555);
+  margin-left: auto;
+}
+
 /* ─── Bakery View (station grid) ─────────────────────────── */
 
 .bakery-view {
@@ -2594,6 +2637,17 @@ h3 { font-size: 0.7rem; }
 .professor-monitor-table__cell--pending {
   color: var(--dark-roast);
   opacity: 0.55;
+}
+
+.professor-monitor-table__cell--na {
+  color: var(--dark-roast);
+  opacity: 0.35;
+}
+
+.professor-monitor-table__members {
+  font-size: 0.85em;
+  color: var(--dark-roast);
+  opacity: 0.85;
 }
 
 /* FE-15 — Create-game panel + join-link card. */

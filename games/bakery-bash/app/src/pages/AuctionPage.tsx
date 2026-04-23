@@ -486,13 +486,14 @@ export function AuctionPage() {
   const alreadySubmitted =
     (isAdPhase && adBidsSubmitted) || (isChefPhase && chefBidsSubmitted);
 
-  // FE-9 — the bid inputs become read-only once the player's team has
-  // locked in bids for the current phase, or the game has moved past the
-  // auction phase entirely. Unlike Decide, "locked" here is phase-scoped:
-  // the Ads tab stays editable during the ad phase even after chefs lock
-  // (and vice-versa). Out-of-phase is always read-only.
+  // FE-9 — bid inputs are read-only only when the phase is over; having
+  // already submitted no longer locks the inputs, so a team that gets
+  // outbid can edit their numbers and resubmit until the timer ends.
+  // submitBids on the backend already performs a full replacement of the
+  // bid doc for that (player, round, bidType), so resubmission is safe.
+  // Out-of-phase is always read-only.
   const inAuctionPhase = isAdPhase || isChefPhase;
-  const bidsReadOnly = !inAuctionPhase || alreadySubmitted;
+  const bidsReadOnly = !inAuctionPhase;
 
   // DEC-21 role gating: Advertising owns ad bids, Finance owns chef bids,
   // Solo owns both. Other teammates still see + can edit the inputs (so
@@ -517,7 +518,7 @@ export function AuctionPage() {
     : submitting
     ? "Submitting…"
     : alreadySubmitted
-    ? "Submitted — waiting for other players…"
+    ? "Update Bids"
     : "Submit All Bids";
 
   return (
@@ -559,8 +560,9 @@ export function AuctionPage() {
           <span
             className="tab__badge tab__badge--submitted auction-page__locked-badge"
             role="status"
+            title="You can still edit and resubmit until the timer runs out."
           >
-            Bids Locked
+            Bids Submitted
           </span>
         )}
       </div>
@@ -765,7 +767,6 @@ export function AuctionPage() {
         disabled={
           timerExpired ||
           submitting ||
-          alreadySubmitted ||
           (!isAdPhase && !isChefPhase) ||
           !canSubmitForPhase
         }

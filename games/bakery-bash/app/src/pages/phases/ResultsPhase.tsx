@@ -184,13 +184,29 @@ export function ResultsPhase() {
         ? latest.revenue
         : null;
 
-  // FE-4 — auction outcomes. Backend writes `adWon` as a string or `null`
-  // on the player's lastRoundResult; `chefWon` mirrors the chef id they
-  // took home this round. We also accept the nested `auctionResults.*`
-  // shape written by some legacy simulation paths.
-  const adWon = latest?.adWon ?? latest?.auctionResults?.adWon ?? null;
-  const chefWon = latest?.auctionResults?.chefWon ?? null;
-  const adPaid = typeof latest?.adPaid === "number" ? latest.adPaid : null;
+  // FE-4 — auction outcomes. A team can now win multiple ad slots and
+  // multiple chefs in the same round. We surface the full lists here and
+  // fall back to the legacy scalars if the new arrays aren't populated
+  // (e.g. replaying historical data).
+  const adWins = latest?.auctionResults?.adWins ?? [];
+  const legacyAdWon = latest?.adWon ?? latest?.auctionResults?.adWon ?? null;
+  const adWinsDisplay =
+    adWins.length > 0
+      ? adWins
+      : legacyAdWon
+        ? [
+            {
+              adType: legacyAdWon,
+              amount:
+                typeof latest?.adPaid === "number" ? latest.adPaid : 0,
+            },
+          ]
+        : [];
+
+  const chefsWon = latest?.auctionResults?.chefsWon ?? [];
+  const legacyChefWon = latest?.auctionResults?.chefWon ?? null;
+  const chefsWonDisplay =
+    chefsWon.length > 0 ? chefsWon : legacyChefWon ? [legacyChefWon] : [];
 
   // FE-4 — end-of-round maintenance snapshot. Prefer the per-round
   // snapshot on the result; fall back to live context state for the
@@ -323,18 +339,22 @@ export function ResultsPhase() {
             <h3 className="results-phase__section-title">Auction Results</h3>
             <ul className="results-phase__auction-list">
               <li className="results-phase__auction-row">
-                <span className="results-phase__auction-label">Ad slot</span>
-                {adWon ? (
+                <span className="results-phase__auction-label">
+                  {adWinsDisplay.length > 1 ? "Ad slots" : "Ad slot"}
+                </span>
+                {adWinsDisplay.length > 0 ? (
                   <span className="results-phase__auction-value results-phase__auction-value--won">
-                    Won: {adWon}
-                    {typeof adPaid === "number" && adPaid > 0 && (
-                      <>
-                        {" "}
-                        <span className="results-phase__auction-sub">
-                          ({formatMoney(adPaid)})
-                        </span>
-                      </>
-                    )}
+                    Won:{" "}
+                    {adWinsDisplay
+                      .map(
+                        (w) =>
+                          `${w.adType}${
+                            typeof w.amount === "number" && w.amount > 0
+                              ? ` (${formatMoney(w.amount)})`
+                              : ""
+                          }`,
+                      )
+                      .join(", ")}
                   </span>
                 ) : (
                   <span className="results-phase__auction-value results-phase__auction-value--lost">
@@ -343,10 +363,12 @@ export function ResultsPhase() {
                 )}
               </li>
               <li className="results-phase__auction-row">
-                <span className="results-phase__auction-label">Chef</span>
-                {chefWon ? (
+                <span className="results-phase__auction-label">
+                  {chefsWonDisplay.length > 1 ? "Chefs" : "Chef"}
+                </span>
+                {chefsWonDisplay.length > 0 ? (
                   <span className="results-phase__auction-value results-phase__auction-value--won">
-                    Hired: {chefWon}
+                    Hired: {chefsWonDisplay.join(", ")}
                   </span>
                 ) : (
                   <span className="results-phase__auction-value results-phase__auction-value--lost">

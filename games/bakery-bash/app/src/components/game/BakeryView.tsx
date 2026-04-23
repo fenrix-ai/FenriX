@@ -235,7 +235,7 @@ export interface BakeryViewProps {
 }
 
 export function BakeryView({ readOnly = false }: BakeryViewProps) {
-  const { player, currentRound, totalRounds, pendingDecision, role } = useGame();
+  const { player, currentRound, totalRounds, pendingDecision, role, teamName } = useGame();
   const dispatch = useGameDispatch();
   const canEditPrices = roleOwnsPricing(role);
 
@@ -283,7 +283,7 @@ export function BakeryView({ readOnly = false }: BakeryViewProps) {
     <div className={`bakery-view${readOnly ? " bakery-view--readonly" : ""}`}>
       <div className="bakery-view__sign">
         <h2 className="bakery-view__name">
-          {player?.bakeryName ?? "My Bakery"}
+          {teamName ?? player?.name ?? "My Bakery"}
           {readOnly && (
             <span
               className="tab__badge tab__badge--submitted bakery-view__badge"
