@@ -265,11 +265,13 @@
 
 .pixel-dollar {
   position: absolute;
-  width: 22px;
-  height: 13px;
+  width: 30px;
+  height: 18px;
   image-rendering: pixelated;
   animation: pixel-dollar-float 0.9s ease-out forwards;
-  filter: drop-shadow(1px 1px 0 rgba(0, 0, 0, 0.35));
+  filter:
+    drop-shadow(1px 1px 0 rgba(0, 0, 0, 0.4))
+    drop-shadow(0 0 4px rgba(127, 255, 127, 0.5));
 }
 
 .pixel-dollar--var-0 { animation-delay: 0ms; }
@@ -281,19 +283,19 @@
 
 @keyframes pixel-dollar-float {
   0% {
-    transform: translate(0, 0) rotate(0deg) scale(0.6);
+    transform: translate(0, 0) rotate(0deg) scale(0.5);
     opacity: 0;
   }
-  15% {
-    transform: translate(0, -6px) rotate(-8deg) scale(1.05);
+  20% {
+    transform: translate(0, -8px) rotate(-10deg) scale(1.15);
     opacity: 1;
   }
   60% {
-    transform: translate(0, -28px) rotate(6deg) scale(1);
+    transform: translate(0, -36px) rotate(8deg) scale(1);
     opacity: 1;
   }
   100% {
-    transform: translate(0, -52px) rotate(-12deg) scale(0.95);
+    transform: translate(0, -68px) rotate(-14deg) scale(0.9);
     opacity: 0;
   }
 }

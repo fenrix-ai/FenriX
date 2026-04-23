@@ -25,8 +25,8 @@ export function DollarLayer({
             aria-hidden="true"
             className={`pixel-dollar ${variantClass}`}
             style={{
-              left: `calc(${leftPct}% - 11px)`,
-              top: `calc(${topPct}% - 7px)`,
+              left: `calc(${leftPct}% - 15px)`,
+              top: `calc(${topPct}% - 9px)`,
             }}
           />
         )
