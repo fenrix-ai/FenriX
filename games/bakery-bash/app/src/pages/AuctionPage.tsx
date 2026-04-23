@@ -165,6 +165,7 @@ interface BackendChef {
   gender: unknown;
   name?: string;
   skillTier?: string;
+  minBidFloor?: number;
 }
 
 const BACKEND_SKILL_MAP: Record<string, SkillLevel> = {
@@ -198,6 +199,10 @@ function mapBackendChef(chef: BackendChef): ChefListing | null {
     name: chef.name || `${NATIONALITY_LABELS[nat]} Chef`,
     skill,
     multiplier: SKILL_CONFIG[skill].multiplier,
+    minBidFloor:
+      typeof chef.minBidFloor === "number" && chef.minBidFloor > 0
+        ? chef.minBidFloor
+        : undefined,
   };
 }
 
@@ -436,10 +441,21 @@ export function AuctionPage() {
         // submit an empty array to advance the lifecycle without bidding.
         const chefBids: Array<{ chefId: string; amount: number }> = [];
         if (chefPoolIsReal) {
-          const poolIds = new Set(chefPool.map((c) => c.id));
+          const poolById = new Map(chefPool.map((c) => [c.id, c]));
           for (const [chefId, amount] of Object.entries(pendingChefBids)) {
-            if (!poolIds.has(chefId)) continue;
+            const chef = poolById.get(chefId);
+            if (!chef) continue;
             if (typeof amount !== "number" || amount <= 0) continue;
+            // Client-side minimum-bid guard (matches the backend enforcement
+            // in the chef-system module). The per-card submit button is also
+            // disabled when `belowMinimum` is true, but guard here too in
+            // case a player submits via the bulk "Submit Bids" path.
+            const floor = chef.minBidFloor ?? 0;
+            if (floor > 0 && amount < floor) {
+              setSubmitError("Bid above the minimum bid.");
+              setSubmitting(false);
+              return;
+            }
             chefBids.push({ chefId, amount });
           }
         }
@@ -704,6 +720,15 @@ export function AuctionPage() {
             <div className="auction-chefs__grid">
               {chefPool.map((chef, chefIndex) => {
                 const skillCfg = SKILL_CONFIG[chef.skill];
+                const minBid =
+                  typeof chef.minBidFloor === "number"
+                    ? chef.minBidFloor
+                    : null;
+                const currentBidAmount = pendingChefBids[chef.id] ?? 0;
+                const belowMinimum =
+                  minBid !== null &&
+                  currentBidAmount > 0 &&
+                  currentBidAmount < minBid;
                 return (
                   <div
                     key={chef.id}
@@ -735,6 +760,16 @@ export function AuctionPage() {
                           : "--"}
                       </span>
                     </div>
+                    {minBid !== null && (
+                      <div className="auction-chef__min-bid">
+                        <span className="auction-chef__min-bid-label">
+                          Minimum Bid
+                        </span>
+                        <span className="auction-chef__min-bid-value">
+                          ${minBid.toLocaleString()}
+                        </span>
+                      </div>
+                    )}
                     <div className="auction-chef__bid">
                       <label className="auction-chef__bid-label">
                         Your Bid
@@ -743,12 +778,15 @@ export function AuctionPage() {
                         <span className="auction-page__bid-prefix">$</span>
                         <input
                           type="number"
-                          className="auction-chef__bid-input auction-page__bid-input"
+                          className={`auction-chef__bid-input auction-page__bid-input${
+                            belowMinimum ? " auction-chef__bid-input--error" : ""
+                          }`}
                           placeholder="0"
                           min={0}
                           value={chefBidInputs[chef.id] ?? ""}
                           disabled={timerExpired || !isChefPhase || isLockedChefBid(chef.id)}
                           readOnly={!isChefPhase || isLockedChefBid(chef.id)}
+                          aria-invalid={belowMinimum ? "true" : undefined}
                           onChange={(e) => {
                             const raw = e.target.value;
                             setChefBidInputs(prev => ({ ...prev, [chef.id]: raw }));
@@ -761,9 +799,14 @@ export function AuctionPage() {
                           }}
                         />
                       </div>
+                      {belowMinimum && (
+                        <p className="auction-chef__bid-error" role="alert">
+                          Bid above the minimum bid.
+                        </p>
+                      )}
                       <button
                         className="btn btn--small chef-card__submit"
-                        disabled={timerExpired || !pendingChefBids[chef.id] || isLockedChefBid(chef.id)}
+                        disabled={timerExpired || !pendingChefBids[chef.id] || isLockedChefBid(chef.id) || belowMinimum}
                         onClick={(e) => { e.preventDefault(); handleSubmitSingleBid(chef.id); }}
                       >
                         Submit Bid
