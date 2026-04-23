@@ -112,6 +112,7 @@ const initialState: GameState = {
   phaseEndsAtMs: null,
   leaderboard: [],
   leaderboardError: null,
+  acquiredCsvs: [],
 };
 
 type GameAction =
