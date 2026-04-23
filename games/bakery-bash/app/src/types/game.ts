@@ -237,13 +237,6 @@ export interface ChefListing {
   name: string;
   skill: SkillLevel;
   multiplier: number;
-  /**
-   * Per-chef minimum bid set by the backend (see BE chef-system module).
-   * Rendered next to `Top Bid` on the auction card and enforced client-side
-   * as a "bid must be ≥ minBidFloor" check before submit. Optional because
-   * the cosmetic placeholder pool (pre-backend snapshot) has no floor.
-   */
-  minBidFloor?: number;
 }
 
 /** Real skill tier written by the backend in `rounds/{N}.chefPool`. */
@@ -386,25 +379,13 @@ export interface GameConfigParams {
  * (maintenance system + chef satisfaction overhaul) ship. Consumers must
  * render gracefully when they are missing.
  */
-/** Single ad-slot win: which slot + what the team paid for it. */
-export interface AdWin {
-  adType: AdType;
-  amount: number;
-}
-
 export interface RoundResult {
   round: number;
   revenue: number;
   customerCount: number;
   customerSatisfaction: number;
   auctionResults: {
-    /** Multi-slot: every ad slot the team won this round. */
-    adWins: AdWin[];
-    /** Every specialty chef the team hired through the chef auction. */
-    chefsWon: string[];
-    /** Legacy: first entry of adWins, or null. Prefer adWins. */
     adWon: AdType | null;
-    /** Legacy: first entry of chefsWon, or null. Prefer chefsWon. */
     chefWon: string | null;
   };
   /** Aggregate chef-satisfaction 0–100 (average across specialty chefs). */
@@ -431,34 +412,12 @@ export interface RoundResult {
   selloutAnywhere?: boolean;
   /** Per-product unit-sold breakdown, used for the Results breakdown table. */
   productBreakdown?: Partial<Record<ProductKey, number>>;
-  /** Legacy first-ad accessor kept so older readers don't crash. */
+  /** Ad surface the player won this round, with paid amount. */
   adWon?: AdType | null;
-  /** Sum of all ad bids the team paid this round. */
+  adWins?: AdType[];
   adPaid?: number;
-  /** Sum of all chef bids the team paid this round. */
+  chefsWon?: Array<{ id?: string; name?: string }>;
   chefBidPaid?: number;
-  /**
-   * Curveball events that landed on this team during the round. Optional
-   * because not every round will have one, and older round docs might
-   * predate the event system entirely. The frontend renders these as
-   * cards in the Events section of the Results screen.
-   */
-  events?: RoundEvent[];
-}
-
-/** One row of the curveball-events feed shown on the Results screen. */
-export type RoundEventKind = "burglary" | "food-safety-inspection";
-
-export interface RoundEvent {
-  kind: RoundEventKind;
-  /** Day-of-month numbers (1–31) when the event occurred this round. */
-  days?: number[];
-  /** Dollars stolen across all burglaries in `days` (burglary only). */
-  amount?: number;
-  /** Inspection cleanliness reading 0–100 (inspection only). */
-  cleanlinessPct?: number;
-  /** Inspection rating label (Poor / Sufficient / Good / Excellent). */
-  rating?: "Poor" | "Sufficient" | "Good" | "Excellent";
 }
 
 /**
@@ -516,22 +475,18 @@ export function roleOwnsRoster(role: PlayerRole): boolean {
   return role === "operations" || role === "solo";
 }
 
-/**
- * Human-readable owner copy used in the disabled-button tooltip.
- * Always delegates to `PLAYER_ROLE_LABELS` so the copy here stays in lockstep
- * with the role-picker and the How-to-Play page (e.g. `advertising → "Bidder"`).
- */
+/** Human-readable owner copy used in the disabled-button tooltip. */
 export function ownerOfDecide(): string {
-  return PLAYER_ROLE_LABELS.operations;
+  return "Operations";
 }
 export function ownerOfAdBids(): string {
-  return PLAYER_ROLE_LABELS.advertising;
+  return "Advertising";
 }
 export function ownerOfChefBids(): string {
-  return PLAYER_ROLE_LABELS.finance;
+  return "Finance";
 }
 export function ownerOfRoster(): string {
-  return PLAYER_ROLE_LABELS.operations;
+  return "Operations";
 }
 
 export interface Player {
@@ -630,37 +585,6 @@ export interface GameState {
    * forever.
    */
   leaderboardError: string | null;
-  /**
-   * CSVs the team has acquired this game and can re-download from the
-   * CSV Inbox header button. Includes competitor-intel purchases, Tier 1
-   * specialty-chef tables, Tier 2 chef-profile dumps, and anything else
-   * the player would otherwise lose the moment the sidebar popup closes.
-   *
-   * The round-history results CSV is *not* stored here — it is derived
-   * on demand from `roundResults` so it always reflects the latest data
-   * (see `downloadResultsCsv`).
-   */
-  acquiredCsvs: AcquiredCsv[];
-}
-
-/**
- * One entry in the CSV Inbox. `kind` drives the icon + grouping; `label`
- * is the human-readable title shown in the list; `round` (when present)
- * pins the CSV to the round it was generated / purchased for.
- */
-export type AcquiredCsvKind =
-  | "competitor-intel"
-  | "chef-tier1"
-  | "chef-tier2";
-
-export interface AcquiredCsv {
-  id: string;
-  kind: AcquiredCsvKind;
-  label: string;
-  round?: number;
-  acquiredAtMs: number;
-  csv: string;
-  filename: string;
 }
 
 /**
@@ -675,9 +599,6 @@ export interface LeaderboardRanking {
   rank: number;
   playerId: string;
   displayName: string;
-  /** Canonical team identity mirrored onto the leaderboard doc. */
-  teamName?: string;
-  /** Legacy field — kept only for backward compatibility with pre-DEC-23 data. */
   bakeryName?: string;
   revenueNet?: number;
   cumulativeRevenue?: number;

@@ -1,12 +1,10 @@
+import { useEffect, useState } from "react";
+import { doc, onSnapshot, type DocumentData } from "firebase/firestore";
 import { useGame } from "../../contexts/GameContext";
 import { LoanSharkCallout } from "../../components/game/LoanSharkCallout";
 import { downloadResultsCsv } from "../../components/game/RoundHeader";
-import type {
-  MaintenanceBars,
-  ProductKey,
-  RoundEvent,
-} from "../../types/game";
-import { formatDaysInRound } from "../../lib/dateSystem";
+import type { MaintenanceBars, ProductKey } from "../../types/game";
+import { db } from "../../lib/firebase";
 
 /**
  * FE-12 — Results phase rework.
@@ -59,106 +57,86 @@ function barColor(pct: number): string {
   return "var(--berry)";
 }
 
-const BURGLAR_ASSET = "/assets/events/burglar.svg";
-const INSPECTOR_ASSET = "/assets/events/food-inspector.svg";
+function looksLikeInternalChefId(value: string | null | undefined): boolean {
+  if (!value) return false;
+  return /^[a-z0-9-]{12,}$/i.test(value);
+}
 
-/**
- * Curveball event card. One card per event. Burglary cards show the
- * burglar asset + the date(s) + amount lost; food-safety inspection
- * cards show the inspector asset + date(s) + cleanliness reading +
- * rating tier (Poor / Sufficient / Good / Excellent).
- */
-function EventCard({
-  event,
-  round,
-}: {
-  event: RoundEvent;
-  round: number | null;
-}) {
-  if (event.kind === "burglary") {
-    const daysLabel = formatDaysInRound(round, event.days ?? []);
-    return (
-      <article
-        className="event-card event-card--burglary"
-        aria-label="Burglary event"
-      >
-        <img
-          src={BURGLAR_ASSET}
-          alt=""
-          aria-hidden
-          className="event-card__asset"
-          onError={(e) => {
-            (e.currentTarget as HTMLImageElement).style.display = "none";
-          }}
-        />
-        <div className="event-card__body">
-          <h4 className="event-card__title">🔓 Burglary</h4>
-          {daysLabel && (
-            <p className="event-card__meta">
-              <strong>When:</strong> {daysLabel}
-            </p>
-          )}
-          {typeof event.amount === "number" && event.amount > 0 && (
-            <p className="event-card__meta event-card__meta--loss">
-              <strong>Stolen:</strong> ${event.amount.toLocaleString()}
-            </p>
-          )}
-          <p className="event-card__hint">
-            Keep maintenance crews busy to deter thieves next round.
-          </p>
-        </div>
-      </article>
-    );
-  }
-
-  const daysLabel = formatDaysInRound(round, event.days ?? []);
-  const rating = event.rating ?? null;
-  const pct =
-    typeof event.cleanlinessPct === "number"
-      ? Math.round(event.cleanlinessPct)
-      : null;
-
-  return (
-    <article
-      className={`event-card event-card--inspection${
-        rating ? ` event-card--inspection-${rating.toLowerCase()}` : ""
-      }`}
-      aria-label="Food safety inspection"
-    >
-      <img
-        src={INSPECTOR_ASSET}
-        alt=""
-        aria-hidden
-        className="event-card__asset"
-        onError={(e) => {
-          (e.currentTarget as HTMLImageElement).style.display = "none";
-        }}
-      />
-      <div className="event-card__body">
-        <h4 className="event-card__title">🧼 Food Safety Inspection</h4>
-        {daysLabel && (
-          <p className="event-card__meta">
-            <strong>When:</strong> {daysLabel}
-          </p>
-        )}
-        {pct !== null && (
-          <p className="event-card__meta">
-            <strong>Cleanliness:</strong> {pct}%
-          </p>
-        )}
-        {rating && (
-          <p className="event-card__meta">
-            <strong>Rating:</strong> {rating}
-          </p>
-        )}
-      </div>
-    </article>
-  );
+function presentChefName(
+  value: string | null | undefined,
+  fallbackIndex?: number,
+): string {
+  if (value && !looksLikeInternalChefId(value)) return value;
+  return typeof fallbackIndex === "number" ? `Chef ${fallbackIndex + 1}` : "Chef";
 }
 
 export function ResultsPhase() {
-  const { roundResults, currentRound, chefSatisfactionScores, leaderboard } = useGame();
+  const {
+    roundResults,
+    currentRound,
+    chefSatisfactionScores,
+    leaderboard,
+    gameId,
+    playerId,
+  } = useGame();
   const latest = roundResults[roundResults.length - 1];
+  const [liveAuctionResult, setLiveAuctionResult] = useState<{
+    adWins: string[];
+    adPaid: number | null;
+    chefsWon: Array<{ id?: string; name?: string }>;
+    chefBidPaid: number | null;
+  }>({
+    adWins: [],
+    adPaid: null,
+    chefsWon: [],
+    chefBidPaid: null,
+  });
+
+  useEffect(() => {
+    if (!gameId || !playerId || !currentRound) {
+      setLiveAuctionResult({
+        adWins: [],
+        adPaid: null,
+        chefsWon: [],
+        chefBidPaid: null,
+      });
+      return;
+    }
+    const roundRef = doc(db, "games", gameId, "rounds", `round_${currentRound}`);
+    const unsubscribe = onSnapshot(roundRef, (snap) => {
+      if (!snap.exists()) {
+        setLiveAuctionResult({
+          adWins: [],
+          adPaid: null,
+          chefsWon: [],
+          chefBidPaid: null,
+        });
+        return;
+      }
+      const data = snap.data() as DocumentData;
+      const adEntry = (data.adAuctionResults?.[playerId] ?? null) as DocumentData | null;
+      const chefEntry = (data.chefAuctionResults?.[playerId] ?? null) as DocumentData | null;
+      setLiveAuctionResult({
+        adWins:
+          adEntry && Array.isArray(adEntry.adTypes)
+            ? (adEntry.adTypes as string[])
+            : [],
+        adPaid:
+          adEntry && typeof adEntry.totalPaid === "number"
+            ? adEntry.totalPaid
+            : null,
+        chefsWon:
+          chefEntry && Array.isArray(chefEntry.chefs)
+            ? (chefEntry.chefs as Array<{ id?: string; name?: string }>)
+            : [],
+        chefBidPaid:
+          chefEntry && typeof chefEntry.totalPaid === "number"
+            ? chefEntry.totalPaid
+            : null,
+      });
+    });
+    return unsubscribe;
+  }, [gameId, playerId, currentRound]);
 
   const scores: Record<string, number> =
     latest?.chefSatisfactionScores ?? chefSatisfactionScores;
@@ -169,7 +147,8 @@ export function ResultsPhase() {
 
   const departures = latest?.chefDepartures ?? [];
   const departureNames = latest?.chefDepartureNames ?? [];
-  const chefLabel = (id: string, index: number) => departureNames[index] || id;
+  const chefLabel = (_id: string, index: number) =>
+    presentChefName(departureNames[index], index);
 
   const productEntries = latest?.productBreakdown
     ? (Object.entries(latest.productBreakdown) as Array<[ProductKey, number]>).filter(
@@ -184,62 +163,38 @@ export function ResultsPhase() {
         ? latest.revenue
         : null;
 
-  // FE-4 — auction outcomes. A team can now win multiple ad slots and
-  // multiple chefs in the same round. We surface the full lists here and
-  // fall back to the legacy scalars if the new arrays aren't populated
-  // (e.g. replaying historical data).
-  const adWins = latest?.auctionResults?.adWins ?? [];
-  const legacyAdWon = latest?.adWon ?? latest?.auctionResults?.adWon ?? null;
-  const adWinsDisplay =
-    adWins.length > 0
-      ? adWins
-      : legacyAdWon
-        ? [
-            {
-              adType: legacyAdWon,
-              amount:
-                typeof latest?.adPaid === "number" ? latest.adPaid : 0,
-            },
-          ]
-        : [];
-
-  const chefsWon = latest?.auctionResults?.chefsWon ?? [];
-  const legacyChefWon = latest?.auctionResults?.chefWon ?? null;
-  const chefsWonDisplay =
-    chefsWon.length > 0 ? chefsWon : legacyChefWon ? [legacyChefWon] : [];
+  // FE-4 — auction outcomes. Backend writes `adWon` as a string or `null`
+  // on the player's lastRoundResult; `chefWon` mirrors the chef id they
+  // took home this round. We also accept the nested `auctionResults.*`
+  // shape written by some legacy simulation paths.
+  const adWins =
+    (liveAuctionResult.adWins.length > 0 ? liveAuctionResult.adWins : undefined) ??
+    (Array.isArray(latest?.adWins) ? latest.adWins : undefined) ??
+    [];
+  const adWon = latest?.adWon ?? latest?.auctionResults?.adWon ?? adWins[0] ?? null;
+  const chefWonList =
+    (liveAuctionResult.chefsWon.length > 0 ? liveAuctionResult.chefsWon : undefined) ??
+    (Array.isArray(latest?.chefsWon) ? latest.chefsWon : undefined) ??
+    [];
+  const chefWon = latest?.auctionResults?.chefWon ?? null;
+  const adPaid =
+    typeof liveAuctionResult.adPaid === "number"
+      ? liveAuctionResult.adPaid
+      : typeof latest?.adPaid === "number"
+        ? latest.adPaid
+        : null;
+  const chefBidPaid =
+    typeof liveAuctionResult.chefBidPaid === "number"
+      ? liveAuctionResult.chefBidPaid
+      : typeof latest?.chefBidPaid === "number"
+        ? latest.chefBidPaid
+        : null;
 
   // FE-4 — end-of-round maintenance snapshot. Prefer the per-round
   // snapshot on the result; fall back to live context state for the
   // pre-BE-1..BE-10 rollout where results docs may not include it.
   const endBars: MaintenanceBars | null =
     latest?.maintenanceBars ?? null;
-
-  // Events derived from the result payload. Backend BE tasks record these
-  // explicitly as `events: RoundEvent[]`; legacy docs had a flat
-  // `burglary` boolean + `burglaryAmount`, so we synthesize a `burglary`
-  // event from those for backwards compatibility.
-  const events: RoundEvent[] = (() => {
-    if (Array.isArray(latest?.events) && latest!.events.length > 0) {
-      return latest!.events;
-    }
-    const legacy = latest as
-      | {
-          burglary?: boolean;
-          burglaryAmount?: number;
-          burglaryDays?: number[];
-        }
-      | undefined;
-    if (legacy?.burglary) {
-      return [
-        {
-          kind: "burglary",
-          amount: legacy.burglaryAmount,
-          days: legacy.burglaryDays,
-        },
-      ];
-    }
-    return [];
-  })();
 
   return (
     <section className="results-phase">
@@ -281,22 +236,11 @@ export function ResultsPhase() {
             </div>
           </div>
 
-          {events.length > 0 && (
-            <section
-              className="results-phase__events"
-              aria-label="Curveball events"
-            >
-              <h3 className="results-phase__section-title">Events</h3>
-              <div className="results-phase__event-cards">
-                {events.map((event, idx) => (
-                  <EventCard
-                    key={`${event.kind}-${idx}`}
-                    event={event}
-                    round={currentRound}
-                  />
-                ))}
-              </div>
-            </section>
+          {(latest as any)?.burglary && (
+            <div className="results-phase__burglar-banner">
+              🔓 Your bakery was broken into! A maintenance deficit left you vulnerable.
+              {(latest as any).burglaryAmount ? ` –$${(latest as any).burglaryAmount.toLocaleString()}` : ""}
+            </div>
           )}
 
           <div className="results-phase__kpis">
@@ -339,22 +283,18 @@ export function ResultsPhase() {
             <h3 className="results-phase__section-title">Auction Results</h3>
             <ul className="results-phase__auction-list">
               <li className="results-phase__auction-row">
-                <span className="results-phase__auction-label">
-                  {adWinsDisplay.length > 1 ? "Ad slots" : "Ad slot"}
-                </span>
-                {adWinsDisplay.length > 0 ? (
+                <span className="results-phase__auction-label">Ad slot</span>
+                {adWins.length > 0 || adWon ? (
                   <span className="results-phase__auction-value results-phase__auction-value--won">
-                    Won:{" "}
-                    {adWinsDisplay
-                      .map(
-                        (w) =>
-                          `${w.adType}${
-                            typeof w.amount === "number" && w.amount > 0
-                              ? ` (${formatMoney(w.amount)})`
-                              : ""
-                          }`,
-                      )
-                      .join(", ")}
+                    Won: {adWins.length > 0 ? adWins.join(", ") : adWon}
+                    {typeof adPaid === "number" && adPaid > 0 && (
+                      <>
+                        {" "}
+                        <span className="results-phase__auction-sub">
+                          ({formatMoney(adPaid)})
+                        </span>
+                      </>
+                    )}
                   </span>
                 ) : (
                   <span className="results-phase__auction-value results-phase__auction-value--lost">
@@ -363,12 +303,22 @@ export function ResultsPhase() {
                 )}
               </li>
               <li className="results-phase__auction-row">
-                <span className="results-phase__auction-label">
-                  {chefsWonDisplay.length > 1 ? "Chefs" : "Chef"}
-                </span>
-                {chefsWonDisplay.length > 0 ? (
+                <span className="results-phase__auction-label">Chef</span>
+                {chefWonList.length > 0 || chefWon ? (
                   <span className="results-phase__auction-value results-phase__auction-value--won">
-                    Hired: {chefsWonDisplay.join(", ")}
+                    Hired: {chefWonList.length > 0
+                      ? chefWonList
+                          .map((chef, index) => presentChefName(chef?.name || chef?.id, index))
+                          .join(", ")
+                      : presentChefName(chefWon)}
+                    {typeof chefBidPaid === "number" && chefBidPaid > 0 && (
+                      <>
+                        {" "}
+                        <span className="results-phase__auction-sub">
+                          ({formatMoney(chefBidPaid)})
+                        </span>
+                      </>
+                    )}
                   </span>
                 ) : (
                   <span className="results-phase__auction-value results-phase__auction-value--lost">
@@ -478,7 +428,7 @@ export function ResultsPhase() {
                 ⚠
               </span>
               <p className="results-phase__warning-text">
-                <strong>{chefId}</strong>'s satisfaction is low (
+                <strong>{presentChefName(undefined, lowChefs.findIndex(([id]) => id === chefId))}</strong>'s satisfaction is low (
                 {Math.round(score)}%). Keep your kitchen clean and machines
                 maintained to retain them.
               </p>
@@ -509,7 +459,7 @@ export function ResultsPhase() {
       {leaderboard && leaderboard.length > 0 && (
         <div className="results-phase__leaderboard">
           <h3 className="results-phase__section-title">Standings</h3>
-          {leaderboard.map((entry: { uid?: string; displayName?: string; cumulativeRevenue?: number }, i: number) => (
+          {leaderboard.map((entry: any, i: number) => (
             <div key={entry.uid ?? i} className="results-phase__rank-row">
               <span className="results-phase__rank">#{i + 1}</span>
               <span className="results-phase__team-name">{entry.displayName ?? "Team"}</span>

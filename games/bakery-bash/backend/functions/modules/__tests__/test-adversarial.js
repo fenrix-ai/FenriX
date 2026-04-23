@@ -1003,7 +1003,7 @@ test('generateChefPool: round 0 → clamps to first spawn table', () => {
   assertNoThrow(() => {
     const pool = chefSystem.generateChefPool(0, defaultCfg);
     assert(Array.isArray(pool), 'round 0 pool is array');
-    assert(pool.length >= defaultCfg.chefPoolSize.min, 'round 0 pool min size');
+    assert(pool.length === defaultCfg.chefPoolSize, 'round 0 pool exact size');
   }, 'generateChefPool round 0 should not crash');
 }, 'MEDIUM');
 

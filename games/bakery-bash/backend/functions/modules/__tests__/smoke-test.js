@@ -89,9 +89,9 @@ assert(auc.winners.get('p2').length === 1 && auc.winners.get('p2')[0].id === 'A'
 assert(auc.winners.get('p1').length === 1 && auc.winners.get('p1')[0].id === 'B', 'p1 wins B');
 assert(auc.payments.get('p1') === 50 && auc.payments.get('p2') === 100, 'payments');
 
-// Pool generation
+// Pool generation — chefPoolSize is now a flat number (default 12).
 const pool = chefSys.generateChefPool(1, cfg);
-assert(pool.length >= 6 && pool.length <= 8, `pool size ${pool.length}`);
+assert(pool.length === cfg.chefPoolSize, `pool size ${pool.length} (expected ${cfg.chefPoolSize})`);
 for (const c of pool) {
   assert(typeof c.id === 'string', 'chef id');
   assert(['novel', 'intermediate', 'advanced'].includes(c.skillTier), 'skill tier');

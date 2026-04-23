@@ -13,11 +13,9 @@ import { AD_TYPES } from "../../types/game";
  */
 export interface AdWinnerEntry {
   adType: AdType;
-  /** Winning team name (preferred); displayed in the banner. */
-  teamName?: string;
-  /** Legacy bakery name — only used for sessions with no team name yet. */
+  /** Winning bakery name (preferred); displayed in the banner. */
   bakeryName?: string;
-  /** Winning player display name — last-resort fallback for true solos. */
+  /** Winning player display name — fallback if bakery name is missing. */
   displayName?: string;
   /** Amount paid for the winning bid. */
   amount?: number;
@@ -78,10 +76,7 @@ export function AdWinnerBanner({
       <ul className="ad-winner-banner__grid">
         {AD_TYPES.map((t) => {
           const w = winners?.[t];
-          // Prefer team name (canonical identity). Fall back to the
-          // legacy bakeryName / displayName only when the team name
-          // mirror hasn't populated yet.
-          const name = w?.teamName || w?.bakeryName || w?.displayName;
+          const name = w?.bakeryName || w?.displayName;
           return (
             <li key={t} className="ad-winner-banner__cell" data-ad-type={t}>
               <div className="ad-winner-banner__icon">

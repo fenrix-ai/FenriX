@@ -165,7 +165,6 @@ interface BackendChef {
   gender: unknown;
   name?: string;
   skillTier?: string;
-  minBidFloor?: number;
 }
 
 const BACKEND_SKILL_MAP: Record<string, SkillLevel> = {
@@ -199,10 +198,6 @@ function mapBackendChef(chef: BackendChef): ChefListing | null {
     name: chef.name || `${NATIONALITY_LABELS[nat]} Chef`,
     skill,
     multiplier: SKILL_CONFIG[skill].multiplier,
-    minBidFloor:
-      typeof chef.minBidFloor === "number" && chef.minBidFloor > 0
-        ? chef.minBidFloor
-        : undefined,
   };
 }
 
@@ -210,6 +205,8 @@ export function AuctionPage() {
   useGamePhaseNav();
   const {
     gameId,
+    playerId,
+    teamId,
     currentRound,
     phase,
     pendingAdBids,
@@ -219,6 +216,10 @@ export function AuctionPage() {
     role,
   } = useGame();
   const dispatch = useGameDispatch();
+  // Backend writes leader keys as `teamId || playerId` — match that here so
+  // the per-slot lock can identify "I'm the unique top bidder" vs. "tied
+  // with another team" (in which case neither should be locked).
+  const myTeamKey = teamId || playerId || null;
 
   const [activeTab, setActiveTabLocal] = useState<AuctionTab>("ads");
   // FE-R09: regenerate the cosmetic placeholder each round so the pre-
@@ -236,15 +237,15 @@ export function AuctionPage() {
   // Shape: `{ad: {TV,Billboard,Radio,Newspaper: number}, chef: {[chefId]: number}}`.
   const [topBidsAd, setTopBidsAd] = useState<Partial<Record<AdType, number>>>({});
   const [topBidsChef, setTopBidsChef] = useState<Record<string, number>>({});
+  // Leader teamKey per slot from `rounds/{round}.topBidsLeader`. Used to
+  // distinguish "I am the unique top bidder" (lock) from "tied with another
+  // team" (don't lock — let the player raise to break the tie).
+  const [topBidsLeaderAd, setTopBidsLeaderAd] = useState<Partial<Record<AdType, string>>>({});
+  const [topBidsLeaderChef, setTopBidsLeaderChef] = useState<Record<string, string>>({});
   const [remaining, setRemaining] = useState<number>(TAB_DURATION_SECONDS);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [chefBidInputs, setChefBidInputs] = useState<Record<string, string>>({});
-  // Free-typed text state for ad bids so the "0" placeholder clears on focus
-  // (matches the chef-bid UX). The underlying numeric `pendingAdBids` is
-  // still the source of truth for submission; this map only mirrors what the
-  // input element displays.
-  const [adBidInputs, setAdBidInputs] = useState<Record<string, string>>({});
   const [showExpiredPopup, setShowExpiredPopup] = useState(false);
 
   const parsed = parseGamePhase(phase, currentRound);
@@ -280,8 +281,9 @@ export function AuctionPage() {
     setBackendPool(null);
     setTopBidsAd({});
     setTopBidsChef({});
+    setTopBidsLeaderAd({});
+    setTopBidsLeaderChef({});
     setChefBidInputs({});
-    setAdBidInputs({});
     if (!gameId || !currentRound) {
       return;
     }
@@ -317,6 +319,28 @@ export function AuctionPage() {
           }
         }
         setTopBidsChef(nextChef);
+
+        // Leader keys (teamId or playerId) per slot. May be missing on round
+        // docs written before this field rolled out — treated as "unknown
+        // leader" which leaves slots editable instead of incorrectly locked.
+        const tbLeader = (data.topBidsLeader ?? null) as DocumentData | null;
+        const tbLeaderAd = (tbLeader?.ad ?? null) as DocumentData | null;
+        const nextLeaderAd: Partial<Record<AdType, string>> = {};
+        if (tbLeaderAd) {
+          (["TV", "Billboard", "Radio", "Newspaper"] as AdType[]).forEach((k) => {
+            const v = tbLeaderAd[k];
+            if (typeof v === "string" && v) nextLeaderAd[k] = v;
+          });
+        }
+        setTopBidsLeaderAd(nextLeaderAd);
+        const tbLeaderChef = (tbLeader?.chef ?? null) as DocumentData | null;
+        const nextLeaderChef: Record<string, string> = {};
+        if (tbLeaderChef && typeof tbLeaderChef === "object") {
+          for (const [id, v] of Object.entries(tbLeaderChef)) {
+            if (typeof v === "string" && v) nextLeaderChef[id] = v;
+          }
+        }
+        setTopBidsLeaderChef(nextLeaderChef);
 
         const raw = Array.isArray(data.chefPool) ? data.chefPool : null;
         if (!raw) {
@@ -370,7 +394,11 @@ export function AuctionPage() {
     if (timerExpired || !gameId) return;
     try {
       const submitBids = httpsCallable(functions, "submitBids");
-      await submitBids({ gameId, bidType: "chef", chefBids: { [chefId]: pendingChefBids[chefId] ?? 0 } });
+      await submitBids({
+        gameId,
+        bidType: "chef",
+        chefBids: [{ chefId, amount: pendingChefBids[chefId] ?? 0 }],
+      });
     } catch (err) {
       setSubmitError(humanizeFunctionError(err, "Could not submit chef bid. Please try again."));
     }
@@ -408,21 +436,10 @@ export function AuctionPage() {
         // submit an empty array to advance the lifecycle without bidding.
         const chefBids: Array<{ chefId: string; amount: number }> = [];
         if (chefPoolIsReal) {
-          const poolById = new Map(chefPool.map((c) => [c.id, c]));
+          const poolIds = new Set(chefPool.map((c) => c.id));
           for (const [chefId, amount] of Object.entries(pendingChefBids)) {
-            const chef = poolById.get(chefId);
-            if (!chef) continue;
+            if (!poolIds.has(chefId)) continue;
             if (typeof amount !== "number" || amount <= 0) continue;
-            // Client-side minimum-bid guard (matches the backend enforcement
-            // in the chef-system module). The submit button is already
-            // disabled when `belowMinimum` is true per-card, but guard here
-            // too in case a player submits via the bulk "Submit Bids" path.
-            const floor = chef.minBidFloor ?? 0;
-            if (floor > 0 && amount < floor) {
-              setSubmitError("Bid above the minimum bid.");
-              setSubmitting(false);
-              return;
-            }
             chefBids.push({ chefId, amount });
           }
         }
@@ -486,14 +503,60 @@ export function AuctionPage() {
   const alreadySubmitted =
     (isAdPhase && adBidsSubmitted) || (isChefPhase && chefBidsSubmitted);
 
-  // FE-9 — bid inputs are read-only only when the phase is over; having
-  // already submitted no longer locks the inputs, so a team that gets
-  // outbid can edit their numbers and resubmit until the timer ends.
-  // submitBids on the backend already performs a full replacement of the
-  // bid doc for that (player, round, bidType), so resubmission is safe.
-  // Out-of-phase is always read-only.
-  const inAuctionPhase = isAdPhase || isChefPhase;
-  const bidsReadOnly = !inAuctionPhase;
+  // FE-9 — the bid inputs become read-only once the player's team has
+  // locked in bids for the current phase, or the game has moved past the
+  // auction phase entirely. Unlike Decide, "locked" here is phase-scoped:
+  // the Ads tab stays editable during the ad phase even after chefs lock
+  // (and vice-versa). Out-of-phase is always read-only.
+  //
+  // Leader-aware lock: a slot only locks when *we* are the unique top
+  // bidder. If the leader key is missing (legacy round doc) or doesn't
+  // match us, the slot stays editable so a tied team can raise to break
+  // the tie instead of being silently frozen out.
+  const isLockedAdBid = useCallback(
+    (adType: AdType) => {
+      if (!isAdPhase) return true;
+      const myBid = pendingAdBids[adType] ?? 0;
+      const topBid = topBidsAd[adType] ?? 0;
+      const leader = topBidsLeaderAd[adType];
+      return (
+        myBid > 0 &&
+        topBid > 0 &&
+        myBid === topBid &&
+        !!myTeamKey &&
+        leader === myTeamKey
+      );
+    },
+    [isAdPhase, pendingAdBids, topBidsAd, topBidsLeaderAd, myTeamKey],
+  );
+
+  const isLockedChefBid = useCallback(
+    (chefId: string) => {
+      if (!isChefPhase) return true;
+      const myBid = pendingChefBids[chefId] ?? 0;
+      const topBid = topBidsChef[chefId] ?? 0;
+      const leader = topBidsLeaderChef[chefId];
+      return (
+        myBid > 0 &&
+        topBid > 0 &&
+        myBid === topBid &&
+        !!myTeamKey &&
+        leader === myTeamKey
+      );
+    },
+    [isChefPhase, pendingChefBids, topBidsChef, topBidsLeaderChef, myTeamKey],
+  );
+
+  const hasEditableAdBid = isAdPhase
+    ? AD_TYPES.some((adType) => !isLockedAdBid(adType))
+    : false;
+  const hasEditableChefBid = isChefPhase
+    ? chefPool.some((chef) => !isLockedChefBid(chef.id))
+    : false;
+  const hasEditableBid = isAdPhase ? hasEditableAdBid : hasEditableChefBid;
+  const hasAnyAdBid = AD_TYPES.some((adType) => (pendingAdBids[adType] ?? 0) > 0);
+  const hasAnyChefBid = chefPool.some((chef) => (pendingChefBids[chef.id] ?? 0) > 0);
+  const hasAnyBidForPhase = isAdPhase ? hasAnyAdBid : hasAnyChefBid;
 
   // DEC-21 role gating: Advertising owns ad bids, Finance owns chef bids,
   // Solo owns both. Other teammates still see + can edit the inputs (so
@@ -517,8 +580,8 @@ export function AuctionPage() {
     ? `Your ${ownerLabel} teammate submits this decision`
     : submitting
     ? "Submitting…"
-    : alreadySubmitted
-    ? "Update Bids"
+    : !hasEditableBid
+    ? "You currently lead every submitted bid"
     : "Submit All Bids";
 
   return (
@@ -556,13 +619,12 @@ export function AuctionPage() {
         >
           {timerDisplay}
         </div>
-        {alreadySubmitted && (
+        {alreadySubmitted && !hasEditableBid && (
           <span
             className="tab__badge tab__badge--submitted auction-page__locked-badge"
             role="status"
-            title="You can still edit and resubmit until the timer runs out."
           >
-            Bids Submitted
+            Bids Locked
           </span>
         )}
       </div>
@@ -579,6 +641,12 @@ export function AuctionPage() {
               reach. Ownership resets every auction, so no team can hold a slot forever. May the best bid win!
             </p>
             <div className="auction-ads__grid">
+              {isAdPhase && hasEditableBid && (
+                <p className="auction-page__hint">
+                  You can rebid any ad slot where another team has outbid you.
+                  Slots where you already lead are locked.
+                </p>
+              )}
               {AD_CARDS.map((ad) => (
                 <div key={ad.id} className="auction-ad">
                   <img
@@ -607,19 +675,12 @@ export function AuctionPage() {
                         className="auction-ad__bid-input auction-page__bid-input"
                         placeholder="0"
                         min={0}
-                        value={adBidInputs[ad.id] ?? ""}
-                        disabled={timerExpired || bidsReadOnly}
-                        readOnly={bidsReadOnly}
-                        onChange={(e) => {
-                          const raw = e.target.value;
-                          setAdBidInputs((prev) => ({ ...prev, [ad.id]: raw }));
-                          const parsed = parseInt(raw, 10);
-                          if (!isNaN(parsed) && parsed >= 0) {
-                            setAdBid(ad.id, parsed);
-                          } else if (raw === "") {
-                            setAdBid(ad.id, 0);
-                          }
-                        }}
+                        value={pendingAdBids[ad.id] ?? 0}
+                        disabled={timerExpired || !isAdPhase || isLockedAdBid(ad.id)}
+                        readOnly={!isAdPhase || isLockedAdBid(ad.id)}
+                        onChange={(e) =>
+                          setAdBid(ad.id, parseInt(e.target.value, 10) || 0)
+                        }
                       />
                     </div>
                   </div>
@@ -634,118 +695,76 @@ export function AuctionPage() {
             <p className="auction-page__hint">
               Bid on chefs to boost your bakery's output.
             </p>
+            {isChefPhase && hasEditableBid && (
+              <p className="auction-page__hint">
+                You can rebid chefs where you have been outbid. Chefs you
+                currently lead are locked.
+              </p>
+            )}
             <div className="auction-chefs__grid">
               {chefPool.map((chef) => {
                 const skillCfg = SKILL_CONFIG[chef.skill];
-                const minBid =
-                  typeof chef.minBidFloor === "number"
-                    ? chef.minBidFloor
-                    : null;
-                const currentBidAmount = pendingChefBids[chef.id] ?? 0;
-                const belowMinimum =
-                  minBid !== null &&
-                  currentBidAmount > 0 &&
-                  currentBidAmount < minBid;
                 return (
                   <div
                     key={chef.id}
-                    className={`auction-chef auction-chef--horizontal ${skillCfg.cssClass}`}
+                    className={`auction-chef ${skillCfg.cssClass}`}
                   >
-                    <div className="auction-chef__portrait auction-chef__portrait--side">
+                    <div className="auction-chef__portrait">
                       <img
                         src={chefIcon(chef.nationality, chef.gender)}
                         alt={chef.name}
                         className="auction-chef__icon"
                       />
                     </div>
-                    <div className="auction-chef__body">
-                      <div className="auction-chef__header-row">
-                        <span className="auction-chef__name">{chef.name}</span>
-                        <span
-                          className={`auction-chef__skill-tag auction-chef__skill-tag--${chef.skill}`}
-                        >
-                          {skillCfg.label}
-                        </span>
-                      </div>
-                      <div className="auction-chef__bids-row">
-                        <div className="auction-chef__top-bid">
-                          <span className="auction-chef__top-bid-label">
-                            Top Bid
-                          </span>
-                          <span className="auction-chef__top-bid-value">
-                            {typeof topBidsChef[chef.id] === "number"
-                              ? `$${topBidsChef[chef.id]!.toLocaleString()}`
-                              : "--"}
-                          </span>
-                        </div>
-                        {minBid !== null && (
-                          <div className="auction-chef__min-bid">
-                            <span className="auction-chef__min-bid-label">
-                              Minimum Bid
-                            </span>
-                            <span className="auction-chef__min-bid-value">
-                              ${minBid.toLocaleString()}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                      <div className="auction-chef__bid">
-                        <label className="auction-chef__bid-label">
-                          Your Bid
-                        </label>
-                        <div className="auction-page__bid-wrapper">
-                          <span className="auction-page__bid-prefix">$</span>
-                          <input
-                            type="number"
-                            className={`auction-chef__bid-input auction-page__bid-input${
-                              belowMinimum
-                                ? " auction-chef__bid-input--error"
-                                : ""
-                            }`}
-                            placeholder="0"
-                            min={0}
-                            value={chefBidInputs[chef.id] ?? ""}
-                            disabled={timerExpired || bidsReadOnly}
-                            readOnly={bidsReadOnly}
-                            aria-invalid={belowMinimum ? "true" : undefined}
-                            onChange={(e) => {
-                              const raw = e.target.value;
-                              setChefBidInputs((prev) => ({
-                                ...prev,
-                                [chef.id]: raw,
-                              }));
-                              const parsed = parseInt(raw, 10);
-                              if (!isNaN(parsed) && parsed >= 0) {
-                                setChefBid(chef.id, parsed);
-                              } else if (raw === "") {
-                                setChefBid(chef.id, 0);
-                              }
-                            }}
-                          />
-                        </div>
-                        {belowMinimum && (
-                          <p
-                            className="auction-chef__bid-error"
-                            role="alert"
-                          >
-                            Bid above the minimum bid.
-                          </p>
-                        )}
-                        <button
-                          className="btn btn--small chef-card__submit"
-                          disabled={
-                            timerExpired ||
-                            !pendingChefBids[chef.id] ||
-                            belowMinimum
-                          }
-                          onClick={(e) => {
-                            e.preventDefault();
-                            handleSubmitSingleBid(chef.id);
+                    <span
+                      className={`auction-chef__skill-tag auction-chef__skill-tag--${chef.skill}`}
+                    >
+                      {skillCfg.label}
+                    </span>
+                    <div className="auction-chef__info">
+                      <span className="auction-chef__name">{chef.name}</span>
+                    </div>
+                    <div className="auction-chef__top-bid">
+                      <span className="auction-chef__top-bid-label">Top Bid</span>
+                      <span className="auction-chef__top-bid-value">
+                        {typeof topBidsChef[chef.id] === "number"
+                          ? `$${topBidsChef[chef.id]!.toLocaleString()}`
+                          : "--"}
+                      </span>
+                    </div>
+                    <div className="auction-chef__bid">
+                      <label className="auction-chef__bid-label">
+                        Your Bid
+                      </label>
+                      <div className="auction-page__bid-wrapper">
+                        <span className="auction-page__bid-prefix">$</span>
+                        <input
+                          type="number"
+                          className="auction-chef__bid-input auction-page__bid-input"
+                          placeholder="0"
+                          min={0}
+                          value={chefBidInputs[chef.id] ?? ""}
+                          disabled={timerExpired || !isChefPhase || isLockedChefBid(chef.id)}
+                          readOnly={!isChefPhase || isLockedChefBid(chef.id)}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            setChefBidInputs(prev => ({ ...prev, [chef.id]: raw }));
+                            const parsed = parseInt(raw, 10);
+                            if (!isNaN(parsed) && parsed >= 0) {
+                              setChefBid(chef.id, parsed);
+                            } else if (raw === "") {
+                              setChefBid(chef.id, 0);
+                            }
                           }}
-                        >
-                          Submit Bid
-                        </button>
+                        />
                       </div>
+                      <button
+                        className="btn btn--small chef-card__submit"
+                        disabled={timerExpired || !pendingChefBids[chef.id] || isLockedChefBid(chef.id)}
+                        onClick={(e) => { e.preventDefault(); handleSubmitSingleBid(chef.id); }}
+                      >
+                        Submit Bid
+                      </button>
                     </div>
                   </div>
                 );
@@ -768,6 +787,8 @@ export function AuctionPage() {
           timerExpired ||
           submitting ||
           (!isAdPhase && !isChefPhase) ||
+          !hasAnyBidForPhase ||
+          !hasEditableBid ||
           !canSubmitForPhase
         }
         title={submitTooltip}

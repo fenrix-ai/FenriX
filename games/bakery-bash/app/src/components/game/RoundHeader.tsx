@@ -1,7 +1,5 @@
 import { useEffect, useState } from "react";
 import { useGame } from "../../contexts/GameContext";
-import { CsvInboxModal } from "./CsvInboxModal";
-import { GameProgressBar } from "./GameProgressBar";
 import {
   PLAYER_ROLE_LABELS,
   parseGamePhase,
@@ -127,6 +125,7 @@ export function RoundHeader() {
     currentRound,
     totalRounds,
     timeRemaining,
+    roundResults,
     teamName,
     player,
     role,
@@ -134,7 +133,6 @@ export function RoundHeader() {
     phase,
   } = useGame();
 
-  const [inboxOpen, setInboxOpen] = useState(false);
   const phaseSeconds = usePhaseCountdownSeconds();
   // Prefer the backend-driven `phaseEndsAt` countdown; fall back to the
   // legacy local `timeRemaining` (only used by AuctionPage's tab timer
@@ -147,13 +145,9 @@ export function RoundHeader() {
     return `${m}:${s.toString().padStart(2, "0")}`;
   };
 
-  // Team label preference: explicit team name (canonical, mirrored onto
-  // players/{uid}.teamName by the backend). We only fall back to the
-  // player's own display name for true-solo sessions (no teamId / pre-
-  // assignment). `bakeryName` is legacy and no longer considered a valid
-  // identity for the header.
+  // Team label preference: explicit team name → bakery name → display name.
   const teamLabel =
-    teamName ?? (teamId ? null : player?.name ?? null);
+    teamName ?? player?.bakeryName ?? player?.name ?? null;
 
   const parsed = parseGamePhase(phase ?? "lobby", currentRound ?? 1);
   const phaseBannerLabel = PHASE_LABELS[parsed.base] ?? phase ?? "";
@@ -172,21 +166,12 @@ export function RoundHeader() {
       </div>
 
       <button
-        className="round-header__email round-header__csv-inbox"
-        onClick={() => setInboxOpen(true)}
-        title="Open CSV inbox"
-        aria-label="Open CSV inbox"
+        className="round-header__email"
+        onClick={() => downloadResultsCsv(roundResults)}
+        title="Download results CSV"
       >
-        <img
-          src="/assets/ui/email.svg"
-          alt=""
-          aria-hidden="true"
-          className="round-header__csv-inbox-icon"
-        />
-        <span className="round-header__csv-inbox-label">CSV Inbox</span>
+        <img src="/assets/ui/email.svg" alt="Download CSV" />
       </button>
-
-      <CsvInboxModal open={inboxOpen} onClose={() => setInboxOpen(false)} />
 
       <div className="round-header__round">
         Round {currentRound} of {totalRounds}
@@ -212,25 +197,12 @@ export function RoundHeader() {
             displaySeconds < 30 ? "round-header__timer--urgent" : ""
           }`}
         >
-          {parsed.base === "results_ready" &&
-            displaySeconds > 0 && (
-              <span className="round-header__timer-label">
-                Seconds until next round:
-              </span>
-            )}
-          {displaySeconds <= 0 ? (
-            <span className="round-header__timer-expired">
-              Time's up — waiting for professor
-            </span>
-          ) : (
-            formatTime(displaySeconds)
-          )}
+          {displaySeconds <= 0
+            ? <span className="round-header__timer-expired">Time's up — waiting for professor</span>
+            : formatTime(displaySeconds)
+          }
         </div>
       )}
-
-      <div className="round-header__progress">
-        <GameProgressBar />
-      </div>
     </header>
   );
 }

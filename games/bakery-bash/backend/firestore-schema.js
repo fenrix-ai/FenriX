@@ -103,7 +103,7 @@ const GameConfigDocument = {
   // ── Chef system ──────────────────────────────────────────
   totalRounds: 5,                 // number — rounds per game
   specialtyChefCap: 3,            // number — max specialty chefs per player
-  chefPoolSize: { min: 6, max: 8 }, // object — pool size range per round
+  chefPoolSize: 12,                 // number — exact pool size per round
 
   // Chef satisfaction decay: satisfaction = max(floor, 100 - max(0, n - threshold) × decay)
   // where n = consecutive rounds on roster without a win bonus.

@@ -300,9 +300,10 @@ function validateChefBids(data, chefPool) {
     }
     const floor = Number(chef.minBidFloor);
     if (Number.isFinite(floor) && amount < floor) {
+      const chefIndex = pool.findIndex((candidate) => (candidate && (candidate.id || candidate.chefId)) === chefId);
       fail(
         'invalid-argument',
-        `Chef "${chefId}" bid ${amount} is below minBidFloor ${floor}`,
+        `Your bid for Chef #${chefIndex >= 0 ? chefIndex + 1 : "?"} ($${amount.toLocaleString()}) is below the Minimum Ask of $${floor.toLocaleString()}.`,
       );
     }
 

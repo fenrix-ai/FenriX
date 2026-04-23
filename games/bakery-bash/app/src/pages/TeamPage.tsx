@@ -454,24 +454,12 @@ export function TeamPage() {
                 </p>
               )}
 
-              <p className="team-page__roles-hint">
-                You can switch to any unclaimed role without clearing first.
-                Press <strong>× Deselect</strong> under your current role to
-                stop owning it entirely. For smaller teams, one teammate can
-                claim the all-roles <em>solo</em> slot to cover multiple
-                responsibilities.
-              </p>
-
               <ul className="team-page__role-list">
                 {PICKABLE_ROLES.map((r) => {
                   const otherClaimer = claimedByOther[r];
                   const taken = !!otherClaimer;
                   const mine = myClaimedRole === r;
                   const saving = savingRole === r;
-                  // Allow the player to click any unclaimed role directly —
-                  // backend's `setTeamRole` overwrites the caller's previous
-                  // role, so this becomes a "switch to" action without
-                  // requiring a separate Clear step first.
                   const disabled = taken || saving || isSolo;
                   return (
                     <li
@@ -502,9 +490,8 @@ export function TeamPage() {
                             className="btn btn--ghost"
                             onClick={() => void handleClearRole()}
                             disabled={clearingRole}
-                            title="Release this role so any teammate can pick it up."
                           >
-                            {clearingRole ? "Clearing…" : "× Deselect"}
+                            {clearingRole ? "Clearing…" : "× Clear"}
                           </button>
                         )}
                       </div>
@@ -513,19 +500,15 @@ export function TeamPage() {
                       </p>
                       <button
                         type="button"
-                        className={`btn btn--ghost team-page__role-btn${
-                          mine ? " team-page__role-btn--mine" : ""
-                        }`}
+                        className="btn btn--ghost team-page__role-btn"
                         onClick={() => void handleClaimRole(r)}
                         disabled={disabled || mine}
                         title={
                           taken
                             ? `${otherClaimer} already picked this role.`
-                            : mine
-                            ? "You already own this role."
                             : isSolo
                             ? "Roles unlock once a teammate joins."
-                            : `Switch to ${PLAYER_ROLE_LABELS[r]}.`
+                            : undefined
                         }
                       >
                         {saving
@@ -534,8 +517,6 @@ export function TeamPage() {
                           ? "Selected"
                           : taken
                           ? "Taken"
-                          : myClaimedRole
-                          ? "Switch"
                           : "Choose"}
                       </button>
                     </li>

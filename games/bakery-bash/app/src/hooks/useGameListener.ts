@@ -8,7 +8,6 @@ import {
 import { useGameDispatch } from "../contexts/GameContext";
 import { db } from "../lib/firebase";
 import {
-  type AdType,
   type GameConfigParams,
   type LeaderboardRanking,
   type MaintenanceBars,
@@ -171,15 +170,6 @@ export function useGameListener(gameId: string | null, playerId?: string | null)
           dispatch({ type: "SET_TEAM_ID", payload: null });
         }
 
-        // Team name is mirrored onto `players/{uid}.teamName` by the
-        // backend (joinGame + updateTeamName), so the rest of the UI can
-        // render team identity without a dedicated teams subscription.
-        if (typeof data.teamName === "string" && data.teamName.length > 0) {
-          dispatch({ type: "SET_TEAM_NAME", payload: data.teamName });
-        } else if (data.teamName === null) {
-          dispatch({ type: "SET_TEAM_NAME", payload: null });
-        }
-
         const lrr = data.lastRoundResult;
         if (lrr && typeof lrr === "object" && typeof lrr.round === "number") {
           const revenue =
@@ -228,40 +218,21 @@ export function useGameListener(gameId: string | null, playerId?: string | null)
                   ? lrr.productBreakdown
                   : undefined,
               adWon: lrr.adWon ?? null,
+              adWins: Array.isArray(lrr.adWins) ? lrr.adWins : undefined,
               adPaid: typeof lrr.adPaid === "number" ? lrr.adPaid : undefined,
+              chefsWon: Array.isArray(lrr.chefsWon)
+                ? (lrr.chefsWon as Array<{ id?: string; name?: string }>)
+                : undefined,
               chefBidPaid:
-                typeof lrr.chefBidPaid === "number" ? lrr.chefBidPaid : undefined,
+                typeof lrr.chefBidPaid === "number"
+                  ? lrr.chefBidPaid
+                  : undefined,
               auctionResults: {
-                adWins: Array.isArray(lrr.adWins)
-                  ? (lrr.adWins as Array<{ adType: string; amount: number }>)
-                      .filter((w) => w && typeof w.adType === "string")
-                      .map((w) => ({
-                        adType: w.adType as AdType,
-                        amount: typeof w.amount === "number" ? w.amount : 0,
-                      }))
-                  : lrr.adWon
-                    ? [
-                        {
-                          adType: lrr.adWon as AdType,
-                          amount:
-                            typeof lrr.adPaid === "number" ? lrr.adPaid : 0,
-                        },
-                      ]
-                    : [],
-                chefsWon: Array.isArray(lrr.chefsWon)
-                  ? (lrr.chefsWon as string[]).filter(
-                      (c): c is string => typeof c === "string",
-                    )
-                  : typeof lrr.chefWon === "string"
-                    ? [lrr.chefWon]
-                    : [],
                 adWon: lrr.adWon ?? null,
                 chefWon:
                   typeof lrr.chefWon === "string"
                     ? lrr.chefWon
-                    : Array.isArray(lrr.chefsWon) && lrr.chefsWon.length > 0
-                      ? String(lrr.chefsWon[0])
-                      : (lrr.chefWon ?? null),
+                    : (lrr.chefWon ?? null),
               },
               maintenanceBars:
                 lrr.maintenanceBars && typeof lrr.maintenanceBars === "object"

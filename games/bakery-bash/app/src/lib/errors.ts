@@ -9,7 +9,9 @@ import type { FunctionsError } from "firebase/functions";
 export function humanizeFunctionError(err: unknown, fallback: string): string {
   if (err && typeof err === "object" && ("code" in err || "message" in err)) {
     const fnErr = err as FunctionsError;
-    if (fnErr.message) return fnErr.message;
+    if (fnErr.message) {
+      return fnErr.message.replace(/\bminBidFloor\b/g, "Minimum Ask");
+    }
   }
   return fallback;
 }

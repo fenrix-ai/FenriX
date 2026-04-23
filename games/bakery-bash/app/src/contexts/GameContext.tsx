@@ -13,7 +13,6 @@ import {
   DEFAULT_MAINTENANCE_BARS,
   DEFAULT_STAFF_COUNTS,
   totalSousChefs,
-  type AcquiredCsv,
   type AdType,
   type AuctionTab,
   type GameConfigParams,
@@ -113,7 +112,6 @@ const initialState: GameState = {
   phaseEndsAtMs: null,
   leaderboard: [],
   leaderboardError: null,
-  acquiredCsvs: [],
 };
 
 type GameAction =
@@ -169,7 +167,6 @@ type GameAction =
   | { type: "SET_BUDGET"; payload: number | null }
   | { type: "SET_LEADERBOARD"; payload: LeaderboardRanking[] }
   | { type: "SET_LEADERBOARD_ERROR"; payload: string | null }
-  | { type: "ADD_ACQUIRED_CSV"; payload: AcquiredCsv }
   | { type: "RESET" };
 
 function gameReducer(state: GameState, action: GameAction): GameState {
@@ -385,22 +382,6 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       return state.leaderboardError === action.payload
         ? state
         : { ...state, leaderboardError: action.payload };
-
-    case "ADD_ACQUIRED_CSV": {
-      // Dedupe by id so repeated purchases of the same round's intel don't
-      // stack up; the newer payload always wins so callers can overwrite a
-      // placeholder entry with a finalized one.
-      const existing = state.acquiredCsvs.findIndex(
-        (c) => c.id === action.payload.id,
-      );
-      const next =
-        existing >= 0
-          ? state.acquiredCsvs.map((c, i) =>
-              i === existing ? action.payload : c,
-            )
-          : [...state.acquiredCsvs, action.payload];
-      return { ...state, acquiredCsvs: next };
-    }
 
     case "RESET":
       return initialState;

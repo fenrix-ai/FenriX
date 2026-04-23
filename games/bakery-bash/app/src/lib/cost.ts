@@ -15,7 +15,6 @@
 import type {
   GameConfigParams,
   PendingAdBidsDraft,
-  PendingChefBidsDraft,
   PendingDecisionDraft,
   ProductKey,
   StaffCounts,
@@ -120,23 +119,15 @@ export function totalAdSpend(adBids: PendingAdBidsDraft): number {
   return sum;
 }
 
-/**
- * Total chef-bid spend committed across all pending chef bids this round.
- * Like ad spend, this is worst-case: the chef auction is independent per
- * chef and a team might win 0, 1, or several chefs, but we bill the full
- * set of open bids as a conservative upper bound for the "Total Cost"
- * preview on the decide page.
- */
-export function totalChefBidSpend(chefBids: PendingChefBidsDraft): number {
-  let sum = 0;
-  for (const v of Object.values(chefBids)) {
-    if (typeof v === "number" && v > 0) sum += v;
-  }
-  return sum;
-}
-
 /** Detailed per-bucket breakdown — handy for tooltips / debugging. */
 export interface RoundCostBreakdown {
+  staff: number;
+  product: number;
+  ad: number;
+  total: number;
+}
+
+export interface DecisionCostBreakdown {
   staff: number;
   product: number;
   ad: number;
@@ -144,18 +135,27 @@ export interface RoundCostBreakdown {
   total: number;
 }
 
-/**
- * Convenience: full round cost from the current pending draft + config.
- * `pendingChefBids` is optional so existing callers (e.g. the old
- * BudgetSummary) keep compiling without knowing about chef bids; when
- * omitted, the chef bucket is zero and the total matches the prior
- * behavior.
- */
+export function computeDecisionCost(
+  pendingDecision: PendingDecisionDraft,
+  config: GameConfigParams | null,
+  auctionCosts?: { ad?: number; chef?: number },
+): DecisionCostBreakdown {
+  const staff = totalStaffCost(pendingDecision.staffCounts, config);
+  const product = totalProductCost(
+    pendingDecision.menu,
+    pendingDecision.quantities,
+    config,
+  );
+  const ad = auctionCosts?.ad ?? 0;
+  const chef = auctionCosts?.chef ?? 0;
+  return { staff, product, ad, chef, total: staff + product + ad + chef };
+}
+
+/** Convenience: full round cost from the current pending draft + config. */
 export function computeRoundCost(
   pendingDecision: PendingDecisionDraft,
   pendingAdBids: PendingAdBidsDraft,
   config: GameConfigParams | null,
-  pendingChefBids?: PendingChefBidsDraft,
 ): RoundCostBreakdown {
   const staff = totalStaffCost(pendingDecision.staffCounts, config);
   const product = totalProductCost(
@@ -164,8 +164,7 @@ export function computeRoundCost(
     config,
   );
   const ad = totalAdSpend(pendingAdBids);
-  const chef = pendingChefBids ? totalChefBidSpend(pendingChefBids) : 0;
-  return { staff, product, ad, chef, total: staff + product + ad + chef };
+  return { staff, product, ad, total: staff + product + ad };
 }
 
 /**

@@ -206,8 +206,6 @@ export function ProfessorLeaderboardPage() {
                 readNumber(data.customerSatisfaction) ??
                 0,
               auctionResults: data.auctionResults ?? {
-                adWins: [],
-                chefsWon: [],
                 adWon: null,
                 chefWon: null,
               },

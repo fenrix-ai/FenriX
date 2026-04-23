@@ -47,11 +47,11 @@ const db = getFirestore();
 
 const {
   DEFAULT_GAME_CONFIG,
+  AD_TYPES,
   mergeConfig,
   numberOrDefault,
   objectOrDefault,
   cleanString,
-  CHEF_NATIONALITIES,
 } = require('./modules/config');
 
 const {
@@ -295,84 +295,181 @@ function assertRoleAllowed(playerRole, allowedRoles) {
   }
 }
 
+function getPlayerTeamId(playerData) {
+  const teamId = cleanString(playerData && playerData.teamId);
+  return teamId || null;
+}
+
+function getPlayerTeamKey(playerDoc) {
+  const data = (playerDoc && typeof playerDoc.data === 'function') ? playerDoc.data() : {};
+  return getPlayerTeamId(data) || playerDoc.id;
+}
+
+function buildTeamGroupsFromPlayerDocs(playerDocs) {
+  const groups = new Map();
+
+  for (const playerDoc of playerDocs) {
+    const data = playerDoc.data() || {};
+    const teamId = getPlayerTeamId(data);
+    const key = teamId || playerDoc.id;
+
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        teamId,
+        bakeryName: cleanString(data.bakeryName) || cleanString(data.displayName) || key,
+        memberUids: [],
+        memberDocs: [],
+        operationsUid: null,
+        financeUid: null,
+        advertisingUid: null,
+        soloUid: null,
+        canonicalUid: playerDoc.id,
+      });
+    }
+
+    const group = groups.get(key);
+    group.memberUids.push(playerDoc.id);
+    group.memberDocs.push(playerDoc);
+
+    const role = cleanString(data.role);
+    if (role === 'operations') group.operationsUid = playerDoc.id;
+    if (role === 'finance') group.financeUid = playerDoc.id;
+    if (role === 'advertising') group.advertisingUid = playerDoc.id;
+    if (role === 'solo') group.soloUid = playerDoc.id;
+  }
+
+  for (const group of groups.values()) {
+    group.memberUids.sort();
+    group.memberDocs.sort((a, b) => a.id.localeCompare(b.id));
+    group.canonicalUid =
+      group.operationsUid ||
+      group.financeUid ||
+      group.advertisingUid ||
+      group.soloUid ||
+      group.memberUids[0] ||
+      group.key;
+  }
+
+  return groups;
+}
+
 // ---------------------------------------------------------------------------
 // updateTopBids — BE-25 competing-bid surface
 // After a successful submitBids, recompute the round's topBids map so the FE
-// can surface the current top VALUE for each ad slot / chef without revealing
-// who the high bidder is.
+// can surface the current top VALUE for each ad slot / chef. Also writes
+// `topBidsLeader` so the FE can tell whether *we* are the unique leader (vs.
+// tied with another team) — the per-slot lock UI relies on this to avoid
+// freezing both teams when their bids are equal.
 //
-// Unlike the previous implementation (monotonic-only: "only accept amounts
-// greater than the current top"), this one RECOMPUTES the max by scanning
-// every player's current `bids/round_{N}` document. That's required so that
-// when the previously-highest bidder edits their bid down, the displayed top
-// actually falls instead of staying stale. Non-fatal: logged + swallowed
-// on failure to avoid breaking submitBids's critical path.
+// Wrapped in `db.runTransaction` so two concurrent submitBids calls cannot
+// each read pre-write state and stomp each other's recomputed `topBids`
+// map (regression guard for PR #54).
+//
+// Non-fatal: logged and swallowed on failure to avoid breaking submitBids's
+// critical path.
 // ---------------------------------------------------------------------------
-async function updateTopBids(gameRef, round, bidType /* , validated */) {
-  const roundRef = gameRef.collection('rounds').doc(`round_${round}`);
+async function updateTopBids(gameRef, round, bidType) {
   const roundId = `round_${round}`;
+  const roundRef = gameRef.collection('rounds').doc(roundId);
   try {
-    // Wrap the read-all-then-write in a Firestore transaction so that two
-    // concurrent `submitBids` calls can't each read stale per-player bid
-    // state and race to stomp `topBids` — Firestore will retry one of them
-    // if any of the reads are modified before the write commits.
     await db.runTransaction(async (tx) => {
       const playersSnap = await tx.get(gameRef.collection('players'));
       const bidSnaps = await Promise.all(
-        playersSnap.docs.map((pd) => tx.get(pd.ref.collection('bids').doc(roundId)))
+        playersSnap.docs.map((pd) =>
+          tx.get(pd.ref.collection('bids').doc(roundId))
+        )
       );
-      const roundSnap = await tx.get(roundRef);
 
-      const adTopBids = {};   // adType -> max amount
-      const chefTopBids = {}; // chefId -> max amount
+      const playerToTeamKey = new Map(
+        playersSnap.docs.map((pd) => [pd.id, getPlayerTeamKey(pd)])
+      );
 
-      for (const bSnap of bidSnaps) {
-        if (!bSnap.exists) continue;
-        const bData = bSnap.data() || {};
+      const submittedAtMillis = (ts) =>
+        ts && typeof ts.toMillis === 'function' ? ts.toMillis() : Number.POSITIVE_INFINITY;
 
-        if (bidType === 'ad' || bidType === 'all') {
-          const ad = (bData && bData.ad) || {};
-          for (const [slot, amount] of Object.entries(ad)) {
-            const a = numberOrDefault(amount, 0);
-            if (a > 0 && a > numberOrDefault(adTopBids[slot], 0)) {
-              adTopBids[slot] = a;
+      const nextTopBidsAd = {};
+      const nextLeaderAd = {};
+      const nextTopBidsChef = {};
+      const nextLeaderChef = {};
+
+      if (bidType === 'ad') {
+        for (const adType of AD_TYPES) {
+          let topAmount = 0;
+          let topLeader = null;
+          let topMillis = Number.POSITIVE_INFINITY;
+          for (let i = 0; i < bidSnaps.length; i += 1) {
+            const bidSnap = bidSnaps[i];
+            if (!bidSnap.exists) continue;
+            const data = bidSnap.data() || {};
+            const amount = numberOrDefault(objectOrDefault(data.ad, {})[adType], 0);
+            if (amount <= 0) continue;
+            const millis = submittedAtMillis(data.adSubmittedAt);
+            const leaderKey = playerToTeamKey.get(playersSnap.docs[i].id) || playersSnap.docs[i].id;
+            if (
+              amount > topAmount ||
+              (amount === topAmount && millis < topMillis)
+            ) {
+              topAmount = amount;
+              topLeader = leaderKey;
+              topMillis = millis;
+            }
+          }
+          if (topAmount > 0) {
+            nextTopBidsAd[adType] = topAmount;
+            if (topLeader) nextLeaderAd[adType] = topLeader;
+          }
+        }
+      } else {
+        const topByChef = {};
+        const leaderByChef = {};
+        const millisByChef = {};
+        for (let i = 0; i < bidSnaps.length; i += 1) {
+          const bidSnap = bidSnaps[i];
+          if (!bidSnap.exists) continue;
+          const data = bidSnap.data() || {};
+          const chefBids = Array.isArray(data.chef) ? data.chef : [];
+          const millis = submittedAtMillis(data.chefSubmittedAt);
+          const leaderKey = playerToTeamKey.get(playersSnap.docs[i].id) || playersSnap.docs[i].id;
+          for (const bid of chefBids) {
+            if (!bid || !bid.chefId) continue;
+            const amount = numberOrDefault(bid.amount, 0);
+            if (amount <= 0) continue;
+            const prevAmount = numberOrDefault(topByChef[bid.chefId], 0);
+            const prevMillis = millisByChef[bid.chefId] ?? Number.POSITIVE_INFINITY;
+            if (
+              amount > prevAmount ||
+              (amount === prevAmount && millis < prevMillis)
+            ) {
+              topByChef[bid.chefId] = amount;
+              leaderByChef[bid.chefId] = leaderKey;
+              millisByChef[bid.chefId] = millis;
             }
           }
         }
-
-        if (bidType === 'chef' || bidType === 'all') {
-          const chefArr = Array.isArray(bData && bData.chef) ? bData.chef : [];
-          for (const cb of chefArr) {
-            const chefId = cb && cb.chefId;
-            const amount = numberOrDefault(cb && cb.amount, 0);
-            if (chefId && amount > 0 && amount > numberOrDefault(chefTopBids[chefId], 0)) {
-              chefTopBids[chefId] = amount;
-            }
-          }
-        }
+        Object.assign(nextTopBidsChef, topByChef);
+        Object.assign(nextLeaderChef, leaderByChef);
       }
 
+      const updates = { updatedAt: FieldValue.serverTimestamp() };
+      if (bidType === 'ad') {
+        updates['topBids.ad'] = nextTopBidsAd;
+        updates['topBidsLeader.ad'] = nextLeaderAd;
+      } else {
+        updates['topBids.chef'] = nextTopBidsChef;
+        updates['topBidsLeader.chef'] = nextLeaderChef;
+      }
+
+      const roundSnap = await tx.get(roundRef);
       if (roundSnap.exists) {
-        // Fully replace the recomputed side (dotted-key update) so stale
-        // entries from previously-leading bidders — who then reduced their
-        // bid — are actually cleared.
-        const updates = { updatedAt: FieldValue.serverTimestamp() };
-        if (bidType === 'ad' || bidType === 'all') {
-          updates['topBids.ad'] = adTopBids;
-        }
-        if (bidType === 'chef' || bidType === 'all') {
-          updates['topBids.chef'] = chefTopBids;
-        }
         tx.update(roundRef, updates);
       } else {
-        const seed = {
+        tx.set(roundRef, {
           round,
-          topBids: {},
+          topBids: { ad: nextTopBidsAd, chef: nextTopBidsChef },
+          topBidsLeader: { ad: nextLeaderAd, chef: nextLeaderChef },
           updatedAt: FieldValue.serverTimestamp(),
-        };
-        if (bidType === 'ad' || bidType === 'all') seed.topBids.ad = adTopBids;
-        if (bidType === 'chef' || bidType === 'all') seed.topBids.chef = chefTopBids;
-        tx.set(roundRef, seed, { merge: true });
+        }, { merge: true });
       }
     });
   } catch (err) {
@@ -380,6 +477,85 @@ async function updateTopBids(gameRef, round, bidType /* , validated */) {
       gameId: gameRef.id, round, bidType, error: err && err.message,
     });
   }
+}
+
+async function resolveAndApplyAdAuction(gameRef, round) {
+  const roundId = `round_${round}`;
+  const roundRef = gameRef.collection('rounds').doc(roundId);
+  const playersSnap = await gameRef.collection('players').get();
+  const teamGroups = buildTeamGroupsFromPlayerDocs(playersSnap.docs);
+  const playerToTeamKey = new Map(
+    playersSnap.docs.map((pd) => [pd.id, getPlayerTeamKey(pd)])
+  );
+  const bidSnaps = await Promise.all(
+    playersSnap.docs.map((pd) => pd.ref.collection('bids').doc(roundId).get())
+  );
+
+  const aggregateAds = {};
+  const adAuctionResults = {};
+
+  for (const adType of AD_TYPES) {
+    let winnerId = null;
+    let winnerKey = null;
+    let winningBid = 0;
+    let winningSubmittedAt = null;
+
+    for (let i = 0; i < playersSnap.docs.length; i += 1) {
+      const bidSnap = bidSnaps[i];
+      if (!bidSnap.exists) continue;
+      const bidData = bidSnap.data() || {};
+      const amount = numberOrDefault(objectOrDefault(bidData.ad, {})[adType], 0);
+      if (amount <= 0) continue;
+      const submittedAt = bidData.adSubmittedAt || null;
+      const isEarlierSubmission =
+        winningSubmittedAt &&
+        submittedAt &&
+        typeof winningSubmittedAt.toMillis === 'function' &&
+        typeof submittedAt.toMillis === 'function' &&
+        submittedAt.toMillis() < winningSubmittedAt.toMillis();
+      if (
+        amount > winningBid ||
+        (amount === winningBid && winningBid > 0 && isEarlierSubmission)
+      ) {
+        winnerId = playersSnap.docs[i].id;
+        winnerKey = playerToTeamKey.get(winnerId) || winnerId;
+        winningBid = amount;
+        winningSubmittedAt = submittedAt;
+      }
+    }
+
+    if (!winnerId || !winnerKey || winningBid <= 0) continue;
+
+    aggregateAds[adType] = {
+      adType,
+      winnerId,
+      winnerKey,
+      winningBid,
+    };
+
+    if (!adAuctionResults[winnerKey]) {
+      adAuctionResults[winnerKey] = { adTypes: [], totalPaid: 0 };
+    }
+    adAuctionResults[winnerKey].adTypes.push(adType);
+    adAuctionResults[winnerKey].totalPaid += winningBid;
+
+    const winnerGroup = teamGroups.get(winnerKey);
+    if (winnerGroup) {
+      for (const memberUid of winnerGroup.memberUids) {
+        adAuctionResults[memberUid] = {
+          adTypes: [...adAuctionResults[winnerKey].adTypes],
+          totalPaid: adAuctionResults[winnerKey].totalPaid,
+        };
+      }
+    }
+  }
+
+  await roundRef.set({
+    round,
+    auctionResults: { ads: aggregateAds },
+    adAuctionResults,
+    adAuctionResolvedAt: FieldValue.serverTimestamp(),
+  }, { merge: true });
 }
 
 // ---------------------------------------------------------------------------
@@ -425,23 +601,9 @@ async function loadRoundPreferences(gameRef, round) {
 }
 
 /**
- * Load all auction results for a round. Returns:
- *   Map<playerId, {
- *     adWins: [{adType, amount}, ...],  // NEW: multi-ad-slot wins
- *     adWon:   AdType | null,            // legacy: first of adWins for old consumers
- *     adBidPaid: number,                 // sum of winning ad bids
- *     chefsWon: Chef[],                  // multi-chef wins (pre-existing)
- *     chefBidPaid: number,
- *   }>
- *
- * Handles two `adAuctionResults` shapes on disk:
- *   - NEW: { [playerId]: { wins: [{adType, amount}], totalPaid } }
- *   - LEGACY: { [playerId]: { adType, amount } }   (single-win, pre-multi-ad)
+ * Load all auction results for a round: read `rounds/{round}` doc and any
+ * child auction docs. Returns a Map<playerId, { adWon, adWins, adBidPaid, chefsWon, chefBidPaid }>.
  */
-function emptyAuctionEntry() {
-  return { adWins: [], adWon: null, adBidPaid: 0, chefsWon: [], chefBidPaid: 0 };
-}
-
 async function loadAuctionResultsByPlayer(gameRef, round) {
   const byPlayer = new Map();
   const roundRef = gameRef.collection('rounds').doc(`round_${round}`);
@@ -452,29 +614,23 @@ async function loadAuctionResultsByPlayer(gameRef, round) {
   const adResults = objectOrDefault(data.adAuctionResults, {});
   const chefResults = objectOrDefault(data.chefAuctionResults, {});
 
+  // Ad auction: keyed by playerId → { adTypes: [...], totalPaid }
   for (const [playerId, r] of Object.entries(adResults)) {
-    if (!byPlayer.has(playerId)) byPlayer.set(playerId, emptyAuctionEntry());
-    const entry = byPlayer.get(playerId);
-
-    if (r && Array.isArray(r.wins)) {
-      // NEW shape
-      entry.adWins = r.wins.map((w) => ({
-        adType: (w && w.adType) || null,
-        amount: numberOrDefault(w && w.amount, 0),
-      })).filter((w) => w.adType);
-      entry.adBidPaid = numberOrDefault(r.totalPaid, entry.adWins.reduce((s, w) => s + w.amount, 0));
-    } else if (r && r.adType) {
-      // LEGACY shape — coerce to a single-entry adWins array.
-      entry.adWins = [{ adType: r.adType, amount: numberOrDefault(r.amount, 0) }];
-      entry.adBidPaid = numberOrDefault(r.amount, 0);
+    if (!byPlayer.has(playerId)) {
+      byPlayer.set(playerId, { adWon: null, adWins: [], adBidPaid: 0, chefsWon: [], chefBidPaid: 0 });
     }
-
-    // Back-compat scalar for consumers that haven't migrated yet.
-    entry.adWon = entry.adWins.length > 0 ? entry.adWins[0].adType : null;
+    const entry = byPlayer.get(playerId);
+    const adWins = Array.isArray(r && r.adTypes) ? r.adTypes : [];
+    entry.adWon = adWins[0] || null;
+    entry.adWins = adWins;
+    entry.adBidPaid = numberOrDefault(r && r.totalPaid, 0);
   }
 
+  // Chef auction: keyed by playerId → { chefs: [chef], totalPaid }
   for (const [playerId, r] of Object.entries(chefResults)) {
-    if (!byPlayer.has(playerId)) byPlayer.set(playerId, emptyAuctionEntry());
+    if (!byPlayer.has(playerId)) {
+      byPlayer.set(playerId, { adWon: null, adWins: [], adBidPaid: 0, chefsWon: [], chefBidPaid: 0 });
+    }
     const entry = byPlayer.get(playerId);
     entry.chefsWon = Array.isArray(r && r.chefs) ? r.chefs : [];
     entry.chefBidPaid = numberOrDefault(r && r.totalPaid, 0);
@@ -540,6 +696,10 @@ async function resolveAndApplyChefAuction(gameRef, round, config) {
   ]);
 
   const chefPool = (roundSnap.exists && roundSnap.data().chefPool) || [];
+  const teamGroups = buildTeamGroupsFromPlayerDocs(playersSnap.docs);
+  const playerToTeamKey = new Map(
+    playersSnap.docs.map((pd) => [pd.id, getPlayerTeamKey(pd)])
+  );
   if (chefPool.length === 0) {
     logger.info('No chef pool for this round; skipping auction.', {
       gameId: gameRef.id, round,
@@ -567,7 +727,7 @@ async function resolveAndApplyChefAuction(gameRef, round, config) {
     for (const cb of chefBids) {
       if (cb && cb.chefId && numberOrDefault(cb.amount, 0) > 0) {
         allBids.push({
-          playerId: pd.id,
+          playerId: playerToTeamKey.get(pd.id) || pd.id,
           chefId: cb.chefId,
           amount: numberOrDefault(cb.amount, 0),
           submittedAt,
@@ -588,11 +748,21 @@ async function resolveAndApplyChefAuction(gameRef, round, config) {
 
   // Write auction results to round doc.
   const chefAuctionResults = {};
-  for (const [playerId, chefs] of winners) {
-    chefAuctionResults[playerId] = {
+  for (const [winnerKey, chefs] of winners) {
+    chefAuctionResults[winnerKey] = {
       chefs,
-      totalPaid: payments.get(playerId) || 0,
+      totalPaid: payments.get(winnerKey) || 0,
     };
+
+    const winnerGroup = teamGroups.get(winnerKey);
+    if (winnerGroup) {
+      for (const memberUid of winnerGroup.memberUids) {
+        chefAuctionResults[memberUid] = {
+          chefs,
+          totalPaid: payments.get(winnerKey) || 0,
+        };
+      }
+    }
   }
   await roundRef.set({
     chefAuctionResults,
@@ -607,21 +777,21 @@ async function resolveAndApplyChefAuction(gameRef, round, config) {
   const batch = db.batch();
   let opsCount = 0;
 
-  for (const [playerId, wonChefs] of winners) {
-    const playerRef = gameRef.collection('players').doc(playerId);
-    const pSnap = playersSnap.docs.find((d) => d.id === playerId);
-    const existingCount = pSnap
-      ? (Array.isArray((pSnap.data() || {}).specialtyChefs)
-          ? pSnap.data().specialtyChefs.length
-          : 0)
-      : 0;
+  for (const [winnerKey, wonChefs] of winners) {
+    const winnerGroup = teamGroups.get(winnerKey);
+    const memberDocs = winnerGroup ? winnerGroup.memberDocs : [];
+    for (const playerDoc of memberDocs) {
+      const existingCount = Array.isArray((playerDoc.data() || {}).specialtyChefs)
+        ? playerDoc.data().specialtyChefs.length
+        : 0;
 
-    batch.update(playerRef, {
-      specialtyChefs: FieldValue.arrayUnion(...wonChefs),
-      pendingRosterAction: (existingCount + wonChefs.length) > specialtyChefCap,
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-    opsCount++;
+      batch.update(playerDoc.ref, {
+        specialtyChefs: FieldValue.arrayUnion(...wonChefs),
+        pendingRosterAction: (existingCount + wonChefs.length) > specialtyChefCap,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      opsCount++;
+    }
   }
 
   if (opsCount > 0) {
@@ -633,101 +803,6 @@ async function resolveAndApplyChefAuction(gameRef, round, config) {
     round,
     winnersCount: winners.size,
     totalBids: allBids.length,
-  });
-}
-
-// ---------------------------------------------------------------------------
-// resolveAndApplyAdAuction — first-price, per-slot auction for the 4 ad slots
-// (TV, Radio, Newspaper, Billboard). Each slot is contested independently:
-// the highest bid wins that slot; ties are broken by earliest submission
-// timestamp (players who bid first and got outbid then rebid the exact same
-// amount lose the tie, which matches intuition that whoever first "claimed"
-// the slot at that price stays ahead). A player/team may win 0, 1, or
-// multiple slots across the four available.
-//
-// Runs after the `bid_ad → bid_chef` phase transition. Idempotent: reading
-// state from players/{uid}/bids/round_{N} means re-running produces the same
-// result unless bids changed, and we always rewrite adAuctionResults in full.
-// ---------------------------------------------------------------------------
-const AD_SLOTS = ['TV', 'Radio', 'Newspaper', 'Billboard'];
-
-async function resolveAndApplyAdAuction(gameRef, round /* , config */) {
-  const roundId = `round_${round}`;
-  const roundRef = gameRef.collection('rounds').doc(roundId);
-
-  const playersSnap = await gameRef.collection('players').get();
-  if (playersSnap.empty) {
-    logger.info('No players for ad auction; skipping.', { gameId: gameRef.id, round });
-    return;
-  }
-
-  // Collect every (playerId, slot, amount, submittedAt) triple above zero.
-  const bidSnaps = await Promise.all(
-    playersSnap.docs.map((pd) => pd.ref.collection('bids').doc(roundId).get())
-  );
-
-  // slot -> Array<{ playerId, amount, submittedAtMs }>
-  const bidsBySlot = new Map(AD_SLOTS.map((s) => [s, []]));
-  for (let i = 0; i < playersSnap.docs.length; i++) {
-    const pd = playersSnap.docs[i];
-    const bSnap = bidSnaps[i];
-    if (!bSnap.exists) continue;
-    const bData = bSnap.data() || {};
-    const ad = (bData && bData.ad) || {};
-    const slotClaims = (bData.adSlotClaims && typeof bData.adSlotClaims === 'object')
-      ? bData.adSlotClaims
-      : {};
-    // Fallback for bid docs written before per-slot claim timestamps existed.
-    const legacySubmittedAtMs = (bData.adSubmittedAt && typeof bData.adSubmittedAt.toMillis === 'function')
-      ? bData.adSubmittedAt.toMillis()
-      : Number.POSITIVE_INFINITY;
-
-    for (const slot of AD_SLOTS) {
-      const amount = numberOrDefault(ad[slot], 0);
-      if (amount > 0) {
-        // Prefer the per-slot first-claim timestamp — it represents when
-        // the player first claimed this price for this slot and doesn't
-        // get reset by resubmits that leave the slot amount unchanged.
-        const claim = slotClaims[slot];
-        const submittedAtMs = (claim && claim.firstClaimedAt && typeof claim.firstClaimedAt.toMillis === 'function')
-          ? claim.firstClaimedAt.toMillis()
-          : legacySubmittedAtMs;
-        bidsBySlot.get(slot).push({ playerId: pd.id, amount, submittedAtMs });
-      }
-    }
-  }
-
-  // Resolve each slot independently: highest amount wins; ties broken by
-  // earliest submission (smaller submittedAtMs first).
-  const adAuctionResults = {}; // playerId -> { wins: [{adType, amount}], totalPaid }
-  for (const slot of AD_SLOTS) {
-    const candidates = bidsBySlot.get(slot);
-    if (!candidates.length) continue;
-    candidates.sort((a, b) => {
-      if (b.amount !== a.amount) return b.amount - a.amount;
-      return a.submittedAtMs - b.submittedAtMs;
-    });
-    const winner = candidates[0];
-    if (!adAuctionResults[winner.playerId]) {
-      adAuctionResults[winner.playerId] = { wins: [], totalPaid: 0 };
-    }
-    adAuctionResults[winner.playerId].wins.push({
-      adType: slot,
-      amount: winner.amount,
-    });
-    adAuctionResults[winner.playerId].totalPaid += winner.amount;
-  }
-
-  await roundRef.set({
-    adAuctionResults,
-    adAuctionResolvedAt: FieldValue.serverTimestamp(),
-  }, { merge: true });
-
-  logger.info('Ad auction resolved.', {
-    gameId: gameRef.id,
-    round,
-    slotsAwarded: Object.values(adAuctionResults).reduce((n, r) => n + r.wins.length, 0),
-    winnerCount: Object.keys(adAuctionResults).length,
   });
 }
 
@@ -909,30 +984,17 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
     const takenRoles = new Set(Object.values(existingRoleAssignments));
     const autoRole = ROLES_ORDER.find((r) => !takenRoles.has(r)) || 'solo';
 
-    // The canonical team name lives on `teams/{teamId}.name`. We mirror
-    // it onto `players/{uid}.teamName` (and roster) so individual players
-    // see the current team name everywhere without needing a teams
-    // subscription. Keep `bakeryName` for legacy readers but the preferred
-    // display is `teamName`.
-    const existingTeamName =
-      tSnap.exists && typeof (tSnap.data() || {}).name === 'string'
-        ? (tSnap.data() || {}).name
-        : null;
-    const teamName = existingTeamName || bakeryName;
-
     if (pSnap.exists) {
       // Rejoin: refresh display name / bakery name but do not reset progress.
       transaction.update(playerRef, {
         displayName,
         bakeryName: effectiveBakeryName,
-        teamName,
         updatedAt: FieldValue.serverTimestamp(),
       });
       transaction.set(rosterRef, {
         uid: auth.uid,
         displayName,
         bakeryName: effectiveBakeryName,
-        teamName,
         updatedAt: FieldValue.serverTimestamp(),
         ...(rSnap.exists ? {} : { joinedAt: FieldValue.serverTimestamp() }),
       }, { merge: true });
@@ -944,7 +1006,6 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
       playerId: auth.uid,
       displayName,
       bakeryName: effectiveBakeryName,
-      teamName,
       teamId,                                    // BE-20
       role: autoRole,                            // BE-20
       joinedAt: FieldValue.serverTimestamp(),
@@ -988,9 +1049,6 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
       uid: auth.uid,
       displayName,
       bakeryName: effectiveBakeryName,
-      teamName,
-      teamId,
-      role: autoRole,
       joinedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
@@ -1430,6 +1488,8 @@ exports.advanceGamePhase = onCall(CALLABLE_OPTS, async (request) => {
     }
 
     if (basePhaseName === 'bid_chef') {
+      await resolveAndApplyAdAuction(gameRef, round);
+
       // Generate chef pool for this round.
       const pool = generateChefPool(round, config);
       await gameRef.collection('rounds').doc(`round_${round}`).set({
@@ -1437,12 +1497,6 @@ exports.advanceGamePhase = onCall(CALLABLE_OPTS, async (request) => {
         chefPool: pool,
         chefPoolGeneratedAt: FieldValue.serverTimestamp(),
       }, { merge: true });
-
-      // Resolve the ad auction now that the bid_ad phase is done. The
-      // bid_ad → bid_chef boundary is our "close of bids" for ads; after
-      // this runs, downstream simulation reads adAuctionResults from the
-      // round doc (via loadAuctionResultsByPlayer).
-      await resolveAndApplyAdAuction(gameRef, round, config);
     }
 
     if (basePhaseName === 'roster') {
@@ -1521,6 +1575,7 @@ async function runSimulationAndPersist(gameRef, round, config) {
   ]);
 
   const playerDocs = playersSnap.docs;
+  const teamGroups = buildTeamGroupsFromPlayerDocs(playerDocs);
   if (playerDocs.length === 0) {
     logger.warn('Simulation skipped — no players.', { gameId: gameRef.id, round });
     await roundRef.set({
@@ -1551,53 +1606,115 @@ async function runSimulationAndPersist(gameRef, round, config) {
     )
   );
 
-  // BE-19: compute disconnection state for each player before simulation.
-  // A player is considered "disconnected" if they have missed 2+ consecutive rounds.
+  const decisionSnapByUid = new Map(
+    playerDocs.map((pd, i) => [pd.id, decisionSnaps[i]])
+  );
+  const priorDecisionSnapsByUid = new Map(
+    playerDocs.map((pd, i) => [pd.id, priorDecisionSnapsByPlayer[i] || []])
+  );
+
+  // BE-19: compute disconnection state per team using the Operations owner
+  // (or the best available fallback) as the round-submission owner.
   const disconnectionMap = new Map();
-  for (let _i = 0; _i < playerDocs.length; _i++) {
-    const _pd = playerDocs[_i];
-    const _p = _pd.data() || {};
-    const _dSnap = decisionSnaps[_i];
-    const _prevMissed = numberOrDefault(_p.consecutiveMissedRounds, 0);
-    const _missed = !_dSnap.exists;
-    disconnectionMap.set(_pd.id, {
-      consecutiveMissedRounds: _missed ? _prevMissed + 1 : 0,
-      disconnected: _missed ? _prevMissed + 1 >= 2 : false,
+  const teams = Array.from(teamGroups.values());
+
+  for (const team of teams) {
+    const ownerUid =
+      team.operationsUid ||
+      team.soloUid ||
+      team.financeUid ||
+      team.advertisingUid ||
+      team.canonicalUid;
+    const ownerDoc = team.memberDocs.find((pd) => pd.id === ownerUid) || team.memberDocs[0];
+    const ownerData = (ownerDoc && ownerDoc.data()) || {};
+    const ownerDecisionSnap = decisionSnapByUid.get(ownerUid);
+    const missed = !(ownerDecisionSnap && ownerDecisionSnap.exists);
+    const prevMissed = numberOrDefault(ownerData.consecutiveMissedRounds, 0);
+    disconnectionMap.set(team.key, {
+      consecutiveMissedRounds: missed ? prevMissed + 1 : 0,
+      disconnected: missed ? prevMissed + 1 >= 2 : false,
     });
   }
 
-  // Assemble per-player input for the pure simulation engine.
-  const players = playerDocs.map((pd, i) => {
-    const p = pd.data() || {};
-    const dSnap = decisionSnaps[i];
-    // BE-19 / regression fix (c7c859f): missed players contribute zero
-    // quantities/menu to the sim — never replay stale pendingDecision.
-    const missed = !dSnap.exists;
-    const decision = missed ? {} : dSnap.data();
-    const ar = auctionByPlayer.get(pd.id) || {
-      adWon: null, adBidPaid: 0, chefsWon: [], chefBidPaid: 0,
-    };
+  // Assemble one simulation input per team, not per player row.
+  const players = teams.map((team) => {
+    const operationsUid =
+      team.operationsUid ||
+      team.soloUid ||
+      team.financeUid ||
+      team.advertisingUid ||
+      team.canonicalUid;
+    const financeUid =
+      team.financeUid ||
+      team.soloUid ||
+      team.operationsUid ||
+      team.canonicalUid;
+    const canonicalDoc =
+      team.memberDocs.find((pd) => pd.id === team.canonicalUid) || team.memberDocs[0];
+    const canonicalData = (canonicalDoc && canonicalDoc.data()) || {};
+    const decisionSnap = decisionSnapByUid.get(operationsUid);
+    const financeDecisionSnap =
+      decisionSnapByUid.get(financeUid) || decisionSnapByUid.get(operationsUid);
+    const missed = !(decisionSnap && decisionSnap.exists);
+    const decision = missed ? {} : (decisionSnap.data() || {});
+    const financeDecision =
+      financeDecisionSnap && financeDecisionSnap.exists
+        ? (financeDecisionSnap.data() || {})
+        : {};
+    const financePrices = objectOrDefault(financeDecision.productPrices, {});
+    const opsPrices = objectOrDefault(decision.productPrices, {});
 
-    // POST-01: chronological list of prior-round productPrices maps.
-    const priorSubmittedPrices = (priorDecisionSnapsByPlayer[i] || [])
+    const aggregatedAuction = {
+      adWon: null,
+      adWins: [],
+      adBidPaid: 0,
+      chefsWon: [],
+      chefBidPaid: 0,
+    };
+    for (const memberUid of team.memberUids) {
+      const ar = auctionByPlayer.get(memberUid) || {};
+      if (Array.isArray(ar.adWins)) {
+        for (const adType of ar.adWins) {
+          if (!aggregatedAuction.adWins.includes(adType)) {
+            aggregatedAuction.adWins.push(adType);
+          }
+        }
+      } else if (ar.adWon && !aggregatedAuction.adWins.includes(ar.adWon)) {
+        aggregatedAuction.adWins.push(ar.adWon);
+      }
+      aggregatedAuction.adBidPaid += numberOrDefault(ar.adBidPaid, 0);
+      if (Array.isArray(ar.chefsWon)) {
+        for (const chef of ar.chefsWon) {
+          if (!aggregatedAuction.chefsWon.find((c) => c.id === chef.id)) {
+            aggregatedAuction.chefsWon.push(chef);
+          }
+        }
+      }
+      aggregatedAuction.chefBidPaid += numberOrDefault(ar.chefBidPaid, 0);
+    }
+    aggregatedAuction.adWon = aggregatedAuction.adWins[0] || null;
+
+    const priorSubmittedPrices = (priorDecisionSnapsByUid.get(financeUid) || [])
       .map((s) => (s && s.exists && s.data()) ? (s.data().productPrices || null) : null);
 
     return {
-      playerId: pd.id,
-      displayName: p.displayName || 'Player',
-      bakeryName: p.bakeryName || '',
+      playerId: team.key,
+      displayName: cleanString(canonicalData.displayName) || team.bakeryName || 'Team',
+      bakeryName: team.bakeryName || cleanString(canonicalData.displayName) || 'Team',
       decision: {
-        menu: (decision && decision.menu) || {},
-        quantities: (decision && decision.quantities) || {},
-        sousChefCount: missed ? 0 : numberOrDefault(decision && decision.sousChefCount, p.sousChefCount || 0),
-        sousChefAssignments: (decision && decision.sousChefAssignments) || {},
-        productPrices: (decision && decision.productPrices) || {},   // POST-01
+        menu: objectOrDefault(decision.menu, {}),
+        quantities: objectOrDefault(decision.quantities, {}),
+        sousChefCount: missed
+          ? 0
+          : numberOrDefault(decision.sousChefCount, canonicalData.sousChefCount || 0),
+        sousChefAssignments: objectOrDefault(decision.sousChefAssignments, {}),
+        productPrices: Object.keys(financePrices).length > 0 ? financePrices : opsPrices,
       },
-      specialtyChefs: Array.isArray(p.specialtyChefs) ? p.specialtyChefs : [],
-      budgetCurrent: numberOrDefault(p.budgetCurrent, 0),
-      returningCustomersPending: numberOrDefault(p.returningCustomersPending, 0),
-      auctionResults: ar,
-      priorSubmittedPrices,   // POST-01
+      specialtyChefs: Array.isArray(canonicalData.specialtyChefs) ? canonicalData.specialtyChefs : [],
+      budgetCurrent: numberOrDefault(canonicalData.budgetCurrent, 0),
+      returningCustomersPending: numberOrDefault(canonicalData.returningCustomersPending, 0),
+      auctionResults: aggregatedAuction,
+      priorSubmittedPrices,
     };
   });
 
@@ -1618,7 +1735,7 @@ async function runSimulationAndPersist(gameRef, round, config) {
   // -----------------------------------------------------------------------
   // Write phase — chunked batches
   // -----------------------------------------------------------------------
-  // Each player writes 3 ops:
+  // Each team member writes 3 ops:
   //   1. update players/{uid}
   //   2. set  players/{uid}/rounds/{round}
   //   3. set  csvRows/{uid}/rounds/{round}
@@ -1629,102 +1746,108 @@ async function runSimulationAndPersist(gameRef, round, config) {
   const batches = [];
 
   for (const r of results) {
-    const playerRef = gameRef.collection('players').doc(r.playerId);
-    const playerRoundRef = playerRef.collection('rounds').doc(roundId);
-    const csvRowRef = gameRef
-      .collection('csvRows')
-      .doc(r.playerId)
-      .collection('rounds')
-      .doc(roundId);
-
-    if (opsInBatch + OPS_PER_PLAYER > BATCH_OP_LIMIT) {
-      batches.push(batch);
-      batch = db.batch();
-      opsInBatch = 0;
-    }
-
+    const team = teamGroups.get(r.playerId);
+    const memberDocs = team ? team.memberDocs : playerDocs.filter((pd) => pd.id === r.playerId);
     const dc = disconnectionMap.get(r.playerId) || { consecutiveMissedRounds: 0, disconnected: false };
-    batch.update(playerRef, {
-      budgetCurrent: r.budgetAfter,
-      cumulativeRevenue: FieldValue.increment(r.revenueNet),
-      returningCustomersPending: r.returningCustomersEarned,
-      sousChefCount: numberOrDefault(
-        (r.csvRow && r.csvRow.sous_chef_count),
-        0
-      ),
-      consecutiveMissedRounds: dc.consecutiveMissedRounds,  // BE-19
-      disconnected: dc.disconnected,                         // BE-19
-      lastRoundResult: {
+
+    for (const memberDoc of memberDocs) {
+      const playerRef = memberDoc.ref;
+      const memberData = memberDoc.data() || {};
+      const playerRoundRef = playerRef.collection('rounds').doc(roundId);
+      const csvRowRef = gameRef
+        .collection('csvRows')
+        .doc(memberDoc.id)
+        .collection('rounds')
+        .doc(roundId);
+
+      if (opsInBatch + OPS_PER_PLAYER > BATCH_OP_LIMIT) {
+        batches.push(batch);
+        batch = db.batch();
+        opsInBatch = 0;
+      }
+
+      batch.update(playerRef, {
+        budgetCurrent: r.budgetAfter,
+        cumulativeRevenue: FieldValue.increment(r.revenueNet),
+        returningCustomersPending: r.returningCustomersEarned,
+        sousChefCount: numberOrDefault(
+          (r.csvRow && r.csvRow.sous_chef_count),
+          0
+        ),
+        consecutiveMissedRounds: dc.consecutiveMissedRounds,
+        disconnected: dc.disconnected,
+        lastRoundResult: {
+          round,
+          revenueGross: r.revenueGross,
+          revenueNet: r.revenueNet,
+          customerCount: r.customerCount,
+          aggregateSatisfactionPct: r.aggregateSatisfactionPct,
+          chefSatisfactionScore: r.chefSatisfactionScore,
+          amountBorrowed: r.amountBorrowed,
+          interestCharged: r.interestCharged,
+          selloutAnywhere: r.selloutAnywhere || false,
+          adWon: r.adWon || null,
+          adWins: Array.isArray(r.adWins) ? r.adWins : [],
+          adPaid: r.adBidPaid || 0,
+          chefsWon: Array.isArray(r.chefsWon) ? r.chefsWon : [],
+          chefWon: Array.isArray(r.chefsWon) && r.chefsWon.length > 0 ? r.chefsWon[0].name || r.chefsWon[0].id || null : null,
+          chefBidPaid: r.chefBidPaid || 0,
+          burglary: r.burglary || false,
+          burglaryAmount: r.burglaryAmount || 0,
+        },
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+
+      const perProductSold = {};
+      const selloutFlags = {};
+      for (const [product, pps] of Object.entries(r.perProductSatisfaction || {})) {
+        perProductSold[product] = (pps && pps.qtySold) || 0;
+        selloutFlags[product] = !!(pps && pps.sellout);
+      }
+
+      batch.set(playerRoundRef, {
         round,
+        playerId: memberDoc.id,
+        displayName: memberData.displayName || r.displayName,
+        bakeryName: r.bakeryName,
         revenueGross: r.revenueGross,
         revenueNet: r.revenueNet,
-        customerCount: r.customerCount,
-        aggregateSatisfactionPct: r.aggregateSatisfactionPct,
-        chefSatisfactionScore: r.chefSatisfactionScore,
         amountBorrowed: r.amountBorrowed,
         interestCharged: r.interestCharged,
-        selloutAnywhere: r.selloutAnywhere || false,
-        burglary: r.burglary || false,           // BE-N06
-        burglaryAmount: r.burglaryAmount || 0,   // BE-N06
-        // Auction outcomes — surfaced so ResultsPhase / AdWinnerBanner
-        // can finally render what the player/team won. `adWins` is the
-        // canonical multi-slot shape; `adWon` is kept for legacy readers.
-        adWins: Array.isArray(r.adWins) ? r.adWins : [],
+        totalSpent: r.totalSpent,
+        budgetAfter: r.budgetAfter,
+        customerCount: r.customerCount,
+        perProductCustomers: r.perProductCustomers,
+        aggregateSatisfactionPct: r.aggregateSatisfactionPct,
+        chefSatisfactionScore: r.chefSatisfactionScore,
+        perProductSatisfaction: r.perProductSatisfaction,
+        perProductSold,
+        selloutFlags,
+        returningCustomersEarned: r.returningCustomersEarned,
         adWon: r.adWon || null,
-        adPaid: numberOrDefault(r.adBidPaid, 0),
+        adWins: Array.isArray(r.adWins) ? r.adWins : [],
+        adPaid: r.adBidPaid || 0,
         chefsWon: Array.isArray(r.chefsWon) ? r.chefsWon : [],
-        chefBidPaid: numberOrDefault(r.chefBidPaid, 0),
-      },
-      updatedAt: FieldValue.serverTimestamp(),
-    });
+        chefBidPaid: r.chefBidPaid || 0,
+        burglary: r.burglary || false,
+        burglaryAmount: r.burglaryAmount || 0,
+        computedAt: FieldValue.serverTimestamp(),
+      });
 
-    // Extract perProductSold and selloutFlags as flat objects for easy
-    // frontend consumption (avoids nested digging into perProductSatisfaction).
-    const perProductSold = {};
-    const selloutFlags = {};
-    for (const [product, pps] of Object.entries(r.perProductSatisfaction || {})) {
-      perProductSold[product] = (pps && pps.qtySold) || 0;
-      selloutFlags[product] = !!(pps && pps.sellout);
+      batch.set(csvRowRef, {
+        round,
+        playerId: memberDoc.id,
+        row: {
+          ...(r.csvRow || {}),
+          player_id: memberDoc.id,
+          display_name: memberData.displayName || r.displayName,
+          bakery_name: r.bakeryName,
+        },
+        writtenAt: FieldValue.serverTimestamp(),
+      });
+
+      opsInBatch += OPS_PER_PLAYER;
     }
-
-    batch.set(playerRoundRef, {
-      round,
-      playerId: r.playerId,
-      displayName: r.displayName,
-      bakeryName: r.bakeryName,
-      revenueGross: r.revenueGross,
-      revenueNet: r.revenueNet,
-      amountBorrowed: r.amountBorrowed,
-      interestCharged: r.interestCharged,
-      totalSpent: r.totalSpent,
-      budgetAfter: r.budgetAfter,
-      customerCount: r.customerCount,
-      perProductCustomers: r.perProductCustomers,
-      aggregateSatisfactionPct: r.aggregateSatisfactionPct,
-      chefSatisfactionScore: r.chefSatisfactionScore,
-      perProductSatisfaction: r.perProductSatisfaction,
-      perProductSold,
-      selloutFlags,
-      returningCustomersEarned: r.returningCustomersEarned,
-      burglary: r.burglary || false,             // BE-N06
-      burglaryAmount: r.burglaryAmount || 0,     // BE-N06
-      // Auction outcomes mirrored into rounds subcollection too.
-      adWins: Array.isArray(r.adWins) ? r.adWins : [],
-      adWon: r.adWon || null,
-      adPaid: numberOrDefault(r.adBidPaid, 0),
-      chefsWon: Array.isArray(r.chefsWon) ? r.chefsWon : [],
-      chefBidPaid: numberOrDefault(r.chefBidPaid, 0),
-      computedAt: FieldValue.serverTimestamp(),
-    });
-
-    batch.set(csvRowRef, {
-      round,
-      playerId: r.playerId,
-      row: r.csvRow,
-      writtenAt: FieldValue.serverTimestamp(),
-    });
-
-    opsInBatch += OPS_PER_PLAYER;
   }
 
   // Aggregate writes (leaderboard + round doc completion) appended to the
@@ -1736,7 +1859,7 @@ async function runSimulationAndPersist(gameRef, round, config) {
     .map((r, i) => ({
       rank: i + 1,
       playerId: r.playerId,
-      displayName: r.displayName,
+      displayName: r.bakeryName || r.displayName,
       bakeryName: r.bakeryName,
       revenueNet: r.revenueNet,
       revenueGross: r.revenueGross,
@@ -1888,6 +2011,10 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
 
     const currentRound = numberOrDefault(game.currentRound || game.round, 1);
     const config = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
+    const teamId = getPlayerTeamId(pSnap.data());
+    const teamPlayerDocs = teamId
+      ? (await transaction.get(gameRef.collection('players').where('teamId', '==', teamId))).docs
+      : [pSnap];
 
     // Validate using the decision-validation module (pure).
     // ValidationError is a plain JS error — convert to HttpsError so the
@@ -1926,21 +2053,24 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
     // POST-01: use dot-paths rather than replacing the whole `pendingDecision`
     // so Finance's `pendingDecision.productPrices` (written by submitPrices)
     // isn't clobbered when Operations submits after Finance.
-    transaction.update(playerRef, {
-      'pendingDecision.submitted': true,
-      'pendingDecision.submittedAt': Timestamp.now(),
-      'pendingDecision.round': currentRound,
-      'pendingDecision.menu': validated.menu || {},
-      'pendingDecision.quantities': validated.quantities || {},
-      'pendingDecision.sousChefCount': validated.sousChefCount || 0,
-      'pendingDecision.sousChefAssignments': validated.sousChefAssignments || {},
-      // BE-19: un-flag a reconnected player immediately on successful submit.
-      // Without this, a previously-disconnected player stays flagged on the
-      // professor dashboard until the next simulation batch runs.
-      consecutiveMissedRounds: 0,
-      disconnected: false,
-      updatedAt: FieldValue.serverTimestamp(),
-    });
+    for (const teamPlayerDoc of teamPlayerDocs) {
+      transaction.update(teamPlayerDoc.ref, {
+        'pendingDecision.submitted': true,
+        'pendingDecision.submittedAt': Timestamp.now(),
+        'pendingDecision.round': currentRound,
+        'pendingDecision.menu': validated.menu || {},
+        'pendingDecision.quantities': validated.quantities || {},
+        'pendingDecision.sousChefCount': validated.sousChefCount || 0,
+        'pendingDecision.sousChefAssignments': validated.sousChefAssignments || {},
+        'pendingDecision.staffCounts': objectOrDefault(data.staffCounts, {}),
+        'pendingDecision.maintenanceTasks': Array.isArray(data.maintenanceTasks)
+          ? data.maintenanceTasks
+          : [],
+        consecutiveMissedRounds: 0,
+        disconnected: false,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
 
     transaction.update(gameRef, {
       submittedCount: FieldValue.increment(1),
@@ -2002,6 +2132,10 @@ exports.submitPrices = onCall(CALLABLE_OPTS, async (request) => {
     }
 
     const currentRound = numberOrDefault(game.currentRound || game.round, 1);
+    const teamId = getPlayerTeamId(pSnap.data());
+    const teamPlayerDocs = teamId
+      ? (await transaction.get(gameRef.collection('players').where('teamId', '==', teamId))).docs
+      : [pSnap];
     // Note: cfgSnap is read for parity with submitDecision even though the
     // price validator doesn't need it today. Future work may apply per-game
     // zone overrides from config.
@@ -2031,10 +2165,12 @@ exports.submitPrices = onCall(CALLABLE_OPTS, async (request) => {
       pricesSubmittedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
 
-    transaction.update(playerRef, {
-      'pendingDecision.productPrices': validated,
-      updatedAt: FieldValue.serverTimestamp(),
-    });
+    for (const teamPlayerDoc of teamPlayerDocs) {
+      transaction.update(teamPlayerDoc.ref, {
+        'pendingDecision.productPrices': validated,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
   });
 
   // Mirror submission state for the professor dashboard
@@ -2105,6 +2241,10 @@ exports.submitBids = onCall(CALLABLE_OPTS, async (request) => {
     const round = numberOrDefault(game.currentRound || game.round, 1);
     _submitBids_round = round;
     const config = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
+    const teamId = getPlayerTeamId(pSnap.data());
+    const teamPlayerDocs = teamId
+      ? (await transaction.get(gameRef.collection('players').where('teamId', '==', teamId))).docs
+      : [pSnap];
 
     let validated;
     try {
@@ -2126,52 +2266,71 @@ exports.submitBids = onCall(CALLABLE_OPTS, async (request) => {
     }
     _submitBids_validated = validated;
 
+    const roundRef = gameRef.collection('rounds').doc(`round_${round}`);
     const bidsRef = playerRef.collection('bids').doc(`round_${round}`);
     const existing = await transaction.get(bidsRef);
+    const roundSnap = await transaction.get(roundRef);
     const merged = existing.exists ? existing.data() : { round };
+    const topBids = objectOrDefault((roundSnap.exists && roundSnap.data().topBids) || {}, {});
 
     if (bidType === 'ad') {
-      // Preserve per-slot first-claim timestamps: if the amount for a given
-      // slot is unchanged from the prior submission, keep the original
-      // timestamp so the ad-auction tie-break ("earliest claim at this
-      // price wins") isn't reset just because the player resubmitted other
-      // slots. A new amount (including newly non-zero) resets the stamp.
-      const prevAd = (merged.ad && typeof merged.ad === 'object') ? merged.ad : {};
-      const prevClaims = (merged.adSlotClaims && typeof merged.adSlotClaims === 'object')
-        ? merged.adSlotClaims
-        : {};
-      const nextClaims = {};
-      const nowStamp = FieldValue.serverTimestamp();
-      for (const slot of Object.keys(validated || {})) {
-        const newAmount = numberOrDefault(validated[slot], 0);
-        if (newAmount <= 0) continue;
-        const prior = prevClaims[slot];
-        const priorAmount = numberOrDefault(prior && prior.amount, numberOrDefault(prevAd[slot], 0));
-        if (prior && prior.firstClaimedAt && priorAmount === newAmount) {
-          nextClaims[slot] = { amount: newAmount, firstClaimedAt: prior.firstClaimedAt };
-        } else {
-          nextClaims[slot] = { amount: newAmount, firstClaimedAt: nowStamp };
+      const existingAd = objectOrDefault(merged.ad, {});
+      const currentTopAd = objectOrDefault(topBids.ad, {});
+      for (const adType of AD_TYPES) {
+        const existingAmount = numberOrDefault(existingAd[adType], 0);
+        const currentTop = numberOrDefault(currentTopAd[adType], 0);
+        const nextAmount = numberOrDefault(validated[adType], 0);
+        if (existingAmount > 0 && existingAmount === currentTop && nextAmount !== existingAmount) {
+          throw new HttpsError(
+            'failed-precondition',
+            `You already hold the top bid for ${adType} and cannot change it until another team outbids you.`
+          );
         }
       }
       merged.ad = validated;
-      merged.adSlotClaims = nextClaims;
     } else {
-      merged.chef = validated;
+      const existingChefBids = Array.isArray(merged.chef) ? merged.chef : [];
+      const existingChefMap = {};
+      for (const bid of existingChefBids) {
+        if (bid && bid.chefId) existingChefMap[bid.chefId] = numberOrDefault(bid.amount, 0);
+      }
+      const currentTopChef = objectOrDefault(topBids.chef, {});
+      for (const bid of validated) {
+        if (!bid || !bid.chefId) continue;
+        const existingAmount = numberOrDefault(existingChefMap[bid.chefId], 0);
+        const currentTop = numberOrDefault(currentTopChef[bid.chefId], 0);
+        if (existingAmount > 0 && existingAmount === currentTop && numberOrDefault(bid.amount, 0) !== existingAmount) {
+          throw new HttpsError(
+            'failed-precondition',
+            'You already hold the top bid for that chef and cannot change it until another team outbids you.'
+          );
+        }
+      }
+
+      const mergedChefMap = { ...existingChefMap };
+      for (const bid of validated) {
+        if (bid && bid.chefId) mergedChefMap[bid.chefId] = numberOrDefault(bid.amount, 0);
+      }
+      merged.chef = Object.entries(mergedChefMap)
+        .filter(([, amount]) => numberOrDefault(amount, 0) > 0)
+        .map(([chefId, amount]) => ({ chefId, amount }));
     }
 
     merged.round = round;
     merged[`${bidType}SubmittedAt`] = FieldValue.serverTimestamp();
 
     transaction.set(bidsRef, merged, { merge: true });
-    transaction.update(playerRef, {
-      [`pendingBids.${bidType}`]: validated,
-      updatedAt: FieldValue.serverTimestamp(),
-    });
+    for (const teamPlayerDoc of teamPlayerDocs) {
+      transaction.update(teamPlayerDoc.ref, {
+        [`pendingBids.${bidType}`]: validated,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
   });
 
   // BE-25: update topBids on the round doc after transaction (non-fatal)
   if (_submitBids_round !== null && _submitBids_validated !== null) {
-    await updateTopBids(gameRef, _submitBids_round, bidType, _submitBids_validated);
+    await updateTopBids(gameRef, _submitBids_round, bidType);
   }
 
   // BE-22: mirror submission state for professor dashboard
@@ -2222,8 +2381,11 @@ exports.layoffChef = onCall(CALLABLE_OPTS, async (request) => {
 
     const config = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
     const specialtyChefCap = numberOrDefault(config.specialtyChefCap, 3);
-
     const player = pSnap.data();
+    const teamId = getPlayerTeamId(player);
+    const teamPlayerDocs = teamId
+      ? (await transaction.get(gameRef.collection('players').where('teamId', '==', teamId))).docs
+      : [pSnap];
     const specialtyChefs = Array.isArray(player.specialtyChefs) ? player.specialtyChefs : [];
     const idx = specialtyChefs.findIndex((c) => c && c.id === chefId);
     if (idx === -1) {
@@ -2246,11 +2408,13 @@ exports.layoffChef = onCall(CALLABLE_OPTS, async (request) => {
       returnedAt: FieldValue.serverTimestamp(),
     });
 
-    transaction.update(playerRef, {
-      specialtyChefs: remaining,
-      pendingRosterAction: remaining.length > specialtyChefCap,
-      updatedAt: FieldValue.serverTimestamp(),
-    });
+    for (const teamPlayerDoc of teamPlayerDocs) {
+      transaction.update(teamPlayerDoc.ref, {
+        specialtyChefs: remaining,
+        pendingRosterAction: remaining.length > specialtyChefCap,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
   });
 
   return { gameId, chefId, laidOff: true };
@@ -2625,56 +2789,25 @@ exports.updateTeamName = onCall(CALLABLE_OPTS, async (request) => {
   if (!name)   throw new HttpsError('invalid-argument', 'name is required.');
   if (name.length > 64) throw new HttpsError('invalid-argument', 'name must be 64 characters or fewer.');
 
-  const gameRef   = db.collection('games').doc(gameId);
-  const teamRef   = gameRef.collection('teams').doc(teamId);
-  const playerRef = gameRef.collection('players').doc(auth.uid);
+  const teamRef   = db.collection('games').doc(gameId).collection('teams').doc(teamId);
+  const playerRef = db.collection('games').doc(gameId).collection('players').doc(auth.uid);
 
-  // Step 1 — validate + rename the team in a transaction.
-  const memberUids = await (async () => {
-    let uids = [];
-    await db.runTransaction(async (tx) => {
-      const [teamSnap, playerSnap] = await Promise.all([
-        tx.get(teamRef),
-        tx.get(playerRef),
-      ]);
+  await db.runTransaction(async (tx) => {
+    const [teamSnap, playerSnap] = await Promise.all([
+      tx.get(teamRef),
+      tx.get(playerRef),
+    ]);
 
-      if (!teamSnap.exists)   throw new HttpsError('not-found', 'Team not found.');
-      if (!playerSnap.exists) throw new HttpsError('not-found', 'You are not in this game.');
+    if (!teamSnap.exists)   throw new HttpsError('not-found', 'Team not found.');
+    if (!playerSnap.exists) throw new HttpsError('not-found', 'You are not in this game.');
 
-      const roleAssignments = (teamSnap.data() || {}).roleAssignments || {};
-      if (!(auth.uid in roleAssignments)) {
-        throw new HttpsError('permission-denied', 'You are not a member of this team.');
-      }
-      uids = Object.keys(roleAssignments);
-
-      tx.update(teamRef, { name, updatedAt: FieldValue.serverTimestamp() });
-    });
-    return uids;
-  })();
-
-  // Step 2 — mirror the new name onto every teammate's player + roster doc
-  // so UI components that read `player.teamName` stay in sync without
-  // needing their own teams-collection subscription. Non-fatal: logged
-  // and swallowed if a write fails, because the team doc is the source
-  // of truth regardless.
-  try {
-    const batch = db.batch();
-    for (const uid of memberUids) {
-      batch.update(gameRef.collection('players').doc(uid), {
-        teamName: name,
-        updatedAt: FieldValue.serverTimestamp(),
-      });
-      batch.set(gameRef.collection('roster').doc(uid), {
-        teamName: name,
-        updatedAt: FieldValue.serverTimestamp(),
-      }, { merge: true });
+    const roleAssignments = (teamSnap.data() || {}).roleAssignments || {};
+    if (!(auth.uid in roleAssignments)) {
+      throw new HttpsError('permission-denied', 'You are not a member of this team.');
     }
-    await batch.commit();
-  } catch (err) {
-    logger.warn('updateTeamName mirror write failed — non-fatal.', {
-      gameId, teamId, error: err && err.message,
-    });
-  }
+
+    tx.update(teamRef, { name, updatedAt: FieldValue.serverTimestamp() });
+  });
 
   return { success: true };
 });
@@ -2794,26 +2927,18 @@ exports.purchaseCompetitorInsight = onCall(async (request) => {
 
   await db.runTransaction(async (tx) => {
     const playerRef = gameRef.collection("players").doc(uid);
-    const purchaseRef = playerRef.collection("purchases").doc(`insight_round_${round}`);
-    const [playerSnap, purchaseSnap] = await Promise.all([
-      tx.get(playerRef),
-      tx.get(purchaseRef),
-    ]);
+    const playerSnap = await tx.get(playerRef);
     if (!playerSnap.exists) throw new HttpsError("not-found", "Player not found.");
-    if (purchaseSnap.exists) {
-      throw new HttpsError("already-exists", `Competitor insight for round ${round} already purchased.`);
-    }
     const player = playerSnap.data();
     const budget = player.budgetCurrent || 0;
     if (budget < insightCost) {
       throw new HttpsError("failed-precondition", "Insufficient budget to purchase competitor insight.");
     }
     tx.update(playerRef, { budgetCurrent: FieldValue.increment(-insightCost) });
-    tx.set(purchaseRef, {
-      round,
-      costDeducted: insightCost,
-      purchasedAt: FieldValue.serverTimestamp(),
-    });
+    tx.set(
+      playerRef.collection("purchases").doc(`insight_round_${round}`),
+      { round, costDeducted: insightCost, purchasedAt: FieldValue.serverTimestamp() }
+    );
   });
 
   // Collect all player decisions for the requested round.
@@ -2837,98 +2962,6 @@ exports.purchaseCompetitorInsight = onCall(async (request) => {
   }
 
   return { csv: rows.join("\n"), costDeducted: insightCost };
-});
-
-// ===========================================================================
-// purchaseChefData — Tier 1 / Tier 2 chef data CSVs
-//
-// Tier 1 ($2,500): static nationality → specialty-product map. Reveals which
-// cuisines lift which products — always the same payload, independent of
-// the current round's generated pool.
-//
-// Tier 2 ($7,500): full per-chef dump for the current round's chef pool
-// (name, nationality, gender, skill tier, specialties, min bid floor) so a
-// team can evaluate every candidate before the chef auction resolves.
-//
-// Purchases are recorded at `players/{uid}/purchases/chef_tier{1|2}` and
-// the transaction rejects re-buying the same tier, so the total cost is
-// bounded even if the UI re-enables the button.
-// ===========================================================================
-exports.purchaseChefData = onCall(async (request) => {
-  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
-  const { gameId, tier } = request.data || {};
-  if (!gameId || (tier !== 1 && tier !== 2)) {
-    throw new HttpsError("invalid-argument", "gameId and tier (1 or 2) are required.");
-  }
-  const uid = request.auth.uid;
-  const gameRef = db.collection("games").doc(gameId);
-  const gameSnap = await gameRef.get();
-  if (!gameSnap.exists) throw new HttpsError("not-found", "Game not found.");
-  const game = gameSnap.data();
-  const currentPhase = typeof game.phase === "string" ? game.phase : "";
-  if (!currentPhase.includes("decide")) {
-    throw new HttpsError("failed-precondition", "Chef data only available during Decisions phase.");
-  }
-
-  const configSnap = await gameRef.collection("config").doc("params").get();
-  const config = configSnap.exists ? configSnap.data() : {};
-  const tier1Cost = numberOrDefault(config.chefDataTier1Cost, 2500);
-  const tier2Cost = numberOrDefault(config.chefDataTier2Cost, 7500);
-  const cost = tier === 1 ? tier1Cost : tier2Cost;
-
-  await db.runTransaction(async (tx) => {
-    const playerRef = gameRef.collection("players").doc(uid);
-    const purchaseRef = playerRef.collection("purchases").doc(`chef_tier${tier}`);
-    const [playerSnap, purchaseSnap] = await Promise.all([
-      tx.get(playerRef),
-      tx.get(purchaseRef),
-    ]);
-    if (!playerSnap.exists) throw new HttpsError("not-found", "Player not found.");
-    if (purchaseSnap.exists) {
-      throw new HttpsError("already-exists", `Tier ${tier} chef data already purchased.`);
-    }
-    const player = playerSnap.data();
-    const budget = player.budgetCurrent || 0;
-    if (budget < cost) {
-      throw new HttpsError("failed-precondition", `Insufficient budget to purchase Tier ${tier} chef data.`);
-    }
-    tx.update(playerRef, { budgetCurrent: FieldValue.increment(-cost) });
-    tx.set(purchaseRef, {
-      tier,
-      costDeducted: cost,
-      purchasedAt: FieldValue.serverTimestamp(),
-    });
-  });
-
-  const rows = [];
-  if (tier === 1) {
-    rows.push("nationality,specialties");
-    for (const [nationality, data] of Object.entries(CHEF_NATIONALITIES)) {
-      const specs = Array.isArray(data.specialties) ? data.specialties.join(";") : "";
-      rows.push(`${nationality},"${specs}"`);
-    }
-  } else {
-    rows.push("chef_id,name,nationality,gender,skill_tier,specialties,min_bid_floor");
-    const round = game.currentRound || 1;
-    const roundSnap = await gameRef.collection("rounds").doc(`round_${round}`).get();
-    const pool = (roundSnap.exists && Array.isArray(roundSnap.data().chefPool))
-      ? roundSnap.data().chefPool
-      : [];
-    for (const chef of pool) {
-      const specs = Array.isArray(chef.specialties) ? chef.specialties.join(";") : "";
-      rows.push([
-        chef.id || "",
-        `"${String(chef.name || "").replace(/"/g, '""')}"`,
-        chef.nationality || "",
-        chef.gender || "",
-        chef.skillTier || "",
-        `"${specs}"`,
-        numberOrDefault(chef.minBidFloor, 0),
-      ].join(","));
-    }
-  }
-
-  return { csv: rows.join("\n"), costDeducted: cost, tier };
 });
 
 // ---------------------------------------------------------------------------

@@ -205,7 +205,7 @@ const DEFAULT_GAME_CONFIG = {
 
   totalRounds: 5,
   specialtyChefCap: 3,
-  chefPoolSize: { min: 6, max: 8 },
+  chefPoolSize: 12,
 
   // Kitchen cohesion: chefSatisfaction = max(floor, 100 - max(0, n - threshold) × decay)
   chefSatisfactionThreshold: 4,
@@ -270,6 +270,23 @@ function cleanString(value) {
   return value.trim();
 }
 
+/**
+ * coerceChefPoolSize
+ * Accepts the new flat-number schema, the legacy `{min, max}` object schema,
+ * or anything else (falls back to `fallback`). For legacy `{min, max}` we
+ * prefer `max` so existing games keep their largest configured pool size.
+ */
+function coerceChefPoolSize(value, fallback) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const max = numberOrDefault(value.max, NaN);
+    if (Number.isFinite(max)) return max;
+    const min = numberOrDefault(value.min, NaN);
+    if (Number.isFinite(min)) return min;
+    return fallback;
+  }
+  return numberOrDefault(value, fallback);
+}
+
 // ---------------------------------------------------------------------------
 // mergeConfig — deep merge user config over defaults with numeric safety
 // ---------------------------------------------------------------------------
@@ -279,7 +296,7 @@ function cleanString(value) {
  * Deep-merges `rawConfig` over DEFAULT_GAME_CONFIG. Every numeric field is
  * validated with numberOrDefault so a malformed input can never replace a valid
  * default with NaN/undefined. Nested objects (revenueCoefficients, adBonuses,
- * phaseDurations, chefPoolSize, returningCustomerBonuses) are merged key-by-key.
+ * phaseDurations, returningCustomerBonuses) are merged key-by-key.
  *
  * @param {object} rawConfig possibly untrusted partial config
  * @returns {object} fully-populated config safe to consume downstream
@@ -291,7 +308,6 @@ function mergeConfig(rawConfig) {
   const rawRevenue    = objectOrDefault(raw.revenueCoefficients,      {});
   const rawAds        = objectOrDefault(raw.adBonuses,                {});
   const rawPhases     = objectOrDefault(raw.phaseDurations,           {});
-  const rawPoolSize   = objectOrDefault(raw.chefPoolSize,             {});
   const rawReturning  = objectOrDefault(raw.returningCustomerBonuses, {});
 
   return {
@@ -329,10 +345,11 @@ function mergeConfig(rawConfig) {
     totalRounds:      numberOrDefault(raw.totalRounds,      d.totalRounds),
     specialtyChefCap: numberOrDefault(raw.specialtyChefCap, d.specialtyChefCap),
 
-    chefPoolSize: {
-      min: numberOrDefault(rawPoolSize.min, d.chefPoolSize.min),
-      max: numberOrDefault(rawPoolSize.max, d.chefPoolSize.max),
-    },
+    // Backward-compat: legacy game configs stored chefPoolSize as
+    // `{ min, max }`. Coerce that shape to a flat number (prefer max) so
+    // existing Firestore game docs don't silently fall back to the
+    // default when reloaded under the new flat-number schema.
+    chefPoolSize: coerceChefPoolSize(raw.chefPoolSize, d.chefPoolSize),
 
     chefSatisfactionThreshold: numberOrDefault(raw.chefSatisfactionThreshold, d.chefSatisfactionThreshold),
     chefSatisfactionDecay:     numberOrDefault(raw.chefSatisfactionDecay,     d.chefSatisfactionDecay),

@@ -31,9 +31,6 @@ interface LeaderboardRanking {
   rank: number;
   playerId: string;
   displayName: string;
-  /** Canonical team identity mirrored onto the leaderboard doc. */
-  teamName?: string;
-  /** Legacy field — kept only for backward compatibility. */
   bakeryName?: string;
   revenueNet?: number;
   cumulativeRevenue?: number;
@@ -127,16 +124,6 @@ export function ConclusionPage() {
             chefSatisfactionScore: data.chefSatisfactionScore,
             productBreakdown: data.productBreakdown,
             auctionResults: {
-              adWins: Array.isArray(data.adWins)
-                ? data.adWins
-                : data.adWon
-                  ? [{ adType: data.adWon, amount: data.adPaid ?? 0 }]
-                  : [],
-              chefsWon: Array.isArray(data.chefsWon)
-                ? data.chefsWon
-                : data.chefWon
-                  ? [data.chefWon]
-                  : [],
               adWon: data.adWon ?? null,
               chefWon: data.chefWon ?? null,
             },
@@ -186,115 +173,37 @@ export function ConclusionPage() {
     mergedByRound[round] = { ...mergedByRound[round], ...v };
   }
 
-  // Top three for the celebratory podium graphic shown on the Game Over
-  // screen. Populated from the leaderboard snapshot (1 / 2 / 3). Missing
-  // slots render as placeholder columns so the visual stays balanced.
-  const podiumSlots = [1, 2, 3].map((rank) =>
-    rankings.find((r) => r.rank === rank) ?? null,
-  );
-
   return (
     <PageShell className="conclusion-page">
-      <div
-        className="conclusion-page__confetti"
-        aria-hidden="true"
-      >
-        {Array.from({ length: 24 }).map((_, i) => (
-          <span
-            key={i}
-            className="conclusion-page__confetti-piece"
-            style={{
-              left: `${(i * 4 + (i % 3)) % 100}%`,
-              animationDelay: `${(i % 6) * 0.3}s`,
-              background: [
-                "#f59e0b",
-                "#84cc16",
-                "#ef4444",
-                "#3b82f6",
-                "#a855f7",
-                "#ec4899",
-              ][i % 6],
-            }}
-          />
-        ))}
-      </div>
-
-      <header className="conclusion-page__hero">
-        <div className="conclusion-page__eyebrow">Final Whistle</div>
-        <h1 className="conclusion-page__title">
-          🎉 Game Over, Bakers 🎉
-        </h1>
-        <p className="conclusion-page__tagline">
-          Ovens off. Receipts in. Here's how the month shook out.
-        </p>
+      <header className="conclusion-page__header">
+        <div className="conclusion-page__eyebrow">Game over</div>
+        <h1 className="conclusion-page__title">The doors are closed.</h1>
       </header>
 
       {winner && (
-        <section
-          className="conclusion-page__winner conclusion-page__winner--hero"
-          aria-label="Winner"
-        >
+        <section className="conclusion-page__winner" aria-label="Winner">
           <div className="conclusion-page__winner-crown" aria-hidden="true">
             👑
           </div>
           <div className="conclusion-page__winner-meta">
-            <div className="conclusion-page__winner-label">Winning team</div>
+            <div className="conclusion-page__winner-label">Winning bakery</div>
             <div className="conclusion-page__winner-name">
-              {winner.teamName || winner.bakeryName || winner.displayName}
+              {winner.bakeryName || winner.displayName}
               {winner.playerId === playerId && (
                 <span className="conclusion-page__winner-you"> (you!)</span>
               )}
             </div>
             <div className="conclusion-page__winner-revenue">
-              {formatMoney(winner.cumulativeRevenue ?? winner.revenueNet)}{" "}
-              in cumulative net revenue
+              {formatMoney(winner.cumulativeRevenue ?? winner.revenueNet)} net
+              revenue
             </div>
-          </div>
-        </section>
-      )}
-
-      {rankings.length > 0 && (
-        <section
-          className="conclusion-page__podium"
-          aria-label="Top 3 podium"
-        >
-          <div className="conclusion-page__podium-row">
-            {podiumSlots.map((slot, idx) => {
-              const rank = idx + 1;
-              const tier = rank === 1 ? "gold" : rank === 2 ? "silver" : "bronze";
-              return (
-                <div
-                  key={rank}
-                  className={`podium podium--${tier}${
-                    slot?.playerId === playerId ? " podium--mine" : ""
-                  }`}
-                >
-                  <div className="podium__medal" aria-hidden>
-                    {rank === 1 ? "🥇" : rank === 2 ? "🥈" : "🥉"}
-                  </div>
-                  <div className="podium__bakery">
-                    {slot
-                      ? slot.bakeryName || slot.displayName
-                      : "—"}
-                  </div>
-                  <div className="podium__revenue">
-                    {slot
-                      ? formatMoney(
-                          slot.cumulativeRevenue ?? slot.revenueNet,
-                        )
-                      : "$0"}
-                  </div>
-                  <div className="podium__block">#{rank}</div>
-                </div>
-              );
-            })}
           </div>
         </section>
       )}
 
       {/* Your final numbers — the ONLY place budget is allowed. */}
       <section className="conclusion-page__yours">
-        <h2 className="conclusion-page__section-title">Your team</h2>
+        <h2 className="conclusion-page__section-title">Your bakery</h2>
         <div className="conclusion-page__yours-grid">
           <StatCard
             label="Final net revenue"
@@ -321,7 +230,7 @@ export function ConclusionPage() {
             <thead>
               <tr>
                 <th>#</th>
-                <th>Team</th>
+                <th>Bakery</th>
                 <th>Net revenue</th>
                 <th>Budget remaining</th>
               </tr>
@@ -338,7 +247,7 @@ export function ConclusionPage() {
                 >
                   <td>{r.rank}</td>
                   <td>
-                    {r.teamName || r.bakeryName || r.displayName}
+                    {r.bakeryName || r.displayName}
                     {r.playerId === playerId && " (you)"}
                   </td>
                   <td>
