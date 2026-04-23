@@ -15,8 +15,6 @@ import { EmailPhasePage } from "./pages/EmailPhasePage";
 import { RosterPhasePage } from "./pages/RosterPhasePage";
 import { ConclusionPage } from "./pages/ConclusionPage";
 import { HowToPlayPage } from "./pages/HowToPlayPage";
-import { BakeryScenePreviewPage } from "./pages/BakeryScenePreviewPage";
-import { TileSheetInspectorPage } from "./pages/TileSheetInspectorPage";
 
 export default function App() {
   return (
@@ -41,14 +39,6 @@ export default function App() {
             <Route
               path="/professor/leaderboard"
               element={<ProfessorLeaderboardPage />}
-            />
-            <Route
-              path="/preview/bakery-scene"
-              element={<BakeryScenePreviewPage />}
-            />
-            <Route
-              path="/preview/tile-inspector"
-              element={<TileSheetInspectorPage />}
             />
           </Routes>
         </BrowserRouter>
