@@ -15,6 +15,7 @@ import { EmailPhasePage } from "./pages/EmailPhasePage";
 import { RosterPhasePage } from "./pages/RosterPhasePage";
 import { ConclusionPage } from "./pages/ConclusionPage";
 import { HowToPlayPage } from "./pages/HowToPlayPage";
+import { BakeryScenePreviewPage } from "./pages/BakeryScenePreviewPage";
 
 export default function App() {
   return (
@@ -26,6 +27,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<LandingPage />} />
             <Route path="/how-to-play" element={<HowToPlayPage />} />
+            <Route path="/preview/bakery-scene" element={<BakeryScenePreviewPage />} />
             <Route path="/team" element={<TeamPage />} />
             <Route path="/lobby" element={<LobbyPage />} />
             <Route path="/game" element={<GamePage />} />
