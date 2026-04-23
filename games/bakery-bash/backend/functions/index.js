@@ -356,56 +356,121 @@ function buildTeamGroupsFromPlayerDocs(playerDocs) {
 
 // ---------------------------------------------------------------------------
 // updateTopBids — BE-25 competing-bid surface
-// After a successful submitBids, update the round's topBids map so the FE
-// can surface the current top VALUE for each ad slot / chef without revealing
-// who the high bidder is.  Non-fatal: logged and swallowed on failure.
+// After a successful submitBids, recompute the round's topBids map so the FE
+// can surface the current top VALUE for each ad slot / chef. Also writes
+// `topBidsLeader` so the FE can tell whether *we* are the unique leader (vs.
+// tied with another team) — the per-slot lock UI relies on this to avoid
+// freezing both teams when their bids are equal.
+//
+// Wrapped in `db.runTransaction` so two concurrent submitBids calls cannot
+// each read pre-write state and stomp each other's recomputed `topBids`
+// map (regression guard for PR #54).
+//
+// Non-fatal: logged and swallowed on failure to avoid breaking submitBids's
+// critical path.
 // ---------------------------------------------------------------------------
 async function updateTopBids(gameRef, round, bidType) {
-  const roundRef = gameRef.collection('rounds').doc(`round_${round}`);
+  const roundId = `round_${round}`;
+  const roundRef = gameRef.collection('rounds').doc(roundId);
   try {
-    const playersSnap = await gameRef.collection('players').get();
-    const bidSnaps = await Promise.all(
-      playersSnap.docs.map((pd) =>
-        pd.ref.collection('bids').doc(`round_${round}`).get()
-      )
-    );
+    await db.runTransaction(async (tx) => {
+      const playersSnap = await tx.get(gameRef.collection('players'));
+      const bidSnaps = await Promise.all(
+        playersSnap.docs.map((pd) =>
+          tx.get(pd.ref.collection('bids').doc(roundId))
+        )
+      );
 
-    const nextTopBids = { ad: {}, chef: {} };
+      const playerToTeamKey = new Map(
+        playersSnap.docs.map((pd) => [pd.id, getPlayerTeamKey(pd)])
+      );
 
-    if (bidType === 'ad') {
-      for (const adType of AD_TYPES) {
-        let top = 0;
-        for (const bidSnap of bidSnaps) {
+      const submittedAtMillis = (ts) =>
+        ts && typeof ts.toMillis === 'function' ? ts.toMillis() : Number.POSITIVE_INFINITY;
+
+      const nextTopBidsAd = {};
+      const nextLeaderAd = {};
+      const nextTopBidsChef = {};
+      const nextLeaderChef = {};
+
+      if (bidType === 'ad') {
+        for (const adType of AD_TYPES) {
+          let topAmount = 0;
+          let topLeader = null;
+          let topMillis = Number.POSITIVE_INFINITY;
+          for (let i = 0; i < bidSnaps.length; i += 1) {
+            const bidSnap = bidSnaps[i];
+            if (!bidSnap.exists) continue;
+            const data = bidSnap.data() || {};
+            const amount = numberOrDefault(objectOrDefault(data.ad, {})[adType], 0);
+            if (amount <= 0) continue;
+            const millis = submittedAtMillis(data.adSubmittedAt);
+            const leaderKey = playerToTeamKey.get(playersSnap.docs[i].id) || playersSnap.docs[i].id;
+            if (
+              amount > topAmount ||
+              (amount === topAmount && millis < topMillis)
+            ) {
+              topAmount = amount;
+              topLeader = leaderKey;
+              topMillis = millis;
+            }
+          }
+          if (topAmount > 0) {
+            nextTopBidsAd[adType] = topAmount;
+            if (topLeader) nextLeaderAd[adType] = topLeader;
+          }
+        }
+      } else {
+        const topByChef = {};
+        const leaderByChef = {};
+        const millisByChef = {};
+        for (let i = 0; i < bidSnaps.length; i += 1) {
+          const bidSnap = bidSnaps[i];
           if (!bidSnap.exists) continue;
-          const adBids = objectOrDefault((bidSnap.data() || {}).ad, {});
-          top = Math.max(top, numberOrDefault(adBids[adType], 0));
+          const data = bidSnap.data() || {};
+          const chefBids = Array.isArray(data.chef) ? data.chef : [];
+          const millis = submittedAtMillis(data.chefSubmittedAt);
+          const leaderKey = playerToTeamKey.get(playersSnap.docs[i].id) || playersSnap.docs[i].id;
+          for (const bid of chefBids) {
+            if (!bid || !bid.chefId) continue;
+            const amount = numberOrDefault(bid.amount, 0);
+            if (amount <= 0) continue;
+            const prevAmount = numberOrDefault(topByChef[bid.chefId], 0);
+            const prevMillis = millisByChef[bid.chefId] ?? Number.POSITIVE_INFINITY;
+            if (
+              amount > prevAmount ||
+              (amount === prevAmount && millis < prevMillis)
+            ) {
+              topByChef[bid.chefId] = amount;
+              leaderByChef[bid.chefId] = leaderKey;
+              millisByChef[bid.chefId] = millis;
+            }
+          }
         }
-        if (top > 0) nextTopBids.ad[adType] = top;
+        Object.assign(nextTopBidsChef, topByChef);
+        Object.assign(nextLeaderChef, leaderByChef);
       }
-    } else {
-      const topByChef = {};
-      for (const bidSnap of bidSnaps) {
-        if (!bidSnap.exists) continue;
-        const chefBids = Array.isArray((bidSnap.data() || {}).chef)
-          ? bidSnap.data().chef
-          : [];
-        for (const bid of chefBids) {
-          if (!bid || !bid.chefId) continue;
-          const amount = numberOrDefault(bid.amount, 0);
-          if (amount <= 0) continue;
-          topByChef[bid.chefId] = Math.max(numberOrDefault(topByChef[bid.chefId], 0), amount);
-        }
-      }
-      nextTopBids.chef = topByChef;
-    }
 
-    await roundRef.set({
-      round,
-      topBids: { ad: {}, chef: {} },
-    }, { merge: true });
-    await roundRef.update({
-      [`topBids.${bidType}`]: bidType === 'ad' ? nextTopBids.ad : nextTopBids.chef,
-      updatedAt: FieldValue.serverTimestamp(),
+      const updates = { updatedAt: FieldValue.serverTimestamp() };
+      if (bidType === 'ad') {
+        updates['topBids.ad'] = nextTopBidsAd;
+        updates['topBidsLeader.ad'] = nextLeaderAd;
+      } else {
+        updates['topBids.chef'] = nextTopBidsChef;
+        updates['topBidsLeader.chef'] = nextLeaderChef;
+      }
+
+      const roundSnap = await tx.get(roundRef);
+      if (roundSnap.exists) {
+        tx.update(roundRef, updates);
+      } else {
+        tx.set(roundRef, {
+          round,
+          topBids: { ad: nextTopBidsAd, chef: nextTopBidsChef },
+          topBidsLeader: { ad: nextLeaderAd, chef: nextLeaderChef },
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+      }
     });
   } catch (err) {
     logger.warn('updateTopBids side-effect failed — non-fatal.', {

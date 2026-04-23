@@ -270,6 +270,23 @@ function cleanString(value) {
   return value.trim();
 }
 
+/**
+ * coerceChefPoolSize
+ * Accepts the new flat-number schema, the legacy `{min, max}` object schema,
+ * or anything else (falls back to `fallback`). For legacy `{min, max}` we
+ * prefer `max` so existing games keep their largest configured pool size.
+ */
+function coerceChefPoolSize(value, fallback) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const max = numberOrDefault(value.max, NaN);
+    if (Number.isFinite(max)) return max;
+    const min = numberOrDefault(value.min, NaN);
+    if (Number.isFinite(min)) return min;
+    return fallback;
+  }
+  return numberOrDefault(value, fallback);
+}
+
 // ---------------------------------------------------------------------------
 // mergeConfig — deep merge user config over defaults with numeric safety
 // ---------------------------------------------------------------------------
@@ -328,7 +345,11 @@ function mergeConfig(rawConfig) {
     totalRounds:      numberOrDefault(raw.totalRounds,      d.totalRounds),
     specialtyChefCap: numberOrDefault(raw.specialtyChefCap, d.specialtyChefCap),
 
-    chefPoolSize: numberOrDefault(raw.chefPoolSize, d.chefPoolSize),
+    // Backward-compat: legacy game configs stored chefPoolSize as
+    // `{ min, max }`. Coerce that shape to a flat number (prefer max) so
+    // existing Firestore game docs don't silently fall back to the
+    // default when reloaded under the new flat-number schema.
+    chefPoolSize: coerceChefPoolSize(raw.chefPoolSize, d.chefPoolSize),
 
     chefSatisfactionThreshold: numberOrDefault(raw.chefSatisfactionThreshold, d.chefSatisfactionThreshold),
     chefSatisfactionDecay:     numberOrDefault(raw.chefSatisfactionDecay,     d.chefSatisfactionDecay),

@@ -205,6 +205,8 @@ export function AuctionPage() {
   useGamePhaseNav();
   const {
     gameId,
+    playerId,
+    teamId,
     currentRound,
     phase,
     pendingAdBids,
@@ -214,6 +216,10 @@ export function AuctionPage() {
     role,
   } = useGame();
   const dispatch = useGameDispatch();
+  // Backend writes leader keys as `teamId || playerId` — match that here so
+  // the per-slot lock can identify "I'm the unique top bidder" vs. "tied
+  // with another team" (in which case neither should be locked).
+  const myTeamKey = teamId || playerId || null;
 
   const [activeTab, setActiveTabLocal] = useState<AuctionTab>("ads");
   // FE-R09: regenerate the cosmetic placeholder each round so the pre-
@@ -231,6 +237,11 @@ export function AuctionPage() {
   // Shape: `{ad: {TV,Billboard,Radio,Newspaper: number}, chef: {[chefId]: number}}`.
   const [topBidsAd, setTopBidsAd] = useState<Partial<Record<AdType, number>>>({});
   const [topBidsChef, setTopBidsChef] = useState<Record<string, number>>({});
+  // Leader teamKey per slot from `rounds/{round}.topBidsLeader`. Used to
+  // distinguish "I am the unique top bidder" (lock) from "tied with another
+  // team" (don't lock — let the player raise to break the tie).
+  const [topBidsLeaderAd, setTopBidsLeaderAd] = useState<Partial<Record<AdType, string>>>({});
+  const [topBidsLeaderChef, setTopBidsLeaderChef] = useState<Record<string, string>>({});
   const [remaining, setRemaining] = useState<number>(TAB_DURATION_SECONDS);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -270,6 +281,8 @@ export function AuctionPage() {
     setBackendPool(null);
     setTopBidsAd({});
     setTopBidsChef({});
+    setTopBidsLeaderAd({});
+    setTopBidsLeaderChef({});
     setChefBidInputs({});
     if (!gameId || !currentRound) {
       return;
@@ -306,6 +319,28 @@ export function AuctionPage() {
           }
         }
         setTopBidsChef(nextChef);
+
+        // Leader keys (teamId or playerId) per slot. May be missing on round
+        // docs written before this field rolled out — treated as "unknown
+        // leader" which leaves slots editable instead of incorrectly locked.
+        const tbLeader = (data.topBidsLeader ?? null) as DocumentData | null;
+        const tbLeaderAd = (tbLeader?.ad ?? null) as DocumentData | null;
+        const nextLeaderAd: Partial<Record<AdType, string>> = {};
+        if (tbLeaderAd) {
+          (["TV", "Billboard", "Radio", "Newspaper"] as AdType[]).forEach((k) => {
+            const v = tbLeaderAd[k];
+            if (typeof v === "string" && v) nextLeaderAd[k] = v;
+          });
+        }
+        setTopBidsLeaderAd(nextLeaderAd);
+        const tbLeaderChef = (tbLeader?.chef ?? null) as DocumentData | null;
+        const nextLeaderChef: Record<string, string> = {};
+        if (tbLeaderChef && typeof tbLeaderChef === "object") {
+          for (const [id, v] of Object.entries(tbLeaderChef)) {
+            if (typeof v === "string" && v) nextLeaderChef[id] = v;
+          }
+        }
+        setTopBidsLeaderChef(nextLeaderChef);
 
         const raw = Array.isArray(data.chefPool) ? data.chefPool : null;
         if (!raw) {
@@ -473,14 +508,26 @@ export function AuctionPage() {
   // auction phase entirely. Unlike Decide, "locked" here is phase-scoped:
   // the Ads tab stays editable during the ad phase even after chefs lock
   // (and vice-versa). Out-of-phase is always read-only.
+  //
+  // Leader-aware lock: a slot only locks when *we* are the unique top
+  // bidder. If the leader key is missing (legacy round doc) or doesn't
+  // match us, the slot stays editable so a tied team can raise to break
+  // the tie instead of being silently frozen out.
   const isLockedAdBid = useCallback(
     (adType: AdType) => {
       if (!isAdPhase) return true;
       const myBid = pendingAdBids[adType] ?? 0;
       const topBid = topBidsAd[adType] ?? 0;
-      return myBid > 0 && topBid > 0 && myBid === topBid;
+      const leader = topBidsLeaderAd[adType];
+      return (
+        myBid > 0 &&
+        topBid > 0 &&
+        myBid === topBid &&
+        !!myTeamKey &&
+        leader === myTeamKey
+      );
     },
-    [isAdPhase, pendingAdBids, topBidsAd],
+    [isAdPhase, pendingAdBids, topBidsAd, topBidsLeaderAd, myTeamKey],
   );
 
   const isLockedChefBid = useCallback(
@@ -488,9 +535,16 @@ export function AuctionPage() {
       if (!isChefPhase) return true;
       const myBid = pendingChefBids[chefId] ?? 0;
       const topBid = topBidsChef[chefId] ?? 0;
-      return myBid > 0 && topBid > 0 && myBid === topBid;
+      const leader = topBidsLeaderChef[chefId];
+      return (
+        myBid > 0 &&
+        topBid > 0 &&
+        myBid === topBid &&
+        !!myTeamKey &&
+        leader === myTeamKey
+      );
     },
-    [isChefPhase, pendingChefBids, topBidsChef],
+    [isChefPhase, pendingChefBids, topBidsChef, topBidsLeaderChef, myTeamKey],
   );
 
   const hasEditableAdBid = isAdPhase
