@@ -63,3 +63,92 @@ describe('useSceneAnimation — spawn interval', () => {
     expect(result.current.customers).toHaveLength(0)
   })
 })
+
+describe('useSceneAnimation — actor lifecycle', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('moves a customer during WALK_IN (x decreases over time)', () => {
+    const { result } = renderHook(() =>
+      useSceneAnimation({
+        customerCount: 80,
+        simDurationMs: 120_000,
+        isNight: false,
+        reducedMotion: false,
+      })
+    )
+
+    act(() => {
+      vi.advanceTimersByTime(2000)
+    })
+
+    expect(result.current.customers.length).toBeGreaterThanOrEqual(1)
+    const spawned = result.current.customers[0]
+    // Actor may have ticked slightly between spawn and test observation.
+    const initialX = spawned.x
+    expect(initialX).toBeGreaterThan(400)
+
+    // Tick for another second — actor should continue moving left.
+    act(() => {
+      vi.advanceTimersByTime(1000)
+    })
+    const customerNow = result.current.customers.find((c) => c.id === spawned.id)
+    expect(customerNow).toBeDefined()
+    expect(customerNow!.x).toBeLessThan(initialX)
+  })
+
+  it('transitions a customer out of WALK_IN once they reach targetX', () => {
+    const { result } = renderHook(() =>
+      useSceneAnimation({
+        customerCount: 80,
+        simDurationMs: 120_000,
+        isNight: false,
+        reducedMotion: false,
+      })
+    )
+
+    act(() => {
+      vi.advanceTimersByTime(2000)
+    })
+    const spawned = result.current.customers[0]
+
+    // Worst-case walk = 5s, plus safety margin for spawn-time offset.
+    act(() => {
+      vi.advanceTimersByTime(6000)
+    })
+
+    const customerNow = result.current.customers.find((c) => c.id === spawned.id)
+    // Either still in scene with phase past WALK_IN, or already despawned.
+    if (customerNow) {
+      expect(customerNow.phase).not.toBe('WALK_IN')
+    }
+  })
+
+  it('removes the customer from state after WALK_OUT completes', () => {
+    const { result } = renderHook(() =>
+      useSceneAnimation({
+        customerCount: 80,
+        simDurationMs: 120_000,
+        isNight: false,
+        reducedMotion: false,
+      })
+    )
+
+    act(() => {
+      vi.advanceTimersByTime(2000)
+    })
+    const spawnedId = result.current.customers[0].id
+
+    // Full lifecycle: walk-in (~5s worst case) + pause (~0.9s) + walk-out (~5s) ≈ 11s worst.
+    // Pad generously.
+    act(() => {
+      vi.advanceTimersByTime(15_000)
+    })
+
+    expect(result.current.customers.find((c) => c.id === spawnedId)).toBeUndefined()
+  })
+})
