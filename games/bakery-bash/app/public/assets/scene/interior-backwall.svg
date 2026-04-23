@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 160" shape-rendering="crispEdges">
+  <title>Bakery interior back wall</title>
+
+  <!-- warm plaster wall -->
+  <rect width="480" height="160" fill="#F4E4C1"/>
+  <!-- vertical stripe texture (subtle) -->
+  <rect x="20"  y="0" width="2" height="160" fill="#EDD8AF"/>
+  <rect x="90"  y="0" width="2" height="160" fill="#EDD8AF"/>
+  <rect x="260" y="0" width="2" height="160" fill="#EDD8AF"/>
+  <rect x="335" y="0" width="2" height="160" fill="#EDD8AF"/>
+  <rect x="455" y="0" width="2" height="160" fill="#EDD8AF"/>
+
+  <!-- wainscoting (dark wood strip along bottom) -->
+  <rect y="128" width="480" height="32" fill="#8B5E3C"/>
+  <rect y="126" width="480" height="2"  fill="#A07B52"/>
+  <rect y="128" width="480" height="2"  fill="#5A3A20"/>
+  <!-- wainscoting plank seams -->
+  <rect x="40"  y="128" width="2" height="32" fill="#5A3A20"/>
+  <rect x="110" y="128" width="2" height="32" fill="#5A3A20"/>
+  <rect x="180" y="128" width="2" height="32" fill="#5A3A20"/>
+  <rect x="250" y="128" width="2" height="32" fill="#5A3A20"/>
+  <rect x="320" y="128" width="2" height="32" fill="#5A3A20"/>
+  <rect x="390" y="128" width="2" height="32" fill="#5A3A20"/>
+  <rect x="460" y="128" width="2" height="32" fill="#5A3A20"/>
+
+  <!-- window (left side) -->
+  <rect x="28"  y="18"  width="94" height="74" fill="#3B2A1A"/>
+  <rect x="30"  y="20"  width="90" height="70" fill="#9ECBEC"/>
+  <rect x="30"  y="20"  width="90" height="32" fill="#B8DDF0"/>
+  <!-- window cross bars -->
+  <rect x="75"  y="20"  width="2"  height="70" fill="#3B2A1A"/>
+  <rect x="30"  y="55"  width="90" height="2"  fill="#3B2A1A"/>
+  <!-- sill + cloud suggestion -->
+  <rect x="26"  y="92"  width="98" height="4"  fill="#6B4A2A"/>
+  <rect x="36"  y="30"  width="14" height="3"  fill="#FFFFFF"/>
+  <rect x="56"  y="26"  width="12" height="3"  fill="#FFFFFF"/>
+  <rect x="90"  y="33"  width="18" height="3"  fill="#FFFFFF"/>
+
+  <!-- 3 pastry shelves on right half -->
+  <rect x="160" y="38"  width="280" height="5" fill="#6B3F1F"/>
+  <rect x="160" y="43"  width="280" height="2" fill="#4A2810"/>
+  <rect x="160" y="72"  width="280" height="5" fill="#6B3F1F"/>
+  <rect x="160" y="77"  width="280" height="2" fill="#4A2810"/>
+  <rect x="160" y="106" width="280" height="5" fill="#6B3F1F"/>
+  <rect x="160" y="111" width="280" height="2" fill="#4A2810"/>
+
+  <!-- little shelf brackets -->
+  <rect x="168" y="33" width="3" height="5" fill="#4A2810"/>
+  <rect x="308" y="33" width="3" height="5" fill="#4A2810"/>
+  <rect x="428" y="33" width="3" height="5" fill="#4A2810"/>
+  <rect x="168" y="67" width="3" height="5" fill="#4A2810"/>
+  <rect x="308" y="67" width="3" height="5" fill="#4A2810"/>
+  <rect x="428" y="67" width="3" height="5" fill="#4A2810"/>
+  <rect x="168" y="101" width="3" height="5" fill="#4A2810"/>
+  <rect x="308" y="101" width="3" height="5" fill="#4A2810"/>
+  <rect x="428" y="101" width="3" height="5" fill="#4A2810"/>
+
+  <!-- chalkboard between window and shelves -->
+  <rect x="140" y="14" width="4" height="88" fill="#3B2A1A"/>
+
+  <!-- decorative wall clock -->
+  <circle cx="255" cy="24" r="10" fill="#F7E6B8" stroke="#4A2810" stroke-width="2"/>
+  <rect x="254" y="18" width="2" height="7" fill="#4A2810"/>
+  <rect x="255" y="23" width="5" height="2" fill="#4A2810"/>
+
+  <!-- chimney smoke wisps decoration -->
+  <rect x="385" y="6"  width="3" height="3" fill="#EDD8AF"/>
+  <rect x="388" y="3"  width="3" height="3" fill="#EDD8AF"/>
+  <rect x="392" y="6"  width="3" height="3" fill="#EDD8AF"/>
+</svg>

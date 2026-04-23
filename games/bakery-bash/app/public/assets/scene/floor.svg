@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 40" shape-rendering="crispEdges">
+  <title>Wood plank floor</title>
+
+  <!-- base plank color -->
+  <rect width="480" height="40" fill="#A07B52"/>
+  <!-- top highlight -->
+  <rect width="480" height="2" fill="#B89268"/>
+  <!-- overall darker grain at bottom -->
+  <rect y="36" width="480" height="4" fill="#7A5A38"/>
+
+  <!-- horizontal plank-divider rows -->
+  <rect x="0" y="12" width="480" height="1" fill="#6B4A2A"/>
+  <rect x="0" y="24" width="480" height="1" fill="#6B4A2A"/>
+
+  <!-- staggered vertical seams -->
+  <rect x="60"  y="0"  width="1" height="12" fill="#5A3A20"/>
+  <rect x="180" y="0"  width="1" height="12" fill="#5A3A20"/>
+  <rect x="300" y="0"  width="1" height="12" fill="#5A3A20"/>
+  <rect x="420" y="0"  width="1" height="12" fill="#5A3A20"/>
+
+  <rect x="20"  y="12" width="1" height="12" fill="#5A3A20"/>
+  <rect x="140" y="12" width="1" height="12" fill="#5A3A20"/>
+  <rect x="260" y="12" width="1" height="12" fill="#5A3A20"/>
+  <rect x="380" y="12" width="1" height="12" fill="#5A3A20"/>
+
+  <rect x="80"  y="24" width="1" height="16" fill="#5A3A20"/>
+  <rect x="200" y="24" width="1" height="16" fill="#5A3A20"/>
+  <rect x="320" y="24" width="1" height="16" fill="#5A3A20"/>
+  <rect x="440" y="24" width="1" height="16" fill="#5A3A20"/>
+
+  <!-- wood knots decorative -->
+  <circle cx="100" cy="6"  r="2" fill="#7A5A38"/>
+  <circle cx="260" cy="18" r="2" fill="#7A5A38"/>
+  <circle cx="400" cy="30" r="2" fill="#7A5A38"/>
+</svg>

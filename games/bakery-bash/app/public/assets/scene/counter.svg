@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 80" shape-rendering="crispEdges">
+  <title>Bakery counter with glass display case</title>
+
+  <!-- counter wooden top slab -->
+  <rect y="0" width="480" height="6" fill="#C9A978"/>
+  <rect y="6" width="480" height="3" fill="#A07B52"/>
+  <rect y="9" width="480" height="2" fill="#6B4A2A"/>
+
+  <!-- glass display case (visible area behind glass) -->
+  <rect y="11" width="480" height="30" fill="#E8F1F8"/>
+  <!-- display case glare lines -->
+  <rect y="11" width="480" height="2" fill="#FFFFFF" opacity="0.6"/>
+  <rect x="30"  y="15" width="80" height="2" fill="#FFFFFF" opacity="0.4"/>
+  <rect x="170" y="15" width="80" height="2" fill="#FFFFFF" opacity="0.4"/>
+  <rect x="310" y="15" width="80" height="2" fill="#FFFFFF" opacity="0.4"/>
+
+  <!-- horizontal shelf inside glass (where pastries sit) -->
+  <rect y="28" width="480" height="2" fill="#A07B52" opacity="0.4"/>
+
+  <!-- glass frame around case -->
+  <rect y="41" width="480" height="2" fill="#3B2A1A"/>
+  <rect x="0"   y="11" width="2" height="32" fill="#3B2A1A"/>
+  <rect x="478" y="11" width="2" height="32" fill="#3B2A1A"/>
+  <rect x="160" y="11" width="2" height="30" fill="#3B2A1A" opacity="0.5"/>
+  <rect x="318" y="11" width="2" height="30" fill="#3B2A1A" opacity="0.5"/>
+
+  <!-- wooden counter front body -->
+  <rect y="43" width="480" height="37" fill="#8B5E3C"/>
+  <!-- highlight line -->
+  <rect y="43" width="480" height="2" fill="#A07B52"/>
+  <!-- shadow line at bottom -->
+  <rect y="76" width="480" height="4" fill="#5A3A20"/>
+
+  <!-- vertical plank seams -->
+  <rect x="60"  y="43" width="2" height="33" fill="#6B3F1F"/>
+  <rect x="160" y="43" width="2" height="33" fill="#6B3F1F"/>
+  <rect x="240" y="43" width="2" height="33" fill="#6B3F1F"/>
+  <rect x="320" y="43" width="2" height="33" fill="#6B3F1F"/>
+  <rect x="420" y="43" width="2" height="33" fill="#6B3F1F"/>
+
+  <!-- brass knobs on a couple of drawers -->
+  <circle cx="30"  cy="60" r="2" fill="#E5C547"/>
+  <circle cx="120" cy="60" r="2" fill="#E5C547"/>
+  <circle cx="210" cy="60" r="2" fill="#E5C547"/>
+  <circle cx="290" cy="60" r="2" fill="#E5C547"/>
+  <circle cx="380" cy="60" r="2" fill="#E5C547"/>
+  <circle cx="460" cy="60" r="2" fill="#E5C547"/>
+</svg>
