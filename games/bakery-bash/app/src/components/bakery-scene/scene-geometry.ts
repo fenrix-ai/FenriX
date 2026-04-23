@@ -1,0 +1,53 @@
+/**
+ * Single source of truth for scene pixel coordinates.
+ *
+ * Scene layout (native 480×270):
+ *   y=0    ┌─────────────────────┐
+ *          │ wall-mounts (30px)  │ clock, team sign, menu board
+ *   y=30   ├─────────────────────┤
+ *          │ mid-band (100px)    │ bread shelves / oven / coffee wall
+ *   y=130  ├─────────────────────┤
+ *          │ wainscoting (10px)  │ dark wood trim
+ *   y=140  ├─────────────────────┤
+ *          │ counter (40px)      │ counter front + chef sprites overlap
+ *   y=180  ├─────────────────────┤
+ *          │ floor strip (90px)  │ customers + cat walk here
+ *   y=270  └─────────────────────┘
+ */
+export const SCENE = {
+  width: 480,
+  height: 270,
+
+  zones: {
+    wallMounts: { y: 0, height: 30 },
+    midBand: { y: 30, height: 100 },
+    wainscoting: { y: 130, height: 10 },
+    counter: { y: 140, height: 40 },
+    floor: { y: 180, height: 90 },
+  },
+
+  /** Y-coordinate where characters stand (top edge of floor strip). */
+  floorBaselineY: 180,
+
+  /** Door is a vertical slot on the right edge. */
+  door: {
+    x: 456, // 480 - 24
+    y: 80,
+    width: 24,
+    height: 200,
+  },
+
+  /** Chef station X centers (mid of chef sprite). Stations stay left of door. */
+  stations: {
+    bakery: 90,
+    deli: 220,
+    barista: 370,
+  },
+
+  /** Y-offset where customers walk (slightly above floor top for feet). */
+  customerFeetY: 262,
+  /** Chef sprite top-edge Y (they overlap the counter). */
+  chefTopY: 140,
+} as const
+
+export type StationKey = 'bakery' | 'deli' | 'barista'
