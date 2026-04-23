@@ -10,7 +10,8 @@ const TICK_MS = 1000 / 30 // 30 Hz position update
 const DOLLAR_LIFETIME_MS = 900
 const FLURRY_MIN = 4
 const FLURRY_MAX = 6
-const COUNTER_Y = 110
+// Logical Y for flurry origin — just above the counter lip (scene is 270 tall).
+const COUNTER_Y = 172
 
 function nextSpawnDelay(base: number) {
   const low = base * (1 - JITTER)
@@ -111,7 +112,8 @@ export function useSceneAnimation(
                 variantIdx: Math.floor(Math.random() * 4),
                 phase: 'WALK_IN' as const,
                 x: 480,
-                targetX: 180 + Math.floor(Math.random() * 120),
+                // Wider queue range so packed rooms look like a line, not a pile.
+              targetX: 120 + Math.floor(Math.random() * 220),
                 phaseStart: performance.now(),
               },
             ]
@@ -143,16 +145,10 @@ export function useSceneAnimation(
     }
 
     const tick = () => {
-      // Skip when the tab is hidden so the queue doesn't spike on resume.
-      if (
-        typeof document !== 'undefined' &&
-        document.visibilityState !== 'visible'
-      ) {
-        lastTick = performance.now()
-        return
-      }
       const now = performance.now()
-      const dt = (now - lastTick) / 1000
+      // Clamp dt to 100ms so a large gap (backgrounded tab, browser throttling)
+      // doesn't teleport every actor forward. Still keeps motion going.
+      const dt = Math.min(0.1, (now - lastTick) / 1000)
       lastTick = now
 
       setCustomers((prev) => {

@@ -14,9 +14,9 @@ interface Props {
   menu: Partial<Record<ProductKey, boolean>>
 }
 
-// Shelf positions (back-wall 3 shelves × ~3 columns) in % relative to scene.
-// Shelf Y rows at ~26%, 46%, 66% (within the 0–60% back-wall band).
-const SHELF_ROW_TOPS = [14, 26, 38] // top 3 shelves
+// Shelf positions (back-wall shelves are at ~14%, 27%, 40% of scene).
+// We use the lower two rows so the hanging sign doesn't overlap the items.
+const SHELF_ROW_TOPS = [29, 42]
 const SHELF_COLS_LEFT = [40, 54, 68]
 
 export function ShelfStock({ soldOut, menu }: Props) {

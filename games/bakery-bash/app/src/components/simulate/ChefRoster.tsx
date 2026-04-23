@@ -28,7 +28,7 @@ export function ChefRoster({ staffCounts }: Props) {
           <div
             key={station}
             className="pixel-chef"
-            style={{ left: `calc(${xPct}% - 18px)`, bottom: '30%' }}
+            style={{ left: `calc(${xPct}% - 18px)`, bottom: '38%' }}
             data-station={station}
           >
             <img src={sprite} alt="" aria-hidden="true" />

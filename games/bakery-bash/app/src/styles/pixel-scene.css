@@ -6,6 +6,7 @@
 .pixel-scene {
   position: relative;
   width: 100%;
+  min-width: 320px;
   max-width: 720px;
   aspect-ratio: 16 / 9;
   margin: 0 auto;
@@ -20,6 +21,25 @@
   image-rendering: crisp-edges;
   font-family: 'Courier New', 'Lucida Console', monospace;
   contain: layout paint style;
+}
+
+/* Override the old legacy global.css .simulate-phase flex row so the
+   pixel layout flows vertically (topbar → main grid). */
+.simulate-phase.simulate-phase--pixel {
+  display: block;
+  text-align: left;
+  min-height: 100vh;
+}
+
+.simulate-phase--pixel .simulate-phase__main {
+  grid-template-columns: 200px minmax(400px, 1fr) 220px;
+}
+
+.simulate-phase--pixel .simulate-phase__bakery-visual {
+  align-items: stretch;
+  justify-content: flex-start;
+  padding-top: 1rem;
+  min-width: 0;
 }
 
 .pixel-scene * {
@@ -284,8 +304,8 @@
   inset: 0;
   z-index: 7;
   background: linear-gradient(180deg,
-    rgba(15, 22, 65, 0.55),
-    rgba(30, 20, 60, 0.45)
+    rgba(30, 40, 95, 0.35),
+    rgba(50, 35, 90, 0.28)
   );
   opacity: 0;
   transition: opacity 600ms ease;
