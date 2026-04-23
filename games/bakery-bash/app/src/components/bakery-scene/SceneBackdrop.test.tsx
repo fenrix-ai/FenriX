@@ -240,3 +240,39 @@ describe('<SceneBackdrop> counter', () => {
     expect(mid[0]).toBeGreaterThan(mid[2])
   })
 })
+
+describe('<SceneBackdrop> wall mounts', () => {
+  let setup: ReturnType<typeof setupCanvasFake>
+
+  beforeEach(() => {
+    setup = setupCanvasFake()
+  })
+
+  afterEach(() => {
+    setup.cleanup()
+  })
+
+  it('paints a clock in the top-left wall-mount area', () => {
+    const { container } = render(<SceneBackdrop />)
+    const ctx = (container.querySelector('canvas')! as HTMLCanvasElement).getContext('2d')!
+    const p = ctx.getImageData(22, 12, 1, 1).data
+    const isCream = p[0] > 200 && p[1] > 180 && p[2] > 140
+    expect(isCream).toBe(false)
+  })
+
+  it('paints the sign frame silhouette in the center wall-mount area', () => {
+    const { container } = render(<SceneBackdrop />)
+    const ctx = (container.querySelector('canvas')! as HTMLCanvasElement).getContext('2d')!
+    const p = ctx.getImageData(200, 8, 1, 1).data
+    const isCream = p[0] > 200 && p[1] > 180 && p[2] > 140
+    expect(isCream).toBe(false)
+  })
+
+  it('paints the menu-board silhouette in the top-right wall-mount area', () => {
+    const { container } = render(<SceneBackdrop />)
+    const ctx = (container.querySelector('canvas')! as HTMLCanvasElement).getContext('2d')!
+    const p = ctx.getImageData(400, 10, 1, 1).data
+    const isCream = p[0] > 200 && p[1] > 180 && p[2] > 140
+    expect(isCream).toBe(false)
+  })
+})

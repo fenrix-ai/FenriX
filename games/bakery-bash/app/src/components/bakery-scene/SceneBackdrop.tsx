@@ -111,6 +111,41 @@ function paintBackdrop(ctx: CanvasRenderingContext2D) {
   for (let x = 40; x < SCENE.width; x += 80) {
     fillRect(ctx, PALETTE.counterTop, x, cY + 2, 1, cH - 4)
   }
+
+  // --- Wall mounts (top strip) ---
+  {
+    // Clock top-left — dark circle with hands.
+    const clockX = 22
+    const clockY = 15
+    fillRect(ctx, PALETTE.outline, clockX - 8, clockY - 8, 16, 16) // outer ring
+    fillRect(ctx, '#eee4c8', clockX - 6, clockY - 6, 12, 12) // face
+    fillRect(ctx, PALETTE.outline, clockX, clockY, 2, 1) // min hand
+    fillRect(ctx, PALETTE.outline, clockX, clockY - 4, 1, 4) // hour hand
+
+    // Sign silhouette — wooden frame with burgundy trim. (Text fills in Phase 3 via <TeamSign>.)
+    const sX = 180
+    const sY = 4
+    const sW = 120
+    const sH = 22
+    fillRect(ctx, PALETTE.burgundyAccent, sX - 2, sY - 2, sW + 4, sH + 4) // burgundy backing
+    fillRect(ctx, '#8a5c2e', sX, sY, sW, sH) // wood face
+    fillRect(ctx, '#6c4420', sX, sY + sH - 2, sW, 2) // bottom shadow
+    // Two small corner nails
+    fillRect(ctx, '#3a2815', sX + 2, sY + 2, 1, 1)
+    fillRect(ctx, '#3a2815', sX + sW - 3, sY + 2, 1, 1)
+
+    // Menu board top-right — dark chalkboard with a wooden frame.
+    const mX = 378
+    const mY = 4
+    const mW = 72
+    const mH = 22
+    fillRect(ctx, PALETTE.counterTop, mX - 2, mY - 2, mW + 4, mH + 4) // frame (same wood tone as counter top / door panel)
+    fillRect(ctx, '#1f3e36', mX, mY, mW, mH) // chalkboard green-black
+    // A couple chalk lines to suggest handwriting (horizontal dashes)
+    fillRect(ctx, '#d7d2b2', mX + 4, mY + 5, 18, 1)
+    fillRect(ctx, '#d7d2b2', mX + 4, mY + 10, 30, 1)
+    fillRect(ctx, '#d7d2b2', mX + 4, mY + 15, 22, 1)
+  }
 }
 
 /**
