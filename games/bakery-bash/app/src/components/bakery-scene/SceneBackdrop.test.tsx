@@ -40,6 +40,29 @@ class FakeImageData {
   }
 }
 
+/**
+ * Canvas-stub setup shared across describe blocks. Each describe needs
+ * its own beforeEach/afterEach pair because vitest hooks don't span siblings —
+ * this keeps the boilerplate to one line per hook.
+ */
+function setupCanvasFake() {
+  const contextStub = stubCanvasContext()
+  const originalImageData = globalThis.ImageData
+  ;(globalThis as { ImageData: typeof ImageData }).ImageData =
+    FakeImageData as unknown as typeof ImageData
+
+  const cleanup = () => {
+    contextStub.spy.mockRestore()
+    if (originalImageData) {
+      ;(globalThis as { ImageData: typeof ImageData }).ImageData = originalImageData
+    } else {
+      delete (globalThis as Partial<{ ImageData: typeof ImageData }>).ImageData
+    }
+  }
+
+  return { contextStub, cleanup }
+}
+
 function makePixelBufferCtx(width: number, height: number) {
   const pixels = new Uint8ClampedArray(width * height * 4)
   // Pre-fill alpha to 255
@@ -103,23 +126,14 @@ function stubCanvasContext() {
 // ---------------------------------------------------------------------------
 
 describe('<SceneBackdrop>', () => {
-  let contextStub: ReturnType<typeof stubCanvasContext>
-  let originalImageData: typeof ImageData | undefined
+  let setup: ReturnType<typeof setupCanvasFake>
 
   beforeEach(() => {
-    contextStub = stubCanvasContext()
-    originalImageData = globalThis.ImageData
-    ;(globalThis as { ImageData: typeof ImageData }).ImageData =
-      FakeImageData as unknown as typeof ImageData
+    setup = setupCanvasFake()
   })
 
   afterEach(() => {
-    contextStub.spy.mockRestore()
-    if (originalImageData) {
-      ;(globalThis as { ImageData: typeof ImageData }).ImageData = originalImageData
-    } else {
-      delete (globalThis as Partial<{ ImageData: typeof ImageData }>).ImageData
-    }
+    setup.cleanup()
   })
 
   it('renders a canvas sized to scene native dimensions', () => {
@@ -155,23 +169,14 @@ describe('<SceneBackdrop>', () => {
 })
 
 describe('<SceneBackdrop> counter', () => {
-  let contextStub: ReturnType<typeof stubCanvasContext>
-  let originalImageData: typeof ImageData | undefined
+  let setup: ReturnType<typeof setupCanvasFake>
 
   beforeEach(() => {
-    contextStub = stubCanvasContext()
-    originalImageData = globalThis.ImageData
-    ;(globalThis as { ImageData: typeof ImageData }).ImageData =
-      FakeImageData as unknown as typeof ImageData
+    setup = setupCanvasFake()
   })
 
   afterEach(() => {
-    contextStub.spy.mockRestore()
-    if (originalImageData) {
-      ;(globalThis as { ImageData: typeof ImageData }).ImageData = originalImageData
-    } else {
-      delete (globalThis as Partial<{ ImageData: typeof ImageData }>).ImageData
-    }
+    setup.cleanup()
   })
 
   it('paints the counter band in wood tones below the wainscoting', () => {
