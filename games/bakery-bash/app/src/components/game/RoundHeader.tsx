@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useGame } from "../../contexts/GameContext";
+import { CsvInboxModal } from "./CsvInboxModal";
 import {
   PLAYER_ROLE_LABELS,
   parseGamePhase,
@@ -132,6 +133,7 @@ export function RoundHeader() {
     phase,
   } = useGame();
 
+  const [inboxOpen, setInboxOpen] = useState(false);
   const phaseSeconds = usePhaseCountdownSeconds();
   // Prefer the backend-driven `phaseEndsAt` countdown; fall back to the
   // legacy local `timeRemaining` (only used by AuctionPage's tab timer
@@ -163,6 +165,24 @@ export function RoundHeader() {
       <div className="round-header__phase-banner">
         {phaseBannerLabel}
       </div>
+
+      <button
+        type="button"
+        className="round-header__email round-header__csv-inbox"
+        onClick={() => setInboxOpen(true)}
+        title="Open CSV inbox"
+        aria-label="Open CSV inbox"
+      >
+        <img
+          src="/assets/ui/email.svg"
+          alt=""
+          aria-hidden="true"
+          className="round-header__csv-inbox-icon"
+        />
+        <span className="round-header__csv-inbox-label">CSV Inbox</span>
+      </button>
+
+      <CsvInboxModal open={inboxOpen} onClose={() => setInboxOpen(false)} />
 
       <div className="round-header__round">
         Round {currentRound} of {totalRounds}

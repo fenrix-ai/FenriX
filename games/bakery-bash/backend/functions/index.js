@@ -48,6 +48,7 @@ const db = getFirestore();
 const {
   DEFAULT_GAME_CONFIG,
   AD_TYPES,
+  CHEF_NATIONALITIES,
   mergeConfig,
   numberOrDefault,
   objectOrDefault,
@@ -3118,6 +3119,98 @@ exports.purchaseCompetitorInsight = onCall(async (request) => {
   }
 
   return { csv: rows.join("\n"), costDeducted: insightCost };
+});
+
+// ===========================================================================
+// purchaseChefData — Tier 1 / Tier 2 chef data CSVs
+//
+// Tier 1 ($2,500): static nationality → specialty-product map. Reveals which
+// cuisines lift which products — always the same payload, independent of
+// the current round's generated pool.
+//
+// Tier 2 ($7,500): full per-chef dump for the current round's chef pool
+// (name, nationality, gender, skill tier, specialties, min bid floor) so a
+// team can evaluate every candidate before the chef auction resolves.
+//
+// Purchases are recorded at `players/{uid}/purchases/chef_tier{1|2}` and
+// the transaction rejects re-buying the same tier, so the total cost is
+// bounded even if the UI re-enables the button.
+// ===========================================================================
+exports.purchaseChefData = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
+  const { gameId, tier } = request.data || {};
+  if (!gameId || (tier !== 1 && tier !== 2)) {
+    throw new HttpsError("invalid-argument", "gameId and tier (1 or 2) are required.");
+  }
+  const uid = request.auth.uid;
+  const gameRef = db.collection("games").doc(gameId);
+  const gameSnap = await gameRef.get();
+  if (!gameSnap.exists) throw new HttpsError("not-found", "Game not found.");
+  const game = gameSnap.data();
+  const currentPhase = typeof game.phase === "string" ? game.phase : "";
+  if (!currentPhase.includes("decide")) {
+    throw new HttpsError("failed-precondition", "Chef data only available during Decisions phase.");
+  }
+
+  const configSnap = await gameRef.collection("config").doc("params").get();
+  const config = configSnap.exists ? configSnap.data() : {};
+  const tier1Cost = numberOrDefault(config.chefDataTier1Cost, 2500);
+  const tier2Cost = numberOrDefault(config.chefDataTier2Cost, 7500);
+  const cost = tier === 1 ? tier1Cost : tier2Cost;
+
+  await db.runTransaction(async (tx) => {
+    const playerRef = gameRef.collection("players").doc(uid);
+    const purchaseRef = playerRef.collection("purchases").doc(`chef_tier${tier}`);
+    const [playerSnap, purchaseSnap] = await Promise.all([
+      tx.get(playerRef),
+      tx.get(purchaseRef),
+    ]);
+    if (!playerSnap.exists) throw new HttpsError("not-found", "Player not found.");
+    if (purchaseSnap.exists) {
+      throw new HttpsError("already-exists", `Tier ${tier} chef data already purchased.`);
+    }
+    const player = playerSnap.data();
+    const budget = player.budgetCurrent || 0;
+    if (budget < cost) {
+      throw new HttpsError("failed-precondition", `Insufficient budget to purchase Tier ${tier} chef data.`);
+    }
+    tx.update(playerRef, { budgetCurrent: FieldValue.increment(-cost) });
+    tx.set(purchaseRef, {
+      tier,
+      costDeducted: cost,
+      purchasedAt: FieldValue.serverTimestamp(),
+    });
+  });
+
+  const rows = [];
+  if (tier === 1) {
+    rows.push("nationality,specialties");
+    for (const [nationality, data] of Object.entries(CHEF_NATIONALITIES)) {
+      const specs = Array.isArray(data.specialties) ? data.specialties.join(";") : "";
+      rows.push(`${nationality},"${specs}"`);
+    }
+  } else {
+    rows.push("chef_id,name,nationality,gender,skill_tier,specialties,min_bid_floor");
+    const round = game.currentRound || 1;
+    const roundSnap = await gameRef.collection("rounds").doc(`round_${round}`).get();
+    const pool = (roundSnap.exists && Array.isArray(roundSnap.data().chefPool))
+      ? roundSnap.data().chefPool
+      : [];
+    for (const chef of pool) {
+      const specs = Array.isArray(chef.specialties) ? chef.specialties.join(";") : "";
+      rows.push([
+        chef.id || "",
+        `"${String(chef.name || "").replace(/"/g, '""')}"`,
+        chef.nationality || "",
+        chef.gender || "",
+        chef.skillTier || "",
+        `"${specs}"`,
+        numberOrDefault(chef.minBidFloor, 0),
+      ].join(","));
+    }
+  }
+
+  return { csv: rows.join("\n"), costDeducted: cost, tier };
 });
 
 // ---------------------------------------------------------------------------
