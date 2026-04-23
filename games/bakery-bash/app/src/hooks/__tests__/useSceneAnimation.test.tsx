@@ -258,3 +258,38 @@ describe('useSceneAnimation — dollar popups', () => {
     expect(result.current.dollars.length).toBeLessThanOrEqual(beforeDrain + 6)
   })
 })
+
+describe('useSceneAnimation — isNight pause', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('does not spawn customers while isNight is true', () => {
+    const { rerender, result } = renderHook(
+      ({ isNight }: { isNight: boolean }) =>
+        useSceneAnimation({
+          customerCount: 80,
+          simDurationMs: 120_000,
+          isNight,
+          reducedMotion: false,
+        }),
+      { initialProps: { isNight: true } },
+    )
+
+    // With isNight=true, no spawns after 10s
+    act(() => {
+      vi.advanceTimersByTime(10_000)
+    })
+    expect(result.current.customers).toHaveLength(0)
+
+    // Flip to daytime — spawns resume
+    rerender({ isNight: false })
+    act(() => {
+      vi.advanceTimersByTime(2500)
+    })
+    expect(result.current.customers.length).toBeGreaterThanOrEqual(1)
+  })
+})

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 const JITTER = 0.25
 const MAX_CUSTOMERS = 12
@@ -81,6 +81,11 @@ export function useSceneAnimation(
   const [customers, setCustomers] = useState<CustomerActor[]>([])
   const [dollars, setDollars] = useState<DollarPopup[]>([])
 
+  // Track latest isNight via ref so the scheduler picks up changes without
+  // tearing down the effect (which would lose in-flight actors).
+  const isNightRef = useRef(config.isNight)
+  isNightRef.current = config.isNight
+
   useEffect(() => {
     if (config.reducedMotion || config.customerCount <= 0) return
 
@@ -95,21 +100,23 @@ export function useSceneAnimation(
 
     const scheduleNextSpawn = () => {
       spawnTimer = setTimeout(() => {
-        setCustomers((prev) => {
-          if (prev.length >= MAX_CUSTOMERS) return prev
-          const id = `c${nextCustomerId++}`
-          return [
-            ...prev,
-            {
-              id,
-              variantIdx: Math.floor(Math.random() * 4),
-              phase: 'WALK_IN' as const,
-              x: 480,
-              targetX: 180 + Math.floor(Math.random() * 120),
-              phaseStart: performance.now(),
-            },
-          ]
-        })
+        if (!isNightRef.current) {
+          setCustomers((prev) => {
+            if (prev.length >= MAX_CUSTOMERS) return prev
+            const id = `c${nextCustomerId++}`
+            return [
+              ...prev,
+              {
+                id,
+                variantIdx: Math.floor(Math.random() * 4),
+                phase: 'WALK_IN' as const,
+                x: 480,
+                targetX: 180 + Math.floor(Math.random() * 120),
+                phaseStart: performance.now(),
+              },
+            ]
+          })
+        }
         scheduleNextSpawn()
       }, nextSpawnDelay(baseInterval))
     }
