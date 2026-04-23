@@ -212,6 +212,25 @@ describe('useSceneAnimation — dollar popups', () => {
     expect(maxSeen).toBeGreaterThanOrEqual(4)
   })
 
+  it('never holds more than 12 active customers even under packed load', () => {
+    const { result } = renderHook(() =>
+      useSceneAnimation({
+        customerCount: 1000, // extreme — base interval = 120ms
+        simDurationMs: 120_000,
+        isNight: false,
+        reducedMotion: false,
+      })
+    )
+
+    // Let ~30s of sim time pass — packed-load conditions.
+    for (let t = 0; t < 300; t++) {
+      act(() => {
+        vi.advanceTimersByTime(100)
+      })
+      expect(result.current.customers.length).toBeLessThanOrEqual(12)
+    }
+  })
+
   it('drains dollar popups after their ~900ms lifetime', () => {
     const { result } = renderHook(() =>
       useSceneAnimation({
