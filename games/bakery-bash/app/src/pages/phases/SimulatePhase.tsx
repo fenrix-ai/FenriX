@@ -35,7 +35,12 @@ export function SimulatePhase() {
   const { roundResults, maintenanceBars } = useGame();
   const latest = roundResults[roundResults.length - 1];
   const targetRevenue = typeof latest?.revenue === "number" ? latest.revenue : 0;
-  const adWon = latest?.auctionResults?.adWon as string | null | undefined;
+  // Multi-ad: pick the first slot as the "icon" for the simulate animation.
+  const firstAdWin = latest?.auctionResults?.adWins?.[0]?.adType;
+  const adWon = (firstAdWin ?? latest?.auctionResults?.adWon) as
+    | string
+    | null
+    | undefined;
 
   const [day, setDay] = useState(1);
   const [isNight, setIsNight] = useState(false);

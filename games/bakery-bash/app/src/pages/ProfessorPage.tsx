@@ -13,7 +13,16 @@ import { useAuth } from "../contexts/AuthContext";
 import { db, functions } from "../lib/firebase";
 import { PageShell } from "../components/ui/PageShell";
 import { humanizeFunctionError } from "../lib/errors";
-import { parseGamePhase, type BasePhase } from "../types/game";
+import {
+  parseGamePhase,
+  PLAYER_ROLE_LABELS,
+  roleOwnsAdBids,
+  roleOwnsChefBids,
+  roleOwnsDecide,
+  roleOwnsRoster,
+  type BasePhase,
+  type PlayerRole,
+} from "../types/game";
 import { isDevModeEnabled, setDevMode } from "../lib/devMode";
 
 /**
@@ -40,7 +49,17 @@ interface ProfessorRosterEntry {
   uid: string;
   displayName: string;
   bakeryName?: string;
+  teamName?: string;
+  teamId?: string;
+  role?: PlayerRole;
   joinedAt?: Timestamp | null;
+}
+
+interface ProfessorTeamEntry {
+  teamId: string;
+  name: string | null;
+  roleAssignments: Record<string, PlayerRole | null>;
+  createdAt?: Timestamp | null;
 }
 
 interface CallableResult {
@@ -117,6 +136,16 @@ export function ProfessorPage() {
   const [roster, setRoster] = useState<ProfessorRosterEntry[]>([]);
   const [rosterError, setRosterError] = useState<string | null>(null);
   const [rosterReady, setRosterReady] = useState(false);
+  const [teams, setTeams] = useState<ProfessorTeamEntry[]>([]);
+  const [teamsError, setTeamsError] = useState<string | null>(null);
+
+  const rosterByUid = useMemo(() => {
+    const map: Record<string, ProfessorRosterEntry> = {};
+    for (const entry of roster) {
+      map[entry.uid] = entry;
+    }
+    return map;
+  }, [roster]);
   const [submissions, setSubmissions] = useState<
     Record<string, Record<string, SubmissionEntry>>
   >({});
@@ -162,6 +191,15 @@ export function ProfessorPage() {
       (snap) => {
         const entries: ProfessorRosterEntry[] = snap.docs.map((d) => {
           const data = d.data() as DocumentData;
+          const rawRole =
+            typeof data.role === "string" ? data.role : undefined;
+          const role: PlayerRole | undefined =
+            rawRole === "operations" ||
+            rawRole === "advertising" ||
+            rawRole === "finance" ||
+            rawRole === "solo"
+              ? rawRole
+              : undefined;
           return {
             uid: typeof data.uid === "string" ? data.uid : d.id,
             displayName:
@@ -170,6 +208,11 @@ export function ProfessorPage() {
                 : "Player",
             bakeryName:
               typeof data.bakeryName === "string" ? data.bakeryName : undefined,
+            teamName:
+              typeof data.teamName === "string" ? data.teamName : undefined,
+            teamId:
+              typeof data.teamId === "string" ? data.teamId : undefined,
+            role,
             joinedAt: (data.joinedAt as Timestamp | null) ?? null,
           };
         });
@@ -189,6 +232,62 @@ export function ProfessorPage() {
           "Could not load the roster. Confirm rules allow professor reads.",
         );
         setRosterReady(true);
+      },
+    );
+    return unsubscribe;
+  }, [gameId]);
+
+  // Teams collection mirror — one row per team in the monitor grid.
+  // Team docs live at `/games/{gameId}/teams/{teamId}` and hold
+  // `{name, roleAssignments: {uid -> role|null}}` (see TeamPage.tsx
+  // and backend/functions/index.js::updateTeamName).
+  useEffect(() => {
+    if (!gameId) {
+      setTeams([]);
+      return;
+    }
+    const teamsRef = collection(db, "games", gameId, "teams");
+    const unsubscribe = onSnapshot(
+      teamsRef,
+      (snap) => {
+        const list: ProfessorTeamEntry[] = snap.docs.map((d) => {
+          const data = d.data() as DocumentData;
+          const rawAssignments =
+            (data.roleAssignments ?? {}) as Record<string, unknown>;
+          const roleAssignments: Record<string, PlayerRole | null> = {};
+          for (const [uid, raw] of Object.entries(rawAssignments)) {
+            if (
+              raw === "operations" ||
+              raw === "advertising" ||
+              raw === "finance" ||
+              raw === "solo"
+            ) {
+              roleAssignments[uid] = raw;
+            } else {
+              roleAssignments[uid] = null;
+            }
+          }
+          return {
+            teamId: d.id,
+            name: typeof data.name === "string" ? data.name : null,
+            roleAssignments,
+            createdAt: (data.createdAt as Timestamp | null) ?? null,
+          };
+        });
+        list.sort((a, b) => {
+          const ta = a.createdAt?.toMillis?.() ?? Number.POSITIVE_INFINITY;
+          const tb = b.createdAt?.toMillis?.() ?? Number.POSITIVE_INFINITY;
+          if (ta !== tb) return ta - tb;
+          return a.teamId.localeCompare(b.teamId);
+        });
+        setTeams(list);
+        setTeamsError(null);
+      },
+      (err) => {
+        console.error("professor: teams listener error:", err);
+        setTeamsError(
+          "Could not load teams. Confirm rules allow professor reads.",
+        );
       },
     );
     return unsubscribe;
@@ -522,15 +621,44 @@ export function ProfessorPage() {
         </p>
       )}
 
-      {gameId && roster.length > 0 && isRunning && (() => {
+      {gameId && teams.length > 0 && isRunning && (() => {
         const currentBasePhase = phase ? parseGamePhase(phase, currentRound).base : null;
         const currentSubmissions: Record<string, SubmissionEntry> =
           currentBasePhase ? (submissions[currentBasePhase] ?? {}) : {};
-        const submittedCount = roster.filter(
-          (p) => currentSubmissions[p.uid]?.status === "submitted",
-        ).length;
-        const allReady = roster.length > 0 && submittedCount === roster.length;
-        const waitingCount = roster.length - submittedCount;
+        const ownerCheck: Record<BasePhase, ((r: PlayerRole) => boolean) | null> = {
+          decide: roleOwnsDecide,
+          bid_ad: roleOwnsAdBids,
+          bid_chef: roleOwnsChefBids,
+          roster: roleOwnsRoster,
+          lobby: null,
+          email: null,
+          simulate: null,
+          results: null,
+          conclusion: null,
+        };
+        const check = currentBasePhase ? ownerCheck[currentBasePhase] : null;
+        const teamOwnerUid = (team: ProfessorTeamEntry): string | null => {
+          const memberUids = Object.keys(team.roleAssignments);
+          if (!check) return null;
+          for (const uid of memberUids) {
+            const role = team.roleAssignments[uid];
+            if (role && check(role)) return uid;
+          }
+          if (memberUids.length === 1) {
+            const only = memberUids[0];
+            const role = team.roleAssignments[only];
+            if (role === null || role === "solo") return only;
+          }
+          return null;
+        };
+        const submittedCount = check
+          ? teams.filter((team) => {
+              const uid = teamOwnerUid(team);
+              return uid && currentSubmissions[uid]?.status === "submitted";
+            }).length
+          : 0;
+        const allReady = teams.length > 0 && submittedCount === teams.length;
+        const waitingCount = teams.length - submittedCount;
         return (
           <div
             className={`prof-phase-readiness prof-phase-readiness--${allReady ? "go" : "wait"}`}
@@ -642,11 +770,13 @@ export function ProfessorPage() {
         </p>
       )}
 
-      {/* Per-phase submission grid. */}
-      {gameId && roster.length > 0 && (
+      {/* Per-team submission grid. Teams own phases, not individual
+          players — each phase is submitted by the role-owner on the
+          team, so we check each team row against the owner's uid. */}
+      {gameId && teams.length > 0 && (
         <section className="professor-page__monitor">
           <h2 className="professor-page__monitor-title">
-            Players ({roster.length})
+            Teams ({teams.length})
             {currentRound > 0 && (
               <span className="professor-page__monitor-round">
                 · Round {currentRound}
@@ -657,9 +787,9 @@ export function ProfessorPage() {
             )}
           </h2>
 
-          {rosterError && (
+          {(rosterError || teamsError) && (
             <p className="professor-page__error" role="alert">
-              {rosterError}
+              {rosterError ?? teamsError}
             </p>
           )}
           {submissionsError && (
@@ -672,50 +802,94 @@ export function ProfessorPage() {
             <thead>
               <tr>
                 <th>#</th>
-                <th>Player</th>
-                <th>Bakery</th>
+                <th>Team</th>
+                <th>Members</th>
                 {SUBMISSION_PHASES.map((p) => (
                   <th key={p.key}>{p.label}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {roster.map((entry, i) => (
-                <tr key={entry.uid}>
-                  <td>{i + 1}</td>
-                  <td>{entry.displayName}</td>
-                  <td>{entry.bakeryName ?? "—"}</td>
-                  {SUBMISSION_PHASES.map((p) => {
-                    const sub = submissions[p.key]?.[entry.uid];
-                    const submitted = sub?.status === "submitted";
-                    return (
-                      <td
-                        key={p.key}
-                        className={
-                          "professor-monitor-table__cell" +
-                          (submitted
-                            ? " professor-monitor-table__cell--ok"
-                            : " professor-monitor-table__cell--pending")
-                        }
-                        title={
-                          submitted
-                            ? `Submitted${sub?.role ? ` as ${sub.role}` : ""}`
-                            : "Not yet submitted"
-                        }
-                      >
-                        {submitted ? "✓" : "⏳"}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
+              {teams.map((team, i) => {
+                const memberUids = Object.keys(team.roleAssignments);
+                const findOwnerUid = (
+                  check: (role: PlayerRole) => boolean,
+                ): string | null => {
+                  for (const uid of memberUids) {
+                    const role = team.roleAssignments[uid];
+                    if (role && check(role)) return uid;
+                  }
+                  if (memberUids.length === 1) {
+                    const only = memberUids[0];
+                    const role = team.roleAssignments[only];
+                    if (role === null || role === "solo") return only;
+                  }
+                  return null;
+                };
+                const phaseOwnerUid: Record<BasePhase, string | null> = {
+                  decide: findOwnerUid(roleOwnsDecide),
+                  bid_ad: findOwnerUid(roleOwnsAdBids),
+                  bid_chef: findOwnerUid(roleOwnsChefBids),
+                  roster: findOwnerUid(roleOwnsRoster),
+                  lobby: null,
+                  email: null,
+                  simulate: null,
+                  results: null,
+                  conclusion: null,
+                };
+                return (
+                  <tr key={team.teamId}>
+                    <td>{i + 1}</td>
+                    <td>{team.name ?? "(unnamed team)"}</td>
+                    <td className="professor-monitor-table__members">
+                      {memberUids.length === 0
+                        ? "—"
+                        : memberUids
+                            .map((uid) => {
+                              const player = rosterByUid[uid];
+                              const name = player?.displayName ?? uid.slice(0, 6);
+                              const role = team.roleAssignments[uid];
+                              const roleLabel = role
+                                ? PLAYER_ROLE_LABELS[role]
+                                : "unassigned";
+                              return `${name} (${roleLabel})`;
+                            })
+                            .join(", ")}
+                    </td>
+                    {SUBMISSION_PHASES.map((p) => {
+                      const ownerUid = phaseOwnerUid[p.key];
+                      const sub = ownerUid
+                        ? submissions[p.key]?.[ownerUid]
+                        : undefined;
+                      const submitted = sub?.status === "submitted";
+                      const cellClass =
+                        "professor-monitor-table__cell" +
+                        (!ownerUid
+                          ? " professor-monitor-table__cell--na"
+                          : submitted
+                          ? " professor-monitor-table__cell--ok"
+                          : " professor-monitor-table__cell--pending");
+                      const title = !ownerUid
+                        ? "No role-owner assigned yet"
+                        : submitted
+                        ? `Submitted${sub?.role ? ` as ${sub.role}` : ""}`
+                        : "Not yet submitted";
+                      return (
+                        <td key={p.key} className={cellClass} title={title}>
+                          {!ownerUid ? "—" : submitted ? "✓" : "⏳"}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </section>
       )}
 
-      {gameId && rosterReady && roster.length === 0 && !rosterError && (
-        <p className="professor-page__note">No players have joined yet.</p>
+      {gameId && rosterReady && teams.length === 0 && !rosterError && !teamsError && (
+        <p className="professor-page__note">No teams have joined yet.</p>
       )}
     </PageShell>
   );

@@ -31,6 +31,9 @@ interface LeaderboardRanking {
   rank: number;
   playerId: string;
   displayName: string;
+  /** Canonical team identity mirrored onto the leaderboard doc. */
+  teamName?: string;
+  /** Legacy field — kept only for backward compatibility. */
   bakeryName?: string;
   revenueNet?: number;
   cumulativeRevenue?: number;
@@ -124,6 +127,16 @@ export function ConclusionPage() {
             chefSatisfactionScore: data.chefSatisfactionScore,
             productBreakdown: data.productBreakdown,
             auctionResults: {
+              adWins: Array.isArray(data.adWins)
+                ? data.adWins
+                : data.adWon
+                  ? [{ adType: data.adWon, amount: data.adPaid ?? 0 }]
+                  : [],
+              chefsWon: Array.isArray(data.chefsWon)
+                ? data.chefsWon
+                : data.chefWon
+                  ? [data.chefWon]
+                  : [],
               adWon: data.adWon ?? null,
               chefWon: data.chefWon ?? null,
             },
@@ -186,9 +199,9 @@ export function ConclusionPage() {
             👑
           </div>
           <div className="conclusion-page__winner-meta">
-            <div className="conclusion-page__winner-label">Winning bakery</div>
+            <div className="conclusion-page__winner-label">Winning team</div>
             <div className="conclusion-page__winner-name">
-              {winner.bakeryName || winner.displayName}
+              {winner.teamName || winner.bakeryName || winner.displayName}
               {winner.playerId === playerId && (
                 <span className="conclusion-page__winner-you"> (you!)</span>
               )}
@@ -203,7 +216,7 @@ export function ConclusionPage() {
 
       {/* Your final numbers — the ONLY place budget is allowed. */}
       <section className="conclusion-page__yours">
-        <h2 className="conclusion-page__section-title">Your bakery</h2>
+        <h2 className="conclusion-page__section-title">Your team</h2>
         <div className="conclusion-page__yours-grid">
           <StatCard
             label="Final net revenue"
@@ -230,7 +243,7 @@ export function ConclusionPage() {
             <thead>
               <tr>
                 <th>#</th>
-                <th>Bakery</th>
+                <th>Team</th>
                 <th>Net revenue</th>
                 <th>Budget remaining</th>
               </tr>
@@ -247,7 +260,7 @@ export function ConclusionPage() {
                 >
                   <td>{r.rank}</td>
                   <td>
-                    {r.bakeryName || r.displayName}
+                    {r.teamName || r.bakeryName || r.displayName}
                     {r.playerId === playerId && " (you)"}
                   </td>
                   <td>

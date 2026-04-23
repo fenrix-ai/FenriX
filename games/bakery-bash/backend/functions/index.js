@@ -265,57 +265,88 @@ function assertRoleAllowed(playerRole, allowedRoles) {
 
 // ---------------------------------------------------------------------------
 // updateTopBids — BE-25 competing-bid surface
-// After a successful submitBids, update the round's topBids map so the FE
+// After a successful submitBids, recompute the round's topBids map so the FE
 // can surface the current top VALUE for each ad slot / chef without revealing
-// who the high bidder is.  Non-fatal: logged and swallowed on failure.
+// who the high bidder is.
+//
+// Unlike the previous implementation (monotonic-only: "only accept amounts
+// greater than the current top"), this one RECOMPUTES the max by scanning
+// every player's current `bids/round_{N}` document. That's required so that
+// when the previously-highest bidder edits their bid down, the displayed top
+// actually falls instead of staying stale. Non-fatal: logged + swallowed
+// on failure to avoid breaking submitBids's critical path.
 // ---------------------------------------------------------------------------
-async function updateTopBids(gameRef, round, bidType, validated) {
+async function updateTopBids(gameRef, round, bidType /* , validated */) {
   const roundRef = gameRef.collection('rounds').doc(`round_${round}`);
+  const roundId = `round_${round}`;
   try {
-    await db.runTransaction(async (tx) => {
-      const roundSnap = await tx.get(roundRef);
-      const data = (roundSnap.exists && roundSnap.data()) || {};
-      const topBids = data.topBids || {};
-      const updates = {};
+    // Read every player's round-scoped bid doc. This is O(players) per
+    // submit — acceptable for class-sized games (<= ~40 students).
+    const playersSnap = await gameRef.collection('players').get();
+    const bidSnaps = await Promise.all(
+      playersSnap.docs.map((pd) => pd.ref.collection('bids').doc(roundId).get())
+    );
 
-      if (bidType === 'ad') {
-        const adTop = topBids.ad || {};
-        for (const [adType, amount] of Object.entries(validated || {})) {
-          if (amount > 0 && amount > numberOrDefault(adTop[adType], 0)) {
-            updates[`topBids.ad.${adType}`] = amount;
-          }
-        }
-      } else {
-        const chefTop = topBids.chef || {};
-        for (const bid of (Array.isArray(validated) ? validated : [])) {
-          const { chefId, amount } = bid || {};
-          if (chefId && amount > 0 && amount > numberOrDefault(chefTop[chefId], 0)) {
-            updates[`topBids.chef.${chefId}`] = amount;
+    const adTopBids = {};   // adType -> max amount
+    const chefTopBids = {}; // chefId -> max amount
+
+    for (const bSnap of bidSnaps) {
+      if (!bSnap.exists) continue;
+      const bData = bSnap.data() || {};
+
+      if (bidType === 'ad' || bidType === 'all') {
+        const ad = (bData && bData.ad) || {};
+        for (const [slot, amount] of Object.entries(ad)) {
+          const a = numberOrDefault(amount, 0);
+          if (a > 0 && a > numberOrDefault(adTopBids[slot], 0)) {
+            adTopBids[slot] = a;
           }
         }
       }
 
-      if (Object.keys(updates).length === 0) return;
-      updates.updatedAt = FieldValue.serverTimestamp();
-
-      if (roundSnap.exists) {
-        tx.update(roundRef, updates);
-      } else {
-        // Round doc may not exist yet during early bid phase — set with merge.
-        const topBidsPayload = { ad: {}, chef: {} };
-        for (const [key, val] of Object.entries(updates)) {
-          if (key === 'updatedAt') continue;
-          const parts = key.split('.');  // ['topBids', 'ad'|'chef', slot]
-          if (parts[1] === 'ad' && parts[2]) topBidsPayload.ad[parts[2]] = val;
-          else if (parts[1] === 'chef' && parts[2]) topBidsPayload.chef[parts[2]] = val;
+      if (bidType === 'chef' || bidType === 'all') {
+        const chefArr = Array.isArray(bData && bData.chef) ? bData.chef : [];
+        for (const cb of chefArr) {
+          const chefId = cb && cb.chefId;
+          const amount = numberOrDefault(cb && cb.amount, 0);
+          if (chefId && amount > 0 && amount > numberOrDefault(chefTopBids[chefId], 0)) {
+            chefTopBids[chefId] = amount;
+          }
         }
-        tx.set(roundRef, {
+      }
+    }
+
+    // Fully replace the recomputed side (dotted-key `update`) so stale
+    // entries from previously-leading bidders — who then reduced their
+    // bid — are actually cleared. Firestore's set+merge on nested objects
+    // deep-merges and would preserve obsolete keys, hence `update` here.
+    // We attempt update first; if the round doc doesn't exist yet (early
+    // bid phase), we fall back to a one-shot set.
+    const updates = { updatedAt: FieldValue.serverTimestamp() };
+    if (bidType === 'ad' || bidType === 'all') {
+      updates['topBids.ad'] = adTopBids;
+    }
+    if (bidType === 'chef' || bidType === 'all') {
+      updates['topBids.chef'] = chefTopBids;
+    }
+    try {
+      await roundRef.update(updates);
+    } catch (updateErr) {
+      // NOT_FOUND (code 5) when doc doesn't exist yet — safe to fall back.
+      const code = updateErr && (updateErr.code || updateErr.status);
+      if (code === 5 || updateErr.code === 'not-found') {
+        const seed = {
           round,
-          topBids: topBidsPayload,
+          topBids: {},
           updatedAt: FieldValue.serverTimestamp(),
-        }, { merge: true });
+        };
+        if (bidType === 'ad' || bidType === 'all') seed.topBids.ad = adTopBids;
+        if (bidType === 'chef' || bidType === 'all') seed.topBids.chef = chefTopBids;
+        await roundRef.set(seed, { merge: true });
+      } else {
+        throw updateErr;
       }
-    });
+    }
   } catch (err) {
     logger.warn('updateTopBids side-effect failed — non-fatal.', {
       gameId: gameRef.id, round, bidType, error: err && err.message,
@@ -366,9 +397,23 @@ async function loadRoundPreferences(gameRef, round) {
 }
 
 /**
- * Load all auction results for a round: read `rounds/{round}` doc and any
- * child auction docs. Returns a Map<playerId, { adWon, adBidPaid, chefsWon, chefBidPaid }>.
+ * Load all auction results for a round. Returns:
+ *   Map<playerId, {
+ *     adWins: [{adType, amount}, ...],  // NEW: multi-ad-slot wins
+ *     adWon:   AdType | null,            // legacy: first of adWins for old consumers
+ *     adBidPaid: number,                 // sum of winning ad bids
+ *     chefsWon: Chef[],                  // multi-chef wins (pre-existing)
+ *     chefBidPaid: number,
+ *   }>
+ *
+ * Handles two `adAuctionResults` shapes on disk:
+ *   - NEW: { [playerId]: { wins: [{adType, amount}], totalPaid } }
+ *   - LEGACY: { [playerId]: { adType, amount } }   (single-win, pre-multi-ad)
  */
+function emptyAuctionEntry() {
+  return { adWins: [], adWon: null, adBidPaid: 0, chefsWon: [], chefBidPaid: 0 };
+}
+
 async function loadAuctionResultsByPlayer(gameRef, round) {
   const byPlayer = new Map();
   const roundRef = gameRef.collection('rounds').doc(`round_${round}`);
@@ -379,21 +424,29 @@ async function loadAuctionResultsByPlayer(gameRef, round) {
   const adResults = objectOrDefault(data.adAuctionResults, {});
   const chefResults = objectOrDefault(data.chefAuctionResults, {});
 
-  // Ad auction: keyed by playerId → { adType, amount }
   for (const [playerId, r] of Object.entries(adResults)) {
-    if (!byPlayer.has(playerId)) {
-      byPlayer.set(playerId, { adWon: null, adBidPaid: 0, chefsWon: [], chefBidPaid: 0 });
-    }
+    if (!byPlayer.has(playerId)) byPlayer.set(playerId, emptyAuctionEntry());
     const entry = byPlayer.get(playerId);
-    entry.adWon = (r && r.adType) || null;
-    entry.adBidPaid = numberOrDefault(r && r.amount, 0);
+
+    if (r && Array.isArray(r.wins)) {
+      // NEW shape
+      entry.adWins = r.wins.map((w) => ({
+        adType: (w && w.adType) || null,
+        amount: numberOrDefault(w && w.amount, 0),
+      })).filter((w) => w.adType);
+      entry.adBidPaid = numberOrDefault(r.totalPaid, entry.adWins.reduce((s, w) => s + w.amount, 0));
+    } else if (r && r.adType) {
+      // LEGACY shape — coerce to a single-entry adWins array.
+      entry.adWins = [{ adType: r.adType, amount: numberOrDefault(r.amount, 0) }];
+      entry.adBidPaid = numberOrDefault(r.amount, 0);
+    }
+
+    // Back-compat scalar for consumers that haven't migrated yet.
+    entry.adWon = entry.adWins.length > 0 ? entry.adWins[0].adType : null;
   }
 
-  // Chef auction: keyed by playerId → { chefs: [chef], totalPaid }
   for (const [playerId, r] of Object.entries(chefResults)) {
-    if (!byPlayer.has(playerId)) {
-      byPlayer.set(playerId, { adWon: null, adBidPaid: 0, chefsWon: [], chefBidPaid: 0 });
-    }
+    if (!byPlayer.has(playerId)) byPlayer.set(playerId, emptyAuctionEntry());
     const entry = byPlayer.get(playerId);
     entry.chefsWon = Array.isArray(r && r.chefs) ? r.chefs : [];
     entry.chefBidPaid = numberOrDefault(r && r.totalPaid, 0);
@@ -511,6 +564,90 @@ async function resolveAndApplyChefAuction(gameRef, round, config) {
     round,
     winnersCount: winners.size,
     totalBids: allBids.length,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// resolveAndApplyAdAuction — first-price, per-slot auction for the 4 ad slots
+// (TV, Radio, Newspaper, Billboard). Each slot is contested independently:
+// the highest bid wins that slot; ties are broken by earliest submission
+// timestamp (players who bid first and got outbid then rebid the exact same
+// amount lose the tie, which matches intuition that whoever first "claimed"
+// the slot at that price stays ahead). A player/team may win 0, 1, or
+// multiple slots across the four available.
+//
+// Runs after the `bid_ad → bid_chef` phase transition. Idempotent: reading
+// state from players/{uid}/bids/round_{N} means re-running produces the same
+// result unless bids changed, and we always rewrite adAuctionResults in full.
+// ---------------------------------------------------------------------------
+const AD_SLOTS = ['TV', 'Radio', 'Newspaper', 'Billboard'];
+
+async function resolveAndApplyAdAuction(gameRef, round /* , config */) {
+  const roundId = `round_${round}`;
+  const roundRef = gameRef.collection('rounds').doc(roundId);
+
+  const playersSnap = await gameRef.collection('players').get();
+  if (playersSnap.empty) {
+    logger.info('No players for ad auction; skipping.', { gameId: gameRef.id, round });
+    return;
+  }
+
+  // Collect every (playerId, slot, amount, submittedAt) triple above zero.
+  const bidSnaps = await Promise.all(
+    playersSnap.docs.map((pd) => pd.ref.collection('bids').doc(roundId).get())
+  );
+
+  // slot -> Array<{ playerId, amount, submittedAtMs }>
+  const bidsBySlot = new Map(AD_SLOTS.map((s) => [s, []]));
+  for (let i = 0; i < playersSnap.docs.length; i++) {
+    const pd = playersSnap.docs[i];
+    const bSnap = bidSnaps[i];
+    if (!bSnap.exists) continue;
+    const bData = bSnap.data() || {};
+    const ad = (bData && bData.ad) || {};
+    const submittedAtMs = (bData.adSubmittedAt && typeof bData.adSubmittedAt.toMillis === 'function')
+      ? bData.adSubmittedAt.toMillis()
+      : Number.POSITIVE_INFINITY;
+
+    for (const slot of AD_SLOTS) {
+      const amount = numberOrDefault(ad[slot], 0);
+      if (amount > 0) {
+        bidsBySlot.get(slot).push({ playerId: pd.id, amount, submittedAtMs });
+      }
+    }
+  }
+
+  // Resolve each slot independently: highest amount wins; ties broken by
+  // earliest submission (smaller submittedAtMs first).
+  const adAuctionResults = {}; // playerId -> { wins: [{adType, amount}], totalPaid }
+  for (const slot of AD_SLOTS) {
+    const candidates = bidsBySlot.get(slot);
+    if (!candidates.length) continue;
+    candidates.sort((a, b) => {
+      if (b.amount !== a.amount) return b.amount - a.amount;
+      return a.submittedAtMs - b.submittedAtMs;
+    });
+    const winner = candidates[0];
+    if (!adAuctionResults[winner.playerId]) {
+      adAuctionResults[winner.playerId] = { wins: [], totalPaid: 0 };
+    }
+    adAuctionResults[winner.playerId].wins.push({
+      adType: slot,
+      amount: winner.amount,
+    });
+    adAuctionResults[winner.playerId].totalPaid += winner.amount;
+  }
+
+  await roundRef.set({
+    adAuctionResults,
+    adAuctionResolvedAt: FieldValue.serverTimestamp(),
+  }, { merge: true });
+
+  logger.info('Ad auction resolved.', {
+    gameId: gameRef.id,
+    round,
+    slotsAwarded: Object.values(adAuctionResults).reduce((n, r) => n + r.wins.length, 0),
+    winnerCount: Object.keys(adAuctionResults).length,
   });
 }
 
@@ -666,17 +803,30 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
     const takenRoles = new Set(Object.values(existingRoleAssignments));
     const autoRole = ROLES_ORDER.find((r) => !takenRoles.has(r)) || 'solo';
 
+    // The canonical team name lives on `teams/{teamId}.name`. We mirror
+    // it onto `players/{uid}.teamName` (and roster) so individual players
+    // see the current team name everywhere without needing a teams
+    // subscription. Keep `bakeryName` for legacy readers but the preferred
+    // display is `teamName`.
+    const existingTeamName =
+      tSnap.exists && typeof (tSnap.data() || {}).name === 'string'
+        ? (tSnap.data() || {}).name
+        : null;
+    const teamName = existingTeamName || bakeryName;
+
     if (pSnap.exists) {
       // Rejoin: refresh display name / bakery name but do not reset progress.
       transaction.update(playerRef, {
         displayName,
         bakeryName,
+        teamName,
         updatedAt: FieldValue.serverTimestamp(),
       });
       transaction.set(rosterRef, {
         uid: auth.uid,
         displayName,
         bakeryName,
+        teamName,
         updatedAt: FieldValue.serverTimestamp(),
         ...(rSnap.exists ? {} : { joinedAt: FieldValue.serverTimestamp() }),
       }, { merge: true });
@@ -688,6 +838,7 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
       playerId: auth.uid,
       displayName,
       bakeryName,
+      teamName,
       teamId,                                    // BE-20
       role: autoRole,                            // BE-20
       joinedAt: FieldValue.serverTimestamp(),
@@ -731,6 +882,9 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
       uid: auth.uid,
       displayName,
       bakeryName,
+      teamName,
+      teamId,
+      role: autoRole,
       joinedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
@@ -932,6 +1086,12 @@ exports.advanceGamePhase = onCall(CALLABLE_OPTS, async (request) => {
         chefPool: pool,
         chefPoolGeneratedAt: FieldValue.serverTimestamp(),
       }, { merge: true });
+
+      // Resolve the ad auction now that the bid_ad phase is done. The
+      // bid_ad → bid_chef boundary is our "close of bids" for ads; after
+      // this runs, downstream simulation reads adAuctionResults from the
+      // round doc (via loadAuctionResultsByPlayer).
+      await resolveAndApplyAdAuction(gameRef, round, config);
     }
 
     if (basePhaseName === 'roster') {
@@ -1155,6 +1315,14 @@ async function runSimulationAndPersist(gameRef, round, config) {
         selloutAnywhere: r.selloutAnywhere || false,
         burglary: r.burglary || false,           // BE-N06
         burglaryAmount: r.burglaryAmount || 0,   // BE-N06
+        // Auction outcomes — surfaced so ResultsPhase / AdWinnerBanner
+        // can finally render what the player/team won. `adWins` is the
+        // canonical multi-slot shape; `adWon` is kept for legacy readers.
+        adWins: Array.isArray(r.adWins) ? r.adWins : [],
+        adWon: r.adWon || null,
+        adPaid: numberOrDefault(r.adBidPaid, 0),
+        chefsWon: Array.isArray(r.chefsWon) ? r.chefsWon : [],
+        chefBidPaid: numberOrDefault(r.chefBidPaid, 0),
       },
       updatedAt: FieldValue.serverTimestamp(),
     });
@@ -1189,6 +1357,12 @@ async function runSimulationAndPersist(gameRef, round, config) {
       returningCustomersEarned: r.returningCustomersEarned,
       burglary: r.burglary || false,             // BE-N06
       burglaryAmount: r.burglaryAmount || 0,     // BE-N06
+      // Auction outcomes mirrored into rounds subcollection too.
+      adWins: Array.isArray(r.adWins) ? r.adWins : [],
+      adWon: r.adWon || null,
+      adPaid: numberOrDefault(r.adBidPaid, 0),
+      chefsWon: Array.isArray(r.chefsWon) ? r.chefsWon : [],
+      chefBidPaid: numberOrDefault(r.chefBidPaid, 0),
       computedAt: FieldValue.serverTimestamp(),
     });
 
@@ -2074,25 +2248,56 @@ exports.updateTeamName = onCall(CALLABLE_OPTS, async (request) => {
   if (!name)   throw new HttpsError('invalid-argument', 'name is required.');
   if (name.length > 64) throw new HttpsError('invalid-argument', 'name must be 64 characters or fewer.');
 
-  const teamRef   = db.collection('games').doc(gameId).collection('teams').doc(teamId);
-  const playerRef = db.collection('games').doc(gameId).collection('players').doc(auth.uid);
+  const gameRef   = db.collection('games').doc(gameId);
+  const teamRef   = gameRef.collection('teams').doc(teamId);
+  const playerRef = gameRef.collection('players').doc(auth.uid);
 
-  await db.runTransaction(async (tx) => {
-    const [teamSnap, playerSnap] = await Promise.all([
-      tx.get(teamRef),
-      tx.get(playerRef),
-    ]);
+  // Step 1 — validate + rename the team in a transaction.
+  const memberUids = await (async () => {
+    let uids = [];
+    await db.runTransaction(async (tx) => {
+      const [teamSnap, playerSnap] = await Promise.all([
+        tx.get(teamRef),
+        tx.get(playerRef),
+      ]);
 
-    if (!teamSnap.exists)   throw new HttpsError('not-found', 'Team not found.');
-    if (!playerSnap.exists) throw new HttpsError('not-found', 'You are not in this game.');
+      if (!teamSnap.exists)   throw new HttpsError('not-found', 'Team not found.');
+      if (!playerSnap.exists) throw new HttpsError('not-found', 'You are not in this game.');
 
-    const roleAssignments = (teamSnap.data() || {}).roleAssignments || {};
-    if (!(auth.uid in roleAssignments)) {
-      throw new HttpsError('permission-denied', 'You are not a member of this team.');
+      const roleAssignments = (teamSnap.data() || {}).roleAssignments || {};
+      if (!(auth.uid in roleAssignments)) {
+        throw new HttpsError('permission-denied', 'You are not a member of this team.');
+      }
+      uids = Object.keys(roleAssignments);
+
+      tx.update(teamRef, { name, updatedAt: FieldValue.serverTimestamp() });
+    });
+    return uids;
+  })();
+
+  // Step 2 — mirror the new name onto every teammate's player + roster doc
+  // so UI components that read `player.teamName` stay in sync without
+  // needing their own teams-collection subscription. Non-fatal: logged
+  // and swallowed if a write fails, because the team doc is the source
+  // of truth regardless.
+  try {
+    const batch = db.batch();
+    for (const uid of memberUids) {
+      batch.update(gameRef.collection('players').doc(uid), {
+        teamName: name,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      batch.set(gameRef.collection('roster').doc(uid), {
+        teamName: name,
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
     }
-
-    tx.update(teamRef, { name, updatedAt: FieldValue.serverTimestamp() });
-  });
+    await batch.commit();
+  } catch (err) {
+    logger.warn('updateTeamName mirror write failed — non-fatal.', {
+      gameId, teamId, error: err && err.message,
+    });
+  }
 
   return { success: true };
 });

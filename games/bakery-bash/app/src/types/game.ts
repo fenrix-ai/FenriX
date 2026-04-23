@@ -379,13 +379,25 @@ export interface GameConfigParams {
  * (maintenance system + chef satisfaction overhaul) ship. Consumers must
  * render gracefully when they are missing.
  */
+/** Single ad-slot win: which slot + what the team paid for it. */
+export interface AdWin {
+  adType: AdType;
+  amount: number;
+}
+
 export interface RoundResult {
   round: number;
   revenue: number;
   customerCount: number;
   customerSatisfaction: number;
   auctionResults: {
+    /** Multi-slot: every ad slot the team won this round. */
+    adWins: AdWin[];
+    /** Every specialty chef the team hired through the chef auction. */
+    chefsWon: string[];
+    /** Legacy: first entry of adWins, or null. Prefer adWins. */
     adWon: AdType | null;
+    /** Legacy: first entry of chefsWon, or null. Prefer chefsWon. */
     chefWon: string | null;
   };
   /** Aggregate chef-satisfaction 0–100 (average across specialty chefs). */
@@ -412,9 +424,12 @@ export interface RoundResult {
   selloutAnywhere?: boolean;
   /** Per-product unit-sold breakdown, used for the Results breakdown table. */
   productBreakdown?: Partial<Record<ProductKey, number>>;
-  /** Ad surface the player won this round, with paid amount. */
+  /** Legacy first-ad accessor kept so older readers don't crash. */
   adWon?: AdType | null;
+  /** Sum of all ad bids the team paid this round. */
   adPaid?: number;
+  /** Sum of all chef bids the team paid this round. */
+  chefBidPaid?: number;
 }
 
 /**
@@ -596,6 +611,9 @@ export interface LeaderboardRanking {
   rank: number;
   playerId: string;
   displayName: string;
+  /** Canonical team identity mirrored onto the leaderboard doc. */
+  teamName?: string;
+  /** Legacy field — kept only for backward compatibility with pre-DEC-23 data. */
   bakeryName?: string;
   revenueNet?: number;
   cumulativeRevenue?: number;

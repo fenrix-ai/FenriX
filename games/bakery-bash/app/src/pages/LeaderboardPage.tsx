@@ -14,7 +14,7 @@ import { PageShell } from "../components/ui/PageShell";
  *
  * Columns:
  *   - Rank             (from backend `rank`)
- *   - Bakery           (`bakeryName` || `displayName`)
+ *   - Team             (`teamName` || legacy `bakeryName` || `displayName`)
  *   - Revenue (Round)  (`lastRoundRevenue`) — FE-7 new column
  *   - Revenue (Total)  (`revenueNet` → `cumulativeRevenue`)
  *   - Δ                (`rankChange` indicator) — FE-7 new column
@@ -89,7 +89,7 @@ export function LeaderboardPage() {
         <thead>
           <tr>
             <th>Rank</th>
-            <th>Bakery</th>
+            <th>Team</th>
             <th>Revenue (Round)</th>
             <th>Revenue (Total)</th>
             <th aria-label="Rank change">Δ</th>
@@ -130,7 +130,7 @@ export function LeaderboardPage() {
                 >
                   <td>{entry.rank}</td>
                   <td>
-                    {entry.bakeryName || entry.displayName}
+                    {entry.teamName || entry.bakeryName || entry.displayName}
                     {isYou && (
                       <span className="leaderboard-table__you-tag"> (you)</span>
                     )}
