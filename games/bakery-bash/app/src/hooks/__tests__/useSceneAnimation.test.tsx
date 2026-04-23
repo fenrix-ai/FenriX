@@ -231,31 +231,39 @@ describe('useSceneAnimation — dollar popups', () => {
     }
   })
 
-  it('drains dollar popups after their ~900ms lifetime', () => {
+  it('drains dollar popups to 0 between sales when spawning is sparse', () => {
+    // customerCount=5 → base interval 24s. First spawn ~24s, walk-in ~5s,
+    // sale at ~29s. Popups expire by ~30s. Next spawn not until ~48s.
     const { result } = renderHook(() =>
       useSceneAnimation({
-        customerCount: 80,
+        customerCount: 5,
         simDurationMs: 120_000,
         isNight: false,
         reducedMotion: false,
       })
     )
 
-    // Wait for a sale to fire.
-    act(() => {
-      vi.advanceTimersByTime(8000)
-    })
-
-    // Freeze the pool count, then wait well past the 900ms lifetime.
-    // Any dollars that were alive must expire.
-    const beforeDrain = result.current.dollars.length
-    act(() => {
-      vi.advanceTimersByTime(2000)
-    })
-
-    // Pool should not grow unbounded — 4-6 new popups can appear from later
-    // sales, so we just require that the pool never exceeds a reasonable cap.
-    expect(result.current.dollars.length).toBeLessThanOrEqual(beforeDrain + 6)
+    // Observe the pool across the first 40s at 100ms granularity; verify it
+    // both rose above 0 (flurry fired) AND returned to 0 (drain completed).
+    let saw4Plus = false
+    let sawDrainAfterPeak = false
+    let peakSeen = false
+    for (let t = 0; t < 400; t++) {
+      act(() => {
+        vi.advanceTimersByTime(100)
+      })
+      const n = result.current.dollars.length
+      if (n >= 4) {
+        saw4Plus = true
+        peakSeen = true
+      }
+      if (peakSeen && n === 0) {
+        sawDrainAfterPeak = true
+        break
+      }
+    }
+    expect(saw4Plus).toBe(true)
+    expect(sawDrainAfterPeak).toBe(true)
   })
 })
 
@@ -291,5 +299,30 @@ describe('useSceneAnimation — isNight pause', () => {
       vi.advanceTimersByTime(2500)
     })
     expect(result.current.customers.length).toBeGreaterThanOrEqual(1)
+  })
+})
+
+describe('useSceneAnimation — cleanup', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('leaves no pending timers after unmount', () => {
+    const { unmount } = renderHook(() =>
+      useSceneAnimation({
+        customerCount: 80,
+        simDurationMs: 120_000,
+        isNight: false,
+        reducedMotion: false,
+      })
+    )
+    act(() => {
+      vi.advanceTimersByTime(5000)
+    })
+    unmount()
+    expect(vi.getTimerCount()).toBe(0)
   })
 })

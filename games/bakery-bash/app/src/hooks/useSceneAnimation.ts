@@ -143,6 +143,14 @@ export function useSceneAnimation(
     }
 
     const tick = () => {
+      // Skip when the tab is hidden so the queue doesn't spike on resume.
+      if (
+        typeof document !== 'undefined' &&
+        document.visibilityState !== 'visible'
+      ) {
+        lastTick = performance.now()
+        return
+      }
       const now = performance.now()
       const dt = (now - lastTick) / 1000
       lastTick = now
