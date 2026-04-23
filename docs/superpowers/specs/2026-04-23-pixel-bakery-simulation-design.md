@@ -3,7 +3,9 @@
 **Date:** 2026-04-23
 **Game:** Bakery Bash
 **Surface:** Per-player `SimulatePhase` screen (between-round simulation, ~2 min)
-**Status:** Design approved; ready for implementation plan
+**Status:** **Superseded** by [`2026-04-23-pixel-bakery-scene-undertale-design.md`](./2026-04-23-pixel-bakery-scene-undertale-design.md).
+
+> **⚠️ This spec is no longer current.** The intermediate top-down CC0-tile pivot committed at `3c4af2d` on `feat/bakery-scene-v2` did not produce a polished bakery; the team then pivoted to a hand-pixeled Undertale side-view approach that now covers both DecidePhase and SimulatePhase. See the linked replacement spec for the canonical design. Preserved here for history.
 
 ---
 
