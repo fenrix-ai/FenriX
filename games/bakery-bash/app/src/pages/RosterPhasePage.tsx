@@ -198,17 +198,6 @@ export function RosterPhasePage() {
       )}
 
       <div className="roster-phase-page__slots">
-        <div className="roster-phase-page__slot roster-phase-page__slot--base">
-          <div className="roster-phase-page__slot-label">Head Chef</div>
-          <div className="roster-phase-page__base-card">
-            <div className="roster-phase-page__base-portrait">👨‍🍳</div>
-            <div className="roster-phase-page__base-name">You</div>
-            <div className="roster-phase-page__base-hint">
-              Always in your kitchen.
-            </div>
-          </div>
-        </div>
-
         {Array.from({ length: SPECIALTY_CAP }, (_, i) => {
           const chef = specialtyChefs[i];
           return (

@@ -430,37 +430,23 @@ export function ProfessorPage() {
     paused
       ? callCallable("resumeGame", "resume", "Game resumed.")
       : callCallable("pauseGame", "pause", "Game paused.");
-  const onEnd = () => {
+  // End Game now also performs a full reset (the design spec merges the two
+  // buttons). We keep the destructive confirm copy, then fire `endGame`
+  // followed by `resetGame` so the professor has a single action that both
+  // stops play AND returns everyone to the lobby for a fresh run.
+  const onEnd = async () => {
     if (
       !window.confirm(
-        "End the game now? This is permanent — no further rounds will run.",
+        "End this game and clear all round data? Players will return to the lobby and can rejoin a fresh game.",
       )
     ) {
       return;
     }
-    void callCallable("endGame", "end", "Game ended.");
-  };
-
-  /**
-   * FE-6 — Reset the active game so it can be replayed from the lobby.
-   * Calls the `resetGame` Firebase callable (BE-6). If the callable has
-   * not been deployed yet (pre-BE-6 rollout), the error path surfaces a
-   * friendly note instead of a generic Firebase error code. We retain
-   * the `createdGame` banner and the local `gameId` so the professor
-   * can confirm the reset succeeded before creating a fresh session.
-   */
-  const onReset = () => {
-    if (
-      !window.confirm(
-        "This will delete all round data and reset all players. Are you sure?",
-      )
-    ) {
-      return;
-    }
-    void callCallable(
+    await callCallable("endGame", "end", "Game ended.");
+    await callCallable(
       "resetGame",
       "reset",
-      "Game reset — all round data cleared and players returned to lobby.",
+      "Game ended and all round data cleared.",
     );
   };
 
@@ -696,7 +682,19 @@ export function ProfessorPage() {
         <button
           className="btn btn--small btn--secondary"
           onClick={handleExtendPhase}
-          disabled={!!pendingAction || phase === "simulating" || phase === "game_over" || phase === "lobby"}
+          disabled={
+            !!pendingAction ||
+            !gameId ||
+            !isRunning ||
+            phase === "simulating" ||
+            phase === "game_over" ||
+            phase === "lobby"
+          }
+          title={
+            !isRunning
+              ? "Starts once the game is running."
+              : "Extend the current phase timer by 1 minute."
+          }
         >
           {pendingAction === "extend" ? "Extending…" : "+ 1 Min"}
         </button>
@@ -726,16 +724,9 @@ export function ProfessorPage() {
               : "Terminate the game immediately."
           }
         >
-          {pendingAction === "end" ? "Ending…" : "End Game"}
-        </button>
-
-        <button
-          className="btn btn--danger"
-          onClick={onReset}
-          disabled={!gameId || controlsDisabled}
-          title="Clear all round data and send players back to the lobby (BE-6)."
-        >
-          {pendingAction === "reset" ? "Resetting…" : "Reset Game"}
+          {pendingAction === "end" || pendingAction === "reset"
+            ? "Ending…"
+            : "End Game"}
         </button>
 
         <Link

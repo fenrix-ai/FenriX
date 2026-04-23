@@ -165,6 +165,7 @@ interface BackendChef {
   gender: unknown;
   name?: string;
   skillTier?: string;
+  minBidFloor?: number;
 }
 
 const BACKEND_SKILL_MAP: Record<string, SkillLevel> = {
@@ -198,6 +199,10 @@ function mapBackendChef(chef: BackendChef): ChefListing | null {
     name: chef.name || `${NATIONALITY_LABELS[nat]} Chef`,
     skill,
     multiplier: SKILL_CONFIG[skill].multiplier,
+    minBidFloor:
+      typeof chef.minBidFloor === "number" && chef.minBidFloor > 0
+        ? chef.minBidFloor
+        : undefined,
   };
 }
 
@@ -235,6 +240,11 @@ export function AuctionPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [chefBidInputs, setChefBidInputs] = useState<Record<string, string>>({});
+  // Free-typed text state for ad bids so the "0" placeholder clears on focus
+  // (matches the chef-bid UX). The underlying numeric `pendingAdBids` is
+  // still the source of truth for submission; this map only mirrors what the
+  // input element displays.
+  const [adBidInputs, setAdBidInputs] = useState<Record<string, string>>({});
   const [showExpiredPopup, setShowExpiredPopup] = useState(false);
 
   const parsed = parseGamePhase(phase, currentRound);
@@ -271,6 +281,7 @@ export function AuctionPage() {
     setTopBidsAd({});
     setTopBidsChef({});
     setChefBidInputs({});
+    setAdBidInputs({});
     if (!gameId || !currentRound) {
       return;
     }
@@ -397,10 +408,21 @@ export function AuctionPage() {
         // submit an empty array to advance the lifecycle without bidding.
         const chefBids: Array<{ chefId: string; amount: number }> = [];
         if (chefPoolIsReal) {
-          const poolIds = new Set(chefPool.map((c) => c.id));
+          const poolById = new Map(chefPool.map((c) => [c.id, c]));
           for (const [chefId, amount] of Object.entries(pendingChefBids)) {
-            if (!poolIds.has(chefId)) continue;
+            const chef = poolById.get(chefId);
+            if (!chef) continue;
             if (typeof amount !== "number" || amount <= 0) continue;
+            // Client-side minimum-bid guard (matches the backend enforcement
+            // in the chef-system module). The submit button is already
+            // disabled when `belowMinimum` is true per-card, but guard here
+            // too in case a player submits via the bulk "Submit Bids" path.
+            const floor = chef.minBidFloor ?? 0;
+            if (floor > 0 && amount < floor) {
+              setSubmitError("Bid above the minimum bid.");
+              setSubmitting(false);
+              return;
+            }
             chefBids.push({ chefId, amount });
           }
         }
@@ -585,12 +607,19 @@ export function AuctionPage() {
                         className="auction-ad__bid-input auction-page__bid-input"
                         placeholder="0"
                         min={0}
-                        value={pendingAdBids[ad.id] ?? 0}
+                        value={adBidInputs[ad.id] ?? ""}
                         disabled={timerExpired || bidsReadOnly}
                         readOnly={bidsReadOnly}
-                        onChange={(e) =>
-                          setAdBid(ad.id, parseInt(e.target.value, 10) || 0)
-                        }
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          setAdBidInputs((prev) => ({ ...prev, [ad.id]: raw }));
+                          const parsed = parseInt(raw, 10);
+                          if (!isNaN(parsed) && parsed >= 0) {
+                            setAdBid(ad.id, parsed);
+                          } else if (raw === "") {
+                            setAdBid(ad.id, 0);
+                          }
+                        }}
                       />
                     </div>
                   </div>
@@ -608,67 +637,115 @@ export function AuctionPage() {
             <div className="auction-chefs__grid">
               {chefPool.map((chef) => {
                 const skillCfg = SKILL_CONFIG[chef.skill];
+                const minBid =
+                  typeof chef.minBidFloor === "number"
+                    ? chef.minBidFloor
+                    : null;
+                const currentBidAmount = pendingChefBids[chef.id] ?? 0;
+                const belowMinimum =
+                  minBid !== null &&
+                  currentBidAmount > 0 &&
+                  currentBidAmount < minBid;
                 return (
                   <div
                     key={chef.id}
-                    className={`auction-chef ${skillCfg.cssClass}`}
+                    className={`auction-chef auction-chef--horizontal ${skillCfg.cssClass}`}
                   >
-                    <div className="auction-chef__portrait">
+                    <div className="auction-chef__portrait auction-chef__portrait--side">
                       <img
                         src={chefIcon(chef.nationality, chef.gender)}
                         alt={chef.name}
                         className="auction-chef__icon"
                       />
                     </div>
-                    <span
-                      className={`auction-chef__skill-tag auction-chef__skill-tag--${chef.skill}`}
-                    >
-                      {skillCfg.label}
-                    </span>
-                    <div className="auction-chef__info">
-                      <span className="auction-chef__name">{chef.name}</span>
-                    </div>
-                    <div className="auction-chef__top-bid">
-                      <span className="auction-chef__top-bid-label">Top Bid</span>
-                      <span className="auction-chef__top-bid-value">
-                        {typeof topBidsChef[chef.id] === "number"
-                          ? `$${topBidsChef[chef.id]!.toLocaleString()}`
-                          : "--"}
-                      </span>
-                    </div>
-                    <div className="auction-chef__bid">
-                      <label className="auction-chef__bid-label">
-                        Your Bid
-                      </label>
-                      <div className="auction-page__bid-wrapper">
-                        <span className="auction-page__bid-prefix">$</span>
-                        <input
-                          type="number"
-                          className="auction-chef__bid-input auction-page__bid-input"
-                          placeholder="0"
-                          min={0}
-                          value={chefBidInputs[chef.id] ?? ""}
-                          disabled={timerExpired || bidsReadOnly}
-                          readOnly={bidsReadOnly}
-                          onChange={(e) => {
-                            const raw = e.target.value;
-                            setChefBidInputs(prev => ({ ...prev, [chef.id]: raw }));
-                            const parsed = parseInt(raw, 10);
-                            if (!isNaN(parsed) && parsed >= 0) {
-                              setChefBid(chef.id, parsed);
-                            } else if (raw === "") {
-                              setChefBid(chef.id, 0);
-                            }
-                          }}
-                        />
+                    <div className="auction-chef__body">
+                      <div className="auction-chef__header-row">
+                        <span className="auction-chef__name">{chef.name}</span>
+                        <span
+                          className={`auction-chef__skill-tag auction-chef__skill-tag--${chef.skill}`}
+                        >
+                          {skillCfg.label}
+                        </span>
                       </div>
-                      <button
-                        className="btn btn--small chef-card__submit"
-                        disabled={timerExpired || !pendingChefBids[chef.id]}
-                        onClick={(e) => { e.preventDefault(); handleSubmitSingleBid(chef.id); }}
-                      >
-                        Submit Bid
-                      </button>
+                      <div className="auction-chef__bids-row">
+                        <div className="auction-chef__top-bid">
+                          <span className="auction-chef__top-bid-label">
+                            Top Bid
+                          </span>
+                          <span className="auction-chef__top-bid-value">
+                            {typeof topBidsChef[chef.id] === "number"
+                              ? `$${topBidsChef[chef.id]!.toLocaleString()}`
+                              : "--"}
+                          </span>
+                        </div>
+                        {minBid !== null && (
+                          <div className="auction-chef__min-bid">
+                            <span className="auction-chef__min-bid-label">
+                              Minimum Bid
+                            </span>
+                            <span className="auction-chef__min-bid-value">
+                              ${minBid.toLocaleString()}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="auction-chef__bid">
+                        <label className="auction-chef__bid-label">
+                          Your Bid
+                        </label>
+                        <div className="auction-page__bid-wrapper">
+                          <span className="auction-page__bid-prefix">$</span>
+                          <input
+                            type="number"
+                            className={`auction-chef__bid-input auction-page__bid-input${
+                              belowMinimum
+                                ? " auction-chef__bid-input--error"
+                                : ""
+                            }`}
+                            placeholder="0"
+                            min={0}
+                            value={chefBidInputs[chef.id] ?? ""}
+                            disabled={timerExpired || bidsReadOnly}
+                            readOnly={bidsReadOnly}
+                            aria-invalid={belowMinimum ? "true" : undefined}
+                            onChange={(e) => {
+                              const raw = e.target.value;
+                              setChefBidInputs((prev) => ({
+                                ...prev,
+                                [chef.id]: raw,
+                              }));
+                              const parsed = parseInt(raw, 10);
+                              if (!isNaN(parsed) && parsed >= 0) {
+                                setChefBid(chef.id, parsed);
+                              } else if (raw === "") {
+                                setChefBid(chef.id, 0);
+                              }
+                            }}
+                          />
+                        </div>
+                        {belowMinimum && (
+                          <p
+                            className="auction-chef__bid-error"
+                            role="alert"
+                          >
+                            Bid above the minimum bid.
+                          </p>
+                        )}
+                        <button
+                          className="btn btn--small chef-card__submit"
+                          disabled={
+                            timerExpired ||
+                            !pendingChefBids[chef.id] ||
+                            belowMinimum
+                          }
+                          onClick={(e) => {
+                            e.preventDefault();
+                            handleSubmitSingleBid(chef.id);
+                          }}
+                        >
+                          Submit Bid
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );

@@ -186,15 +186,54 @@ export function ConclusionPage() {
     mergedByRound[round] = { ...mergedByRound[round], ...v };
   }
 
+  // Top three for the celebratory podium graphic shown on the Game Over
+  // screen. Populated from the leaderboard snapshot (1 / 2 / 3). Missing
+  // slots render as placeholder columns so the visual stays balanced.
+  const podiumSlots = [1, 2, 3].map((rank) =>
+    rankings.find((r) => r.rank === rank) ?? null,
+  );
+
   return (
     <PageShell className="conclusion-page">
-      <header className="conclusion-page__header">
-        <div className="conclusion-page__eyebrow">Game over</div>
-        <h1 className="conclusion-page__title">The doors are closed.</h1>
+      <div
+        className="conclusion-page__confetti"
+        aria-hidden="true"
+      >
+        {Array.from({ length: 24 }).map((_, i) => (
+          <span
+            key={i}
+            className="conclusion-page__confetti-piece"
+            style={{
+              left: `${(i * 4 + (i % 3)) % 100}%`,
+              animationDelay: `${(i % 6) * 0.3}s`,
+              background: [
+                "#f59e0b",
+                "#84cc16",
+                "#ef4444",
+                "#3b82f6",
+                "#a855f7",
+                "#ec4899",
+              ][i % 6],
+            }}
+          />
+        ))}
+      </div>
+
+      <header className="conclusion-page__hero">
+        <div className="conclusion-page__eyebrow">Final Whistle</div>
+        <h1 className="conclusion-page__title">
+          🎉 Game Over, Bakers 🎉
+        </h1>
+        <p className="conclusion-page__tagline">
+          Ovens off. Receipts in. Here's how the month shook out.
+        </p>
       </header>
 
       {winner && (
-        <section className="conclusion-page__winner" aria-label="Winner">
+        <section
+          className="conclusion-page__winner conclusion-page__winner--hero"
+          aria-label="Winner"
+        >
           <div className="conclusion-page__winner-crown" aria-hidden="true">
             👑
           </div>
@@ -207,9 +246,48 @@ export function ConclusionPage() {
               )}
             </div>
             <div className="conclusion-page__winner-revenue">
-              {formatMoney(winner.cumulativeRevenue ?? winner.revenueNet)} net
-              revenue
+              {formatMoney(winner.cumulativeRevenue ?? winner.revenueNet)}{" "}
+              in cumulative net revenue
             </div>
+          </div>
+        </section>
+      )}
+
+      {rankings.length > 0 && (
+        <section
+          className="conclusion-page__podium"
+          aria-label="Top 3 podium"
+        >
+          <div className="conclusion-page__podium-row">
+            {podiumSlots.map((slot, idx) => {
+              const rank = idx + 1;
+              const tier = rank === 1 ? "gold" : rank === 2 ? "silver" : "bronze";
+              return (
+                <div
+                  key={rank}
+                  className={`podium podium--${tier}${
+                    slot?.playerId === playerId ? " podium--mine" : ""
+                  }`}
+                >
+                  <div className="podium__medal" aria-hidden>
+                    {rank === 1 ? "🥇" : rank === 2 ? "🥈" : "🥉"}
+                  </div>
+                  <div className="podium__bakery">
+                    {slot
+                      ? slot.bakeryName || slot.displayName
+                      : "—"}
+                  </div>
+                  <div className="podium__revenue">
+                    {slot
+                      ? formatMoney(
+                          slot.cumulativeRevenue ?? slot.revenueNet,
+                        )
+                      : "$0"}
+                  </div>
+                  <div className="podium__block">#{rank}</div>
+                </div>
+              );
+            })}
           </div>
         </section>
       )}
