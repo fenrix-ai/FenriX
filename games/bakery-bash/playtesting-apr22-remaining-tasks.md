@@ -1,10 +1,11 @@
-# Bakery Bash — Playtesting (Apr 22) Remaining Tasks
+# Bakery Bash — Playtesting Remaining Tasks (Apr 23 refresh)
 
-> **Supersedes:** PR #41 (`tasks/agent-task-files-apr-21`) and PR #44 (`new_changes_Apr_21_pt2`).
-> Both will be closed without merge — this document is the consolidated, current-truth task list.
+> **History:** originally the Apr 22 consolidated task list (superseding the abandoned PR #41 + PR #44).
+> Refreshed 2026-04-23 after PR #54, PR #57, and PR #58 merged to `main`.
+> Remaining P0 tasks for May 1: **FE-R02, FE-R03, FE-R06, FE-R08** (and BE-R05 on the backend side — promoted from P1 because the bare `minBidFloor` error leaks into users whenever a live rebid goes under floor, which is newly possible after PR #54's rebidding).
 
-**Date:** 2026-04-22
-**Branch base:** `feat/playtesting-apr22-tasks`
+**Date:** 2026-04-23 (last refreshed — three merged PRs on `main` since the Apr 22 snapshot)
+**Branch base:** `main` (catch up with `main` before forking new task branches — PR #54, #57, #58 all landed since the original audit)
 **Target:** May 1, 2026 live session
 
 ---
@@ -20,7 +21,7 @@
 
 ## ✅ Already Shipped — Do Not Redo
 
-Verified present in the tree on `feat/playtesting-apr22-tasks` as of 2026-04-22:
+Verified present on `main` as of 2026-04-23. Entries tagged **(PR #54/#57/#58)** landed after the original Apr 22 audit.
 
 ### Game flow / structure
 - **How to Play screen** — [HowToPlayPage.tsx](app/src/pages/HowToPlayPage.tsx) with 4 stage cards (Decisions / Ad Auction / Chef Auction / Results).
@@ -50,23 +51,38 @@ Verified present in the tree on `feat/playtesting-apr22-tasks` as of 2026-04-22:
 - **Per-chef Submit button + global "Submit All Bids"** — `handleSubmitSingleBid` + renamed button.
 - **Timer-expired popup + input lock** — `showExpiredPopup` state + disabled inputs when `remaining <= 0`.
 - **Chef bid "0" display bug fix** — `chefBidInputs` string state decoupled from number state.
+- **Ad bid "0" clears on focus (parity with chef bids)** — PR #57.
 - **Server-side bid timer enforcement** — `submitBids` checks `phaseEndsAt` (BE-N04 in index.js).
 - **Chef nationality + flag emoji** — [ChefCard.tsx](app/src/components/game/ChefCard.tsx) renders `.chef-card__flag` + `.chef-card__nationality`.
 - **`minBidFloor` generated server-side per skill tier** — [chef-system.js](backend/functions/modules/chef-system.js) `MIN_BID_FLOOR_MULTIPLIERS`.
-- **Ad winner banner on Decide screen** — [AdWinnerBanner.tsx](app/src/components/game/AdWinnerBanner.tsx).
+- **Ad winner banner on Decide screen** — [AdWinnerBanner.tsx](app/src/components/game/AdWinnerBanner.tsx); hidden after Round 1 per PR #57.
+- **Auction rebidding until timer expires** — PR #54: AuctionPage no longer locks on first submit; "Bids Submitted / Update Bids" label swap.
+- **Multi-ad wins per team** — PR #54: `resolveAndApplyAdAuction` auctions each slot independently, writes `rounds/round_{N}.adAuctionResults` with `wins: [{ adType, amount }]`; ResultsPhase / ConclusionPage / SimulatePhase render the arrays; simulation sums revenue/spend across all wins.
+- **`updateTopBids` serialized via `db.runTransaction`** — PR #54 + PR #58: concurrent `submitBids` calls retry instead of stomping each other's `topBids` map.
+- **Per-slot `topBidsLeader` + per-slot `firstClaimedAt` tie-break** — PR #54 + PR #58: FE only locks a slot when this team is the unique leader; tied bids no longer freeze both teams out of rebidding.
 
 ### Professor dashboard
 - **Ready-to-advance indicator** — `.prof-phase-readiness` "🟢 All teams ready / 🔴 Waiting for N team(s)" in [ProfessorPage.tsx:532](app/src/pages/ProfessorPage.tsx:532).
-- **Per-phase submission grid (green/red dots per team)** — already in ProfessorPage.
-- **Extend round "+ 1 Min" button** — calls `extendPhase` callable (ProfessorPage:373).
+- **Submission grid regrouped by team** — PR #54: one row per team, member + role chips; each phase column checks the role-owner's uid (not every raw player). Readiness panel uses the same team/role-owner resolution.
+- **Extend round "+ 1 Min" button** — calls `extendPhase` callable (ProfessorPage:373). PR #57 disables it pre-game.
+- **Reset Game merged into End Game** — PR #57: single primary destructive control on the professor panel.
 - **`extendPhase` callable** — [index.js:2134](backend/functions/index.js:2134).
+- **Professor auth via `professorUid` on the game doc** — PR #49 (already landed) + reinforced in PR #57: drops the `professor: true` custom-claim deploy-script dependency for `submissions/*` reads.
 
 ### Decisions screen
 - **Per-item unit cost displayed** — `.product-tile__unit-cost` "Cost: $X.XX / unit" in [BakeryView.tsx:193](app/src/components/game/BakeryView.tsx:193).
 - **"Total Committed This Round" ledger** — BakeryView:347.
-- **"Buy Competitor Intel — $5,000" button** — [GameSidebar.tsx:95](app/src/components/game/GameSidebar.tsx:95).
+- **"Total Cost This Round" line above submit lock** — PR #54: GamePage sums staff + product + ad + chef bid spend with over-budget indicator; `computeRoundCost` in [cost.ts](app/src/lib/cost.ts) gained a `pendingChefBids` breakdown.
+- **"Buy Competitor Intel — $5,000" button** — [GameSidebar.tsx:95](app/src/components/game/GameSidebar.tsx:95); hardened in PR #57 to reject re-purchase inside the transaction and gate on `hasIntelForPrevRound` client-side.
 - **`purchaseCompetitorInsight` callable** — [index.js:2163](backend/functions/index.js:2163).
+- **Purchasable chef data (Tier 1 / Tier 2) + CSV Inbox** — PR #57: `purchaseChefData` callable (Tier 1 nationality→specialty map, Tier 2 current-round chef pool), recorded at `players/{uid}/purchases/chef_tier{N}` with re-buy rejection. Frontend buttons in [GameSidebar.tsx](app/src/components/game/GameSidebar.tsx) flip to "✓ Purchased" on success; purchases flow into [CsvInboxModal.tsx](app/src/components/game/CsvInboxModal.tsx) with per-row downloads (Finance/solo-gated).
+- **Round 1 briefing auto-advances after 5s** — PR #57: [EmailPhasePage.tsx](app/src/pages/EmailPhasePage.tsx) calls `advanceGamePhase` on timeout.
 - **Timer pauses (no client-side auto-advance) when hitting zero** — `.round-header__timer-expired` shows "Time's up — waiting for professor".
+- **Round header timer reads "Seconds until next round" on `results_ready`** — PR #57.
+
+### Team / player identity
+- **Canonical `teamName` mirrored onto `players/{uid}` + `roster/{uid}`** — PR #54: `joinGame` + `updateTeamName` write it; `RoundHeader` / `BakeryView` / `AdWinnerBanner` / `LeaderboardPage` / `ConclusionPage` prefer `teamName` with legacy `bakeryName` as fallback. `LeaderboardRanking` + `AdWinnerEntry` gained `teamName` fields.
+- **Your-Team role picker: switch + deselect + solo-mode hint** — PR #57 (backend still single-role per uid; comment in TeamPage notes that).
 
 ### Curveballs
 - **Burglar event at ≤20% cleanliness** — [simulation.js](backend/functions/modules/simulation.js) writes `burglary` + `burglaryAmount`; Simulate + Results screens show banner.
@@ -75,6 +91,12 @@ Verified present in the tree on `feat/playtesting-apr22-tasks` as of 2026-04-22:
 ### Results screen
 - **Metric cards (Revenue / Customers / Satisfaction)** — `.results-phase__metric-card` in [ResultsPhase.tsx](app/src/pages/phases/ResultsPhase.tsx).
 - **Standings leaderboard at bottom** — `.results-phase__leaderboard` (ResultsPhase:347).
+- **Results Events cards (Burglary + Food Safety Inspection)** — PR #57: placeholder SVG assets in `app/public/assets/events/`; legacy burglary flags synthesized into `RoundEvent` objects so old rounds still render.
+
+### Simulate / Game Over / Progress
+- **Bakery-interior 30-day simulation rework** — PR #57: neutral customer + staff SVG assets, full interior scene (oven, prep line, barista bar, sous-chef stations, maintenance, display case with live "SOLD OUT" stamps, register, ad display, animated customers); month/day labels via new [dateSystem.ts](app/src/lib/dateSystem.ts); run length matches the real month duration.
+- **Conclusion / Game Over screen** — PR #57: celebratory hero, confetti overlay, gold/silver/bronze podium, polished stat + round-by-round cards in [ConclusionPage.tsx](app/src/pages/ConclusionPage.tsx).
+- **Game progress bar** — PR #57: new [GameProgressBar.tsx](app/src/components/game/GameProgressBar.tsx) in RoundHeader — croissant emblem per round, current round scaled + highlighted, completed rounds filled.
 
 ---
 
@@ -321,50 +343,9 @@ Returns `{ teamId, name, logoUrl, memberCount }[]`. Tested via `npm run test:cre
 
 ---
 
-### BE-R03 — Chef Pool: Exactly 12 per Round, No Name Duplicates  (P0)
+### ~~BE-R03 — Chef Pool: Exactly 12 per Round, No Name Duplicates  (P0)~~ ✅ Shipped in PR #57 + PR #58
 
-**Files:**
-- `games/bakery-bash/backend/functions/modules/config.js` — change `chefPoolSize` default
-- `games/bakery-bash/backend/firestore-schema.js` — update the schema comment
-- `games/bakery-bash/backend/functions/modules/chef-system.js` — dedupe names; generate exactly the configured count
-- `games/bakery-bash/backend/functions/modules/__tests__/test-adversarial.js` — update the assertion
-
-**Changes:**
-
-1. **Config** — replace the range with a single number:
-```js
-// config.js:208
-chefPoolSize: 12,                                // was: { min: 6, max: 8 }
-```
-Update the `deepMergeConfig` logic to treat `chefPoolSize` as a plain number (delete the `rawPoolSize` / `numberOrDefault` block for min/max and replace with a single `numberOrDefault(raw.chefPoolSize, d.chefPoolSize)`).
-
-2. **Schema doc** — update `firestore-schema.js:106` comment to `chefPoolSize: 12, // number — exact pool size per round`.
-
-3. **chef-system.js `generateChefPool`:**
-```js
-// Before the for-loop, extract:
-const poolSize = Number.isFinite(cfg.chefPoolSize) ? cfg.chefPoolSize : 12;
-const usedNames = new Set();
-const pool = [];
-let attempts = 0;
-while (pool.length < poolSize && attempts < poolSize * 12) {
-  const chef = generateOneChef(cfg, round);
-  if (!usedNames.has(chef.name)) {
-    usedNames.add(chef.name);
-    pool.push(chef);
-  }
-  attempts++;
-}
-return pool;
-```
-   Extract the existing single-chef construction into a `generateOneChef(cfg, round)` helper if it isn't already one. Ensure `CHEF_NATIONALITIES[nat].names[gender]` has ≥ 12 total unique entries across all nationalities+genders (currently has ~40 — plenty).
-
-4. **Test update** — in `test-adversarial.js:1006`, change `assert(pool.length >= defaultCfg.chefPoolSize.min, …)` to `assert(pool.length === defaultCfg.chefPoolSize, 'pool size is exact, not a range')`.
-
-**Acceptance:**
-- Every auction round writes exactly 12 chefs to `rounds/round_{N}.chefPool`.
-- No name collisions within a pool.
-- Existing tests updated + green.
+Flat `chefPoolSize: 12` in [config.js:208](backend/functions/modules/config.js:208). `generateOneChef(round, config)` helper in [chef-system.js:77](backend/functions/modules/chef-system.js:77) with `usedNames` Set dedup at line 115 + retry loop. PR #58 added `coerceChefPoolSize` to `mergeConfig` so legacy Firestore docs written under the old `{ min, max }` shape fall through to the flat value (prefers `max`) instead of silently dropping to the default. Smoke-test assertion updated. **Audit still needed:** `firestore-schema.js` comment may still say the old shape — low priority, display-only.
 
 ---
 
@@ -403,16 +384,27 @@ throw new HttpsError(
 - [ ] Staff tab clearly reads "Sous Chef Hires" + "Maintenance Crew" as two sections (FE-R02)
 - [ ] Each station stepper title starts with "Sous Chef —" and names the products
 - [ ] Chef cards show `#1`, `#2`, … in the top-left (FE-R03)
-- [ ] Error messages reference "Chef #N" and "Minimum Ask", never `minBidFloor`
-- [ ] Chef cards show skill-tier multiplier table + "do not stack" note (FE-R04)
+- [ ] Error messages reference "Chef #N" and "Minimum Ask", never `minBidFloor` (BE-R05)
+- [ ] Chef cards show skill-tier multiplier table + "do not stack" note (FE-R04 — tier table is in HowToPlay per PR #57, NOT on ChefCard)
 - [ ] Auction reveal screen displays all 4 ad winners + chef winner with team logos for ~8s (FE-R05)
 - [ ] Randomly-chosen ad plays with winning team's logo overlaid
-- [ ] Roster slot reads "Basic Chef" (not "Head Chef") (FE-R06)
+- [ ] Roster slot reads "Basic Chef" (not "Head Chef") (FE-R06 — still reads "Head Chef" at [RosterPhasePage.tsx:202](app/src/pages/RosterPhasePage.tsx:202))
 - [ ] Roster page shows card grid, Lay Off button per occupied slot, New Hires row (FE-R07)
-- [ ] Round header has no CSV mail icon; Results screen has exactly one Download CSV button (FE-R08)
+- [ ] Round header has no CSV mail icon; Results screen has exactly one Download CSV button (FE-R08 — header still renders `.round-header__email` going to `downloadResultsCsv`, and ResultsPhase still renders `.results-phase__download`; CSV Inbox modal from PR #57 lives alongside both)
 - [x] Start a Round 2 in the emulator — no Round 1 ad winners / decisions / bids visible anywhere (FE-R09 + BE-R04) — PR #53 (emulator test `test:round-reset`)
-- [ ] Backend: every chef auction pool has exactly 12 chefs with unique names (BE-R03)
+- [x] Backend: every chef auction pool has exactly 12 chefs with unique names (BE-R03) — PR #57 + PR #58 (smoke-test updated)
 - [x] Backend: advancing to a new round clears every player's `pendingDecision` + `pendingBids` in one batch (BE-R04) — PR #53
+- [x] Auction: teams can resubmit bids until the timer expires; "Bids Submitted / Update Bids" label swap (PR #54)
+- [x] Auction: each ad slot auctions independently; teams can win multiple slots; revenue + spend sum across wins (PR #54)
+- [x] Auction: concurrent `submitBids` calls no longer stomp each other's `topBids` (PR #54 + PR #58 transaction wrap)
+- [x] Auction: tied bids no longer freeze both teams — per-slot `topBidsLeader` gates the FE lock (PR #58)
+- [x] Professor monitor grid groups by team, not raw players (PR #54)
+- [x] Canonical `teamName` renders everywhere (not `bakeryName`) (PR #54)
+- [x] Decide screen shows "Total Cost This Round" above submit with over-budget indicator (PR #54)
+- [x] CSV Inbox modal replaces auto-downloads for purchasable data (Tier 1, Tier 2, Competitor Intel) (PR #57)
+- [x] Round 1 briefing auto-advances after 5s via `advanceGamePhase` (PR #57)
+- [x] Game Over podium + confetti on ConclusionPage (PR #57)
+- [x] GameProgressBar shows per-round croissant emblem in RoundHeader (PR #57)
 
 ---
 
@@ -433,16 +425,21 @@ Two other PRs are open against `main` that overlap with tasks here. Check their 
   - Proposed: 7s delay + countdown banner before auto page-switch, team-name input on LandingPage (not team number), `takeoverTeamRole` callable for disconnected teammates.
   - **Reviewed by maintainer and rejected** — the phase delay was later re-implemented more cleanly in PR #45's grace/freeze timer. Team-name input + takeover did not land. If we want those, pull them back in as separate tasks here (they're not urgent for May 1).
 
-**Pending review (open against `main`):**
-- [PR #53 — named team create/join flow + round-advance state reset](https://github.com/fenrix-ai/FenriX/pull/53) (branch `feat/team-flow-and-round-reset`) — covers FE-R01, BE-R01, BE-R02, FE-R09, BE-R04. Ships the "Already Shipped" entries listed at the top of this doc. Coordinate with PR #49 before merging — both touch `joinGame` in [index.js](backend/functions/index.js).
+**Pending review (open against `main`):** — none of the Apr 22 task-list PRs are still open; check `gh pr list` for the current queue.
 
-**Already merged recently (confirmed on `main` / this branch):**
-- PR #50 — rejoin after game start
-- PR #48 — "Round N" hero briefing (replaces earlier FE-6 work)
-- PR #45 — team self-join + phase timer grace/freeze
-- PR #43 — POST-01 dynamic pricing (Finance role)
-- PR #42 — FE tasks from PR#41 + roster layout
-- PR #40 — SubmissionLock / ghost buttons / dev panel gating
+**Already merged recently (confirmed on `main` as of 2026-04-23):**
+- **PR #58** (`8c95c51`, Apr 23) — bidding logic, team info parity, button fixes; regression-fixed `updateTopBids` transaction; per-slot `topBidsLeader`; `coerceChefPoolSize` legacy-shape fallback
+- **PR #57** (`c348aed`, Apr 22) — Apr 22 frontend bugfix + UX polish sweep: CSV Inbox, purchasable Tier 1/Tier 2 chef data, bakery-interior simulation, Conclusion podium, GameProgressBar, Results Events, briefing auto-advance, role picker polish, professor panel cleanup
+- **PR #54** (`e6919a1`, Apr 22) — auction rebidding, multi-ad wins, professor monitor regroup, canonical `teamName` mirroring, Decide "Total Cost This Round"
+- **PR #53** — named team create/join flow + round-advance state reset (FE-R01 + BE-R01 + BE-R02 + FE-R09 + BE-R04)
+- **PR #52** — `resetGame` callable + `isGameProfessor` rule
+- **PR #51** — playtesting Apr 22 UX polish, simulation animation, market elasticity
+- **PR #50** — rejoin after game start
+- **PR #48** — "Round N" hero briefing (replaces earlier FE-6 work)
+- **PR #45** — team self-join + phase timer grace/freeze
+- **PR #43** — POST-01 dynamic pricing (Finance role)
+- **PR #42** — FE tasks from PR #41 + roster layout
+- **PR #40** — SubmissionLock / ghost buttons / dev panel gating
 
 ## 🔗 Cross-References
 
