@@ -42,11 +42,11 @@
 
 ## 4. `RoundEvent` / `RoundEventKind` types + events system
 
-**Status:** in-progress (`fix/restore-round-events-system`)
-**Files:** `games/bakery-bash/app/src/types/game.ts`, `games/bakery-bash/app/src/pages/phases/ResultsPhase.tsx`, `games/bakery-bash/app/src/pages/phases/SimulatePhase.tsx`, `games/bakery-bash/app/src/styles/global.css` (`.event-card*` rules).
-**What broke:** The `RoundEvent` type + the `events?: RoundEvent[]` field on `RoundResult` were dropped; the `EventCard` renderer + "Events" section + legacy-burglary synthesizer were dropped from `ResultsPhase`; all `.event-card*` CSS was dropped. `ResultsPhase` + `SimulatePhase` currently fall through to an inline `latest?.burglary && <div>` banner with an `any`-cast to read `burglaryAmount` — PR #62's transitional shim. Backend continues to emit the flat `burglary` / `burglaryAmount` fields at both baseline `c348aed` and current `main` (checked `backend/functions/modules/simulation.js`), so the synthesizer is the correct permanent pattern — no backend change required.
-**Acceptance:** Server-emitted round events (via legacy flat fields OR explicit `events[]`) are consumed and rendered as `EventCard`s on the Results screen.
-**Scope clarification:** The doc originally listed `AdWin` as a missing type. On audit, no top-level `AdWin` type ever existed — `AdWinnerBanner.tsx` has a local `AdWinnerEntry` interface that is identical between `c348aed` and `main` (`git diff c348aed main -- .../AdWinnerBanner.tsx` returns empty). So there is nothing to restore on the ad-winners side; item 4 is just the round-events system.
+**Status:** shipped (PR #71)
+**Files:** `games/bakery-bash/app/src/types/game.ts`, `games/bakery-bash/app/src/pages/phases/ResultsPhase.tsx`, `games/bakery-bash/app/src/pages/phases/SimulatePhase.tsx`, `games/bakery-bash/app/src/styles/global.css`.
+**What broke:** The `RoundEvent` type + `events?: RoundEvent[]` field on `RoundResult` were dropped; the `EventCard` renderer + "Events" section + legacy-burglary synthesizer were dropped from `ResultsPhase`; all `.event-card*` CSS was dropped.
+**Scope clarification (audited in PR #71):** The doc originally listed `AdWin` as a missing type — no such top-level type existed at baseline. `AdWinnerBanner.tsx` has a local `AdWinnerEntry` interface identical between `c348aed` and current `main`; nothing to restore on the ad-winners side.
+**Backend stays as-is:** `backend/functions/modules/simulation.js` emits the flat `burglary` / `burglaryAmount` / `burglaryDays` fields at both baseline `c348aed` AND current `main`. The frontend synthesizer pattern is the permanent design; no backend change required.
 
 ## 5. `ChefListing.minBidFloor`
 
@@ -72,14 +72,47 @@
 
 ## 8. ~3500-line UX polish sweep from PR #57
 
-**Status:** todo (probably needs to be broken into sub-items)
-**Scope (non-exhaustive):**
-- Landing modals (create-team / join-team refinements that PR #58 flattened)
-- Simulation bakery-interior art + animation pass
-- Conclusion podium screen
-- Event cards on ResultsPhase (tied to item 4)
-- Misc copy + tab/badge styling
-**Approach:** Skim `git diff c348aed main -- games/bakery-bash/app/src/` section by section, extract cohesive sub-features, file each as a PR. Do **not** attempt to re-land PR #57 wholesale — conflicts with subsequent PRs #60 / #61 will be massive.
+**Status:** partially scoped — split into sub-items below.
+**Baseline audit:** `git diff c348aed main -- games/bakery-bash/app/src/` totals ~4000 lines across 21 files. Auditing each cluster:
+
+### Already addressed (drop from scope)
+
+| Cluster | Handled by |
+|---------|------------|
+| Simulation bakery-interior art + animation | **Superseded** by `feat/bakery-scene-v2` worktree (Undertale-style pixel rewrite) |
+| Round-email "Round N" hero | PR #48 |
+| Event cards on ResultsPhase | Item 4 / PR #71 |
+| Auction page polish (~323 lines) | Heavily reworked by PRs #54 / #58 / #66 / #68 — re-landing would conflict |
+| Game page layout (~215 lines) | PR #68 |
+| Professor page (~223 lines) | PR #54 |
+
+### Remaining sub-items
+
+### 8a. How-to-Play page copy refresh
+
+**Status:** in-progress (`fix/howtoplay-copy-refresh`)
+**Files:** `games/bakery-bash/app/src/pages/HowToPlayPage.tsx`.
+**What broke:** Round order, Bidder copy, chef-tier table, new Simulation Round entry, Results CSV note, and CSV Inbox entry were reverted to a shorter, less accurate version.
+**Acceptance:** Round order reads **Ad Auction → Chef Auction → Decisions → Simulation → Results**; Ad Auction card calls out the Bidder + foot-traffic variation; Chef Auction card explains the sous-chef-station distinction and links to the CSV tiers; CSV Inbox entry exists.
+**Size:** ~90 line diff.
+
+### 8b. Conclusion page podium + confetti
+
+**Status:** shipped (PR #74)
+**Files:** `games/bakery-bash/app/src/pages/ConclusionPage.tsx`, `games/bakery-bash/app/src/styles/global.css` (podium + confetti rules).
+**What broke:** The celebratory hero ("Final Whistle" / 🎉 Game Over, Bakers 🎉), confetti overlay, and gold/silver/bronze podium were replaced with a plainer "The doors are closed." header.
+**Acceptance:** Game Over screen shows the celebratory hero with tagline, confetti overlay animation, and a 3-slot podium for the top leaderboard entries.
+**Size:** ~150 line diff including CSS.
+
+### 8c. Landing page — Create/Join Team modal flow
+
+**Status:** todo (deferred; needs extra care)
+**Files:** `games/bakery-bash/app/src/pages/LandingPage.tsx`, associated CSS.
+**What broke:** The modal-based team create/join flow with logo upload + "team registered" confirmation was flattened to a single-page form.
+**Caveat:** PR #53 ("Named team create/join flow") already lives on main with its own design. Re-landing PR #57's modal flow would need to coexist with PR #53's data contract — this is the highest-risk sub-item and should be scoped separately (possibly a design decision, not just a restoration).
+**Size:** ~520 line diff.
+
+**Approach:** One sub-item per PR. Do **not** attempt to re-land PR #57 wholesale — conflicts with subsequent PRs would be massive.
 
 ---
 
