@@ -1,0 +1,33 @@
+/* Pixel Bakery Scene — Undertale-style side-view. */
+
+.pixel-bakery-scene {
+  position: relative;
+  width: 480px;
+  height: 270px;
+  background: #2a1a10;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  image-rendering: pixelated;
+  transform-origin: top left;
+}
+
+/* Scale helpers — applied by the preview route (Task 4.2) and game-phase integrations (Task 9.x) to render the 480×270 native canvas at 2× or 3× in larger viewports. */
+.pixel-bakery-scene--scale-2 {
+  transform: scale(2);
+}
+
+.pixel-bakery-scene--scale-3 {
+  transform: scale(3);
+}
+
+/* Host container (fills parent, centers the scaled scene inside). */
+.pixel-bakery-scene-host {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 540px;
+  background: #1b1721;
+  overflow: hidden;
+}
