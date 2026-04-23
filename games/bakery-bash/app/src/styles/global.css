@@ -3891,3 +3891,71 @@ h3 { font-size: 0.7rem; }
   0%   { opacity: 0; transform: translateY(6px); }
   100% { opacity: 1; transform: translateY(0); }
 }
+
+/* ─── Game progress bar (Apr 22) ───────────────────────── */
+.round-header__progress {
+  grid-column: 1 / -1;
+  margin-top: 0.5rem;
+  width: 100%;
+}
+
+.game-progress {
+  width: 100%;
+}
+
+.game-progress__track {
+  display: flex;
+  gap: 0.35rem;
+  align-items: stretch;
+  padding: 0.25rem;
+  background: rgba(255, 244, 214, 0.4);
+  border: 2px solid var(--caramel);
+  border-radius: 999px;
+}
+
+.game-progress__segment {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem 0.25rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.4);
+  opacity: 0.55;
+  transition: background 0.25s, opacity 0.25s, transform 0.25s;
+  min-width: 0;
+}
+
+.game-progress__segment--complete {
+  background: linear-gradient(135deg, #fde68a, #f59e0b);
+  opacity: 1;
+}
+
+.game-progress__segment--current {
+  background: linear-gradient(135deg, #fef3c7, #f97316);
+  opacity: 1;
+  transform: scale(1.08);
+  box-shadow: 0 0 0 2px var(--dark-roast);
+}
+
+.game-progress__croissant {
+  font-size: 1rem;
+  line-height: 1;
+  filter: grayscale(1);
+  opacity: 0.5;
+}
+
+.game-progress__segment--complete .game-progress__croissant,
+.game-progress__segment--current  .game-progress__croissant {
+  filter: none;
+  opacity: 1;
+}
+
+.game-progress__label {
+  font-family: var(--font-pixel);
+  font-size: 0.4rem;
+  color: var(--dark-roast);
+  letter-spacing: 0.05em;
+  margin-top: 0.1rem;
+}

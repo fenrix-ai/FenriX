@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useGame } from "../../contexts/GameContext";
 import { CsvInboxModal } from "./CsvInboxModal";
+import { GameProgressBar } from "./GameProgressBar";
 import {
   PLAYER_ROLE_LABELS,
   parseGamePhase,
@@ -214,6 +215,10 @@ export function RoundHeader() {
           }
         </div>
       )}
+
+      <div className="round-header__progress">
+        <GameProgressBar />
+      </div>
     </header>
   );
 }
