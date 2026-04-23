@@ -4,7 +4,7 @@
 
 **Baseline:** Compare `c348aed` (PR #57 merged) vs current `main` for any item below.
 **Opened by:** PR #62 comment at <https://github.com/fenrix-ai/FenriX/pull/62#issuecomment-4302991939>
-**Last updated:** 2026-04-23
+**Last updated:** 2026-04-23 (post-#66)
 
 ---
 
@@ -18,7 +18,7 @@
 
 ## 1. `ADD_ACQUIRED_CSV` reducer case — CSV Inbox population
 
-**Status:** in-progress (`fix/restore-csv-inbox-feature`)
+**Status:** shipped (PR #63)
 **Files:** `games/bakery-bash/app/src/contexts/GameContext.tsx`
 **What broke:** The reducer case that pushes a new `AcquiredCsv` into `state.acquiredCsvs` was deleted. Without it, `acquiredCsvs` stays `[]` forever and the inbox renders permanently empty.
 **Acceptance:** Dispatching `{ type: 'ADD_ACQUIRED_CSV', payload: <AcquiredCsv> }` appends the entry; duplicate `id`s are not added twice.
@@ -26,7 +26,7 @@
 
 ## 2. `CsvInboxModal` mount in `RoundHeader`
 
-**Status:** in-progress (`fix/restore-csv-inbox-feature`)
+**Status:** shipped (PR #63)
 **Files:** `games/bakery-bash/app/src/components/game/RoundHeader.tsx`
 **What broke:** The header's mail-icon button no longer opens the inbox modal — it still triggers the legacy direct-download behaviour. The `<CsvInboxModal>` component file compiles but is imported by nothing at HEAD, so the feature is unreachable.
 **Acceptance:** Clicking the mail button opens the inbox modal; it lists every `AcquiredCsv` currently in `GameState.acquiredCsvs`; closing works; re-clicking the Download link on a row re-downloads without re-charging.
@@ -34,7 +34,7 @@
 
 ## 3. Purchasable-data buttons in `GameSidebar`
 
-**Status:** in-progress (`fix/restore-csv-inbox-feature`)
+**Status:** shipped (PR #63)
 **Files:** `games/bakery-bash/app/src/components/game/GameSidebar.tsx`
 **What broke:** The Finance-gated buttons to purchase competitor intel + Tier 1 / Tier 2 chef CSVs were removed. Even with items 1 + 2 restored, users have no way to populate `acquiredCsvs`.
 **Acceptance:** Finance role sees three purchase buttons with visible costs; clicking charges the team budget, dispatches `ADD_ACQUIRED_CSV`, and the newly acquired CSV appears in the inbox within the same render pass.
@@ -50,7 +50,7 @@
 
 ## 5. `ChefListing.minBidFloor`
 
-**Status:** todo
+**Status:** shipped (PR #66)
 **Files:** `games/bakery-bash/app/src/types/game.ts` (add field), `games/bakery-bash/app/src/pages/AuctionPage.tsx` (render + client-side floor check), possibly `games/bakery-bash/backend/functions/modules/chef-system.js` if server needs to echo the value.
 **What broke:** Per-chef minimum bid floor is no longer rendered or enforced on the client. Backend still rejects under-floor bids (via `MIN_BID_FLOOR_MULTIPLIERS` in `chef-system.js`), so the UX is: user submits a too-low bid and sees a bare error message instead of proactive UI guardrails.
 **Acceptance:** `ChefCard` shows the minimum bid; bid input disables / shows inline validation below the floor; server still double-checks.
@@ -65,9 +65,9 @@
 
 ## 7. `GameProgressBar` component + mount in `RoundHeader`
 
-**Status:** todo
-**Files:** `games/bakery-bash/app/src/components/game/GameProgressBar.tsx` (restore), `games/bakery-bash/app/src/components/game/RoundHeader.tsx` (remount).
-**What broke:** The round-progress visualization strip that sat inside `RoundHeader` was removed. Players no longer have an at-a-glance sense of how far through the game they are.
+**Status:** in-progress (`fix/restore-progress-bar-and-doc-refresh`)
+**Files:** `games/bakery-bash/app/src/components/game/RoundHeader.tsx` (remount), `games/bakery-bash/app/src/styles/global.css` (`.round-header__progress` + `.game-progress*` rules).
+**What broke:** PR #62 restored the `GameProgressBar.tsx` component file but not the mount or its CSS. With no mount the round-progress visualization strip inside `RoundHeader` is absent; with no CSS it'd render unstyled.
 **Acceptance:** Progress bar renders below the phase banner; `currentRound / totalRounds` filled portion is visible; matches `c348aed` design.
 
 ## 8. ~3500-line UX polish sweep from PR #57
