@@ -509,12 +509,13 @@ export function AuctionPage() {
     }
   }, [timerExpired]);
 
-  const timerMinutes = Math.floor(remaining / 60);
-  const timerSeconds = remaining % 60;
-  const timerDisplay = `${timerMinutes}:${timerSeconds
-    .toString()
-    .padStart(2, "0")}`;
-  const timerUrgent = remaining <= 10;
+  // Phase timer display lives exclusively in <RoundHeader /> (it reads
+  // `phaseEndsAt` from the backend and shows a unified clock across every
+  // phase). The AuctionPage used to render a second local timer at
+  // `.auction-page__timer`, which showed a duplicate clock on both bid
+  // tabs — removed. The `remaining` counter + `timerExpired` flag are
+  // kept internal because they still gate the bid inputs + the
+  // timer-expired popup.
 
   const alreadySubmitted =
     (isAdPhase && adBidsSubmitted) || (isChefPhase && chefBidsSubmitted);
@@ -628,13 +629,9 @@ export function AuctionPage() {
             Chef Hiring
           </button>
         </div>
-        <div
-          className={`auction-page__timer${
-            timerUrgent ? " auction-page__timer--urgent" : ""
-          }`}
-        >
-          {timerDisplay}
-        </div>
+        {/* Phase countdown is owned by <RoundHeader />. The AuctionPage
+            used to render a second local timer here which duplicated the
+            header clock on bid pages; removed so players see exactly one. */}
         {alreadySubmitted && !hasEditableBid && (
           <span
             className="tab__badge tab__badge--submitted auction-page__locked-badge"
