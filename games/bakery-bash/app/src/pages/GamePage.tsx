@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   collection,
@@ -21,6 +21,7 @@ import { SimulatePhase } from "./phases/SimulatePhase";
 import { ResultsPhase } from "./phases/ResultsPhase";
 import { db, functions } from "../lib/firebase";
 import { humanizeFunctionError } from "../lib/errors";
+import { computeDecisionCost, formatMoney } from "../lib/cost";
 import {
   PRODUCT_KEYS,
   PRODUCT_STATION,
@@ -114,12 +115,14 @@ export function GamePage() {
     decisionSubmitted,
     pricesSubmitted,
     role,
+    config,
   } = useGame();
   const dispatch = useGameDispatch();
   const navigate = useNavigate();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submittingPrices, setSubmittingPrices] = useState(false);
+  const [wonAuctionCosts, setWonAuctionCosts] = useState({ ad: 0, chef: 0 });
 
   // FE-11 — previous round's ad winners, rendered at the top of Decide.
   // The aggregate `rounds/round_{N}` doc writes
@@ -264,22 +267,54 @@ export function GamePage() {
         // of the catalog defaults. `submitPrices` writes via dot-path, so the
         // field is present on the player doc across rounds.
         const pending = data.pendingDecision;
-        if (pending && typeof pending === "object" && pending.productPrices &&
-            typeof pending.productPrices === "object") {
-          const incoming = pending.productPrices as Record<string, unknown>;
-          const hydratedPrices: Partial<Record<ProductKey, number>> = {};
-          for (const key of PRODUCT_KEYS) {
-            const v = incoming[key];
-            if (typeof v === "number" && Number.isFinite(v)) {
-              hydratedPrices[key] = v;
+        if (pending && typeof pending === "object") {
+          const incomingPending = pending as Record<string, unknown>;
+          const update: {
+            menu?: Partial<Record<ProductKey, boolean>>;
+            quantities?: Partial<Record<ProductKey, number>>;
+            staffCounts?: Partial<StaffCounts>;
+            maintenanceTasks?: MaintenanceTask[];
+            productPrices?: Partial<Record<ProductKey, number>>;
+          } = {};
+
+          if (incomingPending.menu && typeof incomingPending.menu === "object") {
+            update.menu = incomingPending.menu as Partial<Record<ProductKey, boolean>>;
+          }
+          if (incomingPending.quantities && typeof incomingPending.quantities === "object") {
+            update.quantities = incomingPending.quantities as Partial<Record<ProductKey, number>>;
+          }
+          if (incomingPending.staffCounts && typeof incomingPending.staffCounts === "object") {
+            update.staffCounts = incomingPending.staffCounts as Partial<StaffCounts>;
+          }
+          if (Array.isArray(incomingPending.maintenanceTasks)) {
+            update.maintenanceTasks = incomingPending.maintenanceTasks as MaintenanceTask[];
+          }
+
+          if (incomingPending.productPrices && typeof incomingPending.productPrices === "object") {
+            const incoming = incomingPending.productPrices as Record<string, unknown>;
+            const hydratedPrices: Partial<Record<ProductKey, number>> = {};
+            for (const key of PRODUCT_KEYS) {
+              const v = incoming[key];
+              if (typeof v === "number" && Number.isFinite(v)) {
+                hydratedPrices[key] = v;
+              }
+            }
+            if (Object.keys(hydratedPrices).length > 0) {
+              update.productPrices = hydratedPrices;
             }
           }
-          if (Object.keys(hydratedPrices).length > 0) {
+
+          if (Object.keys(update).length > 0) {
             dispatch({
               type: "UPDATE_PENDING_DECISION",
-              payload: { productPrices: hydratedPrices },
+              payload: update,
             });
           }
+
+          dispatch({
+            type: "SET_DECISION_SUBMITTED",
+            payload: incomingPending.submitted === true,
+          });
         }
 
         // lastRoundResult → dispatch ADD_RESULT so ResultsPhase + the CSV
@@ -450,6 +485,39 @@ export function GamePage() {
     return unsubscribe;
   }, [gameId, currentRound, rosterByUid]);
 
+  useEffect(() => {
+    if (!gameId || !playerId || !currentRound) {
+      setWonAuctionCosts({ ad: 0, chef: 0 });
+      return;
+    }
+    const roundRef = doc(db, "games", gameId, "rounds", `round_${currentRound}`);
+    const unsubscribe = onSnapshot(
+      roundRef,
+      (snap) => {
+        if (!snap.exists()) {
+          setWonAuctionCosts({ ad: 0, chef: 0 });
+          return;
+        }
+        const data = snap.data() as DocumentData;
+        const adEntry = (data.adAuctionResults?.[playerId] ?? null) as DocumentData | null;
+        const ad =
+          adEntry && typeof adEntry.totalPaid === "number"
+            ? adEntry.totalPaid
+            : 0;
+        const chefEntry = (data.chefAuctionResults?.[playerId] ?? null) as DocumentData | null;
+        const chef =
+          chefEntry && typeof chefEntry.totalPaid === "number"
+            ? chefEntry.totalPaid
+            : 0;
+        setWonAuctionCosts({ ad, chef });
+      },
+      () => {
+        setWonAuctionCosts({ ad: 0, chef: 0 });
+      },
+    );
+    return unsubscribe;
+  }, [gameId, playerId, currentRound]);
+
   // Redirect into the dedicated phase page when backend says so. This is
   // phase-driven (not a manual navigation after submit).
   useEffect(() => {
@@ -575,6 +643,10 @@ export function GamePage() {
 
   const isDecisionPhase = basePhase === "decide";
   const isSimulating = basePhase === "simulating";
+  const decisionCost = useMemo(
+    () => computeDecisionCost(pendingDecision, config, wonAuctionCosts),
+    [pendingDecision, config, wonAuctionCosts],
+  );
 
   if (!isDecisionPhase) {
     return (
@@ -622,6 +694,18 @@ export function GamePage() {
         <BakeryView readOnly={decisionSubmitted} />
         <GameSidebar readOnly={decisionSubmitted} />
       </div>
+      <section className="game-page__round-cost" aria-label="Total cost this round">
+        <div className="game-page__round-cost-label">Total Cost This Round</div>
+        <div className="game-page__round-cost-total">
+          {formatMoney(decisionCost.total)}
+        </div>
+        <div className="game-page__round-cost-breakdown">
+          <span>Staff {formatMoney(decisionCost.staff)}</span>
+          <span>Products {formatMoney(decisionCost.product)}</span>
+          <span>Ads {formatMoney(decisionCost.ad)}</span>
+          <span>Chef {formatMoney(decisionCost.chef)}</span>
+        </div>
+      </section>
       {submitError && (
         <p className="game-page__submit-error" role="alert">
           {submitError}

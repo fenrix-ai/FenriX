@@ -127,6 +127,30 @@ export interface RoundCostBreakdown {
   total: number;
 }
 
+export interface DecisionCostBreakdown {
+  staff: number;
+  product: number;
+  ad: number;
+  chef: number;
+  total: number;
+}
+
+export function computeDecisionCost(
+  pendingDecision: PendingDecisionDraft,
+  config: GameConfigParams | null,
+  auctionCosts?: { ad?: number; chef?: number },
+): DecisionCostBreakdown {
+  const staff = totalStaffCost(pendingDecision.staffCounts, config);
+  const product = totalProductCost(
+    pendingDecision.menu,
+    pendingDecision.quantities,
+    config,
+  );
+  const ad = auctionCosts?.ad ?? 0;
+  const chef = auctionCosts?.chef ?? 0;
+  return { staff, product, ad, chef, total: staff + product + ad + chef };
+}
+
 /** Convenience: full round cost from the current pending draft + config. */
 export function computeRoundCost(
   pendingDecision: PendingDecisionDraft,

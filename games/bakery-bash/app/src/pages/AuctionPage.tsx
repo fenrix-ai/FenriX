@@ -359,7 +359,11 @@ export function AuctionPage() {
     if (timerExpired || !gameId) return;
     try {
       const submitBids = httpsCallable(functions, "submitBids");
-      await submitBids({ gameId, bidType: "chef", chefBids: { [chefId]: pendingChefBids[chefId] ?? 0 } });
+      await submitBids({
+        gameId,
+        bidType: "chef",
+        chefBids: [{ chefId, amount: pendingChefBids[chefId] ?? 0 }],
+      });
     } catch (err) {
       setSubmitError(humanizeFunctionError(err, "Could not submit chef bid. Please try again."));
     }
@@ -469,8 +473,36 @@ export function AuctionPage() {
   // auction phase entirely. Unlike Decide, "locked" here is phase-scoped:
   // the Ads tab stays editable during the ad phase even after chefs lock
   // (and vice-versa). Out-of-phase is always read-only.
-  const inAuctionPhase = isAdPhase || isChefPhase;
-  const bidsReadOnly = !inAuctionPhase || alreadySubmitted;
+  const isLockedAdBid = useCallback(
+    (adType: AdType) => {
+      if (!isAdPhase) return true;
+      const myBid = pendingAdBids[adType] ?? 0;
+      const topBid = topBidsAd[adType] ?? 0;
+      return myBid > 0 && topBid > 0 && myBid === topBid;
+    },
+    [isAdPhase, pendingAdBids, topBidsAd],
+  );
+
+  const isLockedChefBid = useCallback(
+    (chefId: string) => {
+      if (!isChefPhase) return true;
+      const myBid = pendingChefBids[chefId] ?? 0;
+      const topBid = topBidsChef[chefId] ?? 0;
+      return myBid > 0 && topBid > 0 && myBid === topBid;
+    },
+    [isChefPhase, pendingChefBids, topBidsChef],
+  );
+
+  const hasEditableAdBid = isAdPhase
+    ? AD_TYPES.some((adType) => !isLockedAdBid(adType))
+    : false;
+  const hasEditableChefBid = isChefPhase
+    ? chefPool.some((chef) => !isLockedChefBid(chef.id))
+    : false;
+  const hasEditableBid = isAdPhase ? hasEditableAdBid : hasEditableChefBid;
+  const hasAnyAdBid = AD_TYPES.some((adType) => (pendingAdBids[adType] ?? 0) > 0);
+  const hasAnyChefBid = chefPool.some((chef) => (pendingChefBids[chef.id] ?? 0) > 0);
+  const hasAnyBidForPhase = isAdPhase ? hasAnyAdBid : hasAnyChefBid;
 
   // DEC-21 role gating: Advertising owns ad bids, Finance owns chef bids,
   // Solo owns both. Other teammates still see + can edit the inputs (so
@@ -494,8 +526,8 @@ export function AuctionPage() {
     ? `Your ${ownerLabel} teammate submits this decision`
     : submitting
     ? "Submitting…"
-    : alreadySubmitted
-    ? "Submitted — waiting for other players…"
+    : !hasEditableBid
+    ? "You currently lead every submitted bid"
     : "Submit All Bids";
 
   return (
@@ -533,7 +565,7 @@ export function AuctionPage() {
         >
           {timerDisplay}
         </div>
-        {alreadySubmitted && (
+        {alreadySubmitted && !hasEditableBid && (
           <span
             className="tab__badge tab__badge--submitted auction-page__locked-badge"
             role="status"
@@ -555,6 +587,12 @@ export function AuctionPage() {
               reach. Ownership resets every auction, so no team can hold a slot forever. May the best bid win!
             </p>
             <div className="auction-ads__grid">
+              {isAdPhase && hasEditableBid && (
+                <p className="auction-page__hint">
+                  You can rebid any ad slot where another team has outbid you.
+                  Slots where you already lead are locked.
+                </p>
+              )}
               {AD_CARDS.map((ad) => (
                 <div key={ad.id} className="auction-ad">
                   <img
@@ -584,8 +622,8 @@ export function AuctionPage() {
                         placeholder="0"
                         min={0}
                         value={pendingAdBids[ad.id] ?? 0}
-                        disabled={timerExpired || bidsReadOnly}
-                        readOnly={bidsReadOnly}
+                        disabled={timerExpired || !isAdPhase || isLockedAdBid(ad.id)}
+                        readOnly={!isAdPhase || isLockedAdBid(ad.id)}
                         onChange={(e) =>
                           setAdBid(ad.id, parseInt(e.target.value, 10) || 0)
                         }
@@ -603,6 +641,12 @@ export function AuctionPage() {
             <p className="auction-page__hint">
               Bid on chefs to boost your bakery's output.
             </p>
+            {isChefPhase && hasEditableBid && (
+              <p className="auction-page__hint">
+                You can rebid chefs where you have been outbid. Chefs you
+                currently lead are locked.
+              </p>
+            )}
             <div className="auction-chefs__grid">
               {chefPool.map((chef) => {
                 const skillCfg = SKILL_CONFIG[chef.skill];
@@ -646,8 +690,8 @@ export function AuctionPage() {
                           placeholder="0"
                           min={0}
                           value={chefBidInputs[chef.id] ?? ""}
-                          disabled={timerExpired || bidsReadOnly}
-                          readOnly={bidsReadOnly}
+                          disabled={timerExpired || !isChefPhase || isLockedChefBid(chef.id)}
+                          readOnly={!isChefPhase || isLockedChefBid(chef.id)}
                           onChange={(e) => {
                             const raw = e.target.value;
                             setChefBidInputs(prev => ({ ...prev, [chef.id]: raw }));
@@ -662,7 +706,7 @@ export function AuctionPage() {
                       </div>
                       <button
                         className="btn btn--small chef-card__submit"
-                        disabled={timerExpired || !pendingChefBids[chef.id]}
+                        disabled={timerExpired || !pendingChefBids[chef.id] || isLockedChefBid(chef.id)}
                         onClick={(e) => { e.preventDefault(); handleSubmitSingleBid(chef.id); }}
                       >
                         Submit Bid
@@ -688,8 +732,9 @@ export function AuctionPage() {
         disabled={
           timerExpired ||
           submitting ||
-          alreadySubmitted ||
           (!isAdPhase && !isChefPhase) ||
+          !hasAnyBidForPhase ||
+          !hasEditableBid ||
           !canSubmitForPhase
         }
         title={submitTooltip}

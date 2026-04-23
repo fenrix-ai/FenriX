@@ -205,7 +205,7 @@ const DEFAULT_GAME_CONFIG = {
 
   totalRounds: 5,
   specialtyChefCap: 3,
-  chefPoolSize: { min: 6, max: 8 },
+  chefPoolSize: 12,
 
   // Kitchen cohesion: chefSatisfaction = max(floor, 100 - max(0, n - threshold) × decay)
   chefSatisfactionThreshold: 4,
@@ -279,7 +279,7 @@ function cleanString(value) {
  * Deep-merges `rawConfig` over DEFAULT_GAME_CONFIG. Every numeric field is
  * validated with numberOrDefault so a malformed input can never replace a valid
  * default with NaN/undefined. Nested objects (revenueCoefficients, adBonuses,
- * phaseDurations, chefPoolSize, returningCustomerBonuses) are merged key-by-key.
+ * phaseDurations, returningCustomerBonuses) are merged key-by-key.
  *
  * @param {object} rawConfig possibly untrusted partial config
  * @returns {object} fully-populated config safe to consume downstream
@@ -291,7 +291,6 @@ function mergeConfig(rawConfig) {
   const rawRevenue    = objectOrDefault(raw.revenueCoefficients,      {});
   const rawAds        = objectOrDefault(raw.adBonuses,                {});
   const rawPhases     = objectOrDefault(raw.phaseDurations,           {});
-  const rawPoolSize   = objectOrDefault(raw.chefPoolSize,             {});
   const rawReturning  = objectOrDefault(raw.returningCustomerBonuses, {});
 
   return {
@@ -329,10 +328,7 @@ function mergeConfig(rawConfig) {
     totalRounds:      numberOrDefault(raw.totalRounds,      d.totalRounds),
     specialtyChefCap: numberOrDefault(raw.specialtyChefCap, d.specialtyChefCap),
 
-    chefPoolSize: {
-      min: numberOrDefault(rawPoolSize.min, d.chefPoolSize.min),
-      max: numberOrDefault(rawPoolSize.max, d.chefPoolSize.max),
-    },
+    chefPoolSize: numberOrDefault(raw.chefPoolSize, d.chefPoolSize),
 
     chefSatisfactionThreshold: numberOrDefault(raw.chefSatisfactionThreshold, d.chefSatisfactionThreshold),
     chefSatisfactionDecay:     numberOrDefault(raw.chefSatisfactionDecay,     d.chefSatisfactionDecay),

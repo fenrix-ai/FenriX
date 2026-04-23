@@ -218,7 +218,15 @@ export function useGameListener(gameId: string | null, playerId?: string | null)
                   ? lrr.productBreakdown
                   : undefined,
               adWon: lrr.adWon ?? null,
+              adWins: Array.isArray(lrr.adWins) ? lrr.adWins : undefined,
               adPaid: typeof lrr.adPaid === "number" ? lrr.adPaid : undefined,
+              chefsWon: Array.isArray(lrr.chefsWon)
+                ? (lrr.chefsWon as Array<{ id?: string; name?: string }>)
+                : undefined,
+              chefBidPaid:
+                typeof lrr.chefBidPaid === "number"
+                  ? lrr.chefBidPaid
+                  : undefined,
               auctionResults: {
                 adWon: lrr.adWon ?? null,
                 chefWon:

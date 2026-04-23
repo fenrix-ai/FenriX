@@ -98,12 +98,15 @@ function getQuantity(decision, product) {
 }
 
 /**
- * Pull the ad name (or null) from a player's auction results.
+ * Pull the ad names won by a player this round.
  */
-function getAdWon(player) {
+function getAdWins(player) {
   const ar = player && player.auctionResults;
-  if (!ar) return null;
-  return typeof ar.adWon === 'string' && ar.adWon ? ar.adWon : null;
+  if (!ar) return [];
+  if (Array.isArray(ar.adWins)) {
+    return ar.adWins.filter((adType) => typeof adType === 'string' && adType);
+  }
+  return typeof ar.adWon === 'string' && ar.adWon ? [ar.adWon] : [];
 }
 
 function getAdBidPaid(player) {
@@ -118,6 +121,12 @@ function getChefBidPaid(player) {
   if (!ar) return 0;
   const v = Number(ar.chefBidPaid);
   return Number.isFinite(v) && v > 0 ? v : 0;
+}
+
+function getChefsWon(player) {
+  const ar = player && player.auctionResults;
+  if (!ar || !Array.isArray(ar.chefsWon)) return [];
+  return ar.chefsWon.filter((chef) => chef && typeof chef === 'object');
 }
 
 // ---------------------------------------------------------------------------
@@ -401,12 +410,14 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
       ? decision.sousChefCount
       : Number(p.sousChefCount) || 0;
     const adBidPaid = getAdBidPaid(p);
-    const adWon = getAdWon(p);
+    const adWins = getAdWins(p);
+    const chefBidPaid = getChefBidPaid(p);
+    const chefsWon = getChefsWon(p);
 
     // DEC-03/DEC-04: flat ad-winner bonus added to gross revenue.
-    // TV $50k, Billboard $37.5k, Radio $25k, Newspaper $18.75k (config.adBonuses).
-    const adWinnerBonus =
-      (adWon && config && config.adBonuses && config.adBonuses[adWon]) || 0;
+    const adWinnerBonus = adWins.reduce((sum, adType) => {
+      return sum + ((config && config.adBonuses && config.adBonuses[adType]) || 0);
+    }, 0);
 
     let revenueGross = computeGrossRevenue({
       sousChefCount,
@@ -425,7 +436,7 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
     };
     const costAuction = {
       adAuctionWinningBid: adBidPaid,
-      chefAuctionWinningBid: getChefBidPaid(p),
+      chefAuctionWinningBid: chefBidPaid,
     };
     const roundCosts = calculateRoundCosts(costDecision, costAuction, config);
     const totalSpent = roundCosts.totalSpent;
@@ -503,6 +514,11 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
       perProductSatisfaction,
       returningCustomersEarned,
       selloutAnywhere,
+      adWon: adWins[0] || null,
+      adWins,
+      adBidPaid,
+      chefsWon,
+      chefBidPaid,
       csvRow,
       productPrices: resolvedPricesPerPlayer[p.playerId] || {},
       revenueBreakdown,

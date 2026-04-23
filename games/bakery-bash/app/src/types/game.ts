@@ -414,7 +414,10 @@ export interface RoundResult {
   productBreakdown?: Partial<Record<ProductKey, number>>;
   /** Ad surface the player won this round, with paid amount. */
   adWon?: AdType | null;
+  adWins?: AdType[];
   adPaid?: number;
+  chefsWon?: Array<{ id?: string; name?: string }>;
+  chefBidPaid?: number;
 }
 
 /**

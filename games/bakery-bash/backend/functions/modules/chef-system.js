@@ -68,18 +68,42 @@ function skillRank(tier) {
 // ---------------------------------------------------------------------------
 
 /**
+ * Generate one chef candidate for an auction round.
+ *
+ * @param {number} round   1-indexed round number (1..totalRounds)
+ * @param {object} config  merged game config
+ * @returns {object} chef candidate
+ */
+function generateOneChef(round, config) {
+  const cfg = config || {};
+  const idx = Math.max(0, Math.min(CHEF_SPAWN_RATES.length - 1, round - 1));
+  const rates = CHEF_SPAWN_RATES[idx];
+  const nationalityKeys = Object.keys(CHEF_NATIONALITIES);
+  const nationality = pick(nationalityKeys);
+  const gender = Math.random() < 0.5 ? 'male' : 'female';
+  const name = pick(CHEF_NATIONALITIES[nationality].names[gender]);
+  const skillTier = sampleSkillTier(rates);
+  const specialties = CHEF_NATIONALITIES[nationality].specialties.slice();
+  const baseCost = (cfg.sousChefBaseCost != null && Number.isFinite(cfg.sousChefBaseCost))
+    ? cfg.sousChefBaseCost : 12500;
+  const minBidFloor = MIN_BID_FLOOR_MULTIPLIERS[skillTier] * baseCost;
+
+  return {
+    id: makeId(),
+    nationality,
+    gender,
+    name,
+    skillTier,
+    specialties,
+    minBidFloor,
+  };
+}
+
+/**
  * Generate the chef pool for an auction round.
  *
- * Pool size is uniformly random in [config.chefPoolSize.min, config.chefPoolSize.max].
- * Skill tier is sampled per CHEF_SPAWN_RATES[round - 1]. Nationality and gender
- * are chosen uniformly at random; name is picked from the matching pool.
- *
- * Each chef object:
- *   {
- *     id, nationality, gender, name, skillTier,
- *     specialties:  (from nationality, hidden from UI but needed for output math),
- *     minBidFloor:  sousChefBaseCost × { novel: 2, intermediate: 3.5, advanced: 5.5 }
- *   }
+ * Pool size is exact (`config.chefPoolSize`, default 12), and names are
+ * deduplicated within the round so the live auction/readouts stay unambiguous.
  *
  * @param {number} round   1-indexed round number (1..totalRounds)
  * @param {object} config  merged game config (needs chefPoolSize, sousChefBaseCost)
@@ -87,37 +111,19 @@ function skillRank(tier) {
  */
 function generateChefPool(round, config) {
   const cfg = config || {};
-  const poolSize$ = (cfg.chefPoolSize && cfg.chefPoolSize.min != null)
-    ? cfg.chefPoolSize : { min: 3, max: 6 };
-  const { min, max } = poolSize$;
-  const poolSize = Math.floor(Math.random() * (max - min + 1)) + min;
-
-  // Clamp round into the spawn-rate table range.
-  const idx = Math.max(0, Math.min(CHEF_SPAWN_RATES.length - 1, round - 1));
-  const rates = CHEF_SPAWN_RATES[idx];
-
-  const nationalityKeys = Object.keys(CHEF_NATIONALITIES);
+  const poolSize = Number.isFinite(cfg.chefPoolSize) ? cfg.chefPoolSize : 12;
+  const usedNames = new Set();
   const pool = [];
+  let attempts = 0;
+  const maxAttempts = poolSize * 12;
 
-  for (let i = 0; i < poolSize; i++) {
-    const nationality = pick(nationalityKeys);
-    const gender = Math.random() < 0.5 ? 'male' : 'female';
-    const name = pick(CHEF_NATIONALITIES[nationality].names[gender]);
-    const skillTier = sampleSkillTier(rates);
-    const specialties = CHEF_NATIONALITIES[nationality].specialties.slice();
-    const baseCost = (cfg.sousChefBaseCost != null && Number.isFinite(cfg.sousChefBaseCost))
-      ? cfg.sousChefBaseCost : 12500;
-    const minBidFloor = MIN_BID_FLOOR_MULTIPLIERS[skillTier] * baseCost;
-
-    pool.push({
-      id: makeId(),
-      nationality,
-      gender,
-      name,
-      skillTier,
-      specialties,
-      minBidFloor,
-    });
+  while (pool.length < poolSize && attempts < maxAttempts) {
+    const chef = generateOneChef(round, cfg);
+    if (!usedNames.has(chef.name)) {
+      usedNames.add(chef.name);
+      pool.push(chef);
+    }
+    attempts += 1;
   }
 
   return pool;
@@ -385,6 +391,7 @@ function resolveChefAuction(chefPool, playerBids) {
 module.exports = {
   // Primary API
   generateChefPool,
+  generateOneChef,
   getChefOutputForProduct,
   calculateTotalProductOutput,
   calculateChefSatisfactionScore,

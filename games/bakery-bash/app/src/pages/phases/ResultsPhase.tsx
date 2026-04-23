@@ -1,7 +1,10 @@
+import { useEffect, useState } from "react";
+import { doc, onSnapshot, type DocumentData } from "firebase/firestore";
 import { useGame } from "../../contexts/GameContext";
 import { LoanSharkCallout } from "../../components/game/LoanSharkCallout";
 import { downloadResultsCsv } from "../../components/game/RoundHeader";
 import type { MaintenanceBars, ProductKey } from "../../types/game";
+import { db } from "../../lib/firebase";
 
 /**
  * FE-12 — Results phase rework.
@@ -54,9 +57,86 @@ function barColor(pct: number): string {
   return "var(--berry)";
 }
 
+function looksLikeInternalChefId(value: string | null | undefined): boolean {
+  if (!value) return false;
+  return /^[a-z0-9-]{12,}$/i.test(value);
+}
+
+function presentChefName(
+  value: string | null | undefined,
+  fallbackIndex?: number,
+): string {
+  if (value && !looksLikeInternalChefId(value)) return value;
+  return typeof fallbackIndex === "number" ? `Chef ${fallbackIndex + 1}` : "Chef";
+}
+
 export function ResultsPhase() {
-  const { roundResults, currentRound, chefSatisfactionScores, leaderboard } = useGame();
+  const {
+    roundResults,
+    currentRound,
+    chefSatisfactionScores,
+    leaderboard,
+    gameId,
+    playerId,
+  } = useGame();
   const latest = roundResults[roundResults.length - 1];
+  const [liveAuctionResult, setLiveAuctionResult] = useState<{
+    adWins: string[];
+    adPaid: number | null;
+    chefsWon: Array<{ id?: string; name?: string }>;
+    chefBidPaid: number | null;
+  }>({
+    adWins: [],
+    adPaid: null,
+    chefsWon: [],
+    chefBidPaid: null,
+  });
+
+  useEffect(() => {
+    if (!gameId || !playerId || !currentRound) {
+      setLiveAuctionResult({
+        adWins: [],
+        adPaid: null,
+        chefsWon: [],
+        chefBidPaid: null,
+      });
+      return;
+    }
+    const roundRef = doc(db, "games", gameId, "rounds", `round_${currentRound}`);
+    const unsubscribe = onSnapshot(roundRef, (snap) => {
+      if (!snap.exists()) {
+        setLiveAuctionResult({
+          adWins: [],
+          adPaid: null,
+          chefsWon: [],
+          chefBidPaid: null,
+        });
+        return;
+      }
+      const data = snap.data() as DocumentData;
+      const adEntry = (data.adAuctionResults?.[playerId] ?? null) as DocumentData | null;
+      const chefEntry = (data.chefAuctionResults?.[playerId] ?? null) as DocumentData | null;
+      setLiveAuctionResult({
+        adWins:
+          adEntry && Array.isArray(adEntry.adTypes)
+            ? (adEntry.adTypes as string[])
+            : [],
+        adPaid:
+          adEntry && typeof adEntry.totalPaid === "number"
+            ? adEntry.totalPaid
+            : null,
+        chefsWon:
+          chefEntry && Array.isArray(chefEntry.chefs)
+            ? (chefEntry.chefs as Array<{ id?: string; name?: string }>)
+            : [],
+        chefBidPaid:
+          chefEntry && typeof chefEntry.totalPaid === "number"
+            ? chefEntry.totalPaid
+            : null,
+      });
+    });
+    return unsubscribe;
+  }, [gameId, playerId, currentRound]);
 
   const scores: Record<string, number> =
     latest?.chefSatisfactionScores ?? chefSatisfactionScores;
@@ -67,7 +147,8 @@ export function ResultsPhase() {
 
   const departures = latest?.chefDepartures ?? [];
   const departureNames = latest?.chefDepartureNames ?? [];
-  const chefLabel = (id: string, index: number) => departureNames[index] || id;
+  const chefLabel = (_id: string, index: number) =>
+    presentChefName(departureNames[index], index);
 
   const productEntries = latest?.productBreakdown
     ? (Object.entries(latest.productBreakdown) as Array<[ProductKey, number]>).filter(
@@ -86,9 +167,28 @@ export function ResultsPhase() {
   // on the player's lastRoundResult; `chefWon` mirrors the chef id they
   // took home this round. We also accept the nested `auctionResults.*`
   // shape written by some legacy simulation paths.
-  const adWon = latest?.adWon ?? latest?.auctionResults?.adWon ?? null;
+  const adWins =
+    (liveAuctionResult.adWins.length > 0 ? liveAuctionResult.adWins : undefined) ??
+    (Array.isArray(latest?.adWins) ? latest.adWins : undefined) ??
+    [];
+  const adWon = latest?.adWon ?? latest?.auctionResults?.adWon ?? adWins[0] ?? null;
+  const chefWonList =
+    (liveAuctionResult.chefsWon.length > 0 ? liveAuctionResult.chefsWon : undefined) ??
+    (Array.isArray(latest?.chefsWon) ? latest.chefsWon : undefined) ??
+    [];
   const chefWon = latest?.auctionResults?.chefWon ?? null;
-  const adPaid = typeof latest?.adPaid === "number" ? latest.adPaid : null;
+  const adPaid =
+    typeof liveAuctionResult.adPaid === "number"
+      ? liveAuctionResult.adPaid
+      : typeof latest?.adPaid === "number"
+        ? latest.adPaid
+        : null;
+  const chefBidPaid =
+    typeof liveAuctionResult.chefBidPaid === "number"
+      ? liveAuctionResult.chefBidPaid
+      : typeof latest?.chefBidPaid === "number"
+        ? latest.chefBidPaid
+        : null;
 
   // FE-4 — end-of-round maintenance snapshot. Prefer the per-round
   // snapshot on the result; fall back to live context state for the
@@ -184,9 +284,9 @@ export function ResultsPhase() {
             <ul className="results-phase__auction-list">
               <li className="results-phase__auction-row">
                 <span className="results-phase__auction-label">Ad slot</span>
-                {adWon ? (
+                {adWins.length > 0 || adWon ? (
                   <span className="results-phase__auction-value results-phase__auction-value--won">
-                    Won: {adWon}
+                    Won: {adWins.length > 0 ? adWins.join(", ") : adWon}
                     {typeof adPaid === "number" && adPaid > 0 && (
                       <>
                         {" "}
@@ -204,9 +304,21 @@ export function ResultsPhase() {
               </li>
               <li className="results-phase__auction-row">
                 <span className="results-phase__auction-label">Chef</span>
-                {chefWon ? (
+                {chefWonList.length > 0 || chefWon ? (
                   <span className="results-phase__auction-value results-phase__auction-value--won">
-                    Hired: {chefWon}
+                    Hired: {chefWonList.length > 0
+                      ? chefWonList
+                          .map((chef, index) => presentChefName(chef?.name || chef?.id, index))
+                          .join(", ")
+                      : presentChefName(chefWon)}
+                    {typeof chefBidPaid === "number" && chefBidPaid > 0 && (
+                      <>
+                        {" "}
+                        <span className="results-phase__auction-sub">
+                          ({formatMoney(chefBidPaid)})
+                        </span>
+                      </>
+                    )}
                   </span>
                 ) : (
                   <span className="results-phase__auction-value results-phase__auction-value--lost">
@@ -316,7 +428,7 @@ export function ResultsPhase() {
                 ⚠
               </span>
               <p className="results-phase__warning-text">
-                <strong>{chefId}</strong>'s satisfaction is low (
+                <strong>{presentChefName(undefined, lowChefs.findIndex(([id]) => id === chefId))}</strong>'s satisfaction is low (
                 {Math.round(score)}%). Keep your kitchen clean and machines
                 maintained to retain them.
               </p>

@@ -43,6 +43,12 @@ interface ProfessorRosterEntry {
   joinedAt?: Timestamp | null;
 }
 
+interface ProfessorTeamEntry {
+  id: string;
+  name: string;
+  roleAssignments: Record<string, string | null>;
+}
+
 interface CallableResult {
   gameId: string;
   phase?: string;
@@ -117,6 +123,7 @@ export function ProfessorPage() {
   const [roster, setRoster] = useState<ProfessorRosterEntry[]>([]);
   const [rosterError, setRosterError] = useState<string | null>(null);
   const [rosterReady, setRosterReady] = useState(false);
+  const [teams, setTeams] = useState<ProfessorTeamEntry[]>([]);
   const [submissions, setSubmissions] = useState<
     Record<string, Record<string, SubmissionEntry>>
   >({});
@@ -148,6 +155,37 @@ export function ProfessorPage() {
       },
       (err) => {
         console.error("professor: games listener error", { gameId, err });
+      },
+    );
+    return unsubscribe;
+  }, [gameId]);
+
+  useEffect(() => {
+    if (!gameId) {
+      setTeams([]);
+      return;
+    }
+    const teamsRef = collection(db, "games", gameId, "teams");
+    const unsubscribe = onSnapshot(
+      teamsRef,
+      (snap) => {
+        const entries: ProfessorTeamEntry[] = snap.docs.map((d) => {
+          const data = d.data() as DocumentData;
+          return {
+            id: d.id,
+            name: typeof data.name === "string" ? data.name : d.id,
+            roleAssignments:
+              data.roleAssignments && typeof data.roleAssignments === "object"
+                ? (data.roleAssignments as Record<string, string | null>)
+                : {},
+          };
+        });
+        entries.sort((a, b) => a.name.localeCompare(b.name));
+        setTeams(entries);
+      },
+      (err) => {
+        console.error("professor: teams listener error:", { gameId, err });
+        setTeams([]);
       },
     );
     return unsubscribe;
@@ -323,6 +361,65 @@ export function ProfessorPage() {
     }, delay);
     return () => clearTimeout(t);
   }, [phaseEndsAtMs, gameId, phase]);
+
+  const rosterByUid = useMemo(
+    () =>
+      Object.fromEntries(
+        roster.map((entry) => [
+          entry.uid,
+          { displayName: entry.displayName, bakeryName: entry.bakeryName },
+        ]),
+      ),
+    [roster],
+  );
+
+  const monitorRows = useMemo(() => {
+    if (teams.length > 0) {
+      return teams.map((team) => {
+        const memberUids = Object.keys(team.roleAssignments);
+        return {
+          id: team.id,
+          teamName: team.name,
+          memberUids,
+          members: memberUids.map((uid) => rosterByUid[uid]?.displayName ?? uid),
+          roleAssignments: team.roleAssignments,
+        };
+      });
+    }
+    return roster.map((entry) => ({
+      id: entry.uid,
+      teamName: entry.bakeryName ?? entry.displayName,
+      memberUids: [entry.uid],
+      members: [entry.displayName],
+      roleAssignments: { [entry.uid]: "solo" },
+    }));
+  }, [teams, roster, rosterByUid]);
+
+  const submissionOwnerUid = useCallback(
+    (
+      row: {
+        memberUids: string[];
+        roleAssignments: Record<string, string | null>;
+      },
+      phaseKey: BasePhase,
+    ) => {
+      const preferredRole =
+        phaseKey === "bid_ad"
+          ? "advertising"
+          : phaseKey === "bid_chef"
+            ? "finance"
+            : "operations";
+      const entries = Object.entries(row.roleAssignments);
+      const soloUid = entries.find(([, roleValue]) => roleValue === "solo")?.[0];
+      if (soloUid) return soloUid;
+      return (
+        entries.find(([, roleValue]) => roleValue === preferredRole)?.[0] ??
+        row.memberUids[0] ??
+        null
+      );
+    },
+    [],
+  );
 
   const onStart = () => callCallable("startGame", "start", "Game started.");
   const onAdvance = () =>
@@ -522,15 +619,18 @@ export function ProfessorPage() {
         </p>
       )}
 
-      {gameId && roster.length > 0 && isRunning && (() => {
+      {gameId && monitorRows.length > 0 && isRunning && (() => {
         const currentBasePhase = phase ? parseGamePhase(phase, currentRound).base : null;
         const currentSubmissions: Record<string, SubmissionEntry> =
           currentBasePhase ? (submissions[currentBasePhase] ?? {}) : {};
-        const submittedCount = roster.filter(
-          (p) => currentSubmissions[p.uid]?.status === "submitted",
+        const submittedCount = monitorRows.filter(
+          (row) => {
+            const ownerUid = submissionOwnerUid(row, currentBasePhase ?? "decide");
+            return ownerUid ? currentSubmissions[ownerUid]?.status === "submitted" : false;
+          },
         ).length;
-        const allReady = roster.length > 0 && submittedCount === roster.length;
-        const waitingCount = roster.length - submittedCount;
+        const allReady = monitorRows.length > 0 && submittedCount === monitorRows.length;
+        const waitingCount = monitorRows.length - submittedCount;
         return (
           <div
             className={`prof-phase-readiness prof-phase-readiness--${allReady ? "go" : "wait"}`}
@@ -643,10 +743,10 @@ export function ProfessorPage() {
       )}
 
       {/* Per-phase submission grid. */}
-      {gameId && roster.length > 0 && (
+      {gameId && monitorRows.length > 0 && (
         <section className="professor-page__monitor">
           <h2 className="professor-page__monitor-title">
-            Players ({roster.length})
+            Teams ({monitorRows.length})
             {currentRound > 0 && (
               <span className="professor-page__monitor-round">
                 · Round {currentRound}
@@ -672,21 +772,22 @@ export function ProfessorPage() {
             <thead>
               <tr>
                 <th>#</th>
-                <th>Player</th>
-                <th>Bakery</th>
+                <th>Team</th>
+                <th>Members</th>
                 {SUBMISSION_PHASES.map((p) => (
                   <th key={p.key}>{p.label}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {roster.map((entry, i) => (
-                <tr key={entry.uid}>
+              {monitorRows.map((row, i) => (
+                <tr key={row.id}>
                   <td>{i + 1}</td>
-                  <td>{entry.displayName}</td>
-                  <td>{entry.bakeryName ?? "—"}</td>
+                  <td>{row.teamName}</td>
+                  <td>{row.members.join(", ") || "—"}</td>
                   {SUBMISSION_PHASES.map((p) => {
-                    const sub = submissions[p.key]?.[entry.uid];
+                    const ownerUid = submissionOwnerUid(row, p.key);
+                    const sub = ownerUid ? submissions[p.key]?.[ownerUid] : undefined;
                     const submitted = sub?.status === "submitted";
                     return (
                       <td
@@ -699,8 +800,12 @@ export function ProfessorPage() {
                         }
                         title={
                           submitted
-                            ? `Submitted${sub?.role ? ` as ${sub.role}` : ""}`
-                            : "Not yet submitted"
+                            ? `Submitted by ${sub?.displayName ?? ownerUid ?? "assigned owner"}${
+                                sub?.role ? ` as ${sub.role}` : ""
+                              }`
+                            : ownerUid
+                              ? `Waiting on ${row.members.join(", ")}`
+                              : "No owner assigned"
                         }
                       >
                         {submitted ? "✓" : "⏳"}
@@ -714,7 +819,7 @@ export function ProfessorPage() {
         </section>
       )}
 
-      {gameId && rosterReady && roster.length === 0 && !rosterError && (
+      {gameId && rosterReady && monitorRows.length === 0 && !rosterError && (
         <p className="professor-page__note">No players have joined yet.</p>
       )}
     </PageShell>
