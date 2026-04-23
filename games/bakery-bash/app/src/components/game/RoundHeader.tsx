@@ -126,7 +126,6 @@ export function RoundHeader() {
   const {
     currentRound,
     totalRounds,
-    timeRemaining,
     teamName,
     player,
     role,
@@ -136,11 +135,7 @@ export function RoundHeader() {
   } = useGame();
 
   const [inboxOpen, setInboxOpen] = useState(false);
-  const phaseSeconds = usePhaseCountdownSeconds();
-  // Prefer the backend-driven `phaseEndsAt` countdown; fall back to the
-  // legacy local `timeRemaining` (only used by AuctionPage's tab timer
-  // until `phaseEndsAt` is wired through there too).
-  const displaySeconds = phaseSeconds ?? timeRemaining;
+  const displaySeconds = usePhaseCountdownSeconds();
 
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);

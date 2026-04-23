@@ -279,7 +279,6 @@ export function useGameListener(gameId: string | null, playerId?: string | null)
                 : typeof data.displayName === "string"
                   ? data.displayName
                   : "Player",
-            budget: 0,
             cumulativeRevenue:
               typeof data.cumulativeRevenue === "number"
                 ? data.cumulativeRevenue

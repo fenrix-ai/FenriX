@@ -89,7 +89,6 @@ const initialState: GameState = {
   player: null,
   players: [],
   roundResults: [],
-  timeRemaining: null,
   auctionTab: "chefs",
   pendingDecision: DEFAULT_PENDING_DECISION,
   pendingAdBids: DEFAULT_PENDING_AD_BIDS,
@@ -138,16 +137,13 @@ type GameAction =
   | { type: "SET_PHASE"; payload: GamePhaseString }
   | { type: "SET_ROUND"; payload: number }
   | { type: "SET_PLAYERS"; payload: Player[] }
-  | { type: "ADVANCE_ROUND" }
   | { type: "ADD_RESULT"; payload: RoundResult }
-  | { type: "SET_TIMER"; payload: number | null }
   | { type: "UPDATE_PLAYER"; payload: Partial<Player> }
   | { type: "SET_AUCTION_TAB"; payload: AuctionTab }
   | { type: "SET_CONFIG"; payload: GameConfigParams | null }
   | {
       type: "UPDATE_PENDING_DECISION";
       payload: {
-        sousChefCount?: number;
         menu?: Partial<Record<ProductKey, boolean>>;
         quantities?: Partial<Record<ProductKey, number>>;
         sousChefAssignments?: Partial<Record<ProductKey, number>>;
@@ -262,14 +258,6 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     case "SET_PLAYERS":
       return { ...state, players: action.payload };
 
-    case "ADVANCE_ROUND":
-      return {
-        ...state,
-        currentRound: state.currentRound + 1,
-        roundResults: [],   // clear stale results from previous round
-        phase: "decide",
-      };
-
     case "ADD_RESULT": {
       const result = action.payload;
       // Dedupe by round — the player-doc snapshot fires multiple times per
@@ -296,9 +284,6 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           : state.chefSatisfactionScores,
       };
     }
-
-    case "SET_TIMER":
-      return { ...state, timeRemaining: action.payload };
 
     case "UPDATE_PLAYER":
       return {

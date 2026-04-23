@@ -1,3 +1,5 @@
+import { formatMoney } from "../../lib/cost";
+
 /**
  * FE-12 — Red banner shown on the results screen when the player had to
  * borrow from the loan shark this round.
@@ -14,11 +16,6 @@
 export interface LoanSharkCalloutProps {
   amountBorrowed: number | null | undefined;
   interestCharged?: number | null;
-}
-
-function formatMoney(n: number | null | undefined): string {
-  if (typeof n !== "number" || Number.isNaN(n)) return "$0";
-  return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
 
 export function LoanSharkCallout({

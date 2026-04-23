@@ -1,7 +1,7 @@
 /**
- * Round-cost calculations shared between the StaffTab grand total, the
- * BudgetSummary live counter, and any future cost-aware UI. Centralized so
- * the staff-tab number and the budget panel number can never drift apart.
+ * Round-cost calculations shared across all cost-aware UI. Centralized so
+ * every caller (StaffTab grand total, decision cost panel, etc.) gets the
+ * same numbers.
  *
  * All formulas mirror the game-design-proposal staffing economics:
  * an escalating per-hire curve for both sous chefs and Maintenance Guys
@@ -55,8 +55,8 @@ export function totalRoleCost(base: number, count: number): number {
  * Resolve the per-role base costs from the live `config` doc, with sensible
  * fallbacks. `maintenanceBaseCost` falls back to the sous chef base, which in
  * turn falls back to the legacy `costPerStaffPerRound` field, then to the
- * hard default. Two callers (StaffTab + BudgetSummary) rely on getting
- * identical numbers, so the fallback chain lives here.
+ * hard default. All staff-cost callers rely on getting identical numbers,
+ * so the fallback chain lives here.
  */
 export function resolveBaseCosts(config: GameConfigParams | null): {
   sousBase: number;

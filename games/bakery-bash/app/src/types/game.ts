@@ -95,17 +95,6 @@ export function parseGamePhase(
   return { round: fallbackRound, base: "lobby" };
 }
 
-/** True if the current phase allows decision submission. */
-export function isDecidePhase(phase: GamePhaseString | null | undefined) {
-  return parseGamePhase(phase).base === "decide";
-}
-
-/** True if the current phase is an auction phase (ads or chefs). */
-export function isBidPhase(phase: GamePhaseString | null | undefined) {
-  const base = parseGamePhase(phase).base;
-  return base === "bid_ad" || base === "bid_chef";
-}
-
 // ---------------------------------------------------------------------------
 // Product keys / menu
 // ---------------------------------------------------------------------------
@@ -133,10 +122,6 @@ export const PRODUCT_KEYS: ProductKey[] = [
 
 export const BASE_MENU: ProductKey[] = ["croissant", "cookie", "bagel"];
 export const OPTIONAL_MENU: ProductKey[] = ["sandwich", "coffee", "matcha"];
-
-// Legacy alias — existing UI code refers to `MenuItemId`. Keep it pointing at
-// the canonical product key so older files compile while we migrate.
-export type MenuItemId = ProductKey;
 
 // ---------------------------------------------------------------------------
 // Stations + maintenance (game-design-proposal integration)
@@ -311,17 +296,6 @@ export interface ProductPriceConfig {
   elasticityTier: ElasticityTier;
 }
 
-export interface MenuItem {
-  id: MenuItemId;
-  name: string;
-  unlocked: boolean;
-  basePrice: number;
-  quantity: number;
-  priceFloor: number;
-  priceCeiling: number;
-  elasticityTier: ElasticityTier;
-}
-
 // ---------------------------------------------------------------------------
 // Pending decision / bids drafts
 // ---------------------------------------------------------------------------
@@ -475,13 +449,6 @@ export interface RoundEvent {
  */
 export type PlayerRole = "operations" | "advertising" | "finance" | "solo";
 
-export const PLAYER_ROLES: PlayerRole[] = [
-  "operations",
-  "advertising",
-  "finance",
-  "solo",
-];
-
 export const PLAYER_ROLE_LABELS: Record<PlayerRole, string> = {
   operations: "Operations",
   advertising: "Bidder",
@@ -585,7 +552,6 @@ export interface Player {
   id: string;
   name: string;
   bakeryName: string;
-  budget: number;
   cumulativeRevenue: number;
   /** Optional team name (DEC-23). Falls back to displayName if absent. */
   teamName?: string;
@@ -604,7 +570,6 @@ export interface GameState {
   player: Player | null;
   players: Player[];
   roundResults: RoundResult[];
-  timeRemaining: number | null;
   auctionTab: AuctionTab;
   pendingDecision: PendingDecisionDraft;
   pendingAdBids: PendingAdBidsDraft;
