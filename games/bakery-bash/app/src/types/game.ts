@@ -237,6 +237,13 @@ export interface ChefListing {
   name: string;
   skill: SkillLevel;
   multiplier: number;
+  /**
+   * Per-chef minimum bid set by the backend (see BE chef-system module).
+   * Rendered next to `Top Bid` on the auction card and enforced client-side
+   * as a "bid must be ≥ minBidFloor" check before submit. Optional because
+   * the cosmetic placeholder pool (pre-backend snapshot) has no floor.
+   */
+  minBidFloor?: number;
 }
 
 /** Real skill tier written by the backend in `rounds/{N}.chefPool`. */
@@ -415,6 +422,28 @@ export interface RoundResult {
   /** Ad surface the player won this round, with paid amount. */
   adWon?: AdType | null;
   adPaid?: number;
+  /**
+   * Curveball events that landed on this team during the round. Optional
+   * because not every round will have one, and older round docs might
+   * predate the event system entirely. The frontend renders these as
+   * cards in the Events section of the Results screen.
+   */
+  events?: RoundEvent[];
+}
+
+/** One row of the curveball-events feed shown on the Results screen. */
+export type RoundEventKind = "burglary" | "food-safety-inspection";
+
+export interface RoundEvent {
+  kind: RoundEventKind;
+  /** Day-of-month numbers (1–31) when the event occurred this round. */
+  days?: number[];
+  /** Dollars stolen across all burglaries in `days` (burglary only). */
+  amount?: number;
+  /** Inspection cleanliness reading 0–100 (inspection only). */
+  cleanlinessPct?: number;
+  /** Inspection rating label (Poor / Sufficient / Good / Excellent). */
+  rating?: "Poor" | "Sufficient" | "Good" | "Excellent";
 }
 
 /**
@@ -582,6 +611,37 @@ export interface GameState {
    * forever.
    */
   leaderboardError: string | null;
+  /**
+   * CSVs the team has acquired this game and can re-download from the
+   * CSV Inbox header button. Includes competitor-intel purchases, Tier 1
+   * specialty-chef tables, Tier 2 chef-profile dumps, and anything else
+   * the player would otherwise lose the moment the sidebar popup closes.
+   *
+   * The round-history results CSV is *not* stored here — it is derived
+   * on demand from `roundResults` so it always reflects the latest data
+   * (see `downloadResultsCsv`).
+   */
+  acquiredCsvs: AcquiredCsv[];
+}
+
+/**
+ * One entry in the CSV Inbox. `kind` drives the icon + grouping; `label`
+ * is the human-readable title shown in the list; `round` (when present)
+ * pins the CSV to the round it was generated / purchased for.
+ */
+export type AcquiredCsvKind =
+  | "competitor-intel"
+  | "chef-tier1"
+  | "chef-tier2";
+
+export interface AcquiredCsv {
+  id: string;
+  kind: AcquiredCsvKind;
+  label: string;
+  round?: number;
+  acquiredAtMs: number;
+  csv: string;
+  filename: string;
 }
 
 /**
