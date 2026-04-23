@@ -1614,6 +1614,41 @@ h3 { font-size: 0.7rem; }
   border-color: var(--caramel);
 }
 
+.auction-chef__min-bid {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  width: 100%;
+  padding: 0.25rem 0.4rem;
+}
+
+.auction-chef__min-bid-label {
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  color: var(--dark-roast);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.auction-chef__min-bid-value {
+  font-family: var(--font-body);
+  font-weight: 600;
+  color: var(--espresso);
+}
+
+.auction-chef__bid-input--error {
+  border-color: var(--berry) !important;
+  background: rgba(220, 58, 90, 0.08);
+}
+
+.auction-chef__bid-error {
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  color: var(--berry);
+  margin: 0.2rem 0 0;
+}
+
 /* ─── Advertisements Grid ───────────────────────────────── */
 
 .auction-ads__grid {

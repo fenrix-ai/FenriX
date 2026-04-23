@@ -237,6 +237,13 @@ export interface ChefListing {
   name: string;
   skill: SkillLevel;
   multiplier: number;
+  /**
+   * Per-chef minimum bid set by the backend (see BE chef-system module).
+   * Rendered next to `Top Bid` on the auction card and enforced client-side
+   * as a "bid must be ≥ minBidFloor" check before submit. Optional because
+   * the cosmetic placeholder pool (pre-backend snapshot) has no floor.
+   */
+  minBidFloor?: number;
 }
 
 /** Real skill tier written by the backend in `rounds/{N}.chefPool`. */
