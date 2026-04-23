@@ -7,6 +7,10 @@ const AT_COUNTER_MIN_MS = 600
 const AT_COUNTER_MAX_MS = 900
 const EXIT_X = 500
 const TICK_MS = 1000 / 30 // 30 Hz position update
+const DOLLAR_LIFETIME_MS = 900
+const FLURRY_MIN = 4
+const FLURRY_MAX = 6
+const COUNTER_Y = 110
 
 function nextSpawnDelay(base: number) {
   const low = base * (1 - JITTER)
@@ -75,22 +79,25 @@ export function useSceneAnimation(
   config: SceneAnimationConfig,
 ): SceneAnimationState {
   const [customers, setCustomers] = useState<CustomerActor[]>([])
-  const [dollars] = useState<DollarPopup[]>([])
+  const [dollars, setDollars] = useState<DollarPopup[]>([])
 
   useEffect(() => {
     if (config.reducedMotion || config.customerCount <= 0) return
 
     const baseInterval = config.simDurationMs / config.customerCount
-    let nextId = 0
+    let nextCustomerId = 0
+    let nextDollarId = 0
+    const paid = new Set<string>()
     let spawnTimer: ReturnType<typeof setTimeout> | null = null
     let tickTimer: ReturnType<typeof setInterval> | null = null
+    const dollarTimers: ReturnType<typeof setTimeout>[] = []
     let lastTick = performance.now()
 
     const scheduleNextSpawn = () => {
       spawnTimer = setTimeout(() => {
         setCustomers((prev) => {
           if (prev.length >= MAX_CUSTOMERS) return prev
-          const id = `c${nextId++}`
+          const id = `c${nextCustomerId++}`
           return [
             ...prev,
             {
@@ -107,16 +114,45 @@ export function useSceneAnimation(
       }, nextSpawnDelay(baseInterval))
     }
 
+    const emitFlurry = (x: number) => {
+      const count =
+        FLURRY_MIN + Math.floor(Math.random() * (FLURRY_MAX - FLURRY_MIN + 1))
+      const born = performance.now()
+      const fresh: DollarPopup[] = []
+      for (let i = 0; i < count; i++) {
+        const id = `d${nextDollarId++}`
+        fresh.push({
+          id,
+          x: x + (Math.random() * 16 - 8),
+          y: COUNTER_Y,
+          bornAt: born,
+        })
+        const timer = setTimeout(() => {
+          setDollars((prev) => prev.filter((d) => d.id !== id))
+        }, DOLLAR_LIFETIME_MS)
+        dollarTimers.push(timer)
+      }
+      setDollars((prev) => [...prev, ...fresh])
+    }
+
     const tick = () => {
       const now = performance.now()
       const dt = (now - lastTick) / 1000
       lastTick = now
 
-      setCustomers((prev) =>
-        prev
-          .map((c) => advanceActor(c, dt, now))
-          .filter((c): c is CustomerActor => c !== null),
-      )
+      setCustomers((prev) => {
+        const next: CustomerActor[] = []
+        for (const c of prev) {
+          const advanced = advanceActor(c, dt, now)
+          if (advanced === null) continue
+          if (advanced.phase === 'AT_COUNTER' && !paid.has(advanced.id)) {
+            paid.add(advanced.id)
+            emitFlurry(advanced.x)
+          }
+          next.push(advanced)
+        }
+        return next
+      })
     }
 
     scheduleNextSpawn()
@@ -125,6 +161,7 @@ export function useSceneAnimation(
     return () => {
       if (spawnTimer) clearTimeout(spawnTimer)
       if (tickTimer) clearInterval(tickTimer)
+      for (const t of dollarTimers) clearTimeout(t)
     }
   }, [config.customerCount, config.simDurationMs, config.reducedMotion])
 
