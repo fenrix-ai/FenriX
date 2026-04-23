@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useGame } from "../../contexts/GameContext";
+import { PixelBakeryScene } from "../../components/simulate/PixelBakeryScene";
+import { SceneErrorBoundary } from "../../components/simulate/SceneErrorBoundary";
 
 const TOTAL_DAYS = 30;
 const DAY_DURATION_MS = 4000; // 4 seconds per day
@@ -29,6 +31,37 @@ function getSelloutDays(): Record<Product, number> {
     days[p] = 20 + Math.floor(Math.random() * 9);
   }
   return days;
+}
+
+/** Emoji fallback retained for SceneErrorBoundary on crash. */
+function LegacyEmojiFallback({
+  adWon,
+  isNight,
+  reducedMotion,
+}: {
+  adWon: string | null | undefined;
+  isNight: boolean;
+  reducedMotion: boolean;
+}) {
+  return (
+    <>
+      {adWon && AD_ICONS[adWon] && (
+        <div className="simulate-phase__ad-display">
+          <img src={AD_ICONS[adWon]} alt={`${adWon} ad`} className="simulate-phase__ad-icon" />
+        </div>
+      )}
+      <div className="simulate-phase__storefront">
+        <div className="simulate-phase__store-label">🥐 Your Bakery</div>
+        {!isNight && !reducedMotion && (
+          <div className="simulate-phase__customers">
+            <span className="simulate-phase__customer">🚶</span>
+            <span className="simulate-phase__customer simulate-phase__customer--2">🚶‍♀️</span>
+          </div>
+        )}
+        {isNight && <div className="simulate-phase__night-label">🌙 Closed</div>}
+      </div>
+    </>
+  );
 }
 
 export function SimulatePhase() {
@@ -97,7 +130,9 @@ export function SimulatePhase() {
   const burglaryAmount = Number((latest as { burglaryAmount?: number } | undefined)?.burglaryAmount ?? 0);
 
   return (
-    <section className={`simulate-phase ${isNight ? "simulate-phase--night" : "simulate-phase--day"}`}>
+    <section
+      className={`simulate-phase simulate-phase--pixel ${isNight ? "simulate-phase--night" : "simulate-phase--day"}`}
+    >
       {/* Top bar */}
       <div className="simulate-phase__topbar">
         <div className="simulate-phase__day-counter">
@@ -130,23 +165,23 @@ export function SimulatePhase() {
           </ul>
         </aside>
 
-        {/* Centre: Bakery visual */}
+        {/* Centre: Pixel bakery scene */}
         <div className="simulate-phase__bakery-visual">
-          {adWon && AD_ICONS[adWon] && (
-            <div className="simulate-phase__ad-display">
-              <img src={AD_ICONS[adWon]} alt={`${adWon} ad`} className="simulate-phase__ad-icon" />
-            </div>
-          )}
-          <div className="simulate-phase__storefront">
-            <div className="simulate-phase__store-label">🥐 Your Bakery</div>
-            {!isNight && !reducedMotion && (
-              <div className="simulate-phase__customers">
-                <span className="simulate-phase__customer">🚶</span>
-                <span className="simulate-phase__customer simulate-phase__customer--2">🚶‍♀️</span>
-              </div>
-            )}
-            {isNight && <div className="simulate-phase__night-label">🌙 Closed</div>}
-          </div>
+          <SceneErrorBoundary
+            fallback={
+              <LegacyEmojiFallback
+                adWon={adWon}
+                isNight={isNight}
+                reducedMotion={reducedMotion}
+              />
+            }
+          >
+            <PixelBakeryScene
+              isNight={isNight}
+              soldOut={soldOut}
+              reducedMotion={reducedMotion}
+            />
+          </SceneErrorBoundary>
         </div>
 
         {/* Right: Maintenance bars */}
