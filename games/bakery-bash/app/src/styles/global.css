@@ -3415,6 +3415,51 @@ h3 { font-size: 0.7rem; }
 .how-to-play__card-label   { display: inline-block; background: var(--caramel, #d97706); color: #fff; font-size: 0.75rem; font-weight: bold; padding: 0.2rem 0.6rem; border-radius: 4px; margin-bottom: 0.6rem; text-transform: uppercase; letter-spacing: 0.05em; }
 .how-to-play__card-tagline { font-size: 1.1rem; font-weight: bold; margin: 0 0 0.5rem; }
 .how-to-play__card-body    { font-size: 0.9rem; line-height: 1.6; margin: 0; color: #444; }
+
+.how-to-play__chef-tiers {
+  margin-top: 1.5rem;
+  background: var(--cream, #fff7e6);
+  border: 2px solid var(--caramel, #d97706);
+  border-radius: 10px;
+  padding: 1.25rem;
+}
+
+.how-to-play__chef-tiers-title {
+  font-family: var(--font-pixel);
+  font-size: 0.75rem;
+  color: var(--dark-roast);
+  margin: 0 0 0.4rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.how-to-play__chef-tiers-hint {
+  font-size: 0.9rem;
+  color: #444;
+  margin: 0 0 0.75rem;
+}
+
+.how-to-play__chef-tier-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.how-to-play__chef-tier-table th,
+.how-to-play__chef-tier-table td {
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid var(--caramel, #d97706);
+  text-align: left;
+}
+
+.how-to-play__chef-tier-table th {
+  font-family: var(--font-pixel);
+  font-size: 0.55rem;
+  color: var(--dark-roast);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
 .landing-page__how-to-play-link { display: block; text-align: center; font-size: 0.85rem; color: var(--caramel, #d97706); margin-top: 0.5rem; text-decoration: underline; }
 
 /* ── Phase banner ───────────────────────────────────────────────────── */
