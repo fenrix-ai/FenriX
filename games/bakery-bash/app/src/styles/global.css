@@ -2026,7 +2026,17 @@ h3 { font-size: 0.7rem; }
 
 /* ─── Responsive ─────────────────────────────────────────── */
 
-@media (max-width: 960px) {
+/* Keep Bakery / Deli / Barista horizontal on laptops. Tighten the gap at
+   laptop widths before falling back to a stacked column on true mobile.
+   Previously the column fallback kicked in at 960px which stacked the
+   decide page on almost every laptop in split view. */
+@media (max-width: 1080px) {
+  .bakery-view__stations {
+    gap: 0.65rem;
+  }
+}
+
+@media (max-width: 640px) {
   .bakery-view__stations {
     grid-template-columns: 1fr;
   }
@@ -3501,3 +3511,383 @@ h3 { font-size: 0.7rem; }
 .simulate-phase__bar-pct       { font-size: 0.75rem; }
 .simulate-phase__waiting       { font-size: 0.8rem; color: #999; margin-top: 1rem; }
 @media (prefers-reduced-motion: reduce) { .simulate-phase__customer { animation: none; } }
+
+/* ── Ad Winner Banner (Decide screen, rounds 2+) ───────────────────────
+   Rendered at the top of the decide page. Prior to this rule block the
+   component had zero CSS, so the `<section>` + `<ul>` fell back to a
+   full-width vertical list that dominated the page. Compact 4-column
+   strip with per-cell headline / amount. */
+.ad-winner-banner {
+  display: flex;
+  align-items: stretch;
+  gap: 0.75rem;
+  margin: 0 0 0.75rem;
+  padding: 0.55rem 0.75rem;
+  background: var(--dough);
+  border: 2px solid var(--caramel);
+  border-radius: 8px;
+  box-shadow: var(--shadow-pixel);
+  flex-wrap: wrap;
+}
+
+.ad-winner-banner__header {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 108px;
+  padding-right: 0.6rem;
+  border-right: 2px dashed var(--caramel);
+}
+
+.ad-winner-banner__eyebrow {
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  color: var(--dark-roast);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ad-winner-banner__title {
+  font-family: var(--font-pixel);
+  font-size: 0.75rem;
+  color: var(--espresso);
+  margin: 0.15rem 0 0;
+}
+
+.ad-winner-banner__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+  flex: 1;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.ad-winner-banner__cell {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.55rem;
+  background: var(--cream);
+  border: 1.5px solid var(--caramel);
+  border-radius: 6px;
+  min-width: 0;
+}
+
+.ad-winner-banner__icon img {
+  width: 28px;
+  height: 28px;
+  display: block;
+  image-rendering: pixelated;
+}
+
+.ad-winner-banner__content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.ad-winner-banner__surface {
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--dark-roast);
+}
+
+.ad-winner-banner__winner {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--espresso);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ad-winner-banner__amount {
+  font-size: 0.72rem;
+  color: var(--sage);
+  font-weight: 600;
+}
+
+.ad-winner-banner__empty {
+  font-size: 0.75rem;
+  font-style: italic;
+  color: #888;
+}
+
+@media (max-width: 880px) {
+  .ad-winner-banner__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ad-winner-banner__header {
+    border-right: 0;
+    border-bottom: 2px dashed var(--caramel);
+    padding-right: 0;
+    padding-bottom: 0.4rem;
+    width: 100%;
+    flex-direction: row;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+}
+
+/* ── Chef Card (<ChefCard> component, used on Kitchen Roster page) ─────
+   AuctionPage uses its own `.auction-chef*` markup so it wasn't affected,
+   but the Roster page renders `<ChefCard mode="roster" />` and the
+   element classes had no rules — two adjacent spans in `.chef-card__meta`
+   rendered as "AdvancedFrench" with no whitespace. Full ruleset added
+   here so the roster looks intentional.
+
+   NOTE: `.chef-card { position: relative }` + `.chef-card__number`
+   already exist near line ~1464 (from FE-R03 — sequential chef numbering).
+   We extend `.chef-card` here with layout; `position: relative` is
+   inherited from the earlier rule via the cascade, but repeated below
+   defensively so the absolutely-positioned `__number` badge never
+   detaches if the earlier rule is refactored. */
+.chef-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--cream);
+  border: 2px solid var(--caramel);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: var(--shadow-pixel);
+  min-width: 0;
+}
+
+.chef-card__portrait {
+  position: relative;
+  background: var(--dough);
+  border-bottom: 2px solid var(--caramel);
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.chef-card__portrait img {
+  width: 80%;
+  height: 80%;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.chef-card__flag {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font-size: 1.1rem;
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 4px;
+  padding: 1px 4px;
+  line-height: 1;
+}
+
+.chef-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.55rem 0.65rem 0.65rem;
+  min-width: 0;
+}
+
+.chef-card__name {
+  font-family: var(--font-pixel);
+  font-size: 0.7rem;
+  color: var(--espresso);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chef-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  font-size: 0.72rem;
+}
+
+.chef-card__skill {
+  display: inline-block;
+  padding: 1px 6px;
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-radius: 3px;
+  border: 1.5px solid transparent;
+  color: #fff;
+}
+
+.chef-card__skill--novel {
+  background: #7a8ca3;
+  border-color: #5c6c80;
+}
+
+.chef-card__skill--intermediate {
+  background: var(--honey);
+  border-color: var(--caramel);
+  color: var(--espresso);
+}
+
+.chef-card__skill--advanced {
+  background: var(--sage);
+  border-color: #4d6548;
+}
+
+.chef-card__nationality {
+  color: var(--dark-roast);
+  font-style: italic;
+}
+
+.chef-card__footer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding-top: 0.3rem;
+  border-top: 1px dashed var(--caramel);
+}
+
+.chef-card__footer--bid {
+  gap: 0.35rem;
+}
+
+.chef-card__bids {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.chef-card__bid-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 0.72rem;
+}
+
+.chef-card__bid-row--mine {
+  color: var(--sage);
+  font-weight: 600;
+}
+
+.chef-card__bid-label {
+  color: var(--dark-roast);
+}
+
+.chef-card__bid-value {
+  font-family: var(--font-pixel);
+  font-size: 0.65rem;
+  color: var(--espresso);
+}
+
+.chef-card__action {
+  display: flex;
+}
+
+.chef-card__footer--roster {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.chef-card__satisfaction {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.chef-card__satisfaction--high {
+  background: #e9f5ea;
+  color: var(--sage);
+}
+
+.chef-card__satisfaction--mid {
+  background: #fff3d6;
+  color: var(--caramel);
+}
+
+.chef-card__satisfaction--low {
+  background: #fde4e4;
+  color: #b03030;
+}
+
+.chef-card__footer--won {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 0.4rem;
+  justify-content: flex-start;
+}
+
+.chef-card__won-badge {
+  display: inline-block;
+  background: var(--sage);
+  color: #fff;
+  font-family: var(--font-pixel);
+  font-size: 0.55rem;
+  padding: 2px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.chef-card__won-amount {
+  font-size: 0.75rem;
+  color: var(--espresso);
+}
+
+/* ── Results phase KPI tiles ───────────────────────────────────────────
+   The <Kpi> component renders `<span class="__label">` above
+   `<span class="__value">`. Without these rules the two spans rendered
+   inline and produced "Customer satisfaction0/100" etc. */
+.results-phase__kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+  margin: 0.75rem 0 1.25rem;
+}
+
+.results-phase__kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem 0.9rem;
+  background: var(--cream);
+  border: 2px solid var(--caramel);
+  border-radius: 6px;
+  box-shadow: var(--shadow-pixel);
+}
+
+.results-phase__kpi-label {
+  display: block;
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--dark-roast);
+}
+
+.results-phase__kpi-value {
+  display: block;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--espresso);
+}
+
+.results-phase__kpi--animated .results-phase__kpi-value {
+  animation: kpiReveal 420ms ease-out both;
+}
+
+@keyframes kpiReveal {
+  0%   { opacity: 0; transform: translateY(6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}

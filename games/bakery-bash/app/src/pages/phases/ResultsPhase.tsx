@@ -451,15 +451,35 @@ export function ResultsPhase() {
       {leaderboard && leaderboard.length > 0 && (
         <div className="results-phase__leaderboard">
           <h3 className="results-phase__section-title">Standings</h3>
-          {leaderboard.map((entry, i) => (
-            <div key={entry.playerId} className="results-phase__rank-row">
-              <span className="results-phase__rank">#{i + 1}</span>
-              <span className="results-phase__team-name">{entry.displayName ?? "Team"}</span>
-              <span className="results-phase__team-revenue">
-                ${(entry.cumulativeRevenue ?? 0).toLocaleString()}
-              </span>
-            </div>
-          ))}
+          {leaderboard.map((entry, i) => {
+            // Backend writes per-round `revenueNet` + `bakeryName` into
+            // each ranking entry (index.js ~1558). `cumulativeRevenue`
+            // lives on the player doc and isn't in the leaderboard
+            // payload, so reading only that field produced $0 even when
+            // players made money. Prefer bakery name + fall back to
+            // revenueNet so the Standings row always reflects what's on
+            // the wire (same pattern as ConclusionPage).
+            const amount =
+              typeof entry.cumulativeRevenue === "number"
+                ? entry.cumulativeRevenue
+                : typeof entry.revenueNet === "number"
+                  ? entry.revenueNet
+                  : 0;
+            const name =
+              entry.bakeryName ?? entry.displayName ?? "Team";
+            return (
+              <div
+                key={entry.playerId ?? i}
+                className="results-phase__rank-row"
+              >
+                <span className="results-phase__rank">#{i + 1}</span>
+                <span className="results-phase__team-name">{name}</span>
+                <span className="results-phase__team-revenue">
+                  {formatMoney(amount)}
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
     </section>
