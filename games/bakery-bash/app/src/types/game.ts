@@ -418,6 +418,15 @@ export interface RoundResult {
   adPaid?: number;
   chefsWon?: Array<{ id?: string; name?: string }>;
   chefBidPaid?: number;
+  /**
+   * Legacy burglary fields written by pre-RoundEvent simulation paths.
+   * Kept optional because newer simulations emit burglaries via RoundEvent
+   * instead. The Results screen reads these as a fallback when no event
+   * data is available.
+   */
+  burglary?: boolean;
+  burglaryAmount?: number;
+  burglaryDays?: number[];
 }
 
 /**
@@ -585,6 +594,37 @@ export interface GameState {
    * forever.
    */
   leaderboardError: string | null;
+  /**
+   * CSVs the team has acquired this game and can re-download from the
+   * CSV Inbox header button. Includes competitor-intel purchases, Tier 1
+   * specialty-chef tables, Tier 2 chef-profile dumps, and anything else
+   * the player would otherwise lose the moment the sidebar popup closes.
+   *
+   * The round-history results CSV is *not* stored here — it is derived
+   * on demand from `roundResults` so it always reflects the latest data
+   * (see `downloadResultsCsv`).
+   */
+  acquiredCsvs: AcquiredCsv[];
+}
+
+/**
+ * One entry in the CSV Inbox. `kind` drives the icon + grouping; `label`
+ * is the human-readable title shown in the list; `round` (when present)
+ * pins the CSV to the round it was generated / purchased for.
+ */
+export type AcquiredCsvKind =
+  | "competitor-intel"
+  | "chef-tier1"
+  | "chef-tier2";
+
+export interface AcquiredCsv {
+  id: string;
+  kind: AcquiredCsvKind;
+  label: string;
+  round?: number;
+  acquiredAtMs: number;
+  csv: string;
+  filename: string;
 }
 
 /**
