@@ -22,7 +22,6 @@ export class SceneErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error) {
-    // eslint-disable-next-line no-console
     console.error('PixelBakeryScene crashed; falling back.', error)
   }
 

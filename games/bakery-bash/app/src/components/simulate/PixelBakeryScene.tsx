@@ -103,6 +103,7 @@ export function PixelBakeryScene({ isNight, soldOut, reducedMotion }: Props) {
         bakerySousChefs: overrides.chefCounts.bakery,
         deliSousChefs: overrides.chefCounts.deli,
         baristaSousChefs: overrides.chefCounts.barista,
+        maintenanceGuys: pendingDecision.staffCounts.maintenanceGuys,
       }
     : pendingDecision.staffCounts
 
