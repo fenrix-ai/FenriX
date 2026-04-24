@@ -3181,6 +3181,16 @@ h3 { font-size: 0.7rem; }
   font-style: italic;
 }
 
+/* The .chef-card__portrait uses aspect-ratio: 1/1, so without a width
+   cap the portrait stretches to fill the slot's 1fr column on wider
+   viewports — the chef ends up rendered at ~600 px tall. Constrain the
+   roster card to a sensible max width so the portrait stays card-sized. */
+.roster-phase-page__slot .chef-card {
+  width: 100%;
+  max-width: 14rem;
+  justify-self: start;
+}
+
 .roster-phase-page__role-gate,
 .roster-phase-page__overflow-warning,
 .roster-phase-page__info,
