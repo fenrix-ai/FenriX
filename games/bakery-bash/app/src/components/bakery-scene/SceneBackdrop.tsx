@@ -225,8 +225,8 @@ function paintBackdrop(ctx: CanvasRenderingContext2D, menu: string[], soldOut: S
     // Glass pane upper half
     fillRect(ctx, PALETTE.doorGlass, SCENE.door.x + 4, SCENE.door.y + 6, SCENE.door.width - 8, 40)
     fillRect(ctx, PALETTE.outline, SCENE.door.x + 4, SCENE.door.y + 6, SCENE.door.width - 8, 1) // glass top edge
-    // Door handle
-    fillRect(ctx, '#d5b060', SCENE.door.x + 4, SCENE.door.y + 110, 3, 3)
+    // Door handle (anchored near the bottom of the door, inside the wood)
+    fillRect(ctx, '#d5b060', SCENE.door.x + 4, SCENE.door.y + SCENE.door.height - 10, 3, 3)
   }
 
   // --- Wall mounts (top strip) ---

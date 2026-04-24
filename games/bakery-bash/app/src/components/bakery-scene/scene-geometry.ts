@@ -29,12 +29,14 @@ export const SCENE = {
   /** Y-coordinate where characters stand (top edge of floor strip). */
   floorBaselineY: 180,
 
-  /** Door is a vertical slot on the right edge. */
+  /** Door is a vertical slot on the right edge of the back wall. Height is
+   * chosen so the door ends flush with the counter top (y=140) instead of
+   * passing through the counter and floor. */
   door: {
     x: 456, // 480 - 24
     y: 80,
     width: 24,
-    height: 200,
+    height: 60, // y=80..140 — wall zone through wainscoting top
   },
 
   /** Team-sign frame — position + size of the wooden sign on the back wall. */
