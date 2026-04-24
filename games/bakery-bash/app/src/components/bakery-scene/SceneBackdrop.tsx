@@ -55,10 +55,42 @@ function paintBackdrop(ctx: CanvasRenderingContext2D, menu: string[], soldOut: S
   {
     // Middle: deck oven — top control panel, glazed door with rack + bread
     // silhouettes, bottom control band with buttons and a green "ready" LED.
+    // The oven sits inside a dark brick alcove on the back wall, resting on
+    // a wooden hearth ledge that connects to the wainscoting below.
     const ovenX = 198
     const ovenY = 50
     const ovenW = 60
     const ovenH = 70
+
+    // --- Brick alcove (behind the oven) ---
+    // Darker recess extending 4 px on each side + top, filling the space down
+    // to the wainscoting so the oven visibly sits inside the wall.
+    const alcX = ovenX - 4
+    const alcY = ovenY - 4
+    const alcW = ovenW + 8
+    const alcH = (SCENE.zones.wainscoting.y) - alcY // reach to wainscoting top
+    fillRect(ctx, '#4a2814', alcX, alcY, alcW, alcH)
+    // Top inner shadow (2 px) for recessed look.
+    fillRect(ctx, '#2a1608', alcX, alcY, alcW, 2)
+    // Outer frame outline (1 px darker border around the alcove).
+    fillRect(ctx, PALETTE.outline, alcX - 1, alcY - 1, alcW + 2, 1) // top
+    fillRect(ctx, PALETTE.outline, alcX - 1, alcY + alcH, alcW + 2, 1) // bottom
+    fillRect(ctx, PALETTE.outline, alcX - 1, alcY - 1, 1, alcH + 2) // left
+    fillRect(ctx, PALETTE.outline, alcX + alcW, alcY - 1, 1, alcH + 2) // right
+    // Brick seams — a few horizontal lines inside the alcove (above + below the oven).
+    fillRect(ctx, '#2a1608', alcX + 2, alcY + 2, alcW - 4, 1)
+    fillRect(ctx, '#2a1608', alcX + 2, ovenY + ovenH + 1, alcW - 4, 1)
+    fillRect(ctx, '#2a1608', alcX + 2, ovenY + ovenH + 4, alcW - 4, 1)
+
+    // --- Hearth ledge (below the oven, on top of the wainscoting) ---
+    // Warm wooden shelf that extends slightly wider than the alcove and
+    // grounds the oven against the wainscoting.
+    const ledgeY = SCENE.zones.wainscoting.y - 4
+    const ledgeX = alcX - 3
+    const ledgeW = alcW + 6
+    fillRect(ctx, PALETTE.shelfWood, ledgeX, ledgeY, ledgeW, 4)
+    fillRect(ctx, PALETTE.shelfShadow, ledgeX, ledgeY + 3, ledgeW, 1) // under-shadow
+    fillRect(ctx, '#a87048', ledgeX, ledgeY, ledgeW, 1) // top highlight
 
     // Oven body (slight 1px chrome outer highlight on top edge + darker shadow on bottom edge).
     fillRect(ctx, PALETTE.ovenDark, ovenX, ovenY, ovenW, ovenH)
