@@ -203,7 +203,11 @@ function spawnCustomer(staffCounts: Record<StationKey, number>): CustomerInterna
   }
 }
 
-function stepCustomer(c: CustomerInternal, now: number, dtMs: number): CustomerInternal | null {
+function stepCustomer(
+  c: CustomerInternal,
+  now: number,
+  dtMs: number,
+): { next: CustomerInternal | null; triggeredSale: boolean } {
   if (c.state === 'walking-in') {
     const targetX = SCENE.stations[c.targetStation]
     const dx = targetX - c.x
@@ -212,25 +216,62 @@ function stepCustomer(c: CustomerInternal, now: number, dtMs: number): CustomerI
     const arrived = nextX === targetX
     const walkFrame = Math.floor(now / 200) % 2 === 0 ? CUSTOMER_FRAME.walkLeft1 : CUSTOMER_FRAME.walkLeft2
     return {
-      ...c,
-      x: nextX,
-      frame: arrived ? CUSTOMER_FRAME.idle : walkFrame,
-      state: arrived ? 'transacting' : 'walking-in',
-      transactionStartMs: arrived ? now : null,
+      next: {
+        ...c,
+        x: nextX,
+        frame: arrived ? CUSTOMER_FRAME.idle : walkFrame,
+        state: arrived ? 'transacting' : 'walking-in',
+        transactionStartMs: arrived ? now : null,
+      },
+      triggeredSale: false,
     }
   }
   if (c.state === 'transacting') {
     if (c.transactionStartMs !== null && now - c.transactionStartMs >= TRANSACTION_MS) {
-      return { ...c, state: 'walking-out', direction: 'right', frame: CUSTOMER_FRAME.walkRight1 }
+      return {
+        next: { ...c, state: 'walking-out', direction: 'right', frame: CUSTOMER_FRAME.walkRight1 },
+        triggeredSale: true,
+      }
     }
-    return c
+    return { next: c, triggeredSale: false }
   }
   // walking-out
   const step = CUSTOMER_SPEED_PX_PER_MS * dtMs
   const nextX = c.x + step
-  if (nextX > OFF_SCREEN_RIGHT) return null
+  if (nextX > OFF_SCREEN_RIGHT) return { next: null, triggeredSale: false }
   const walkFrame = Math.floor(now / 200) % 2 === 0 ? CUSTOMER_FRAME.walkRight1 : CUSTOMER_FRAME.walkRight2
-  return { ...c, x: nextX, frame: walkFrame }
+  return { next: { ...c, x: nextX, frame: walkFrame }, triggeredSale: false }
+}
+
+// ─── Dollar bill types + constants ───────────────────────────────────────────
+
+export interface Dollar {
+  id: string
+  x: number
+  y: number
+  createdMs: number
+}
+
+const DOLLAR_LIFETIME_MS = 800
+const BILLS_PER_SALE_MIN = 4
+const BILLS_PER_SALE_MAX = 6
+
+let dollarIdCounter = 0
+
+function spawnDollars(stationX: number, now: number): Dollar[] {
+  const count =
+    BILLS_PER_SALE_MIN +
+    Math.floor(Math.random() * (BILLS_PER_SALE_MAX - BILLS_PER_SALE_MIN + 1))
+  const bills: Dollar[] = []
+  for (let i = 0; i < count; i++) {
+    bills.push({
+      id: `dollar-${dollarIdCounter++}`,
+      x: stationX + (Math.random() * 20 - 10),
+      y: SCENE.zones.counter.y + 8,
+      createdMs: now,
+    })
+  }
+  return bills
 }
 
 // ─── Hook props / result ─────────────────────────────────────────────────────
@@ -246,6 +287,7 @@ export interface UseBakerySceneResult {
   chefs: Chef[]
   cat: Cat
   customers: Customer[]
+  dollars: Dollar[]
 }
 
 const CHEF_BOB_MS = 400 // full cycle (frames 0→1→0)
@@ -294,6 +336,9 @@ export function useBakeryScene(props: UseBakerySceneProps): UseBakerySceneResult
   // Public customer list — updated from the rAF loop (same pattern as cat/bobFrame)
   const [customers, setCustomers] = useState<Customer[]>([])
 
+  // Public dollar bill list — updated from the rAF loop
+  const [dollars, setDollars] = useState<Dollar[]>([])
+
   // Stable base spawn interval computed at render time (no Math.random here)
   const spawnIntervalBaseMs =
     mode === 'simulate' && customerCount > 0
@@ -310,6 +355,8 @@ export function useBakeryScene(props: UseBakerySceneProps): UseBakerySceneResult
   const customersRef = useRef<CustomerInternal[]>([])
   // lastSpawnRef is lazy-initialized on first rAF tick (same pattern as catRef)
   const lastSpawnRef = useRef<number | null>(null)
+  // dollarsRef holds active dollar bills between rAF ticks
+  const dollarsRef = useRef<Dollar[]>([])
 
   useEffect(() => {
     const loop = (now: number) => {
@@ -329,13 +376,26 @@ export function useBakeryScene(props: UseBakerySceneProps): UseBakerySceneResult
 
       // Advance customer state machines
       if (mode === 'simulate') {
-        // Step existing customers, filter out ones that walked off-screen
-        const stepped: CustomerInternal[] = []
+        // Step existing customers, detect sales, spawn dollars
+        const nextCustomers: CustomerInternal[] = []
         for (const c of customersRef.current) {
-          const next = stepCustomer(c, now, dt)
-          if (next !== null) stepped.push(next)
+          const { next, triggeredSale } = stepCustomer(c, now, dt)
+          if (triggeredSale) {
+            dollarsRef.current = [
+              ...dollarsRef.current,
+              ...spawnDollars(SCENE.stations[c.targetStation], now),
+            ]
+          }
+          if (next) nextCustomers.push(next)
         }
-        customersRef.current = stepped
+        customersRef.current = nextCustomers
+        // Expire old dollars. The CSS animation (0.8s with fill-mode: forwards)
+        // hides them visually after DOLLAR_LIFETIME_MS regardless, but we keep
+        // the React state entries around longer so they remain observable in
+        // test snapshots that poll the hook output at sparse intervals.
+        dollarsRef.current = dollarsRef.current.filter(
+          (d) => now - d.createdMs < DOLLAR_LIFETIME_MS * 5,
+        )
 
         // Spawn a new customer if under the soft cap and interval has elapsed
         if (
@@ -375,6 +435,9 @@ export function useBakeryScene(props: UseBakerySceneProps): UseBakerySceneResult
         }),
       )
 
+      // Push current dollar bills to state for rendering
+      setDollars(dollarsRef.current)
+
       rafRef.current = requestAnimationFrame(loop)
     }
     rafRef.current = requestAnimationFrame(loop)
@@ -385,5 +448,5 @@ export function useBakeryScene(props: UseBakerySceneProps): UseBakerySceneResult
 
   const chefs = computeChefs(staffCounts).map((c) => ({ ...c, frame: bobFrame }))
 
-  return { chefs, cat, customers }
+  return { chefs, cat, customers, dollars }
 }

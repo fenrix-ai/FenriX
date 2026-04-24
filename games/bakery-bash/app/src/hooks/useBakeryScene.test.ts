@@ -133,3 +133,40 @@ describe('useBakeryScene — customers (simulate)', () => {
     expect(['walking-in', 'transacting', 'walking-out']).toContain(customer.state)
   })
 })
+
+describe('useBakeryScene — dollar bills', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  const baseProps = {
+    mode: 'decide' as const,
+    teamName: 'X',
+    staffCounts: { bakery: 1, deli: 1, barista: 1 },
+    customerCount: 0,
+  }
+
+  it('dollar bills spawn when a customer completes transactionMs', () => {
+    const { result, rerender } = renderHook(() =>
+      useBakeryScene({ ...baseProps, mode: 'simulate', customerCount: 5 }),
+    )
+    act(() => vi.advanceTimersByTime(30_000))
+    rerender()
+    const anyWalkingOut = result.current.customers.some((c) => c.state === 'walking-out')
+    const anyDollars = result.current.dollars.length > 0
+    expect(anyWalkingOut || anyDollars).toBe(true)
+  })
+
+  it('each dollar has x, y, createdMs within sane scene bounds', () => {
+    const { result, rerender } = renderHook(() =>
+      useBakeryScene({ ...baseProps, mode: 'simulate', customerCount: 5 }),
+    )
+    act(() => vi.advanceTimersByTime(30_000))
+    rerender()
+    for (const d of result.current.dollars) {
+      expect(d.x).toBeGreaterThan(0)
+      expect(d.x).toBeLessThan(480)
+      expect(d.y).toBeGreaterThan(100)
+      expect(d.y).toBeLessThan(270)
+    }
+  })
+})

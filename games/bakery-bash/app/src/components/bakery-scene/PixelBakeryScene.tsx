@@ -3,6 +3,7 @@ import { TeamSign } from './TeamSign'
 import { ChefLayer } from './ChefLayer'
 import { CustomerLayer } from './CustomerLayer'
 import { CatLayer } from './CatLayer'
+import { DollarLayer } from './DollarLayer'
 import { useBakeryScene } from '../../hooks/useBakeryScene'
 import type { StationKey } from './scene-geometry'
 
@@ -34,7 +35,7 @@ export function PixelBakeryScene({
   staffCounts = DEFAULT_STAFF,
   customerCount = 0,
 }: Props) {
-  const { chefs, cat, customers } = useBakeryScene({ mode, teamName, staffCounts, customerCount })
+  const { chefs, cat, customers, dollars } = useBakeryScene({ mode, teamName, staffCounts, customerCount })
   return (
     <div
       data-testid="pixel-bakery-scene"
@@ -45,6 +46,7 @@ export function PixelBakeryScene({
       <ChefLayer chefs={chefs} />
       <CustomerLayer customers={customers} />
       <CatLayer cat={cat} />
+      <DollarLayer dollars={dollars} />
     </div>
   )
 }
