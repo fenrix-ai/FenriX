@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { PixelBakeryScene, type BakerySceneMode } from '../components/bakery-scene/PixelBakeryScene'
 import '../styles/pixel-scene.css'
 
+const PREVIEW_MENU = ['croissant', 'cookie', 'bagel', 'sandwich', 'coffee', 'matcha']
+
 /**
  * Dev-only preview for the pixel bakery scene. Route: /preview/bakery-scene.
  * Useful for iterating on sprites and animations in isolation.
@@ -10,6 +12,8 @@ export function BakeryScenePreviewPage() {
   const [mode, setMode] = useState<BakerySceneMode>('decide')
   const [teamName, setTeamName] = useState('CRUMBS & CO')
   const [scale, setScale] = useState(2)
+  const [soldOutBagel, setSoldOutBagel] = useState(false)
+  const soldOut = soldOutBagel ? new Set(['bagel']) : new Set<string>()
 
   return (
     <div className="pixel-bakery-scene-host" style={{ flexDirection: 'column', gap: 16, padding: 24 }}>
@@ -56,10 +60,26 @@ export function BakeryScenePreviewPage() {
           />
           {scale}×
         </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <input
+            type="checkbox"
+            checked={soldOutBagel}
+            onChange={(e) => setSoldOutBagel(e.target.checked)}
+          />
+          bagel sold-out
+        </label>
       </div>
       <div style={{ transform: `scale(${scale})`, transformOrigin: 'top center' }}>
-        <PixelBakeryScene mode={mode} teamName={teamName} />
+        <PixelBakeryScene
+          mode={mode}
+          teamName={teamName}
+          menu={PREVIEW_MENU}
+          soldOut={soldOut}
+        />
       </div>
+      <p style={{ color: '#888', fontSize: 10, fontFamily: 'monospace', marginTop: 16 }}>
+        Bread art: Designed by Freepik
+      </p>
     </div>
   )
 }

@@ -3,6 +3,7 @@ import { SceneBackdrop } from './SceneBackdrop'
 import { TeamSign } from './TeamSign'
 import { ChefLayer } from './ChefLayer'
 import { CounterFrontLayer } from './CounterFrontLayer'
+import { BreadShelfLayer } from './BreadShelfLayer'
 import { CustomerLayer } from './CustomerLayer'
 import { CatLayer } from './CatLayer'
 import { DollarLayer } from './DollarLayer'
@@ -65,7 +66,8 @@ export function PixelBakeryScene({
       <SceneBackdrop menu={menu} soldOut={soldOut} />
       <TeamSign teamName={teamName} />
       <ChefLayer chefs={chefs} />
-      <CounterFrontLayer />
+      <CounterFrontLayer menu={menu} soldOut={soldOut} />
+      <BreadShelfLayer menu={menu} soldOut={soldOut} />
       <CustomerLayer customers={customers} />
       <CatLayer cat={cat} />
       <DollarLayer dollars={dollars} />

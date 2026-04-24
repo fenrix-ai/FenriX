@@ -15,6 +15,9 @@ export const PALETTE = {
   ovenChrome: '#9a9aa4',
   ovenDark: '#3d3d4a',
   ovenGlow: '#ffa845',
+  ovenPanel: '#2a2a35', // darker than ovenDark — top/bottom control bands
+  ovenKnob: '#c8c8d0',  // light gray for temp knobs
+  ovenLED: '#4ade80',   // ready indicator (green)
   coffeeBody: '#5a4a3a',
   coffeeChrome: '#d2d2de',
   coffeeHandle: '#2d2420',

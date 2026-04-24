@@ -165,6 +165,7 @@ export function SimulatePhase() {
           <p className="simulate-phase__waiting">
             Results loading shortly…
           </p>
+          <p className="simulate-phase__credits">Art: Designed by Freepik</p>
         </aside>
       </div>
     </section>

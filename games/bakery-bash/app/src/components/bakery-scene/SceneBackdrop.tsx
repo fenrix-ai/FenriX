@@ -31,24 +31,21 @@ function paintBackdrop(ctx: CanvasRenderingContext2D, menu: string[], soldOut: S
 
   // --- Back-wall elements (painted on the wall, above the counter) ---
   {
-    // Left: two stacked bread shelves (simple dark wooden rectangles with bread loaves on top).
+    // Left: two stacked bread shelves. The wooden plank + shadow are painted
+    // here; the per-slot bread PNGs land on top via <BreadShelfLayer>. When
+    // a slot is sold-out or missing from the menu, we paint the gray empty
+    // tray so the fallback shows through the absence of an overlay PNG.
     const shelfX = 32
     let slotIndex = 0
     for (const shelfY of [54, 88]) {
-      // Shelf plank (dark wood, ~60w × 4h)
       fillRect(ctx, PALETTE.shelfWood, shelfX, shelfY, 80, 4)
       fillRect(ctx, PALETTE.shelfShadow, shelfX, shelfY + 4, 80, 7) // height=7 so the pixel test at y=60 lands in the painted shadow
-      // Three bread loaves on top (simple amber bumps)
       for (let i = 0; i < 3; i++) {
         const product = menu[slotIndex]
         const loafX = shelfX + 6 + i * 24
         if (!product || soldOut.has(product)) {
-          fillRect(ctx, '#7a7a7a', loafX, shelfY - 8, 18, 8)  // gray empty tray (drop-in loaf replacement)
-          fillRect(ctx, '#5a5a5a', loafX, shelfY - 2, 18, 2)  // shadow
-        } else {
-          fillRect(ctx, '#c7883a', loafX, shelfY - 8, 18, 8)
-          fillRect(ctx, '#9c6424', loafX, shelfY - 2, 18, 2) // shadow
-          fillRect(ctx, '#e3a85a', loafX + 2, shelfY - 6, 14, 2) // highlight
+          fillRect(ctx, '#7a7a7a', loafX, shelfY - 8, 18, 8)
+          fillRect(ctx, '#5a5a5a', loafX, shelfY - 2, 18, 2)
         }
         slotIndex++
       }
@@ -56,18 +53,102 @@ function paintBackdrop(ctx: CanvasRenderingContext2D, menu: string[], soldOut: S
   }
 
   {
-    // Middle: wall oven (chrome + dark front + amber glow window).
+    // Middle: deck oven — top control panel, glazed door with rack + bread
+    // silhouettes, bottom control band with buttons and a green "ready" LED.
     const ovenX = 198
     const ovenY = 50
     const ovenW = 60
     const ovenH = 70
+
+    // Oven body (slight 1px chrome outer highlight on top edge + darker shadow on bottom edge).
     fillRect(ctx, PALETTE.ovenDark, ovenX, ovenY, ovenW, ovenH)
-    fillRect(ctx, PALETTE.ovenChrome, ovenX + 2, ovenY + 2, ovenW - 4, 6) // top stripe
-    fillRect(ctx, PALETTE.ovenChrome, ovenX + 2, ovenY + ovenH - 8, ovenW - 4, 6) // bottom stripe
-    // Glowing window (center rectangle — fades to orange)
-    fillRect(ctx, '#662222', ovenX + 8, ovenY + 18, ovenW - 16, 34)
-    fillRect(ctx, PALETTE.ovenGlow, ovenX + 10, ovenY + 20, ovenW - 20, 30)
-    fillRect(ctx, '#ffcf70', ovenX + 14, ovenY + 24, ovenW - 28, 20)
+    fillRect(ctx, PALETTE.ovenChrome, ovenX, ovenY, ovenW, 1)
+    fillRect(ctx, '#1a1a22', ovenX, ovenY + ovenH - 1, ovenW, 1)
+
+    // Top control panel (y=50..64, 14 high).
+    const panelTopY = ovenY + 1
+    const panelTopH = 13
+    fillRect(ctx, PALETTE.ovenPanel, ovenX + 1, panelTopY, ovenW - 2, panelTopH)
+    // Digital temperature display — small dark rectangle with glowing orange digits.
+    const dispX = ovenX + 22
+    const dispY = panelTopY + 3
+    const dispW = 16
+    const dispH = 7
+    fillRect(ctx, '#0a0a0a', dispX, dispY, dispW, dispH)
+    fillRect(ctx, PALETTE.ovenGlow, dispX + 2, dispY + 2, 3, 3) // digit 1 glow
+    fillRect(ctx, PALETTE.ovenGlow, dispX + 7, dispY + 2, 3, 3) // digit 2 glow
+    fillRect(ctx, PALETTE.ovenGlow, dispX + 12, dispY + 2, 2, 3) // digit 3 glow
+    // Two temperature knobs — circle with pointer + tick marks.
+    for (const knobCX of [ovenX + 9, ovenX + ovenW - 9]) {
+      const knobCY = panelTopY + 6
+      // Tick marks: 3 dots around knob
+      fillRect(ctx, PALETTE.ovenChrome, knobCX - 4, knobCY - 4, 1, 1)
+      fillRect(ctx, PALETTE.ovenChrome, knobCX + 3, knobCY - 4, 1, 1)
+      fillRect(ctx, PALETTE.ovenChrome, knobCX - 4, knobCY + 3, 1, 1)
+      fillRect(ctx, PALETTE.ovenChrome, knobCX + 3, knobCY + 3, 1, 1)
+      // Knob body (5×5 rounded via corner chips)
+      fillRect(ctx, PALETTE.ovenKnob, knobCX - 2, knobCY - 2, 5, 5)
+      fillRect(ctx, PALETTE.ovenPanel, knobCX - 2, knobCY - 2, 1, 1) // TL corner
+      fillRect(ctx, PALETTE.ovenPanel, knobCX + 2, knobCY - 2, 1, 1) // TR
+      fillRect(ctx, PALETTE.ovenPanel, knobCX - 2, knobCY + 2, 1, 1) // BL
+      fillRect(ctx, PALETTE.ovenPanel, knobCX + 2, knobCY + 2, 1, 1) // BR
+      // Pointer (dark line from center up to top edge)
+      fillRect(ctx, PALETTE.outline, knobCX, knobCY - 2, 1, 3)
+    }
+
+    // Door area (y=64..106, 42 high).
+    const doorY = panelTopY + panelTopH + 1
+    const doorH = 42
+    const doorX = ovenX + 3
+    const doorW = ovenW - 6
+    // Outer bezel (lighter highlight on top/left, darker on bottom/right)
+    fillRect(ctx, PALETTE.ovenChrome, doorX, doorY, doorW, 1)
+    fillRect(ctx, PALETTE.ovenChrome, doorX, doorY, 1, doorH)
+    fillRect(ctx, '#1a1a22', doorX, doorY + doorH - 1, doorW, 1)
+    fillRect(ctx, '#1a1a22', doorX + doorW - 1, doorY, 1, doorH)
+    // Inner bezel (darker border just inside the outer bezel)
+    fillRect(ctx, PALETTE.ovenPanel, doorX + 1, doorY + 1, doorW - 2, 1)
+    fillRect(ctx, PALETTE.ovenPanel, doorX + 1, doorY + 1, 1, doorH - 2)
+    fillRect(ctx, PALETTE.ovenPanel, doorX + 1, doorY + doorH - 2, doorW - 2, 1)
+    fillRect(ctx, PALETTE.ovenPanel, doorX + doorW - 2, doorY + 1, 1, doorH - 2)
+    // Hinges on left side (two small vertical rectangles)
+    fillRect(ctx, PALETTE.ovenChrome, doorX - 1, doorY + 4, 2, 4)
+    fillRect(ctx, PALETTE.ovenChrome, doorX - 1, doorY + doorH - 8, 2, 4)
+    // Glowing window inside the door — outline + three glow gradients.
+    const winX = doorX + 4
+    const winY = doorY + 4
+    const winW = doorW - 8
+    const winH = doorH - 10
+    fillRect(ctx, PALETTE.outline, winX, winY, winW, winH) // window frame
+    fillRect(ctx, '#662222', winX + 1, winY + 1, winW - 2, winH - 2) // deep red-brown
+    fillRect(ctx, PALETTE.ovenGlow, winX + 2, winY + 2, winW - 4, winH - 4)
+    fillRect(ctx, '#ffcf70', winX + 3, winY + 3, winW - 6, winH - 6) // hot center
+    // Oven rack — thin horizontal line across the glow, with two bread silhouettes.
+    const rackY = winY + Math.floor(winH / 2)
+    fillRect(ctx, PALETTE.outline, winX + 2, rackY, winW - 4, 1)
+    // Bread silhouettes on the rack (dark amber lumps).
+    fillRect(ctx, '#b86d20', winX + 5, rackY - 4, 7, 4)
+    fillRect(ctx, '#7c4614', winX + 5, rackY - 1, 7, 1)
+    fillRect(ctx, '#b86d20', winX + winW - 12, rackY - 4, 7, 4)
+    fillRect(ctx, '#7c4614', winX + winW - 12, rackY - 1, 7, 1)
+    // Door handle — horizontal chrome bar across the bottom of the door.
+    const handleY = doorY + doorH - 5
+    fillRect(ctx, PALETTE.ovenChrome, doorX + 6, handleY, doorW - 12, 2)
+    fillRect(ctx, '#1a1a22', doorX + 6, handleY + 2, doorW - 12, 1) // shadow under handle
+
+    // Bottom control band (y=doorY+doorH+1..ovenY+ovenH-1).
+    const panelBotY = doorY + doorH + 1
+    const panelBotH = ovenY + ovenH - panelBotY - 1
+    fillRect(ctx, PALETTE.ovenPanel, ovenX + 1, panelBotY, ovenW - 2, panelBotH)
+    // 3 button circles + 1 LED
+    for (let i = 0; i < 3; i++) {
+      const btnX = ovenX + 10 + i * 10
+      fillRect(ctx, PALETTE.ovenChrome, btnX, panelBotY + 2, 3, 3)
+      fillRect(ctx, '#1a1a22', btnX, panelBotY + 5, 3, 1) // shadow
+    }
+    // Green "ready" LED at the right.
+    fillRect(ctx, PALETTE.ovenLED, ovenX + ovenW - 6, panelBotY + 2, 2, 2)
+    fillRect(ctx, '#86f5a6', ovenX + ovenW - 6, panelBotY + 2, 1, 1) // bright pixel
   }
 
   {
