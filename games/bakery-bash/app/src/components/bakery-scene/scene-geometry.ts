@@ -45,11 +45,14 @@ export const SCENE = {
     height: 22,
   },
 
-  /** Chef station X centers (mid of chef sprite). Stations stay left of door. */
+  /** Chef station X centers (mid of chef sprite). Stations stay left of door.
+   * Barista is the front-counter service spot (between the display case and
+   * the espresso machine) and is the default visible character when no
+   * explicit staffCounts are passed. */
   stations: {
     bakery: 90,
     deli: 220,
-    barista: 370,
+    barista: 260,
   },
 
   /** Y-offset where customers walk (slightly above floor top for feet). */

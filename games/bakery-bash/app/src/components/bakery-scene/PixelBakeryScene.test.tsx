@@ -31,12 +31,24 @@ describe('<PixelBakeryScene>', () => {
 })
 
 describe('<PixelBakeryScene> — chefs', () => {
-  it('renders a chef at each station by default', () => {
+  it('renders a single front-counter barista by default', () => {
     const { container } = render(
       <PixelBakeryScene mode="decide" teamName="CRUMBS" />,
     )
     const chefs = container.querySelectorAll('[data-testid^="chef-"]')
-    expect(chefs.length).toBe(3)
+    expect(chefs.length).toBe(1)
+    expect(chefs[0].getAttribute('data-testid')).toBe('chef-barista-0')
+  })
+
+  it('renders the requested chefs when staffCounts are provided', () => {
+    const { container } = render(
+      <PixelBakeryScene
+        mode="decide"
+        teamName="X"
+        staffCounts={{ bakery: 1, deli: 1, barista: 1 } as Record<StationKey, number>}
+      />,
+    )
+    expect(container.querySelectorAll('[data-testid^="chef-"]').length).toBe(3)
   })
 
   it('renders no chefs when all staffCounts are zero', () => {

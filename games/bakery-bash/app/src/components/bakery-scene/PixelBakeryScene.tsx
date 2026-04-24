@@ -28,7 +28,9 @@ interface Props {
   soldOut?: Set<string>
 }
 
-const DEFAULT_STAFF: Record<StationKey, number> = { bakery: 1, deli: 1, barista: 1 }
+// Default to a single front-counter barista. Real-game callers (SimulatePhase)
+// override with player-chosen staff counts.
+const DEFAULT_STAFF: Record<StationKey, number> = { bakery: 0, deli: 0, barista: 1 }
 // Stable empty defaults — keep a single reference so SceneBackdrop's
 // useEffect deps don't thrash on every parent re-render.
 const EMPTY_MENU: string[] = []
