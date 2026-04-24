@@ -734,6 +734,13 @@ async function resetPendingPlayerStateForRound(gameRef) {
       // the previous round and Operations can submit before Finance posts
       // prices for the new round.
       'pendingDecision.pricesSubmitted': false,
+      // Clear round-scoped Operations staffing state. `runSimulationAndPersist`
+      // falls back to `pendingDecision.staffCounts` / `maintenanceTasks` when
+      // the round's decision doc is missing those fields (e.g., a missed
+      // submission), so leaving them in place would cause round N+1 to
+      // inherit round N's staffing.
+      'pendingDecision.staffCounts': {},
+      'pendingDecision.maintenanceTasks': [],
       'pendingBids.ad': null,
       'pendingBids.chef': null,
       pendingRosterAction: false,
