@@ -27,6 +27,10 @@ interface Props {
 }
 
 const DEFAULT_STAFF: Record<StationKey, number> = { bakery: 1, deli: 1, barista: 1 }
+// Stable empty defaults — keep a single reference so SceneBackdrop's
+// useEffect deps don't thrash on every parent re-render.
+const EMPTY_MENU: string[] = []
+const EMPTY_SOLD_OUT: Set<string> = new Set()
 
 /**
  * Orchestrator for the bakery scene. Composes the backdrop + team sign +
@@ -38,8 +42,8 @@ export function PixelBakeryScene({
   teamName,
   staffCounts = DEFAULT_STAFF,
   customerCount = 0,
-  menu = [],
-  soldOut = new Set(),
+  menu = EMPTY_MENU,
+  soldOut = EMPTY_SOLD_OUT,
 }: Props) {
   const { chefs, cat, customers, dollars } = useBakeryScene({ mode, teamName, staffCounts, customerCount })
 

@@ -202,12 +202,18 @@ interface Props {
   soldOut?: Set<string>
 }
 
+// Stable empty defaults — inline `[]`/`new Set()` defaults would allocate a
+// fresh reference on every render, invalidating the useEffect deps below
+// and triggering a full canvas repaint at rAF frequency.
+const EMPTY_MENU: string[] = []
+const EMPTY_SOLD_OUT: Set<string> = new Set()
+
 /**
  * The static back-wall + floor canvas. Heavy-weight draw happens once on
  * mount; props in later tasks (menu, soldOut) will cause re-paints only
  * when those values change.
  */
-export function SceneBackdrop({ menu = [], soldOut = new Set() }: Props = {}) {
+export function SceneBackdrop({ menu = EMPTY_MENU, soldOut = EMPTY_SOLD_OUT }: Props = {}) {
   const ref = useRef<HTMLCanvasElement | null>(null)
 
   useEffect(() => {
