@@ -1762,6 +1762,25 @@ exports.retryStuckSimulation = onCall(CALLABLE_OPTS, async (request) => {
 // ---------------------------------------------------------------------------
 
 /**
+ * BE-I06: Stocked-weighted aggregate fill rate across a player's offered
+ * products. Returns 0 when the player stocked nothing. Input is the
+ * per-product map that `simulation.js` already builds.
+ */
+function aggregateFillRate(perProductSatisfaction) {
+  const entries = Object.values(perProductSatisfaction || {});
+  const totalStocked = entries.reduce(
+    (s, e) => s + numberOrDefault(e && e.qtyStocked, 0),
+    0,
+  );
+  if (totalStocked <= 0) return 0;
+  const weighted = entries.reduce(
+    (s, e) => s + numberOrDefault(e && e.fillRate, 0) * numberOrDefault(e && e.qtyStocked, 0),
+    0,
+  );
+  return weighted / totalStocked;
+}
+
+/**
  * Read all data needed for simulation, invoke the pure simulation engine,
  * and persist results with batch chunking for 150+ player games.
  */
@@ -2022,6 +2041,7 @@ async function runSimulationAndPersist(gameRef, round, config) {
           revenueNet: r.revenueNet,
           customerCount: r.customerCount,
           aggregateSatisfactionPct: r.aggregateSatisfactionPct,
+          fillRate: aggregateFillRate(r.perProductSatisfaction),
           chefSatisfactionScore: r.chefSatisfactionScore,
           amountBorrowed: r.amountBorrowed,
           interestCharged: r.interestCharged,
@@ -2132,6 +2152,7 @@ async function runSimulationAndPersist(gameRef, round, config) {
       maxRevenueNet: revenues.length ? Math.max(...revenues) : 0,
       minRevenueNet: revenues.length ? Math.min(...revenues) : 0,
       avgCustomerCount: avg(customers),
+      totalCustomerPool: customers.reduce((s, n) => s + n, 0),
       playerCount: results.length,
     },
   }, { merge: true });

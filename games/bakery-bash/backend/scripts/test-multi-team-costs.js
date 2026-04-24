@@ -365,6 +365,36 @@ async function main() {
   assertEqual(soloSpent, AD_COST + CHEF_COST, "totalSpent matches ad + chef cost.");
   console.log(`  ✓ totalSpent equals adPaid + chefPaid ($${AD_COST + CHEF_COST})`);
 
+  // -----------------------------------------------------------------------
+  // BE-I05: classStats.totalCustomerPool must be written.
+  // BE-I06: lastRoundResult.fillRate must be a number.
+  // -----------------------------------------------------------------------
+  const roundDoc = await db.doc(`games/${GAME_ID}/rounds/${ROUND_ID}`).get();
+  assert(roundDoc.exists, "Round doc written.");
+  const classStats = roundDoc.get("classStats") || {};
+  assert(
+    typeof classStats.totalCustomerPool === "number",
+    `BE-I05: classStats.totalCustomerPool should be a number, got ${typeof classStats.totalCustomerPool}.`
+  );
+  const expectedPool = classStats.avgCustomerCount * classStats.playerCount;
+  assert(
+    Math.abs(classStats.totalCustomerPool - expectedPool) < 1,
+    `BE-I05: totalCustomerPool (${classStats.totalCustomerPool}) should equal avg × playerCount (${expectedPool}).`
+  );
+  console.log(`  ✓ BE-I05: classStats.totalCustomerPool = ${classStats.totalCustomerPool}`);
+
+  const soloPlayer = await db.doc(`games/${GAME_ID}/players/${PLAYER_SOLO}`).get();
+  const lrr = soloPlayer.get("lastRoundResult") || {};
+  assert(
+    typeof lrr.fillRate === "number",
+    `BE-I06: lastRoundResult.fillRate should be a number, got ${typeof lrr.fillRate}.`
+  );
+  assert(
+    lrr.fillRate >= 0 && lrr.fillRate <= 5,
+    `BE-I06: fillRate should be in a plausible range, got ${lrr.fillRate}.`
+  );
+  console.log(`  ✓ BE-I06: lastRoundResult.fillRate = ${lrr.fillRate.toFixed(3)}`);
+
   console.log("\nMulti-team cost flow passed.");
 }
 
