@@ -112,21 +112,6 @@ export function SimulatePhase() {
       )}
 
       <div className="simulate-phase__main">
-        {/* Left: Menu */}
-        <aside className="simulate-phase__menu-panel">
-          <h3 className="simulate-phase__panel-title">Menu</h3>
-          <ul className="simulate-phase__menu-list">
-            {PRODUCTS.map(p => (
-              <li key={p} className={`simulate-phase__menu-item ${soldOut.has(p) ? "simulate-phase__menu-item--soldout" : ""}`}>
-                <img src={`/assets/products/${p}.svg`} alt={PRODUCT_LABELS[p]} className="simulate-phase__menu-icon" />
-                <span>{PRODUCT_LABELS[p]}</span>
-                {soldOut.has(p) && <span className="simulate-phase__sold-out-badge">SOLD OUT</span>}
-              </li>
-            ))}
-          </ul>
-        </aside>
-
-        {/* Centre: Bakery visual */}
         <div className="simulate-phase__bakery-visual">
           <SceneErrorBoundary teamName={teamName ?? ""}>
             <PixelBakeryScene
@@ -142,31 +127,9 @@ export function SimulatePhase() {
               soldOut={soldOut as Set<string>}
             />
           </SceneErrorBoundary>
-        </div>
-
-        {/* Right: Maintenance bars */}
-        <aside className="simulate-phase__status-panel">
-          <h3 className="simulate-phase__panel-title">Status</h3>
-          {[
-            { label: "Cleanliness", value: cleanlinessDisplay },
-            { label: "Oven", value: ovenDisplay },
-          ].map(({ label, value }) => (
-            <div key={label} className="simulate-phase__bar-row">
-              <span className="simulate-phase__bar-label">{label}</span>
-              <div className="simulate-phase__bar-track">
-                <div
-                  className="simulate-phase__bar-fill"
-                  style={{ width: `${Math.round(value)}%`, background: value > 50 ? "var(--sage, #84cc16)" : "var(--berry, #ef4444)" }}
-                />
-              </div>
-              <span className="simulate-phase__bar-pct">{Math.round(value)}%</span>
-            </div>
-          ))}
-          <p className="simulate-phase__waiting">
-            Results loading shortly…
-          </p>
+          <p className="simulate-phase__waiting">Results loading shortly…</p>
           <p className="simulate-phase__credits">Art: Designed by Freepik</p>
-        </aside>
+        </div>
       </div>
     </section>
   );

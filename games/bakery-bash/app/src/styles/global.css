@@ -3618,14 +3618,14 @@ h3 { font-size: 0.7rem; }
 
 /* ── Simulate phase ─────────────────────────────────────────────────── */
 .simulate-phase__burglar-banner { background: #fee2e2; border: 2px solid #ef4444; border-radius: 6px; padding: 0.75rem 1rem; color: #991b1b; font-weight: bold; margin: 0.75rem 1rem; }
-.simulate-phase { min-height: 100vh; transition: background 1s ease; }
+.simulate-phase { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; min-height: 100vh; text-align: left; transition: background 1s ease; }
 .simulate-phase--day  { background: #fff7e6; }
 .simulate-phase--night{ background: #1a1a2e; color: #fff; }
 .simulate-phase__topbar { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.5rem; background: rgba(0,0,0,0.1); }
 .simulate-phase__day-counter { font-weight: bold; font-size: 1rem; }
 .simulate-phase__revenue-counter { font-size: 1.1rem; }
 .simulate-phase__revenue-counter strong { font-size: 1.4rem; color: var(--caramel, #d97706); }
-.simulate-phase__main { display: grid; grid-template-columns: 200px 1fr 220px; gap: 1.5rem; padding: 1.5rem; min-height: calc(100vh - 60px); }
+.simulate-phase__main { display: flex; justify-content: center; padding: 1.5rem; }
 .simulate-phase__panel-title { font-size: 0.85rem; font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem; }
 /* Menu panel */
 .simulate-phase__menu-panel { background: rgba(255,255,255,0.15); border-radius: 8px; padding: 1rem; }
@@ -3635,11 +3635,11 @@ h3 { font-size: 0.7rem; }
 .simulate-phase__menu-item--soldout { opacity: 0.5; }
 .simulate-phase__sold-out-badge { font-size: 0.65rem; font-weight: bold; background: #ef4444; color: #fff; padding: 0.1rem 0.3rem; border-radius: 3px; margin-left: auto; }
 /* Bakery centre */
-.simulate-phase__bakery-visual { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; }
+.simulate-phase__bakery-visual { display: flex; flex-direction: column; align-items: center; gap: 1rem; }
 .simulate-phase__bakery-visual .pixel-bakery-scene {
   transform: scale(2);
-  transform-origin: center;
-  margin: 135px 0; /* compensate for 2x scale so flex centering works */
+  transform-origin: center top;
+  margin-bottom: 270px; /* compensate for 2x scale height so credits don't overlap */
 }
 .simulate-phase__ad-display    { display: flex; align-items: center; gap: 0.5rem; }
 .simulate-phase__ad-icon       { width: 80px; height: 80px; }
@@ -3663,16 +3663,39 @@ h3 { font-size: 0.7rem; }
 
 /* ─── Decide Phase — Pixel Bakery Scene Panel ────────────── */
 
-.decide-phase__scene-panel {
-  display: flex;
-  justify-content: center;
+.decide-phase__layout {
+  display: grid;
+  grid-template-columns: minmax(540px, 1fr) minmax(480px, 560px);
+  gap: 1.5rem;
+  align-items: start;
   margin: 0 0 1rem;
 }
 
+.decide-phase__scene-panel {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  position: sticky;
+  top: 1rem;
+}
+
 .decide-phase__scene-panel .pixel-bakery-scene {
-  transform: scale(2);
-  transform-origin: center top;
-  margin-bottom: 270px; /* compensate for 2x scale height */
+  transform: scale(1.5);
+  transform-origin: top left;
+  margin-bottom: calc(270px * 0.5); /* compensate for 1.5x height */
+}
+
+/* Collapse the two columns on anything narrower than typical laptop
+ * widths so small windows still flow the scene above the dashboard. */
+@media (max-width: 1180px) {
+  .decide-phase__layout {
+    grid-template-columns: 1fr;
+  }
+  .decide-phase__scene-panel { position: static; }
+  .decide-phase__scene-panel .pixel-bakery-scene {
+    transform: scale(1);
+    margin-bottom: 0;
+  }
 }
 
 /* ── Ad Winner Banner (Decide screen, rounds 2+) ───────────────────────

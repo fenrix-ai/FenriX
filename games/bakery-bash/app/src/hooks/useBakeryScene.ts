@@ -176,7 +176,10 @@ interface CustomerInternal extends Customer {
 const CUSTOMER_SOFT_CAP = 4
 const CUSTOMER_SPEED_PX_PER_MS = 0.06
 const TRANSACTION_MS = 800
-const CUSTOMER_SPAWN_Y = 246
+// Walking Y chosen so the customer's head is roughly at the counter-bottom
+// line (y=180). Customer sprites are ~24 tall, so Y=198 puts heads at ~198
+// and feet at ~222 — right up against the counter front.
+const CUSTOMER_SPAWN_Y = 198
 const OFF_SCREEN_RIGHT = SCENE.width + 24
 
 let customerIdCounter = 0
