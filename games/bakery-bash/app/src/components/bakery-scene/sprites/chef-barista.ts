@@ -1,14 +1,16 @@
 import type { SpriteData } from '../sprite-data'
 
-/** Barista station chef — brown/bronze apron. */
+/** Barista station chef — forest-green apron. Chosen to contrast the warm-brown
+ * oven cabinet and counter wood so the front-counter character pops visually
+ * instead of blending into the millwork. */
 export const chefBarista: SpriteData = {
   width: 24,
   height: 40,
   palette: [
     '#1e1410', '#f2c9a3', '#d29872', '#3d281a', '#f4efe2',
     '#efe0c0',
-    '#8a5a2e', // 6 apron bronze
-    '#5e3e1e', // 7 apron bronze shadow
+    '#3a6b48', // 6 apron green
+    '#234a2e', // 7 apron green shadow
     '#6b4428', '#2d1810',
   ],
   frames: [
