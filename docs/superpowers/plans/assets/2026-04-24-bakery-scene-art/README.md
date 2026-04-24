@@ -7,7 +7,7 @@ These are the source images provided by the user for the bakery scene art polish
 | File | Contents | Use |
 |---|---|---|
 | `bread-pixel-art.zip` | Original Freepik download — pixel-art food illustration pack (JPG + AI + EPS) | Source of truth |
-| `bread-pixel-art.jpg` | 4×4 grid of 16 pixel-art bread/pastry items, ~1000×1000, purple background | **USE THIS.** Extract per-item PNGs with transparent background, place at `games/bakery-bash/app/public/assets/pixel-scene/bread/*.png` |
+| `bread-pixel-art.jpg` | 14 pixel-art bread/pastry items arranged organically (not a strict grid) on a `#714256` wine-purple background. 2000×2000. | **USE THIS.** Extracted per-item PNGs with transparent background landed at `games/bakery-bash/app/public/assets/pixel-scene/bread/*.png` (see `extract-bread.py` in this folder for the extraction recipe — Pillow + connected-components BFS, chromakey by euclidean RGB distance). |
 | `appliances-reference.zip` | Original Freepik download — cooking appliances icon set (JPG + EPS + licenses) | Reference only |
 | `appliances-reference.jpg` | Grid of kitchen appliance icons, flat vector / cartoon style | **DO NOT USE** in the scene — style clash with pixel-art chefs. Keep as visual reference when hand-redrawing the oven and espresso machine in pixel-art style. |
 | `appliances-license-free.txt` | Freepik free-tier license for the appliances pack | Attribution terms: `katemangostar / Freepik` |
