@@ -61,7 +61,7 @@ function buildChefs({ nationality, flag, specialties, maleVariants, femaleVarian
         flag,
         gender: 'male',
         variant,
-        skillLevel: tier.level,
+        skillTier: tier.level,
         specialties,
         baseMultiplier: tier.baseMultiplier,
         specialtyMultiplier: tier.specialtyMultiplier,
@@ -75,7 +75,7 @@ function buildChefs({ nationality, flag, specialties, maleVariants, femaleVarian
         flag,
         gender: 'female',
         variant,
-        skillLevel: tier.level,
+        skillTier: tier.level,
         specialties,
         baseMultiplier: tier.baseMultiplier,
         specialtyMultiplier: tier.specialtyMultiplier,
@@ -238,14 +238,30 @@ winning ad slot can swing the outcome. Trust your model, execute your plan, and 
 // ---------------------------------------------------------------------------
 const BATCH_LIMIT = 480;
 
+// BE-I07: fields that older seeds wrote and that must be removed on re-seed
+// so a stale value doesn't live alongside its canonical replacement. The seed
+// still uses `{ merge: true }` for everything else so extra fields added
+// outside the seed (e.g. portraitPath) survive a re-seed.
+const DEPRECATED_FIELDS_BY_COLLECTION = {
+  'catalog/chefs/items': ['skillLevel'],
+};
+
 async function seedCollection(collectionPath, docs, idField) {
   console.log(`\nSeeding ${collectionPath} (${docs.length} docs)…`);
+  const deprecated = DEPRECATED_FIELDS_BY_COLLECTION[collectionPath] || [];
+  const deleteOps = Object.fromEntries(
+    deprecated.map((field) => [field, FieldValue.delete()]),
+  );
   let batch = db.batch();
   let count = 0;
 
   for (const doc of docs) {
     const ref = db.collection(collectionPath).doc(doc[idField]);
-    batch.set(ref, { ...doc, seededAt: FieldValue.serverTimestamp() }, { merge: true });
+    batch.set(
+      ref,
+      { ...doc, ...deleteOps, seededAt: FieldValue.serverTimestamp() },
+      { merge: true },
+    );
     count++;
     if (count % BATCH_LIMIT === 0) {
       await batch.commit();

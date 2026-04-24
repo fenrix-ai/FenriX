@@ -352,6 +352,33 @@ function getPlayerTeamKey(playerDoc) {
   return getPlayerTeamId(data) || playerDoc.id;
 }
 
+/**
+ * BE-I02: Scan every player doc and return the set of (teamKey, memberUid,
+ * count) entries whose `specialtyChefs` array exceeds the cap. Used by
+ * advanceGamePhase to block leaving the roster phase while anyone is over.
+ *
+ * Runs outside the phase-transition transaction because collection-wide reads
+ * aren't allowed inside a transaction. The transactional phase check plus the
+ * `expectedFromPhase` guard cover the narrow race window where a player could
+ * add a chef between this scan and the phase write.
+ */
+async function findPlayersOverChefCap(gameRef, specialtyChefCap) {
+  const snap = await gameRef.collection('players').get();
+  const offenders = [];
+  for (const doc of snap.docs) {
+    const chefs = doc.get('specialtyChefs');
+    const count = Array.isArray(chefs) ? chefs.length : 0;
+    if (count > specialtyChefCap) {
+      offenders.push({
+        memberUid: doc.id,
+        teamKey: doc.get('teamId') || doc.id,
+        count,
+      });
+    }
+  }
+  return offenders;
+}
+
 function buildTeamGroupsFromPlayerDocs(playerDocs) {
   const groups = new Map();
 
@@ -1487,6 +1514,37 @@ exports.advanceGamePhase = onCall(CALLABLE_OPTS, async (request) => {
   // read the already-advanced phase and advance it a second time).
   const expectedFromPhase = (request.data || {}).expectedFromPhase || null;
 
+  // BE-I02: if we are leaving `roster`, no player may exceed the specialty-
+  // chef cap. Run the collection scan outside the transaction since Firestore
+  // transactions don't allow collection-wide reads. Concurrent writes are
+  // bounded by the transactional phase guard below — worst case a player
+  // gains a chef in the gap, advanceGamePhase fails, professor retries.
+  {
+    const preSnap = await gameRef.get();
+    if (!preSnap.exists) {
+      throw new HttpsError('not-found', 'Game not found.');
+    }
+    if (preSnap.get('professorUid') !== auth.uid && preSnap.get('professorId') !== auth.uid) {
+      throw new HttpsError('permission-denied', 'Only the professor can advance phases.');
+    }
+    const currentPhase = preSnap.get('phase') || '';
+    if (/_roster$/.test(currentPhase)) {
+      const cfgSnap = await gameRef.collection('config').doc('params').get();
+      const cfg = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
+      const cap = numberOrDefault(cfg.specialtyChefCap, 3);
+      const offenders = await findPlayersOverChefCap(gameRef, cap);
+      if (offenders.length) {
+        const detail = Array.from(
+          new Map(offenders.map((o) => [o.teamKey, `${o.teamKey} (${o.count} chefs)`])).values(),
+        ).join(', ');
+        throw new HttpsError(
+          'failed-precondition',
+          `Cannot leave roster — team(s) over chef cap of ${cap}: ${detail}. Use Force Layoff or wait for teams to resolve.`,
+        );
+      }
+    }
+  }
+
   await db.runTransaction(async (transaction) => {
     const [gSnap, cfgSnap] = await Promise.all([
       transaction.get(gameRef),
@@ -1762,6 +1820,25 @@ exports.retryStuckSimulation = onCall(CALLABLE_OPTS, async (request) => {
 // ---------------------------------------------------------------------------
 
 /**
+ * BE-I06: Stocked-weighted aggregate fill rate across a player's offered
+ * products. Returns 0 when the player stocked nothing. Input is the
+ * per-product map that `simulation.js` already builds.
+ */
+function aggregateFillRate(perProductSatisfaction) {
+  const entries = Object.values(perProductSatisfaction || {});
+  const totalStocked = entries.reduce(
+    (s, e) => s + numberOrDefault(e && e.qtyStocked, 0),
+    0,
+  );
+  if (totalStocked <= 0) return 0;
+  const weighted = entries.reduce(
+    (s, e) => s + numberOrDefault(e && e.fillRate, 0) * numberOrDefault(e && e.qtyStocked, 0),
+    0,
+  );
+  return weighted / totalStocked;
+}
+
+/**
  * Read all data needed for simulation, invoke the pure simulation engine,
  * and persist results with batch chunking for 150+ player games.
  */
@@ -2022,6 +2099,7 @@ async function runSimulationAndPersist(gameRef, round, config) {
           revenueNet: r.revenueNet,
           customerCount: r.customerCount,
           aggregateSatisfactionPct: r.aggregateSatisfactionPct,
+          fillRate: aggregateFillRate(r.perProductSatisfaction),
           chefSatisfactionScore: r.chefSatisfactionScore,
           amountBorrowed: r.amountBorrowed,
           interestCharged: r.interestCharged,
@@ -2132,6 +2210,7 @@ async function runSimulationAndPersist(gameRef, round, config) {
       maxRevenueNet: revenues.length ? Math.max(...revenues) : 0,
       minRevenueNet: revenues.length ? Math.min(...revenues) : 0,
       avgCustomerCount: avg(customers),
+      totalCustomerPool: customers.reduce((s, n) => s + n, 0),
       playerCount: results.length,
     },
   }, { merge: true });
