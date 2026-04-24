@@ -40,6 +40,22 @@ Every task also has a **Priority** tag:
 
 ---
 
+# 🚢 Recent Shipped (Apr 22–24 Playtest Hardening)
+
+Post-MVP hardening landed after the April 17 milestone, tracked in dedicated playtest docs rather than new line items in the task tree:
+
+- **Apr 22 remaining tasks** — see [`playtesting-apr22-remaining-tasks.md`](./playtesting-apr22-remaining-tasks.md).
+- **Apr 23 issues** — PRs [#72](https://github.com/fenrix-ai/FenriX/pull/72), [#77](https://github.com/fenrix-ai/FenriX/pull/77), [#79](https://github.com/fenrix-ai/FenriX/pull/79), [#80](https://github.com/fenrix-ai/FenriX/pull/80), [#82](https://github.com/fenrix-ai/FenriX/pull/82), [#84](https://github.com/fenrix-ai/FenriX/pull/84). See [`playtesting-apr23-issues.md`](./playtesting-apr23-issues.md).
+- **Apr 24 issues** — all 10 items (3× P0 / 5× P1 / 2× P2) shipped in PR [**#87**](https://github.com/fenrix-ai/FenriX/pull/87) (squash `9663c92`): team-photo removal, live lobby counts, ad-bonus stock gate, HowToPlay role cards, email-phase countdown + auto-advance, auction phase split, timer sync, last-chance banner gating, round-1 starting-budget chip, Profit rename. See [`playtesting-apr24-issues.md`](./playtesting-apr24-issues.md) for per-issue receipts.
+
+New artifacts from #87 worth knowing about when editing adjacent code:
+
+- `app/src/hooks/usePhaseCountdownSeconds.ts` — shared countdown hook consumed by `RoundHeader` *and* `EmailPhasePage`; any phase that needs a visible "Xs until close" should use this, not a local `setInterval`.
+- `app/src/components/game/ChefWinnerBanner.tsx` — roster-page companion to `AdWinnerBanner`.
+- `backend/scripts/test-ad-bonus-gate.js` — regression test for the ad-bonus stock gate (runs directly against `runSimulation()`, no emulator needed; wired up as `npm run test:ad-bonus-gate`).
+
+---
+
 # ✅ Already Done (Verified as of April 17, 2026)
 
 These are confirmed in the repo. Do not redo them. If a bug is found, file a new task.

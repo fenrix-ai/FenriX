@@ -11,7 +11,7 @@
 
 ## Concept
 
-Players run competing grab-and-go cafés in a shared plaza food court. Each round, they decide how much stock to carry per product, how many sous chefs to hire, and how much to bid in auctions for scarce resources (advertisements, highly-rated chefs, etc.). Product prices and starting budget are pre-set — players do not control these. A regression model running on the individual player's computer can be used to help them win. The player with the highest cumulative net revenue across all rounds wins.
+Players run competing grab-and-go cafés in a shared plaza food court. Each round, they decide how much stock to carry per product, how many sous chefs to hire, and how much to bid in auctions for scarce resources (advertisements, highly-rated chefs, etc.). Product prices and starting budget are pre-set — players do not control these. A regression model running on the individual player's computer can be used to help them win. The player (or team) with the highest cumulative **profit** across all rounds wins.
 
 > **Loan Shark Rule:** If a player's total spending in a round exceeds their available budget, the overage is treated as a loan from the loan shark. At the end of that round, the borrowed amount **plus 10% interest** on the borrowed amount is deducted from the player's revenue. Example: borrow $200 → revenue penalty = $200 (principal) + $20 (interest) = **$220 deducted**. Players are never blocked from overspending — but the cost is punishing and compounds risk.
 
@@ -23,9 +23,11 @@ Players receive "company emails" between rounds containing sales proceeds, marke
 
 ## Target Variable
 
-**Revenue** (continuous, in dollars). This is the output of the regression model and the metric students will try to predict. It is computed server-side — players never see the target model coefficients directly.
+**Profit** (continuous, in dollars). This is the output of the regression model and the metric students will try to predict. It is computed server-side — players never see the target model coefficients directly.
 
-Revenue must be continuous (not bucketed or categorical) so students can run linear regression on it. Integer is also acceptable — you could round to whole dollars.
+Profit is gross revenue minus all round costs, with the loan-shark interest deducted. The backend field name is `revenueNet` (unchanged — schema stability), but every **student-facing** surface (Results card, Leaderboard column, Conclusion screen, SimulatePhase running total) labels the number as **"Profit"** per the Apr 24 playtest rename (A24-I09, PR [#87](https://github.com/fenrix-ai/FenriX/pull/87)).
+
+Profit must be continuous (not bucketed or categorical) so students can run linear regression on it. Integer is also acceptable — you could round to whole dollars.
 
 ---
 
@@ -1110,7 +1112,7 @@ Foot Traffic Modifier =
     Satisfaction Modifier       (from aggregate satisfaction %)
   + Product Variety Bonus
   + Sous Chef Bonus             (up to threshold — see Chef Satisfaction below)
-  + Ad Type Bonus               (TBD — to be specified when ad system is finalized)
+  + Ad Type Bonus               (flat $ to the winner — see Ad Type Bonus below)
   − Availability Penalty        (sell-outs reduce share via customer defection)
 ```
 
@@ -1148,7 +1150,16 @@ Premium bonus: +10% if Croissant or Matcha individually at Excellent (stackable,
 
 **Availability Penalty:** Each sell-out event during the round reduces foot traffic by −8% (product-loyal customers defect to competitors). Stacks per product sold out.
 
-**Ad Type Bonus:** To be defined when the ad auction system is finalized.
+**Ad Type Bonus:** Flat gross-revenue bonus added to the round's auction winner, sourced from `config.adBonuses` in `backend/functions/modules/config.js`:
+
+| Ad Slot | Default bonus |
+|---|---|
+| TV | **$50,000** |
+| Billboard | $37,500 |
+| Radio | $25,000 |
+| Newspaper | $18,750 |
+
+**Stock gate (Apr 24 playtest fix — PR [#87](https://github.com/fenrix-ai/FenriX/pull/87)).** An ad bonus is paid **only when the winning team has offered at least one product this round** (`offeredProducts.length > 0`). Winning an ad and stocking zero items produces **$0** bonus. This closes the dominant-strategy exploit where a team could bid to win TV, stock nothing, and collect the flat bonus with no customer-serving risk. Regression covered by `backend/scripts/test-ad-bonus-gate.js`.
 
 ### How Players Compete
 

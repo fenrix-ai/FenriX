@@ -326,7 +326,7 @@ revenue = 500
 
 Sealed-bid, first-price. Highest bidder wins and pays their bid.
 
-**Ad Auction:** 4 types (TV, Radio, Newspaper, Billboard). Player can bid on multiple but wins at most one. If the high bidder already won another ad type this round, award to next-highest. Tie-break by `submittedAt asc`. Bonus values pulled from `config/params.adBonus` (defaults: TV +$200, Billboard +$150, Radio +$100, Newspaper +$75). Persist winners to `games/{gameId}/rounds/{round}/adWinners` so the next round's Decide screen can render the visual ad-winner banner.
+**Ad Auction:** 4 types (TV, Radio, Newspaper, Billboard). Player can bid on multiple but wins at most one. If the high bidder already won another ad type this round, award to next-highest. Tie-break by `submittedAt asc`. Bonus values pulled from `config.adBonuses` in `backend/functions/modules/config.js` (defaults: TV **$50,000**, Billboard $37,500, Radio $25,000, Newspaper $18,750). **Stock gate (Apr 24 fix, PR [#87](https://github.com/fenrix-ai/FenriX/pull/87)):** the ad bonus is added to `revenueGross` **only if the winning team offered at least one product this round** (`offeredProducts.length > 0`) — winning an ad and stocking nothing yields $0 bonus. Regression coverage: `npm run test:ad-bonus-gate`. Persist winners to `games/{gameId}/rounds/{round}/auctionResults.ads` so the current round's chef-auction screen and the next round's Decide screen can render the ad-winner banner.
 
 **Chef Auction:** Each chef in the round's pool resolves independently. Highest bidder wins, pays bid. A player can win multiple chefs. Tie-break by `submittedAt asc`. Won chefs append to `players/{uid}.specialtyChefs` and trigger `pendingRosterAction` if the player would exceed 3.
 
