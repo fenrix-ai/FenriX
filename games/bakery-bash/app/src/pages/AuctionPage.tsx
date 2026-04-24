@@ -726,26 +726,21 @@ export function AuctionPage() {
       )}
       <RoundHeader />
 
-      <div className="auction-page__header">
-        <h1 className="auction-page__phase-title">
-          {isAdPhase
-            ? "Ad Auction"
-            : isChefPhase
-            ? "Chef Auction"
-            : "Auction"}
-        </h1>
-        {/* Phase countdown is owned by <RoundHeader />. The AuctionPage
-            used to render a second local timer here which duplicated the
-            header clock on bid pages; removed so players see exactly one. */}
-        {alreadySubmitted && !hasEditableBid && (
+      {/* A24-I05: the old tab-bar `auction-page__header` was removed in
+          favour of a phase-conditional render. The phase label lives in
+          <RoundHeader /> already (PHASE_LABELS map), so no duplicate title
+          is rendered here. A "Bids Locked" badge still appears once the
+          team has locked in every slot. */}
+      {alreadySubmitted && !hasEditableBid && (
+        <div className="auction-page__locked-row">
           <span
             className="tab__badge tab__badge--submitted auction-page__locked-badge"
             role="status"
           >
             Bids Locked
           </span>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* A24-I05 — surface "you won / you didn't" before the chef auction
           opens so students don't have to wait until Results to find out. */}

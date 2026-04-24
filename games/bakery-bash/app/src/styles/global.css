@@ -1384,63 +1384,11 @@ h3 { font-size: 0.7rem; }
   width: 100%;
 }
 
-.auction-page__header {
+/* A24-I05 — "Bids Locked" badge row when the whole phase is locked. */
+.auction-page__locked-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: var(--espresso);
-  border: var(--border);
-  box-shadow: var(--shadow-pixel-sm);
-  padding: 0;
-  margin-bottom: 1.25rem;
-  overflow: hidden;
-}
-
-.auction-page__tabs {
-  display: flex;
-}
-
-/* A24-I05 — auction phase title (replaces the old tab bar). */
-.auction-page__phase-title {
-  font-family: var(--font-pixel);
-  font-size: 0.9rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  margin: 0;
-  padding: 0.75rem 1.25rem;
-  color: var(--espresso, #1a1a1a);
-}
-
-.auction-page__tab {
-  font-family: var(--font-pixel);
-  font-size: 0.55rem;
-  padding: 0.75rem 1.25rem;
-  border: none;
-  background: transparent;
-  color: var(--dough);
-  cursor: pointer;
-  text-transform: uppercase;
-  position: relative;
-  transition: background 0.1s, color 0.1s;
-}
-
-.auction-page__tab--active {
-  background: var(--cream);
-  color: var(--espresso);
-}
-
-.auction-page__tab--active::after {
-  content: "";
-  position: absolute;
-  bottom: -3px;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: var(--cream);
-}
-
-.auction-page__tab--locked {
-  opacity: 0.4;
+  justify-content: flex-end;
+  margin-bottom: 0.75rem;
 }
 
 .auction-page__timer {
@@ -4050,19 +3998,6 @@ h3 { font-size: 0.7rem; }
   font-size: 0.85rem;
   font-style: italic;
   color: #666;
-}
-
-@media (max-width: 880px) {
-  .chef-winner-banner__header {
-    border-right: 0;
-    border-bottom: 2px dashed var(--berry);
-    padding-right: 0;
-    padding-bottom: 0.4rem;
-    width: 100%;
-    flex-direction: row;
-    align-items: baseline;
-    gap: 0.5rem;
-  }
 }
 
 /* ── Chef Card (<ChefCard> component, used on Kitchen Roster page) ─────
