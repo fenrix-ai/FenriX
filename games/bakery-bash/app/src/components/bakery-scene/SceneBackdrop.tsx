@@ -7,7 +7,7 @@ function fillRect(ctx: CanvasRenderingContext2D, color: string, x: number, y: nu
   ctx.fillRect(x, y, w, h)
 }
 
-function paintBackdrop(ctx: CanvasRenderingContext2D) {
+function paintBackdrop(ctx: CanvasRenderingContext2D, menu: string[], soldOut: Set<string>) {
   // Back-wall cream fill, covering wall-mounts + mid-band zones.
   fillRect(ctx, PALETTE.wallCream, 0, 0, SCENE.width, SCENE.zones.wainscoting.y)
   // Subtle vertical-stripe wall pattern (thin shadow columns every 32 px).
@@ -33,16 +33,24 @@ function paintBackdrop(ctx: CanvasRenderingContext2D) {
   {
     // Left: two stacked bread shelves (simple dark wooden rectangles with bread loaves on top).
     const shelfX = 32
+    let slotIndex = 0
     for (const shelfY of [54, 88]) {
       // Shelf plank (dark wood, ~60w × 4h)
       fillRect(ctx, PALETTE.shelfWood, shelfX, shelfY, 80, 4)
       fillRect(ctx, PALETTE.shelfShadow, shelfX, shelfY + 4, 80, 7) // height=7 so the pixel test at y=60 lands in the painted shadow
       // Three bread loaves on top (simple amber bumps)
       for (let i = 0; i < 3; i++) {
+        const product = menu[slotIndex]
         const loafX = shelfX + 6 + i * 24
-        fillRect(ctx, '#c7883a', loafX, shelfY - 8, 18, 8)
-        fillRect(ctx, '#9c6424', loafX, shelfY - 2, 18, 2) // shadow
-        fillRect(ctx, '#e3a85a', loafX + 2, shelfY - 6, 14, 2) // highlight
+        if (!product || soldOut.has(product)) {
+          fillRect(ctx, '#7a7a7a', loafX, shelfY - 8, 18, 8)  // gray empty tray (drop-in loaf replacement)
+          fillRect(ctx, '#5a5a5a', loafX, shelfY - 2, 18, 2)  // shadow
+        } else {
+          fillRect(ctx, '#c7883a', loafX, shelfY - 8, 18, 8)
+          fillRect(ctx, '#9c6424', loafX, shelfY - 2, 18, 2) // shadow
+          fillRect(ctx, '#e3a85a', loafX + 2, shelfY - 6, 14, 2) // highlight
+        }
+        slotIndex++
       }
     }
   }
@@ -189,12 +197,17 @@ function paintBackdrop(ctx: CanvasRenderingContext2D) {
   }
 }
 
+interface Props {
+  menu?: string[]
+  soldOut?: Set<string>
+}
+
 /**
  * The static back-wall + floor canvas. Heavy-weight draw happens once on
  * mount; props in later tasks (menu, soldOut) will cause re-paints only
  * when those values change.
  */
-export function SceneBackdrop() {
+export function SceneBackdrop({ menu = [], soldOut = new Set() }: Props = {}) {
   const ref = useRef<HTMLCanvasElement | null>(null)
 
   useEffect(() => {
@@ -202,8 +215,8 @@ export function SceneBackdrop() {
     if (!canvas) return
     const ctx = canvas.getContext('2d')
     if (!ctx) return
-    paintBackdrop(ctx)
-  }, [])
+    paintBackdrop(ctx, menu, soldOut)
+  }, [menu, soldOut])
 
   return (
     <canvas

@@ -138,6 +138,8 @@ export function SimulatePhase() {
                 barista: pendingDecision.staffCounts.baristaSousChefs,
               }}
               customerCount={latestRound?.customerCount ?? 0}
+              menu={[...PRODUCTS]}
+              soldOut={soldOut as Set<string>}
             />
           </SceneErrorBoundary>
         </div>

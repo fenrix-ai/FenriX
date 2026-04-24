@@ -183,3 +183,27 @@ describe('<SceneBackdrop> counter furniture', () => {
     expect(isCream).toBe(false)
   })
 })
+
+describe('<SceneBackdrop> sold-out', () => {
+  let setup: ReturnType<typeof setupCanvasFake>
+
+  beforeEach(() => {
+    setup = setupCanvasFake()
+  })
+
+  afterEach(() => {
+    setup.cleanup()
+  })
+
+  it('renders gray empty trays instead of amber loaves for sold-out products', () => {
+    const menu = ['bread', 'croissant', 'baguette', 'danish', 'pretzel', 'scone']
+    const soldOut = new Set(['bread', 'croissant', 'baguette'])
+    const { container } = render(<SceneBackdrop menu={menu} soldOut={soldOut} />)
+    const ctx = (container.querySelector('canvas')! as HTMLCanvasElement).getContext('2d')!
+    // Shelf 1 loaf 1 (product index 0, sold-out) — sample the tray area (shelfY=54, loaf tray at y=49..54)
+    const p = ctx.getImageData(45, 48, 1, 1).data
+    // gray = R ~ G ~ B, all between 120 and 200
+    const isGray = Math.abs(p[0] - p[1]) < 30 && Math.abs(p[1] - p[2]) < 30
+    expect(isGray).toBe(true)
+  })
+})

@@ -703,6 +703,9 @@ export function GamePage() {
               barista: pendingDecision.staffCounts.baristaSousChefs,
             }}
             customerCount={0}
+            menu={Object.keys(pendingDecision.menu).filter(
+              (k) => pendingDecision.menu[k as ProductKey],
+            )}
           />
         </SceneErrorBoundary>
       </div>

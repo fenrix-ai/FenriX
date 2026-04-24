@@ -22,6 +22,8 @@ interface Props {
   teamName: string
   staffCounts?: Record<StationKey, number>
   customerCount?: number
+  menu?: string[]
+  soldOut?: Set<string>
 }
 
 const DEFAULT_STAFF: Record<StationKey, number> = { bakery: 1, deli: 1, barista: 1 }
@@ -36,6 +38,8 @@ export function PixelBakeryScene({
   teamName,
   staffCounts = DEFAULT_STAFF,
   customerCount = 0,
+  menu = [],
+  soldOut = new Set(),
 }: Props) {
   const { chefs, cat, customers, dollars } = useBakeryScene({ mode, teamName, staffCounts, customerCount })
 
@@ -53,7 +57,7 @@ export function PixelBakeryScene({
       data-testid="pixel-bakery-scene"
       className={`pixel-bakery-scene pixel-bakery-scene--${mode}`}
     >
-      <SceneBackdrop />
+      <SceneBackdrop menu={menu} soldOut={soldOut} />
       <TeamSign teamName={teamName} />
       <ChefLayer chefs={chefs} />
       <CustomerLayer customers={customers} />
