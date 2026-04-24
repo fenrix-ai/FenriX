@@ -3,6 +3,7 @@ import type {
   ChefNationality,
   ChefSkillTier,
 } from "../../types/game";
+import { formatMoney } from "../../lib/cost";
 
 /**
  * FE-04 — Shared chef card used across the chef bid phase (`bid`), the
@@ -77,11 +78,6 @@ const SKILL_LABEL: Record<ChefSkillTier, string> = {
   intermediate: "Intermediate",
   advanced: "Advanced",
 };
-
-function formatMoney(n: number | null | undefined): string {
-  if (typeof n !== "number" || Number.isNaN(n)) return "—";
-  return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-}
 
 export function ChefCard(props: ChefCardProps) {
   const { chef, mode, className, cardIndex } = props;

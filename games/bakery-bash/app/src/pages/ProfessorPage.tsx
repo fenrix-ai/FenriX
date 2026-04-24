@@ -544,7 +544,7 @@ export function ProfessorPage() {
           gameId: res.data.gameId,
           playerId: user!.uid,
           gameCode: res.data.joinCode,
-          player: { id: user!.uid, name: "Professor", bakeryName: "", budget: 0, cumulativeRevenue: 0 },
+          player: { id: user!.uid, name: "Professor", bakeryName: "", cumulativeRevenue: 0 },
         },
       });
       setInfo(`Game created — join code ${res.data.joinCode}`);

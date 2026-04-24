@@ -1,5 +1,6 @@
 import type { AdType } from "../../types/game";
 import { AD_TYPES } from "../../types/game";
+import { formatMoney } from "../../lib/cost";
 
 /**
  * FE-11 — Shows who won each ad surface last round. Rendered at the top
@@ -43,11 +44,6 @@ const AD_LABEL: Record<AdType, string> = {
   Radio: "Radio",
   Newspaper: "Newspaper",
 };
-
-function formatMoney(n: number | null | undefined): string {
-  if (typeof n !== "number" || Number.isNaN(n)) return "—";
-  return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-}
 
 export function AdWinnerBanner({
   round,

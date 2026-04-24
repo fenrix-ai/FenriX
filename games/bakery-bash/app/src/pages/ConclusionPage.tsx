@@ -11,6 +11,7 @@ import { useGame } from "../contexts/GameContext";
 import { PageShell } from "../components/ui/PageShell";
 import { downloadResultsCsv } from "../components/game/RoundHeader";
 import type { RoundResult } from "../types/game";
+import { formatMoney } from "../lib/cost";
 
 /**
  * FE-13 — `/game/conclusion` page, rendered when `phase === "game_over"`.
@@ -40,11 +41,6 @@ interface LeaderboardRanking {
 interface LeaderboardDocument {
   round: number;
   rankings: LeaderboardRanking[];
-}
-
-function formatMoney(n: number | null | undefined): string {
-  if (typeof n !== "number" || Number.isNaN(n)) return "—";
-  return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
 
 interface ClassRoundSnapshot {
