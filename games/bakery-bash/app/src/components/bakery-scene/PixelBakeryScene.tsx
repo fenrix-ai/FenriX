@@ -4,6 +4,7 @@ import { ChefLayer } from './ChefLayer'
 import { CustomerLayer } from './CustomerLayer'
 import { CatLayer } from './CatLayer'
 import { DollarLayer } from './DollarLayer'
+import { FxLayer } from './FxLayer'
 import { useBakeryScene } from '../../hooks/useBakeryScene'
 import type { StationKey } from './scene-geometry'
 
@@ -47,6 +48,7 @@ export function PixelBakeryScene({
       <CustomerLayer customers={customers} />
       <CatLayer cat={cat} />
       <DollarLayer dollars={dollars} />
+      <FxLayer />
     </div>
   )
 }
