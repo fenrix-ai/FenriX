@@ -19,8 +19,20 @@
 | BE-I13 | [#77](https://github.com/fenrix-ai/FenriX/pull/77) | `setTeamRole({ role: null \| "" \| "unassigned" })` clears the caller; player doc falls back to `solo`. |
 | FE-I14 | [#77](https://github.com/fenrix-ai/FenriX/pull/77) | "Pick Your Role" briefing + solo helper text rewritten to define the term inline. |
 | FE-I15 | [#77](https://github.com/fenrix-ai/FenriX/pull/77) | `assertRoleAllowed` + `roleOwnsX` accept team-fallback: any teammate can submit when nobody holds the specialist role. |
+| FE-I12 | [#79](https://github.com/fenrix-ai/FenriX/pull/79) | Simulate screen holds ≥20s so fast backend transitions don't skip past the animation. |
+| FE-I16 | [#79](https://github.com/fenrix-ai/FenriX/pull/79) | Ad-bid input switched to string-keyed state + `placeholder="0"` — no more "01000". |
+| FE-I18 | [#79](https://github.com/fenrix-ai/FenriX/pull/79) | Submission grid flips ✓ on any teammate submit; missing-claim notice promoted to visible amber callout. |
+| FE-I20 | [#79](https://github.com/fenrix-ai/FenriX/pull/79) | Results page drops the duplicate Net revenue / Customers / Customer satisfaction label rows. |
+| FE-I21 | [#74](https://github.com/fenrix-ai/FenriX/pull/74) + [#75](https://github.com/fenrix-ai/FenriX/pull/75) + [#79](https://github.com/fenrix-ai/FenriX/pull/79) | Conclusion: winner hero + confetti + podium (#74), bakery-stats / leaderboard / per-round CSS (#75), and class-stats KPI grid (#79). Chef-portrait roster + "Play again" CTA still open. |
+| BE-I02 | _pending backend-automated-playthrough PR_ | `advanceGamePhase` refuses to leave `round_N_roster` while any player is over `specialtyChefCap`; failed-precondition error names the offending team(s). |
+| BE-I05 | _pending backend-automated-playthrough PR_ | `classStats.totalCustomerPool` written each round (sum of per-player customerCount). |
+| BE-I06 | _pending backend-automated-playthrough PR_ | `lastRoundResult.fillRate` exposes a stocked-weighted aggregate of per-product fill rates. |
+| BE-I07 | _pending backend-automated-playthrough PR_ | Chef catalog seed now writes the canonical `skillTier` key (was `skillLevel`). |
+| BE-I08 | _pending backend-automated-playthrough PR_ | `scripts/test-phase-flow.js` walks the canonical `email → bid_ad → bid_chef → roster → decide → simulating → results_ready` order; dead `scripts/test-lifecycle.js` retired; `test-suite` phase fixtures aligned. |
+| BE-I09 | _pending backend-automated-playthrough PR_ | `generateChefPool produces valid chefs` asserts `pool.length === cfg.chefPoolSize` (was stale 6-8 range). |
+| DOC-I10 | _pending backend-automated-playthrough PR_ | `GAME_DESIGN_PROPOSAL.md` Round Structure table matches the shipped phase order. |
 
-Remaining P0s: **BE-I02** (chef cap never enforced). Everything else below is P1/P2.
+All P0 issues shipped. Remaining open items are P1/P2 (see Priority Summary below).
 
 ---
 
@@ -31,17 +43,17 @@ Remaining P0s: **BE-I02** (chef cap never enforced). Everything else below is P1
 | ID | Area | Title | Priority | Effort | Status |
 |---|---|---|---|---|---|
 | BE-I01 | simulation / auction | **Auction costs are charged N× for a team of N** | **P0 — ship-blocker** | M (~1 day) | ✅ shipped ([#72](https://github.com/fenrix-ai/FenriX/pull/72)) |
-| BE-I02 | roster / phases | **Chef cap (3) is never enforced; teams hoard 10+ chefs** | **P0 — ship-blocker** | M (~1 day) | ⏳ open |
+| BE-I02 | roster / phases | **Chef cap (3) is never enforced; teams hoard 10+ chefs** | **P0 — ship-blocker** | M (~1 day) | ✅ shipped (_pending backend-automated-playthrough PR_) |
 | BE-I03 | roster / schema | **Auction-results doc duplicates payload under both team-slug and every member uid** | **P0** (enables I01 fix) | S (½ day) | ✅ shipped ([#72](https://github.com/fenrix-ai/FenriX/pull/72)) |
 | BE-I04 | team formation | **2-player teams have no `operations` role — can't submit decisions** | **P0** | S–M (½–1 day) | ✅ shipped ([#77](https://github.com/fenrix-ai/FenriX/pull/77)) |
-| BE-I05 | results schema | **`classStats.totalCustomerPool` never written** | P1 | XS (~1 hr) | ⏳ open |
-| BE-I06 | results schema | **`fillRate` missing from `lastRoundResult`** | P1 | XS (~1 hr) | ⏳ open |
-| BE-I07 | chef pool | **`skillLevel` field missing / renamed to `skillTier`** | P1 | S (~2 hr) | ⏳ open |
-| BE-I08 | tests | **`test-phase-flow` + `test-lifecycle` (backend/scripts) expect old phase order** | P1 | XS (~1 hr) | ⏳ open |
-| BE-I09 | tests | **Unit-test failure: `generateChefPool produces valid chefs`** | P1 | S (~2 hr) | ⏳ open |
-| DOC-I10 | docs | **`GAME_DESIGN_PROPOSAL.md` phase-order section contradicts shipped code** | P1 | XS (~½ hr) | ⏳ open |
-| UX-I11 | auctions | **Tie-break is earlier-submission → network-speed wins** | P2 | S–M | ⏳ open |
-| FE-I12 | simulate phase | **Sim advances `decide → results_ready` in <3s; "simulating" frame is invisible** | P2 | S | ⏳ open |
+| BE-I05 | results schema | **`classStats.totalCustomerPool` never written** | P1 | XS (~1 hr) | ✅ shipped (_pending backend-automated-playthrough PR_) |
+| BE-I06 | results schema | **`fillRate` missing from `lastRoundResult`** | P1 | XS (~1 hr) | ✅ shipped (_pending backend-automated-playthrough PR_) |
+| BE-I07 | chef pool | **`skillLevel` field missing / renamed to `skillTier`** | P1 | S (~2 hr) | ✅ shipped (_pending backend-automated-playthrough PR_) |
+| BE-I08 | tests | **`test-phase-flow` + `test-lifecycle` (backend/scripts) expect old phase order** | P1 | XS (~1 hr) | ✅ shipped (_pending backend-automated-playthrough PR_) |
+| BE-I09 | tests | **Unit-test failure: `generateChefPool produces valid chefs`** | P1 | S (~2 hr) | ✅ shipped (_pending backend-automated-playthrough PR_) |
+| DOC-I10 | docs | **`GAME_DESIGN_PROPOSAL.md` phase-order section contradicts shipped code** | P1 | XS (~½ hr) | ✅ shipped (_pending backend-automated-playthrough PR_) |
+| UX-I11 | auctions | **Tie-break is earlier-submission → network-speed wins** | P2 | S–M | ⏳ open (design decision) |
+| FE-I12 | simulate phase | **Sim advances `decide → results_ready` in <3s; "simulating" frame is invisible** | P2 | S | ✅ shipped ([#79](https://github.com/fenrix-ai/FenriX/pull/79)) |
 
 ### From manual playtesting (browser walk-through, UX-focused)
 
@@ -50,14 +62,14 @@ Remaining P0s: **BE-I02** (chef cap never enforced). Everything else below is P1
 | BE-I13 | team roles | **"× Clear" button on Pick Your Role doesn't actually clear the role** | **P0** | XS (~1 hr) | ✅ shipped ([#77](https://github.com/fenrix-ai/FenriX/pull/77)) |
 | FE-I14 | team roles | **"Pick Your Role" briefing references "role owner" without defining it** | P2 | XS (~½ hr) | ✅ shipped ([#77](https://github.com/fenrix-ai/FenriX/pull/77)) |
 | FE-I15 / BE-I04 | team roles | **Teams with only 1 or 2 roles picked can't submit — need a solo-fallback** | **P0** (sibling of BE-I04) | S (½ day) | ✅ shipped ([#77](https://github.com/fenrix-ai/FenriX/pull/77)) |
-| FE-I16 | ad auction | **Typing into $0 bid input produces "01000" (leading zero)** | **P1** | XS (~½ hr) | ⏳ open |
+| FE-I16 | ad auction | **Typing into $0 bid input produces "01000" (leading zero)** | **P1** | XS (~½ hr) | ✅ shipped ([#79](https://github.com/fenrix-ai/FenriX/pull/79)) |
 | BE-I17 | professor | **`pauseGame` flips a flag that nothing honors — timer and submissions still tick** | **P1** | M (~1 day) | ⏳ open |
-| FE-I18 | professor | **Per-phase submission grid is stuck on ⏳ for everyone** | **P1** | S (~2 hr) | ⏳ open |
+| FE-I18 | professor | **Per-phase submission grid is stuck on ⏳ for everyone** | **P1** | S (~2 hr) | ✅ shipped ([#79](https://github.com/fenrix-ai/FenriX/pull/79)) |
 | DESIGN-I19 | chef auction | **Minimum bid floor feels arbitrary — reconsider removing or simplifying** | P2 | design discussion | ⏳ open |
-| FE-I20 | results | **Revenue / Customers / Satisfaction values duplicated in label strip below cards** | P2 | XS (~½ hr) | ⏳ open |
-| FE-I21 | conclusion | **End-game screen needs polish — mirror the Results-phase card style** | P2 | M (~½–1 day) | ⏳ open |
+| FE-I20 | results | **Revenue / Customers / Satisfaction values duplicated in label strip below cards** | P2 | XS (~½ hr) | ✅ shipped ([#79](https://github.com/fenrix-ai/FenriX/pull/79)) |
+| FE-I21 | conclusion | **End-game screen needs polish — mirror the Results-phase card style** | P2 | M (~½–1 day) | 🟡 mostly shipped ([#74](https://github.com/fenrix-ai/FenriX/pull/74) + [#75](https://github.com/fenrix-ai/FenriX/pull/75) + [#79](https://github.com/fenrix-ai/FenriX/pull/79)); roster-portrait cards + "Play again" CTA still open |
 
-**P0 status:** 5 of 6 shipped. Only **BE-I02** (chef cap never enforced) is still open before May 1.
+**P0 status:** 6 of 6 shipped. Remaining open: BE-I17 (pauseGame), UX-I11 (tie-break), DESIGN-I19 (min-bid floor), and FE-I21 polish follow-ups.
 
 ---
 
@@ -114,6 +126,8 @@ By round 2 the team is in the loan shark. By round 5 the team is at **−$6,882,
 ---
 
 ### BE-I02 — Chef roster cap (3 specialty chefs) is never enforced
+
+> ✅ **Shipped in the Apr 23 backend-automated-playthrough PR.** `advanceGamePhase` now refuses to leave any `round_N_roster` phase while any player has more than `config.specialtyChefCap` (default 3) specialty chefs. Professor sees a `failed-precondition` banner naming the over-cap team(s) and their chef count; the existing `layoffChef` callable is the escape hatch. Scope is the advance-block only; the recommended auto-layoff-on-timeout safety net is tracked as a follow-up. Covered by `backend/scripts/test-chef-cap-enforcement.js` (`npm run test:chef-cap`).
 
 **Severity:** Critical. Teams that bid aggressively stockpile 10+ chefs over 5 rounds and get runaway output, breaking the competitive balance the design intended.
 
@@ -305,6 +319,8 @@ While there: the `team-page__roles-solo` paragraph assumes 1-person → "flying 
 
 ### BE-I05 — `classStats.totalCustomerPool` is never written
 
+> ✅ **Shipped in the Apr 23 backend-automated-playthrough PR.** `runSimulationAndPersist` now writes `classStats.totalCustomerPool` alongside the existing averages, computed as the sum of per-player `customerCount`. Asserted in `test-multi-team-costs.js`.
+
 Design proposal expects a `totalCustomerPool` on the round's class stats. Firestore currently has:
 ```
 { avgRevenueNet, minRevenueNet, maxRevenueNet, playerCount, avgCustomerCount }
@@ -317,6 +333,8 @@ Anything referencing `totalCustomerPool` (leaderboard banner, professor "pool sh
 
 ### BE-I06 — `fillRate` missing from `lastRoundResult`
 
+> ✅ **Shipped in the Apr 23 backend-automated-playthrough PR.** `lastRoundResult.fillRate` now carries a stocked-weighted aggregate of per-product fill rates. Division-by-zero guard returns 0 when the player stocked nothing. Asserted in `test-multi-team-costs.js`. Per-product fill rates were already on the player round doc via `perProductSatisfaction`; no change there.
+
 `simulation.js` computes `fillRate` per product inside `perProductSatisfaction[product]`, but doesn't surface a player-level aggregate on `lastRoundResult`. Any Result-screen UI reading `lrr.fillRate` gets `undefined`.
 
 **Fix:** copy the weighted-average fillRate (or per-product map) onto the result payload. Also surface it on the CSV row so students can regress against it.
@@ -324,6 +342,8 @@ Anything referencing `totalCustomerPool` (leaderboard banner, professor "pool sh
 ---
 
 ### BE-I07 — Chef-pool skill-level field name inconsistency
+
+> ✅ **Shipped in the Apr 23 backend-automated-playthrough PR.** Catalog seed (`scripts/seed-catalogs.js`) renamed from `skillLevel: tier.level` to `skillTier: tier.level`, matching the runtime `generateChefPool` output and every downstream consumer (csv-export, conclusion, test-compliance). Other `skillLevel` occurrences in the repo belong to a different schema (legacy `chefBid: { skillLevel, amount }` objects) and are intentionally unchanged.
 
 `catalog/chefs/items` seed uses `skillTier`. At least one consumer was written for `skillLevel`. In the 6-player run, inspection showed `skillLevel: undefined` on every pool chef (the fallback read). Rename all reads to `skillTier`, or always coerce one to the other in the seed.
 
@@ -333,11 +353,15 @@ Grep once, pick the canonical name, update the rest. Add a schema comment at the
 
 ### BE-I08 — Integration tests `test-phase-flow` + old `test-lifecycle` encode the old phase order
 
+> ✅ **Shipped in the Apr 23 backend-automated-playthrough PR.** `scripts/test-phase-flow.js` now walks the canonical `email → bid_ad → bid_chef → roster → decide → simulating → results_ready` order; the dead `scripts/test-lifecycle.js` (old `closing_hours` / `open_for_business` phase names, no caller) was deleted. The companion `test-suite.js` fixtures (`getNextPhase — full progression`, `isValidTransition`) were fixed in the same commit — 197/197 unit tests pass.
+
 `backend/scripts/test-phase-flow.js` asserts `round_1_email → round_1_decide`, but the shipped order is `round_1_email → round_1_bid_ad`. Same for the standalone `backend/scripts/test-lifecycle.js`. These tests currently fail on `npm run test:phase-flow`. Update the fixtures to match the shipped `PHASE_ORDER`.
 
 ---
 
 ### BE-I09 — Unit test: `generateChefPool produces valid chefs` fails
+
+> ✅ **Shipped in the Apr 23 backend-automated-playthrough PR.** Assertion updated from a stale `pool.length >= 6 && pool.length <= 8` (pre-refactor when pool size was dynamic per round) to the current contract `pool.length === cfg.chefPoolSize` (12 by default). Chef shape assertions (`skillTier`, `specialties`, `minBidFloor`) unchanged — they already matched runtime output.
 
 `node functions/modules/__tests__/test-suite.js` fails with:
 ```
@@ -350,6 +374,8 @@ Likely the same `skillLevel` vs `skillTier` symptom as BE-I07, manifesting insid
 
 ### DOC-I10 — `GAME_DESIGN_PROPOSAL.md` phase-order section is stale
 
+> ✅ **Shipped in the Apr 23 backend-automated-playthrough PR.** Round Structure table rewritten to the canonical `Email → Bid Ad → Bid Chef → Roster → Decide → Simulate → Review` order, with a short preamble explaining the rationale (teams know what ads and chefs they have before committing to quantities).
+
 The proposal's "Round Structure" table lists: **Decide → Bidding → Roster → Simulate → Review → Email**.
 The shipped code is: **Email → bid_ad → bid_chef → Roster → Decide → Simulate → Review**.
 
@@ -360,6 +386,8 @@ No code change needed.
 ---
 
 ### FE-I16 — Typing into the ad-bid input produces "01000"
+
+> ✅ **Shipped in PR [#79](https://github.com/fenrix-ai/FenriX/pull/79).** Ad-bid input switched to a string-keyed `adBidInputs` state with `placeholder="0"` (mirroring the existing chef-bid input), so the first keystroke replaces rather than concatenates.
 
 **Severity:** Moderate. Every ad-auction participant hits this on their first bid. Doesn't corrupt data (the number stored is correct), but looks broken.
 
@@ -412,6 +440,8 @@ Also apply to the equivalent chef-bid input around line 752 (same shape).
 
 ### FE-I18 — Per-phase submission grid never updates (stuck on ⏳)
 
+> ✅ **Shipped in PR [#79](https://github.com/fenrix-ai/FenriX/pull/79).** Grid cells now flip to ✓ as soon as any teammate submits (matching the FE-I15 solo-fallback). Readiness banner is suppressed on non-submission phases, and the missing-professor-claim notice was promoted from a quiet toast to a visible amber callout pointing at `scripts/set-professor-claim.js`.
+
 **Severity:** Moderate. Professor has no way to see who submitted what during a round, which makes pacing the live session much harder.
 
 **Symptom.** Grid rows under "Decide / Ad Bids / Chef Bids / Roster" all show ⏳ permanently; toggling submit from a player's device doesn't change anything.
@@ -447,6 +477,8 @@ Pick one, document it in `GAME_DESIGN_PROPOSAL.md`, and surface the resolution o
 ---
 
 ### FE-I12 — "Simulating" phase frame never shows
+
+> ✅ **Shipped in PR [#79](https://github.com/fenrix-ai/FenriX/pull/79).** Simulate screen now holds for a minimum of 20s after entry, so a fast backend `simulating → results_ready` transition no longer skips past the animation.
 
 Phase sequence observed in logs:
 ```
@@ -493,6 +525,8 @@ No decision yet; write up the trade-off and bring it to the next all-hands.
 
 ### FE-I20 — Results cards duplicate their values in the label strip below
 
+> ✅ **Shipped in PR [#79](https://github.com/fenrix-ai/FenriX/pull/79).** The three redundant label rows (Net revenue / Customers / Customer satisfaction) were dropped from `ResultsPhase.tsx`; metric cards above already show those values. Chef-satisfaction and gross-revenue fallback rows kept.
+
 **Severity:** Cosmetic (P2). Flagged during manual playtest.
 
 **Symptom.** The Results phase shows three big KPI cards (Revenue, Customers, Satisfaction) and **then** a label strip below that repeats the same three values with text labels. Visually noisy and redundant.
@@ -522,6 +556,13 @@ No decision yet; write up the trade-off and bring it to the next all-hands.
 
 ### FE-I21 — End-game Conclusion screen needs polish
 
+> 🟡 **Mostly shipped across PRs [#74](https://github.com/fenrix-ai/FenriX/pull/74), [#75](https://github.com/fenrix-ai/FenriX/pull/75), and [#79](https://github.com/fenrix-ai/FenriX/pull/79).** Outline items from the fix below map as:
+> - **Hero banner + winner callout** — ✅ PR #74 restored the "Final Whistle" eyebrow, 🎉 Game Over hero, gold-gradient champion card with crown bob, confetti overlay, and 🥇🥈🥉 podium with `podium--mine` outline.
+> - **Class KPI grid** — ✅ PR #79 added "How the class did" (bakeries competing, class net revenue, customers served, best-satisfaction round) sourced from `rounds/{N}.classStats`.
+> - **Restyled ranking / your-bakery / per-round list** — ✅ PR #75 restored 19 `.conclusion-page__*` CSS rules for `__yours-grid`, `__board-table`, `__round-list`, `__mini-kpi`, and the `--you` row highlight.
+> - **Chef-portrait cards for the winning roster** — ⏳ still open.
+> - **"Play again?" CTA for the professor (and student CSV link)** — ⏳ still open.
+
 **Severity:** Cosmetic (P2). Last screen every student sees — worth making it feel finished.
 
 **Symptom.** Conclusion page today is a functional rankings list, but feels drafty compared to the polished Results-phase card layout. Specific complaints:
@@ -549,18 +590,17 @@ Split into tracks so backend + frontend can run in parallel.
 
 **Backend track (Scott / Dylan B.)**
 1. **Day 1:** ✅ BE-I03 → ✅ BE-I01 shipped in PR [#72](https://github.com/fenrix-ai/FenriX/pull/72); `test-multi-team-costs.js` added and green.
-2. **Day 2:** ✅ BE-I04 + ✅ BE-I13 shipped in PR [#77](https://github.com/fenrix-ai/FenriX/pull/77). **Still open: BE-I02 (chef cap enforcement).**
-3. **Day 3:** BE-I17 (real pause). Non-trivial because it touches `phaseEndsAt` bookkeeping plus six submit callables. Slot it after I04 so the "solo-fallback" guard already exists everywhere you'd be adding the paused guard.
-4. **Day 4 (pre-launch cleanup):** BE-I05 / I06 / I07 / I08 / I09 / DOC-I10 — all small. Group into one PR titled something like "schema and doc cleanup before live session".
+2. **Day 2:** ✅ BE-I04 + ✅ BE-I13 shipped in PR [#77](https://github.com/fenrix-ai/FenriX/pull/77).
+3. **Day 3:** ✅ BE-I02 + ✅ BE-I05 + ✅ BE-I06 + ✅ BE-I07 + ✅ BE-I08 + ✅ BE-I09 + ✅ DOC-I10 shipped in the Apr 23 backend-automated-playthrough PR. **Still open: BE-I17 (real pause)** — non-trivial because it touches `phaseEndsAt` bookkeeping plus six submit callables.
 
 **Frontend track (AB / Kavin)**
-1. **Day 1:** FE-I16 (leading-zero bid input, 1-line fix) → FE-I18 (submission grid — verify prof claim path, surface the banner) → ✅ FE-I15 client side shipped in PR [#77](https://github.com/fenrix-ai/FenriX/pull/77).
-2. **Day 2:** ✅ FE-I14 shipped in PR [#77](https://github.com/fenrix-ai/FenriX/pull/77). Still open: FE-I20 (drop duplicate metric labels on results).
-3. **Day 3+:** FE-I21 (Conclusion polish). Needs design time with Mia.
+1. **Day 1:** ✅ FE-I16 + ✅ FE-I18 shipped in PR [#79](https://github.com/fenrix-ai/FenriX/pull/79); ✅ FE-I15 client side shipped in PR [#77](https://github.com/fenrix-ai/FenriX/pull/77).
+2. **Day 2:** ✅ FE-I14 shipped in PR [#77](https://github.com/fenrix-ai/FenriX/pull/77); ✅ FE-I20 shipped in PR [#79](https://github.com/fenrix-ai/FenriX/pull/79).
+3. **Day 3+:** ✅ FE-I21 class-stats KPI grid shipped in PR [#79](https://github.com/fenrix-ai/FenriX/pull/79). Any further Conclusion polish (hero restyle, chef-portrait cards, Play-again CTA) is now nice-to-have.
 
 **Game-design track (Dylan M. / Mia)**
 - DESIGN-I19: decide on minimum-bid-floor direction and write it up in `GAME_DESIGN_PROPOSAL.md` before code work starts on the chef bid UI.
-- Post-launch / nice-to-have: UX-I11 tie-break choice, FE-I12 simulating-phase timing.
+- Post-launch / nice-to-have: UX-I11 tie-break choice. ✅ FE-I12 simulating-phase timing shipped in PR [#79](https://github.com/fenrix-ai/FenriX/pull/79).
 
 ### Cross-track coordination points
 
