@@ -92,7 +92,7 @@ export function SimulatePhase() {
   const burglaryAmount = Number((latest as { burglaryAmount?: number } | undefined)?.burglaryAmount ?? 0);
 
   return (
-    <section className={`simulate-phase ${isNight ? "simulate-phase--night" : "simulate-phase--day"}`}>
+    <section className={`simulate-phase simulate-phase--pixel ${isNight ? "simulate-phase--night" : "simulate-phase--day"}`}>
       {/* Top bar */}
       <div className="simulate-phase__topbar">
         <div className="simulate-phase__day-counter">
