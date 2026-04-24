@@ -3663,11 +3663,13 @@ h3 { font-size: 0.7rem; }
 
 /* ─── Decide Phase — Pixel Bakery Scene Panel ────────────── */
 
+/* Decide-phase layout — stacked on purpose. Scene sits at the top,
+ * decision dashboard takes the full width below. No sticky positioning
+ * on the scene so it scrolls off-screen as the player reads the panels. */
 .decide-phase__layout {
-  display: grid;
-  grid-template-columns: minmax(540px, 1fr) minmax(480px, 560px);
+  display: flex;
+  flex-direction: column;
   gap: 1.5rem;
-  align-items: start;
   margin: 0 0 1rem;
 }
 
@@ -3675,27 +3677,12 @@ h3 { font-size: 0.7rem; }
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  position: sticky;
-  top: 1rem;
 }
 
 .decide-phase__scene-panel .pixel-bakery-scene {
   transform: scale(1.5);
-  transform-origin: top left;
-  margin-bottom: calc(270px * 0.5); /* compensate for 1.5x height */
-}
-
-/* Collapse the two columns on anything narrower than typical laptop
- * widths so small windows still flow the scene above the dashboard. */
-@media (max-width: 1180px) {
-  .decide-phase__layout {
-    grid-template-columns: 1fr;
-  }
-  .decide-phase__scene-panel { position: static; }
-  .decide-phase__scene-panel .pixel-bakery-scene {
-    transform: scale(1);
-    margin-bottom: 0;
-  }
+  transform-origin: top center;
+  margin-bottom: calc(270px * 0.5); /* compensate for 1.5x visual height */
 }
 
 /* ── Ad Winner Banner (Decide screen, rounds 2+) ───────────────────────
