@@ -352,6 +352,33 @@ function getPlayerTeamKey(playerDoc) {
   return getPlayerTeamId(data) || playerDoc.id;
 }
 
+/**
+ * BE-I02: Scan every player doc and return the set of (teamKey, memberUid,
+ * count) entries whose `specialtyChefs` array exceeds the cap. Used by
+ * advanceGamePhase to block leaving the roster phase while anyone is over.
+ *
+ * Runs outside the phase-transition transaction because collection-wide reads
+ * aren't allowed inside a transaction. The transactional phase check plus the
+ * `expectedFromPhase` guard cover the narrow race window where a player could
+ * add a chef between this scan and the phase write.
+ */
+async function findPlayersOverChefCap(gameRef, specialtyChefCap) {
+  const snap = await gameRef.collection('players').get();
+  const offenders = [];
+  for (const doc of snap.docs) {
+    const chefs = doc.get('specialtyChefs');
+    const count = Array.isArray(chefs) ? chefs.length : 0;
+    if (count > specialtyChefCap) {
+      offenders.push({
+        memberUid: doc.id,
+        teamKey: doc.get('teamId') || doc.id,
+        count,
+      });
+    }
+  }
+  return offenders;
+}
+
 function buildTeamGroupsFromPlayerDocs(playerDocs) {
   const groups = new Map();
 
@@ -1486,6 +1513,37 @@ exports.advanceGamePhase = onCall(CALLABLE_OPTS, async (request) => {
   // concurrent admin clicks (Firestore transaction retry would otherwise
   // read the already-advanced phase and advance it a second time).
   const expectedFromPhase = (request.data || {}).expectedFromPhase || null;
+
+  // BE-I02: if we are leaving `roster`, no player may exceed the specialty-
+  // chef cap. Run the collection scan outside the transaction since Firestore
+  // transactions don't allow collection-wide reads. Concurrent writes are
+  // bounded by the transactional phase guard below — worst case a player
+  // gains a chef in the gap, advanceGamePhase fails, professor retries.
+  {
+    const preSnap = await gameRef.get();
+    if (!preSnap.exists) {
+      throw new HttpsError('not-found', 'Game not found.');
+    }
+    if (preSnap.get('professorUid') !== auth.uid && preSnap.get('professorId') !== auth.uid) {
+      throw new HttpsError('permission-denied', 'Only the professor can advance phases.');
+    }
+    const currentPhase = preSnap.get('phase') || '';
+    if (/_roster$/.test(currentPhase)) {
+      const cfgSnap = await gameRef.collection('config').doc('params').get();
+      const cfg = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
+      const cap = numberOrDefault(cfg.specialtyChefCap, 3);
+      const offenders = await findPlayersOverChefCap(gameRef, cap);
+      if (offenders.length) {
+        const detail = Array.from(
+          new Map(offenders.map((o) => [o.teamKey, `${o.teamKey} (${o.count} chefs)`])).values(),
+        ).join(', ');
+        throw new HttpsError(
+          'failed-precondition',
+          `Cannot leave roster — team(s) over chef cap of ${cap}: ${detail}. Use Force Layoff or wait for teams to resolve.`,
+        );
+      }
+    }
+  }
 
   await db.runTransaction(async (transaction) => {
     const [gSnap, cfgSnap] = await Promise.all([
