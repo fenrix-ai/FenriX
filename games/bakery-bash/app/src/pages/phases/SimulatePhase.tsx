@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useGame } from "../../contexts/GameContext";
+import { PixelBakeryScene } from '../../components/bakery-scene/PixelBakeryScene';
+import '../../styles/pixel-scene.css';
 
 const TOTAL_DAYS = 30;
 const DAY_DURATION_MS = 4000; // 4 seconds per day
@@ -15,13 +17,6 @@ const PRODUCT_LABELS: Record<Product, string> = {
   matcha:    "Matcha",
 };
 
-const AD_ICONS: Record<string, string> = {
-  TV:        "/assets/ads/tv.svg",
-  Radio:     "/assets/ads/radio.svg",
-  Newspaper: "/assets/ads/newspaper.svg",
-  Billboard: "/assets/ads/billboard.svg",
-};
-
 // Simulate which day each product sells out (days 20–28)
 function getSelloutDays(): Record<Product, number> {
   const days = {} as Record<Product, number>;
@@ -32,10 +27,10 @@ function getSelloutDays(): Record<Product, number> {
 }
 
 export function SimulatePhase() {
-  const { roundResults, maintenanceBars } = useGame();
+  const { roundResults, maintenanceBars, teamName, pendingDecision } = useGame();
   const latest = roundResults[roundResults.length - 1];
+  const latestRound = latest ?? null;
   const targetRevenue = typeof latest?.revenue === "number" ? latest.revenue : 0;
-  const adWon = latest?.auctionResults?.adWon as string | null | undefined;
 
   const [day, setDay] = useState(1);
   const [isNight, setIsNight] = useState(false);
@@ -132,21 +127,12 @@ export function SimulatePhase() {
 
         {/* Centre: Bakery visual */}
         <div className="simulate-phase__bakery-visual">
-          {adWon && AD_ICONS[adWon] && (
-            <div className="simulate-phase__ad-display">
-              <img src={AD_ICONS[adWon]} alt={`${adWon} ad`} className="simulate-phase__ad-icon" />
-            </div>
-          )}
-          <div className="simulate-phase__storefront">
-            <div className="simulate-phase__store-label">🥐 Your Bakery</div>
-            {!isNight && !reducedMotion && (
-              <div className="simulate-phase__customers">
-                <span className="simulate-phase__customer">🚶</span>
-                <span className="simulate-phase__customer simulate-phase__customer--2">🚶‍♀️</span>
-              </div>
-            )}
-            {isNight && <div className="simulate-phase__night-label">🌙 Closed</div>}
-          </div>
+          <PixelBakeryScene
+            mode="simulate"
+            teamName={teamName ?? ""}
+            staffCounts={pendingDecision.staffCounts}
+            customerCount={latestRound?.customerCount ?? 0}
+          />
         </div>
 
         {/* Right: Maintenance bars */}

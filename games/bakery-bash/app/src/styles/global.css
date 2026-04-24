@@ -3483,6 +3483,11 @@ h3 { font-size: 0.7rem; }
 .simulate-phase__sold-out-badge { font-size: 0.65rem; font-weight: bold; background: #ef4444; color: #fff; padding: 0.1rem 0.3rem; border-radius: 3px; margin-left: auto; }
 /* Bakery centre */
 .simulate-phase__bakery-visual { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; }
+.simulate-phase__bakery-visual .pixel-bakery-scene {
+  transform: scale(2);
+  transform-origin: center;
+  margin: 135px 0; /* compensate for 2x scale so flex centering works */
+}
 .simulate-phase__ad-display    { display: flex; align-items: center; gap: 0.5rem; }
 .simulate-phase__ad-icon       { width: 80px; height: 80px; }
 .simulate-phase__storefront    { background: rgba(255,255,255,0.2); border-radius: 12px; padding: 2rem; text-align: center; min-width: 200px; }
