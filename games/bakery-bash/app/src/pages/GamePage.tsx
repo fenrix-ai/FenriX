@@ -8,6 +8,9 @@ import {
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { useGame, useGameDispatch } from "../contexts/GameContext";
+import { PixelBakeryScene } from "../components/bakery-scene/PixelBakeryScene";
+import { SceneErrorBoundary } from "../components/bakery-scene/SceneErrorBoundary";
+import "../styles/pixel-scene.css";
 import { RoundHeader } from "../components/game/RoundHeader";
 import { BakeryView } from "../components/game/BakeryView";
 import { GameSidebar } from "../components/game/GameSidebar";
@@ -118,6 +121,7 @@ export function GamePage() {
     role,
     teamRoleAssignments,
     config,
+    teamName,
   } = useGame();
   // BE-I03: auction result docs are keyed by team slug; fall back to the
   // player uid for solo teams, whose `team.key` on the backend is the uid.
@@ -733,14 +737,32 @@ export function GamePage() {
         />
       )}
 
-      {/* FE-9 — lock the menu + Hire tab once the player has submitted.
-          We intentionally *don't* tie this to `!isDecisionPhase` alone
-          because GamePage itself swaps to the results view as soon as
-          `basePhase` leaves "decide"; within this branch only the
-          `decisionSubmitted` flag can flip inputs to read-only. */}
-      <div className="game-page__dashboard">
-        <BakeryView readOnly={decisionSubmitted} />
-        <GameSidebar readOnly={decisionSubmitted} />
+      {/* Decide-phase layout — scene on the left, decision dashboard on
+          the right. Tuned for laptop (≥ 1280 px). */}
+      <div className="decide-phase__layout">
+        <div className="decide-phase__scene-panel">
+          <SceneErrorBoundary teamName={teamName ?? ""}>
+            <PixelBakeryScene
+              mode="decide"
+              teamName={teamName ?? ""}
+              staffCounts={{
+                bakery: pendingDecision.staffCounts.bakerySousChefs,
+                deli: pendingDecision.staffCounts.deliSousChefs,
+                barista: pendingDecision.staffCounts.baristaSousChefs,
+              }}
+              customerCount={0}
+              menu={Object.keys(pendingDecision.menu).filter(
+                (k) => pendingDecision.menu[k as ProductKey],
+              )}
+            />
+          </SceneErrorBoundary>
+        </div>
+
+        {/* FE-9 — lock the menu + Hire tab once the player has submitted. */}
+        <div className="game-page__dashboard">
+          <BakeryView readOnly={decisionSubmitted} />
+          <GameSidebar readOnly={decisionSubmitted} />
+        </div>
       </div>
       <section className="game-page__round-cost" aria-label="Total cost this round">
         <div className="game-page__round-cost-label">Total Cost This Round</div>

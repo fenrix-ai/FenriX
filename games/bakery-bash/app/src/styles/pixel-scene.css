@@ -1,0 +1,159 @@
+/* Pixel Bakery Scene — Undertale-style side-view. */
+
+.pixel-bakery-scene {
+  position: relative;
+  width: 480px;
+  height: 270px;
+  background: #2a1a10;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  image-rendering: pixelated;
+  transform-origin: top left;
+}
+
+/* Scale helpers — applied by the preview route (Task 4.2) and game-phase integrations (Task 9.x) to render the 480×270 native canvas at 2× or 3× in larger viewports. */
+.pixel-bakery-scene--scale-2 {
+  transform: scale(2);
+}
+
+.pixel-bakery-scene--scale-3 {
+  transform: scale(3);
+}
+
+/* Host container (fills parent, centers the scaled scene inside). */
+.pixel-bakery-scene-host {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 540px;
+  background: #1b1721;
+  overflow: hidden;
+}
+
+/* ---- Dollar bills ---- */
+.dollar-bill {
+  position: absolute;
+  width: 10px;
+  height: 6px;
+  background: #3e8a3e; /* bill green */
+  border: 1px solid #1d4a1d;
+  image-rendering: pixelated;
+  animation: dollar-float 0.8s linear forwards;
+}
+
+.dollar-bill::before {
+  content: "$";
+  display: block;
+  position: absolute;
+  inset: 0;
+  color: #d8f0d8;
+  font-family: monospace;
+  font-size: 6px;
+  line-height: 6px;
+  text-align: center;
+}
+
+@keyframes dollar-float {
+  0% {
+    transform: translate(0, 0) rotate(0deg);
+    opacity: 1;
+  }
+  75% {
+    transform: translate(var(--drift, 0px), -30px) rotate(var(--rot, 0deg));
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--drift, 0px), -40px) rotate(var(--rot, 0deg));
+    opacity: 0;
+  }
+}
+
+/* ---- Oven steam ---- */
+.oven-steam {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  background: #e0dfda;
+  border-radius: 50%;
+  opacity: 0.75;
+  image-rendering: pixelated;
+  animation: steam-rise 1.2s ease-out forwards;
+}
+
+@keyframes steam-rise {
+  0% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0.75;
+  }
+  100% {
+    transform: translate(calc((var(--drift, 0) * 1px)), -30px) scale(1.4);
+    opacity: 0;
+  }
+}
+
+/* ---- Pixel-themed side panels on SimulatePhase ---- */
+.simulate-phase--pixel .simulate-phase__menu-panel,
+.simulate-phase--pixel .simulate-phase__status-panel {
+  background: #3d2615;
+  border: 2px solid #8a5a2e;
+  box-shadow:
+    inset 0 0 0 1px #5a3818,
+    0 4px 12px rgba(0, 0, 0, 0.4);
+  border-radius: 4px;
+  padding: 16px;
+  color: #f3e2b8;
+  font-family: 'Courier New', monospace;
+}
+
+.simulate-phase--pixel .simulate-phase__panel-title {
+  color: #fbbf24;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  border-bottom: 1px solid #8a5a2e;
+  padding-bottom: 4px;
+  margin-bottom: 12px;
+}
+
+.simulate-phase--pixel .simulate-phase__menu-item {
+  background: rgba(138, 90, 46, 0.3);
+  padding: 6px;
+  margin-bottom: 4px;
+  border-radius: 2px;
+}
+
+.simulate-phase--pixel .simulate-phase__menu-item--soldout {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+
+.simulate-phase--pixel .simulate-phase__sold-out-badge {
+  background: #842a3a;
+  color: #fbbf24;
+  padding: 1px 4px;
+  font-size: 0.75rem;
+  border-radius: 2px;
+}
+
+.simulate-phase--pixel .simulate-phase__bar-row {
+  margin-bottom: 6px;
+}
+.simulate-phase--pixel .simulate-phase__bar-label {
+  color: #fbbf24;
+}
+
+/* ---- Reduced-motion overlay (simulate mode only) ---- */
+.pixel-bakery-scene__reduced-motion-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(30, 20, 16, 0.6);
+  color: #fbbf24;
+  font-family: monospace;
+  font-size: 14px;
+  letter-spacing: 1px;
+  pointer-events: none;
+}

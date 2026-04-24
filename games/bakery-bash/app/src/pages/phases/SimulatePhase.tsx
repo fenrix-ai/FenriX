@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useGame } from "../../contexts/GameContext";
+import { PixelBakeryScene } from '../../components/bakery-scene/PixelBakeryScene';
+import { SceneErrorBoundary } from '../../components/bakery-scene/SceneErrorBoundary';
+import '../../styles/pixel-scene.css';
 
 const TOTAL_DAYS = 30;
 const DAY_DURATION_MS = 4000; // 4 seconds per day
@@ -15,13 +18,6 @@ const PRODUCT_LABELS: Record<Product, string> = {
   matcha:    "Matcha",
 };
 
-const AD_ICONS: Record<string, string> = {
-  TV:        "/assets/ads/tv.svg",
-  Radio:     "/assets/ads/radio.svg",
-  Newspaper: "/assets/ads/newspaper.svg",
-  Billboard: "/assets/ads/billboard.svg",
-};
-
 // Simulate which day each product sells out (days 20–28)
 function getSelloutDays(): Record<Product, number> {
   const days = {} as Record<Product, number>;
@@ -32,10 +28,10 @@ function getSelloutDays(): Record<Product, number> {
 }
 
 export function SimulatePhase() {
-  const { roundResults, maintenanceBars } = useGame();
+  const { roundResults, maintenanceBars, teamName, pendingDecision } = useGame();
   const latest = roundResults[roundResults.length - 1];
+  const latestRound = latest ?? null;
   const targetRevenue = typeof latest?.revenue === "number" ? latest.revenue : 0;
-  const adWon = latest?.auctionResults?.adWon as string | null | undefined;
 
   const [day, setDay] = useState(1);
   const [isNight, setIsNight] = useState(false);
@@ -97,7 +93,7 @@ export function SimulatePhase() {
   const burglaryAmount = Number(latest?.burglaryAmount ?? 0);
 
   return (
-    <section className={`simulate-phase ${isNight ? "simulate-phase--night" : "simulate-phase--day"}`}>
+    <section className={`simulate-phase simulate-phase--pixel ${isNight ? "simulate-phase--night" : "simulate-phase--day"}`}>
       {/* Top bar */}
       <div className="simulate-phase__topbar">
         <div className="simulate-phase__day-counter">
@@ -116,61 +112,24 @@ export function SimulatePhase() {
       )}
 
       <div className="simulate-phase__main">
-        {/* Left: Menu */}
-        <aside className="simulate-phase__menu-panel">
-          <h3 className="simulate-phase__panel-title">Menu</h3>
-          <ul className="simulate-phase__menu-list">
-            {PRODUCTS.map(p => (
-              <li key={p} className={`simulate-phase__menu-item ${soldOut.has(p) ? "simulate-phase__menu-item--soldout" : ""}`}>
-                <img src={`/assets/products/${p}.svg`} alt={PRODUCT_LABELS[p]} className="simulate-phase__menu-icon" />
-                <span>{PRODUCT_LABELS[p]}</span>
-                {soldOut.has(p) && <span className="simulate-phase__sold-out-badge">SOLD OUT</span>}
-              </li>
-            ))}
-          </ul>
-        </aside>
-
-        {/* Centre: Bakery visual */}
         <div className="simulate-phase__bakery-visual">
-          {adWon && AD_ICONS[adWon] && (
-            <div className="simulate-phase__ad-display">
-              <img src={AD_ICONS[adWon]} alt={`${adWon} ad`} className="simulate-phase__ad-icon" />
-            </div>
-          )}
-          <div className="simulate-phase__storefront">
-            <div className="simulate-phase__store-label">🥐 Your Bakery</div>
-            {!isNight && !reducedMotion && (
-              <div className="simulate-phase__customers">
-                <span className="simulate-phase__customer">🚶</span>
-                <span className="simulate-phase__customer simulate-phase__customer--2">🚶‍♀️</span>
-              </div>
-            )}
-            {isNight && <div className="simulate-phase__night-label">🌙 Closed</div>}
-          </div>
+          <SceneErrorBoundary teamName={teamName ?? ""}>
+            <PixelBakeryScene
+              mode="simulate"
+              teamName={teamName ?? ""}
+              staffCounts={{
+                bakery: pendingDecision.staffCounts.bakerySousChefs,
+                deli: pendingDecision.staffCounts.deliSousChefs,
+                barista: pendingDecision.staffCounts.baristaSousChefs,
+              }}
+              customerCount={latestRound?.customerCount ?? 0}
+              menu={[...PRODUCTS]}
+              soldOut={soldOut as Set<string>}
+            />
+          </SceneErrorBoundary>
+          <p className="simulate-phase__waiting">Results loading shortly…</p>
+          <p className="simulate-phase__credits">Art: Designed by Freepik</p>
         </div>
-
-        {/* Right: Maintenance bars */}
-        <aside className="simulate-phase__status-panel">
-          <h3 className="simulate-phase__panel-title">Status</h3>
-          {[
-            { label: "Cleanliness", value: cleanlinessDisplay },
-            { label: "Oven", value: ovenDisplay },
-          ].map(({ label, value }) => (
-            <div key={label} className="simulate-phase__bar-row">
-              <span className="simulate-phase__bar-label">{label}</span>
-              <div className="simulate-phase__bar-track">
-                <div
-                  className="simulate-phase__bar-fill"
-                  style={{ width: `${Math.round(value)}%`, background: value > 50 ? "var(--sage, #84cc16)" : "var(--berry, #ef4444)" }}
-                />
-              </div>
-              <span className="simulate-phase__bar-pct">{Math.round(value)}%</span>
-            </div>
-          ))}
-          <p className="simulate-phase__waiting">
-            Results loading shortly…
-          </p>
-        </aside>
       </div>
     </section>
   );
