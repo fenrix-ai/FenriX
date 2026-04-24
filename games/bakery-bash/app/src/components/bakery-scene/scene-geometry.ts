@@ -54,8 +54,10 @@ export const SCENE = {
 
   /** Y-offset where customers walk (slightly above floor top for feet). */
   customerFeetY: 262,
-  /** Chef sprite top-edge Y (they overlap the counter). */
-  chefTopY: 140,
+  /** Chef sprite top-edge Y. Positioned so the counter front (y=140..180)
+   * overlaps the chef's lower 16 rows, hiding pants + shoes so only
+   * hat + face + apron show above the counter line. */
+  chefTopY: 116,
 } as const
 
 export type StationKey = 'bakery' | 'deli' | 'barista'

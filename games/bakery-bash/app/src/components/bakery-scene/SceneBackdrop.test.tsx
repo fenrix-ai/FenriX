@@ -96,30 +96,6 @@ describe('<SceneBackdrop> back-wall elements', () => {
   })
 })
 
-describe('<SceneBackdrop> counter', () => {
-  let setup: ReturnType<typeof setupCanvasFake>
-
-  beforeEach(() => {
-    setup = setupCanvasFake()
-  })
-
-  afterEach(() => {
-    setup.cleanup()
-  })
-
-  it('paints the counter band in wood tones below the wainscoting', () => {
-    const { container } = render(<SceneBackdrop />)
-    const canvas = container.querySelector('canvas')! as HTMLCanvasElement
-    const ctx = canvas.getContext('2d')!
-    // Top of counter zone (y=140 per SCENE.zones.counter.y) should be the counter top stripe
-    const top = ctx.getImageData(10, SCENE.zones.counter.y, 1, 1).data
-    const mid = ctx.getImageData(10, SCENE.zones.counter.y + 10, 1, 1).data
-    // Both warm brown (R>G>B), mid darker than top or vice versa — just assert warm brown.
-    expect(top[0]).toBeGreaterThan(top[2])
-    expect(mid[0]).toBeGreaterThan(mid[2])
-  })
-})
-
 describe('<SceneBackdrop> wall mounts', () => {
   let setup: ReturnType<typeof setupCanvasFake>
 
@@ -151,34 +127,6 @@ describe('<SceneBackdrop> wall mounts', () => {
     const { container } = render(<SceneBackdrop />)
     const ctx = (container.querySelector('canvas')! as HTMLCanvasElement).getContext('2d')!
     const p = ctx.getImageData(400, 10, 1, 1).data
-    const isCream = p[0] > 200 && p[1] > 180 && p[2] > 140
-    expect(isCream).toBe(false)
-  })
-})
-
-describe('<SceneBackdrop> counter furniture', () => {
-  let setup: ReturnType<typeof setupCanvasFake>
-
-  beforeEach(() => {
-    setup = setupCanvasFake()
-  })
-
-  afterEach(() => {
-    setup.cleanup()
-  })
-
-  it('paints the bread display case above the counter on the left', () => {
-    const { container } = render(<SceneBackdrop />)
-    const ctx = (container.querySelector('canvas')! as HTMLCanvasElement).getContext('2d')!
-    const p = ctx.getImageData(60, 130, 1, 1).data
-    const isCream = p[0] > 200 && p[1] > 180 && p[2] > 140
-    expect(isCream).toBe(false)
-  })
-
-  it('paints the espresso machine on the counter right', () => {
-    const { container } = render(<SceneBackdrop />)
-    const ctx = (container.querySelector('canvas')! as HTMLCanvasElement).getContext('2d')!
-    const p = ctx.getImageData(340, 135, 1, 1).data
     const isCream = p[0] > 200 && p[1] > 180 && p[2] > 140
     expect(isCream).toBe(false)
   })

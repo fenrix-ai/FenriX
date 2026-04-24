@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { SceneBackdrop } from './SceneBackdrop'
 import { TeamSign } from './TeamSign'
 import { ChefLayer } from './ChefLayer'
+import { CounterFrontLayer } from './CounterFrontLayer'
 import { CustomerLayer } from './CustomerLayer'
 import { CatLayer } from './CatLayer'
 import { DollarLayer } from './DollarLayer'
@@ -64,6 +65,7 @@ export function PixelBakeryScene({
       <SceneBackdrop menu={menu} soldOut={soldOut} />
       <TeamSign teamName={teamName} />
       <ChefLayer chefs={chefs} />
+      <CounterFrontLayer />
       <CustomerLayer customers={customers} />
       <CatLayer cat={cat} />
       <DollarLayer dollars={dollars} />
