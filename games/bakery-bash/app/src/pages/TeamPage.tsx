@@ -62,7 +62,7 @@ const ROLE_DESCRIPTIONS: Record<PlayerRole, string> = {
   operations:
     "Submits the Decide screen — menu, quantities, sous chef hires, maintenance.",
   advertising:
-    "The Bidder places all auction bids — advertisements and chef hiring.",
+    "The Bidder places ad-auction bids — TV, billboard, radio, newspaper.",
   finance:
     "Submits the Chef Bid screen + roster decisions — specialty chef hires & layoffs.",
   solo: "All three buttons enabled — used automatically when you're playing alone.",

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   collection,
   doc,
@@ -269,8 +269,12 @@ export function AuctionPage() {
   // Reads the current round's `auctionResults.ads` — same surface
   // GamePage/Decide already uses — and joins each winner's teamId to a
   // bakery-name via the roster subcollection.
-  const [adWinners, setAdWinners] = useState<
-    Partial<Record<AdType, AdWinnerEntry>> | null
+  // Raw winner IDs + amounts, untouched by roster snapshots. Names are
+  // resolved at render time below so a roster update never re-subscribes
+  // the round listener (and a round doc that lands before the roster
+  // still renders correctly once the roster snapshot arrives).
+  const [adWinnersRaw, setAdWinnersRaw] = useState<
+    Partial<Record<AdType, { winnerId: string; amount: number }>> | null
   >(null);
   const [rosterByUid, setRosterByUid] = useState<
     Record<string, { displayName: string; bakeryName: string }>
@@ -314,7 +318,7 @@ export function AuctionPage() {
 
   useEffect(() => {
     if (!gameId || !currentRound) {
-      setAdWinners(null);
+      setAdWinnersRaw(null);
       return;
     }
     const roundRef = doc(
@@ -328,17 +332,17 @@ export function AuctionPage() {
       roundRef,
       (snap) => {
         if (!snap.exists()) {
-          setAdWinners(null);
+          setAdWinnersRaw(null);
           return;
         }
         const data = snap.data() as DocumentData;
         const auction = data.auctionResults as DocumentData | undefined;
         const adsRaw = (auction?.ads ?? null) as DocumentData | null;
         if (!adsRaw || typeof adsRaw !== "object") {
-          setAdWinners(null);
+          setAdWinnersRaw(null);
           return;
         }
-        const out: Partial<Record<AdType, AdWinnerEntry>> = {};
+        const out: Partial<Record<AdType, { winnerId: string; amount: number }>> = {};
         AD_TYPES.forEach((t) => {
           const entry = adsRaw[t];
           if (!entry || typeof entry !== "object") return;
@@ -347,14 +351,9 @@ export function AuctionPage() {
           const winningBid =
             typeof entry.winningBid === "number" ? entry.winningBid : undefined;
           if (!winnerId || !winningBid) return;
-          out[t] = {
-            adType: t,
-            amount: winningBid,
-            bakeryName: rosterByUid[winnerId]?.bakeryName,
-            displayName: rosterByUid[winnerId]?.displayName,
-          };
+          out[t] = { winnerId, amount: winningBid };
         });
-        setAdWinners(Object.keys(out).length > 0 ? out : null);
+        setAdWinnersRaw(Object.keys(out).length > 0 ? out : null);
       },
       (err) => {
         console.error(
@@ -364,7 +363,30 @@ export function AuctionPage() {
       },
     );
     return unsubscribe;
-  }, [gameId, currentRound, rosterByUid]);
+  }, [gameId, currentRound]);
+
+  // Resolve winner IDs to bakery/display names at render time. Recomputes
+  // when either the raw round data or the roster map changes — so the
+  // banner updates naturally whichever snapshot arrives second.
+  const adWinners = useMemo<Partial<Record<AdType, AdWinnerEntry>> | null>(
+    () => {
+      if (!adWinnersRaw) return null;
+      const out: Partial<Record<AdType, AdWinnerEntry>> = {};
+      AD_TYPES.forEach((t) => {
+        const raw = adWinnersRaw[t];
+        if (!raw) return;
+        const rosterEntry = rosterByUid[raw.winnerId];
+        out[t] = {
+          adType: t,
+          amount: raw.amount,
+          bakeryName: rosterEntry?.bakeryName,
+          displayName: rosterEntry?.displayName,
+        };
+      });
+      return Object.keys(out).length > 0 ? out : null;
+    },
+    [adWinnersRaw, rosterByUid],
+  );
 
   const parsed = parseGamePhase(phase, currentRound);
   const basePhase = parsed.base;
