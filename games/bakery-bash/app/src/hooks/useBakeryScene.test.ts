@@ -42,8 +42,6 @@ describe('useBakeryScene', () => {
 
   it('advances the idle-bob frame index over time via requestAnimationFrame', () => {
     const { result } = renderHook(() => useBakeryScene(baseProps))
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const initialFrame = result.current.chefs[0].frame
     act(() => {
       vi.advanceTimersByTime(250)
     })

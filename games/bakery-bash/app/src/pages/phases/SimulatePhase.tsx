@@ -130,7 +130,11 @@ export function SimulatePhase() {
           <PixelBakeryScene
             mode="simulate"
             teamName={teamName ?? ""}
-            staffCounts={pendingDecision.staffCounts}
+            staffCounts={{
+              bakery: pendingDecision.staffCounts.bakerySousChefs,
+              deli: pendingDecision.staffCounts.deliSousChefs,
+              barista: pendingDecision.staffCounts.baristaSousChefs,
+            }}
             customerCount={latestRound?.customerCount ?? 0}
           />
         </div>
