@@ -1,6 +1,7 @@
 import { SceneBackdrop } from './SceneBackdrop'
 import { TeamSign } from './TeamSign'
 import { ChefLayer } from './ChefLayer'
+import { CatLayer } from './CatLayer'
 import { useBakeryScene } from '../../hooks/useBakeryScene'
 import type { StationKey } from './scene-geometry'
 
@@ -32,7 +33,7 @@ export function PixelBakeryScene({
   staffCounts = DEFAULT_STAFF,
   customerCount = 0,
 }: Props) {
-  const { chefs } = useBakeryScene({ mode, teamName, staffCounts, customerCount })
+  const { chefs, cat } = useBakeryScene({ mode, teamName, staffCounts, customerCount })
   return (
     <div
       data-testid="pixel-bakery-scene"
@@ -41,6 +42,7 @@ export function PixelBakeryScene({
       <SceneBackdrop />
       <TeamSign teamName={teamName} />
       <ChefLayer chefs={chefs} />
+      <CatLayer cat={cat} />
     </div>
   )
 }
