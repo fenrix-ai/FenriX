@@ -6,6 +6,8 @@
 **Branch base:** `main` (fork off current `main` — which already has all Apr 23 fixes from PRs [#72](https://github.com/fenrix-ai/FenriX/pull/72), [#77](https://github.com/fenrix-ai/FenriX/pull/77), [#79](https://github.com/fenrix-ai/FenriX/pull/79), [#80](https://github.com/fenrix-ai/FenriX/pull/80))
 **Target:** May 1, 2026 live session
 
+**Status:** ✅ **All 10 issues shipped in PR [#87](https://github.com/fenrix-ai/FenriX/pull/87)** (merged 2026-04-24, squash `9663c92`). Includes two review follow-ups on top of the original plan: (1) a stable ad-winner Firestore subscription that no longer re-subscribes on every roster snapshot, and (2) a corrected `advertising` role description in TeamPage (drops the stale "chef hiring" clause now that finance owns chef bids).
+
 ---
 
 ## Raw playtest note (verbatim)
@@ -30,16 +32,16 @@
 
 | ID | Area | Title | Priority | Effort | Status |
 |---|---|---|---|---|---|
-| A24-I01 | team formation | **Team photo upload hangs + times out** | **P0 — ship-blocker** | XS (~1 hr if we remove) / M (~1 day if we keep) | ⏳ open |
-| A24-I03 | team formation | **"Second joiner also gets solo" UX confusion + lobby member count stale** | **P0** | S (½ day) | ⏳ open |
-| A24-I10 | simulation | **Ad bonus paid to teams that stocked nothing** | **P0** | S (~2 hr) | ⏳ open |
-| A24-I02 | onboarding | **HowToPlayPage is partly wrong; needs intro box + per-role colored cards** | **P1** | S (½ day) | ⏳ open |
-| A24-I04 | email phase | **Email page has no visible timer and no auto-advance** | **P1** | S (~2 hr) | ⏳ open |
-| A24-I05 | auctions | **Ad & chef auctions share a page; no "you won" feedback after each** | **P1** | S–M (½–1 day) | ⏳ open |
-| A24-I06 | timers | **RoundHeader timer ≠ "Last chance to submit" overlay timer** | **P1** | S (~2 hr) | ⏳ open |
-| A24-I08 | timers / overlay | **"Last chance to submit" banner shows on phases it shouldn't (e.g., round 2 email / results)** | **P1** | S (~1 hr) | ⏳ open |
-| A24-I07 | round 1 | **No banner telling players they start with $500,000** | P2 | XS (~½ hr) | ⏳ open |
-| A24-I09 | results | **Results screen "Revenue" card should be labeled "Profit"** | P2 | XS (~½ hr) | ⏳ open |
+| A24-I01 | team formation | **Team photo upload hangs + times out** | **P0 — ship-blocker** | XS (~1 hr if we remove) / M (~1 day if we keep) | ✅ shipped ([#87](https://github.com/fenrix-ai/FenriX/pull/87)) |
+| A24-I03 | team formation | **"Second joiner also gets solo" UX confusion + lobby member count stale** | **P0** | S (½ day) | ✅ shipped ([#87](https://github.com/fenrix-ai/FenriX/pull/87)) |
+| A24-I10 | simulation | **Ad bonus paid to teams that stocked nothing** | **P0** | S (~2 hr) | ✅ shipped ([#87](https://github.com/fenrix-ai/FenriX/pull/87)) |
+| A24-I02 | onboarding | **HowToPlayPage is partly wrong; needs intro box + per-role colored cards** | **P1** | S (½ day) | ✅ shipped ([#87](https://github.com/fenrix-ai/FenriX/pull/87)) |
+| A24-I04 | email phase | **Email page has no visible timer and no auto-advance** | **P1** | S (~2 hr) | ✅ shipped ([#87](https://github.com/fenrix-ai/FenriX/pull/87)) |
+| A24-I05 | auctions | **Ad & chef auctions share a page; no "you won" feedback after each** | **P1** | S–M (½–1 day) | ✅ shipped ([#87](https://github.com/fenrix-ai/FenriX/pull/87)) |
+| A24-I06 | timers | **RoundHeader timer ≠ "Last chance to submit" overlay timer** | **P1** | S (~2 hr) | ✅ shipped ([#87](https://github.com/fenrix-ai/FenriX/pull/87)) |
+| A24-I08 | timers / overlay | **"Last chance to submit" banner shows on phases it shouldn't (e.g., round 2 email / results)** | **P1** | S (~1 hr) | ✅ shipped ([#87](https://github.com/fenrix-ai/FenriX/pull/87)) |
+| A24-I07 | round 1 | **No banner telling players they start with $500,000** | P2 | XS (~½ hr) | ✅ shipped ([#87](https://github.com/fenrix-ai/FenriX/pull/87)) |
+| A24-I09 | results | **Results screen "Revenue" card should be labeled "Profit"** | P2 | XS (~½ hr) | ✅ shipped ([#87](https://github.com/fenrix-ai/FenriX/pull/87)) |
 
 **P0 count:** 3. **P1 count:** 5. **P2 count:** 2. Nothing here requires a backend schema migration — all fixes are either label swaps, UI gating, conditional renders, or a one-line guard in `simulation.js`.
 
@@ -48,6 +50,8 @@
 ## P0 — Must-fix before May 1
 
 ### A24-I01 — Team photo upload hangs + times out on Create Team
+
+> ✅ **Shipped in PR [#87](https://github.com/fenrix-ai/FenriX/pull/87) — feature removed path.** The team-photo input, client-side `uploadBytes()` call, `logoUrl` parameter on `createTeam`, `logoUrl` field in `getTeamsInLobby`, the logo `<img>` on team cards, and the orphaned Storage comment in `firestore.rules` are all gone. Backend fixture tests (`test-create-join-flow.js`, `test-multi-team-costs.js`) were updated to drop the `logoUrl` argument and pass under `npm test`.
 
 **Severity:** Critical (blocks team creation for anyone who tries the feature). The user explicitly said: *"That feature fully does not work. Honestly if it's not an easy fix, then we should just get rid of it."*
 
@@ -96,6 +100,8 @@ Pick (remove) for May 1 — the user's own preference, and it gets us a clean de
 
 ### A24-I03 — "Second joiner also gets solo" UX confusion + lobby member count stale
 
+> ✅ **Shipped in PR [#87](https://github.com/fenrix-ai/FenriX/pull/87).** Sub-bug A (confusing solo state): `TeamPage` now renders per-member status banners — "You're first on your team…", "Both of you share all three roles…", "Team is full — roles are auto-assigned." Sub-bug B (stale lobby): `LandingPage` replaced the one-shot `getTeamsInLobby` callable with a live Firestore `onSnapshot` on `games/{gameId}/teams`, so the member count updates within ~1s of any join. The cascade logic (`joinGame` → solo for ≤2, split on 3) was untouched; existing `test-create-join-flow.js` + `test-apr23-e2e.js` still pass.
+
 **Severity:** High. Two distinct bugs under one playtest observation:
 1. The team-formation UX is confusing because **both the first and second joiner show `role: solo`** — which is the intended design post-BE-I04 ([Apr 23 PR #77](https://github.com/fenrix-ai/FenriX/pull/77)), but the TeamPage never explains that "both of us are solo" means "either of us can submit anything."
 2. The lobby team-picker shows **stale member counts** for teams another player is actively joining.
@@ -141,6 +147,8 @@ Pick (remove) for May 1 — the user's own preference, and it gets us a clean de
 
 ### A24-I10 — Ad bonus paid to teams that stocked zero items
 
+> ✅ **Shipped in PR [#87](https://github.com/fenrix-ai/FenriX/pull/87).** `simulation.js` now gates the ad-winner bonus behind `stockedAnything = offeredProducts.length > 0` — no stock, no bonus. New regression test `backend/scripts/test-ad-bonus-gate.js` constructs two synthetic players (one wins TV and stocks 0 → expects $0 bonus; one wins TV and stocks ≥1 → expects $50k bonus) and runs directly against `runSimulation()` without the emulator. The rule is now documented in `GAME_DESIGN_PROPOSAL.md` under the Ad Type Bonus section.
+
 **Severity:** Critical (game-economy). A team can win TV for $35k, stock literally nothing, and still collect the $50k flat TV bonus. That's a guaranteed $15k profit with zero customer risk. Every auction becomes dominant-strategy-solvable by bidding to win the biggest bonus ad and intentionally stocking nothing.
 
 **Symptom.** In a 6-player repro, a player who won TV but set `quantity = 0` for every product had `revenueGross = $50,000` (the TV bonus) and `revenueNet = $50,000 − adBidPaid − loanShark`. Even with $35k `adBidPaid`, the net is positive.
@@ -182,6 +190,8 @@ if (stockedAnything) {
 
 ### A24-I02 — HowToPlayPage needs a top intro box + colored per-role cards
 
+> ✅ **Shipped in PR [#87](https://github.com/fenrix-ai/FenriX/pull/87).** `HowToPlayPage` now leads with a hero intro card ("Run a bakery. Read the market. Beat the class."), then 4 role cards in the canonical colors (Operations/sage, Advertising/caramel, Finance/berry, Solo/honey), then the corrected 8-stage flow (Briefing → Ad → Chef → Roster → Decide → Simulate → Results → CSV Inbox), then the chef-tier table. The earlier stale stage comment at the top of the file was refreshed to match the shipped `PHASE_ORDER`.
+
 **Severity:** Moderate. The page is every student's first contact with the game rules; today it leads with a phase sequence and a chef-tier table, with **zero** role explanation. The user wants the structure flipped.
 
 **Symptom.** [HowToPlayPage.tsx (full file ~120 lines)](app/src/pages/HowToPlayPage.tsx) currently renders:
@@ -222,6 +232,8 @@ There are no role cards, no "what's the point of this game" blurb, and the phase
 
 ### A24-I04 — Email page has no visible timer and no auto-advance
 
+> ✅ **Shipped in PR [#87](https://github.com/fenrix-ai/FenriX/pull/87).** A new shared hook `app/src/hooks/usePhaseCountdownSeconds.ts` is consumed by both `RoundHeader` and `EmailPhasePage` (briefing page now displays "Xs until briefing closes"). Auto-advance: `GamePhaseListener` grew a second `useEffect` that, for non-submission phases (`email`, `simulating`, `results_ready`), fires `advanceGamePhase` at `phaseEndsAtMs + 0`, piggybacking on the existing CRIT-02 `expectedFromPhase` guard to absorb duplicates. `ProfessorPage` also auto-advances non-submission phases in parallel; the server-side guard ensures only the first wins.
+
 **Severity:** Moderate. Today the email (round-briefing) page is a static "Round N" hero. Students sit on it indefinitely until the professor clicks advance. The user wants the timer visible and the phase to auto-advance when it expires.
 
 **Symptom.** [EmailPhasePage.tsx](app/src/pages/EmailPhasePage.tsx) renders only the round label ([line 60](app/src/pages/EmailPhasePage.tsx:60)) and decorative floats. No countdown, no progress bar, no auto-advance. The 30-second backend duration ([config.js: `email: 30`](backend/functions/modules/config.js)) ticks down silently.
@@ -253,6 +265,8 @@ There are no role cards, no "what's the point of this game" blurb, and the phase
 
 ### A24-I05 — Ad & chef auctions share a page with a switchable tab; no "you won" feedback
 
+> ✅ **Shipped in PR [#87](https://github.com/fenrix-ai/FenriX/pull/87).** Sub-bug A: `AuctionPage` dropped the tab bar entirely — it now renders *only* the ad block during `bid_ad` and *only* the chef block during `bid_chef`, driven by `parsed.base`. `activeTab` state + the phase-sync `useEffect` are gone. Sub-bug B: `AdWinnerBanner` renders at the top of the chef auction showing the current round's ad winners; a new sibling `ChefWinnerBanner` shows on `RosterPhasePage`. Post-review follow-up: the ad-winner Firestore subscription was refactored to split raw winner IDs from display names (resolved at render time via `useMemo`), so a roster snapshot no longer thrashes the round listener and a round doc that arrives before the roster still renders names once the roster snapshot lands.
+
 **Severity:** Moderate. Two sub-issues under the same area.
 
 **Sub-bug A — shared tab bar lets users click into the non-active auction.**
@@ -282,6 +296,8 @@ There are no role cards, no "what's the point of this game" blurb, and the phase
 ---
 
 ### A24-I06 — "Last chance to submit" timer is on different numbers than the top timer
+
+> ✅ **Shipped in PR [#87](https://github.com/fenrix-ai/FenriX/pull/87).** The grace/freeze banner in `GamePhaseListener` now derives its countdown from absolute `phaseEndsAtMs` on each 250 ms tick (was: decremented from a local counter with 1 s `setInterval`). Both widgets read the same wall-clock anchor, so they converge to 0 together and backgrounded tabs re-sync on refocus.
 
 **Severity:** Moderate. User complaint: *"The timers are off, the last chance to submit timer and the top timer are on different numbers."*
 
@@ -313,6 +329,8 @@ So they can easily disagree: if the browser tab was backgrounded during the last
 
 ### A24-I08 — "Last chance to submit" banner shows on non-submission phases (email, results, round 2 bottom)
 
+> ✅ **Shipped in PR [#87](https://github.com/fenrix-ai/FenriX/pull/87).** Both the grace-stage `useEffect` and the overlay render are gated by `SUBMISSION_PHASE_BASES` (`bid_ad`, `bid_chef`, `roster`, `decide`) — nothing fires on `email`, `simulating`, `results_ready`, `game_over`, or `lobby`. The Locked / freeze overlay uses the same gate.
+
 **Severity:** Moderate. User reports: *"There is a last chance to submit button on the bottom of the round 2 screen, that should not be there."*
 
 **Symptom.** The orange "Last chance to submit — {n}s" banner from [GamePhaseListener.tsx:192–220](app/src/components/GamePhaseListener.tsx:192) renders globally any time a phase's `phaseEndsAt` is within 5 s — **including non-submission phases** like `email`, `simulating`, `results_ready`, or the transitional moment when the email phase of round 2 is wrapping up. On those phases, there's nothing to submit, and the banner is misleading.
@@ -343,6 +361,8 @@ File: [GamePhaseListener.tsx:162–250](app/src/components/GamePhaseListener.tsx
 
 ### A24-I07 — Round 1 screen should tell players they start with $500,000
 
+> ✅ **Shipped in PR [#87](https://github.com/fenrix-ai/FenriX/pull/87).** `EmailPhasePage` renders a starter chip on Round 1 only — "Your team starts with $X — spend wisely." — sourced from the game config (`config.startingBudget`), not hard-coded. Rounds 2–5 hide the chip.
+
 **Severity:** Low (onboarding polish). User: *"Need something at the start to tell them, maybe on the round one screen, that they are starting with X amount of dollars."*
 
 **Fix.** On [EmailPhasePage.tsx](app/src/pages/EmailPhasePage.tsx), when `currentRound === 1`, render a small info chip above the tagline:
@@ -365,6 +385,8 @@ The value should come from `GameContext` (add `startingBudget` to context if not
 ---
 
 ### A24-I09 — Results screen "Revenue" card should be labeled "Profit"
+
+> ✅ **Shipped in PR [#87](https://github.com/fenrix-ai/FenriX/pull/87).** User-facing labels flipped from "Revenue" → "Profit" across `ResultsPhase`, `LeaderboardPage`, `ConclusionPage`, and `SimulatePhase`. Backend field name (`revenueNet`) is unchanged — purely a label swap, no schema impact.
 
 **Severity:** Low (terminology). User: *"On the results screen, the target variable should be profit, rename it."*
 
