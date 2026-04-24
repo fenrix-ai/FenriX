@@ -3506,3 +3506,17 @@ h3 { font-size: 0.7rem; }
 .simulate-phase__bar-pct       { font-size: 0.75rem; }
 .simulate-phase__waiting       { font-size: 0.8rem; color: #999; margin-top: 1rem; }
 @media (prefers-reduced-motion: reduce) { .simulate-phase__customer { animation: none; } }
+
+/* ─── Decide Phase — Pixel Bakery Scene Panel ────────────── */
+
+.decide-phase__scene-panel {
+  display: flex;
+  justify-content: center;
+  margin: 0 0 1rem;
+}
+
+.decide-phase__scene-panel .pixel-bakery-scene {
+  transform: scale(2);
+  transform-origin: center top;
+  margin-bottom: 270px; /* compensate for 2x scale height */
+}

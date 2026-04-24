@@ -8,6 +8,8 @@ import {
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { useGame, useGameDispatch } from "../contexts/GameContext";
+import { PixelBakeryScene } from "../components/bakery-scene/PixelBakeryScene";
+import "../styles/pixel-scene.css";
 import { RoundHeader } from "../components/game/RoundHeader";
 import { BakeryView } from "../components/game/BakeryView";
 import { GameSidebar } from "../components/game/GameSidebar";
@@ -116,6 +118,7 @@ export function GamePage() {
     pricesSubmitted,
     role,
     config,
+    teamName,
   } = useGame();
   const dispatch = useGameDispatch();
   const navigate = useNavigate();
@@ -684,6 +687,22 @@ export function GamePage() {
           hideWhenEmpty={false}
         />
       )}
+
+      {/* Task 9.2 — pixel bakery scene above the decision controls.
+          Map game StaffCounts (bakerySousChefs / deliSousChefs /
+          baristaSousChefs) → scene StationKey shape { bakery, deli, barista }. */}
+      <div className="decide-phase__scene-panel">
+        <PixelBakeryScene
+          mode="decide"
+          teamName={teamName ?? ""}
+          staffCounts={{
+            bakery: pendingDecision.staffCounts.bakerySousChefs,
+            deli: pendingDecision.staffCounts.deliSousChefs,
+            barista: pendingDecision.staffCounts.baristaSousChefs,
+          }}
+          customerCount={0}
+        />
+      </div>
 
       {/* FE-9 — lock the menu + Hire tab once the player has submitted.
           We intentionally *don't* tie this to `!isDecisionPhase` alone
