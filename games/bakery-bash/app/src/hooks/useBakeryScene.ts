@@ -320,6 +320,17 @@ function computeChefs(staffCounts: Record<StationKey, number>): Chef[] {
 
 export function useBakeryScene(props: UseBakerySceneProps): UseBakerySceneResult {
   const { mode, staffCounts, customerCount } = props
+
+  // Detect prefers-reduced-motion at render time so tests that mock
+  // window.matchMedia before renderHook() have their mock picked up.
+  // Wrapped in useState lazy init to avoid re-reading on every re-render
+  // while still capturing the value at mount (when the test mock is set).
+  const [prefersReduced] = useState(() =>
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  )
+
   const [bobFrame, setBobFrame] = useState(0)
 
   // Lazy-initialize public cat state using Date.now() so we don't call
@@ -359,6 +370,29 @@ export function useBakeryScene(props: UseBakerySceneProps): UseBakerySceneResult
   const dollarsRef = useRef<Dollar[]>([])
 
   useEffect(() => {
+    if (prefersReduced) {
+      // Freeze the scene: cat sits, no customers, no dollars, no rAF loop.
+      if (catRef.current === null) {
+        const seed = initialCat(0)
+        catRef.current = { ...seed, state: 'sitting', frame: CAT_FRAME.sit }
+      } else {
+        catRef.current = { ...catRef.current, state: 'sitting', frame: CAT_FRAME.sit }
+      }
+      setCat({
+        x: catRef.current.x,
+        y: catRef.current.y,
+        direction: catRef.current.direction,
+        state: 'sitting',
+        frame: CAT_FRAME.sit,
+      })
+      customersRef.current = []
+      dollarsRef.current = []
+      setCustomers([])
+      setDollars([])
+      setBobFrame(0)
+      return // no rAF loop
+    }
+
     const loop = (now: number) => {
       // Lazy-initialize all refs on the first tick
       if (startRef.current === null) startRef.current = now
@@ -444,7 +478,7 @@ export function useBakeryScene(props: UseBakerySceneProps): UseBakerySceneResult
     return () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
     }
-  }, [mode, staffCounts, customerCount, spawnIntervalBaseMs])
+  }, [mode, staffCounts, customerCount, spawnIntervalBaseMs, prefersReduced])
 
   const chefs = computeChefs(staffCounts).map((c) => ({ ...c, frame: bobFrame }))
 

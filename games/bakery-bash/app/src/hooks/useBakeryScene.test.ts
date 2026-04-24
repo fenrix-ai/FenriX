@@ -168,3 +168,44 @@ describe('useBakeryScene — dollar bills', () => {
     }
   })
 })
+
+describe('useBakeryScene — reduced motion', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  const baseProps = {
+    mode: 'decide' as const,
+    teamName: 'X',
+    staffCounts: { bakery: 1, deli: 1, barista: 1 },
+    customerCount: 0,
+  }
+
+  function mockReducedMotion(matches: boolean) {
+    window.matchMedia = vi.fn().mockImplementation((q: string) => ({
+      matches: q.includes('reduce') && matches,
+      media: q,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    }))
+  }
+
+  it('does not spawn customers when reduced motion is active', () => {
+    mockReducedMotion(true)
+    const { result } = renderHook(() =>
+      useBakeryScene({ ...baseProps, mode: 'simulate', customerCount: 20 }),
+    )
+    act(() => vi.advanceTimersByTime(30_000))
+    expect(result.current.customers.length).toBe(0)
+  })
+
+  it('cat stays sitting when reduced motion is active', () => {
+    mockReducedMotion(true)
+    const { result } = renderHook(() => useBakeryScene(baseProps))
+    act(() => vi.advanceTimersByTime(10_000))
+    expect(result.current.cat.state).toBe('sitting')
+  })
+})

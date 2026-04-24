@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { SceneBackdrop } from './SceneBackdrop'
 import { TeamSign } from './TeamSign'
 import { ChefLayer } from './ChefLayer'
@@ -37,6 +38,16 @@ export function PixelBakeryScene({
   customerCount = 0,
 }: Props) {
   const { chefs, cat, customers, dollars } = useBakeryScene({ mode, teamName, staffCounts, customerCount })
+
+  // Detect prefers-reduced-motion via lazy useState so it's stable across
+  // re-renders but still captured at mount (safe for SSR — falls back to false).
+  const [prefersReduced] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  )
+
   return (
     <div
       data-testid="pixel-bakery-scene"
@@ -49,6 +60,15 @@ export function PixelBakeryScene({
       <CatLayer cat={cat} />
       <DollarLayer dollars={dollars} />
       <FxLayer />
+      {mode === 'simulate' && prefersReduced && (
+        <div
+          className="pixel-bakery-scene__reduced-motion-overlay"
+          role="status"
+          aria-live="polite"
+        >
+          Simulating round…
+        </div>
+      )}
     </div>
   )
 }
