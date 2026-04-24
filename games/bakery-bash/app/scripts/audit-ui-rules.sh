@@ -33,7 +33,6 @@ BUDGET_ALLOWLIST=(
   "src/pages/ConclusionPage.tsx"
   "src/pages/ProfessorPage.tsx"
   "src/pages/ProfessorLeaderboardPage.tsx"
-  "src/components/game/BudgetSummary.tsx"
   "src/pages/GamePage.tsx"
   "src/contexts/GameContext.tsx"
   "src/lib/cost.ts"

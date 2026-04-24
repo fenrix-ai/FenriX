@@ -3,7 +3,8 @@ import { doc, onSnapshot, type DocumentData } from "firebase/firestore";
 import { useGame } from "../../contexts/GameContext";
 import { LoanSharkCallout } from "../../components/game/LoanSharkCallout";
 import { downloadResultsCsv } from "../../components/game/RoundHeader";
-import type { MaintenanceBars, ProductKey } from "../../types/game";
+import type { MaintenanceBars, ProductKey, RoundEvent } from "../../types/game";
+import { formatDaysInRound } from "../../lib/dateSystem";
 import { db } from "../../lib/firebase";
 
 /**
@@ -70,6 +71,103 @@ function presentChefName(
   return typeof fallbackIndex === "number" ? `Chef ${fallbackIndex + 1}` : "Chef";
 }
 
+const BURGLAR_ASSET = "/assets/events/burglar.svg";
+const INSPECTOR_ASSET = "/assets/events/food-inspector.svg";
+
+/**
+ * Curveball event card. One card per event. Burglary cards show the
+ * burglar asset + the date(s) + amount lost; food-safety inspection
+ * cards show the inspector asset + date(s) + cleanliness reading +
+ * rating tier (Poor / Sufficient / Good / Excellent).
+ */
+function EventCard({
+  event,
+  round,
+}: {
+  event: RoundEvent;
+  round: number | null;
+}) {
+  if (event.kind === "burglary") {
+    const daysLabel = formatDaysInRound(round, event.days ?? []);
+    return (
+      <article
+        className="event-card event-card--burglary"
+        aria-label="Burglary event"
+      >
+        <img
+          src={BURGLAR_ASSET}
+          alt=""
+          aria-hidden
+          className="event-card__asset"
+          onError={(e) => {
+            (e.currentTarget as HTMLImageElement).style.display = "none";
+          }}
+        />
+        <div className="event-card__body">
+          <h4 className="event-card__title">🔓 Burglary</h4>
+          {daysLabel && (
+            <p className="event-card__meta">
+              <strong>When:</strong> {daysLabel}
+            </p>
+          )}
+          {typeof event.amount === "number" && event.amount > 0 && (
+            <p className="event-card__meta event-card__meta--loss">
+              <strong>Stolen:</strong> ${event.amount.toLocaleString()}
+            </p>
+          )}
+          <p className="event-card__hint">
+            Keep maintenance crews busy to deter thieves next round.
+          </p>
+        </div>
+      </article>
+    );
+  }
+
+  const daysLabel = formatDaysInRound(round, event.days ?? []);
+  const rating = event.rating ?? null;
+  const pct =
+    typeof event.cleanlinessPct === "number"
+      ? Math.round(event.cleanlinessPct)
+      : null;
+
+  return (
+    <article
+      className={`event-card event-card--inspection${
+        rating ? ` event-card--inspection-${rating.toLowerCase()}` : ""
+      }`}
+      aria-label="Food safety inspection"
+    >
+      <img
+        src={INSPECTOR_ASSET}
+        alt=""
+        aria-hidden
+        className="event-card__asset"
+        onError={(e) => {
+          (e.currentTarget as HTMLImageElement).style.display = "none";
+        }}
+      />
+      <div className="event-card__body">
+        <h4 className="event-card__title">🧼 Food Safety Inspection</h4>
+        {daysLabel && (
+          <p className="event-card__meta">
+            <strong>When:</strong> {daysLabel}
+          </p>
+        )}
+        {pct !== null && (
+          <p className="event-card__meta">
+            <strong>Cleanliness:</strong> {pct}%
+          </p>
+        )}
+        {rating && (
+          <p className="event-card__meta">
+            <strong>Rating:</strong> {rating}
+          </p>
+        )}
+      </div>
+    </article>
+  );
+}
+
 export function ResultsPhase() {
   const {
     roundResults,
@@ -78,7 +176,11 @@ export function ResultsPhase() {
     leaderboard,
     gameId,
     playerId,
+    teamId,
   } = useGame();
+  // BE-I03: auction result docs are keyed by team slug (or the player uid for
+  // solo players, which is also `team.key` on the backend).
+  const auctionResultKey = teamId || playerId;
   const latest = roundResults[roundResults.length - 1];
   const [liveAuctionResult, setLiveAuctionResult] = useState<{
     adWins: string[];
@@ -93,7 +195,7 @@ export function ResultsPhase() {
   });
 
   useEffect(() => {
-    if (!gameId || !playerId || !currentRound) return;
+    if (!gameId || !auctionResultKey || !currentRound) return;
     const roundRef = doc(db, "games", gameId, "rounds", `round_${currentRound}`);
     const unsubscribe = onSnapshot(roundRef, (snap) => {
       if (!snap.exists()) {
@@ -106,8 +208,8 @@ export function ResultsPhase() {
         return;
       }
       const data = snap.data() as DocumentData;
-      const adEntry = (data.adAuctionResults?.[playerId] ?? null) as DocumentData | null;
-      const chefEntry = (data.chefAuctionResults?.[playerId] ?? null) as DocumentData | null;
+      const adEntry = (data.adAuctionResults?.[auctionResultKey] ?? null) as DocumentData | null;
+      const chefEntry = (data.chefAuctionResults?.[auctionResultKey] ?? null) as DocumentData | null;
       setLiveAuctionResult({
         adWins:
           adEntry && Array.isArray(adEntry.adTypes)
@@ -128,7 +230,7 @@ export function ResultsPhase() {
       });
     });
     return unsubscribe;
-  }, [gameId, playerId, currentRound]);
+  }, [gameId, auctionResultKey, currentRound]);
 
   const scores: Record<string, number> =
     latest?.chefSatisfactionScores ?? chefSatisfactionScores;
@@ -188,6 +290,27 @@ export function ResultsPhase() {
   const endBars: MaintenanceBars | null =
     latest?.maintenanceBars ?? null;
 
+  // Events derived from the result payload. Future backend work may write
+  // these explicitly as `events: RoundEvent[]`; today the backend still
+  // writes the flat `burglary` / `burglaryAmount` / `burglaryDays` fields,
+  // so we synthesize a burglary RoundEvent from those when no explicit
+  // events array is present.
+  const events: RoundEvent[] = (() => {
+    if (Array.isArray(latest?.events) && latest!.events!.length > 0) {
+      return latest!.events!;
+    }
+    if (latest?.burglary) {
+      return [
+        {
+          kind: "burglary",
+          amount: latest.burglaryAmount,
+          days: latest.burglaryDays,
+        },
+      ];
+    }
+    return [];
+  })();
+
   return (
     <section className="results-phase">
       <header className="results-phase__header">
@@ -228,42 +351,47 @@ export function ResultsPhase() {
             </div>
           </div>
 
-          {latest?.burglary && (
-            <div className="results-phase__burglar-banner">
-              🔓 Your bakery was broken into! A maintenance deficit left you vulnerable.
-              {latest.burglaryAmount ? ` –$${latest.burglaryAmount.toLocaleString()}` : ""}
-            </div>
+          {events.length > 0 && (
+            <section
+              className="results-phase__events"
+              aria-label="Curveball events"
+            >
+              <h3 className="results-phase__section-title">Events</h3>
+              <div className="results-phase__event-cards">
+                {events.map((event, idx) => (
+                  <EventCard
+                    key={`${event.kind}-${idx}`}
+                    event={event}
+                    round={currentRound}
+                  />
+                ))}
+              </div>
+            </section>
           )}
 
-          <div className="results-phase__kpis">
-            <Kpi
-              label="Net revenue"
-              value={formatMoney(revenueDisplay)}
-              // Simple "rising" animation — CSS handles the reveal.
-              animated
-            />
-            <Kpi
-              label="Customers"
-              value={latest.customerCount.toLocaleString()}
-            />
-            <Kpi
-              label="Customer satisfaction"
-              value={`${latest.customerSatisfaction}/100`}
-            />
-            {typeof latest.chefSatisfactionScore === "number" && (
-              <Kpi
-                label="Chef satisfaction"
-                value={`${Math.round(latest.chefSatisfactionScore)}/100`}
-              />
-            )}
-            {typeof latest.amountBorrowed === "number" &&
-              latest.amountBorrowed > 0 && (
+          {/* FE-I20: Net revenue / Customers / Customer satisfaction
+              already render in the metric cards above; only the values that
+              don't appear there (Chef satisfaction, Gross revenue when a
+              loan was taken out) live here. */}
+          {(typeof latest.chefSatisfactionScore === "number" ||
+            (typeof latest.amountBorrowed === "number" &&
+              latest.amountBorrowed > 0)) && (
+            <div className="results-phase__kpis">
+              {typeof latest.chefSatisfactionScore === "number" && (
                 <Kpi
-                  label="Gross revenue"
-                  value={formatMoney(latest.revenueGross)}
+                  label="Chef satisfaction"
+                  value={`${Math.round(latest.chefSatisfactionScore)}/100`}
                 />
               )}
-          </div>
+              {typeof latest.amountBorrowed === "number" &&
+                latest.amountBorrowed > 0 && (
+                  <Kpi
+                    label="Gross revenue"
+                    value={formatMoney(latest.revenueGross)}
+                  />
+                )}
+            </div>
+          )}
 
           {/* FE-4 — auction outcomes row. Rendered between the KPI cards
               and the product breakdown so players get the "what did I win
@@ -451,15 +579,35 @@ export function ResultsPhase() {
       {leaderboard && leaderboard.length > 0 && (
         <div className="results-phase__leaderboard">
           <h3 className="results-phase__section-title">Standings</h3>
-          {leaderboard.map((entry, i) => (
-            <div key={entry.playerId} className="results-phase__rank-row">
-              <span className="results-phase__rank">#{i + 1}</span>
-              <span className="results-phase__team-name">{entry.displayName ?? "Team"}</span>
-              <span className="results-phase__team-revenue">
-                ${(entry.cumulativeRevenue ?? 0).toLocaleString()}
-              </span>
-            </div>
-          ))}
+          {leaderboard.map((entry, i) => {
+            // Backend writes per-round `revenueNet` + `bakeryName` into
+            // each ranking entry (index.js ~1558). `cumulativeRevenue`
+            // lives on the player doc and isn't in the leaderboard
+            // payload, so reading only that field produced $0 even when
+            // players made money. Prefer bakery name + fall back to
+            // revenueNet so the Standings row always reflects what's on
+            // the wire (same pattern as ConclusionPage).
+            const amount =
+              typeof entry.cumulativeRevenue === "number"
+                ? entry.cumulativeRevenue
+                : typeof entry.revenueNet === "number"
+                  ? entry.revenueNet
+                  : 0;
+            const name =
+              entry.bakeryName ?? entry.displayName ?? "Team";
+            return (
+              <div
+                key={entry.playerId ?? i}
+                className="results-phase__rank-row"
+              >
+                <span className="results-phase__rank">#{i + 1}</span>
+                <span className="results-phase__team-name">{name}</span>
+                <span className="results-phase__team-revenue">
+                  {formatMoney(amount)}
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
     </section>

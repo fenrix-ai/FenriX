@@ -95,17 +95,6 @@ export function parseGamePhase(
   return { round: fallbackRound, base: "lobby" };
 }
 
-/** True if the current phase allows decision submission. */
-export function isDecidePhase(phase: GamePhaseString | null | undefined) {
-  return parseGamePhase(phase).base === "decide";
-}
-
-/** True if the current phase is an auction phase (ads or chefs). */
-export function isBidPhase(phase: GamePhaseString | null | undefined) {
-  const base = parseGamePhase(phase).base;
-  return base === "bid_ad" || base === "bid_chef";
-}
-
 // ---------------------------------------------------------------------------
 // Product keys / menu
 // ---------------------------------------------------------------------------
@@ -133,10 +122,6 @@ export const PRODUCT_KEYS: ProductKey[] = [
 
 export const BASE_MENU: ProductKey[] = ["croissant", "cookie", "bagel"];
 export const OPTIONAL_MENU: ProductKey[] = ["sandwich", "coffee", "matcha"];
-
-// Legacy alias — existing UI code refers to `MenuItemId`. Keep it pointing at
-// the canonical product key so older files compile while we migrate.
-export type MenuItemId = ProductKey;
 
 // ---------------------------------------------------------------------------
 // Stations + maintenance (game-design-proposal integration)
@@ -311,17 +296,6 @@ export interface ProductPriceConfig {
   elasticityTier: ElasticityTier;
 }
 
-export interface MenuItem {
-  id: MenuItemId;
-  name: string;
-  unlocked: boolean;
-  basePrice: number;
-  quantity: number;
-  priceFloor: number;
-  priceCeiling: number;
-  elasticityTier: ElasticityTier;
-}
-
 // ---------------------------------------------------------------------------
 // Pending decision / bids drafts
 // ---------------------------------------------------------------------------
@@ -434,6 +408,28 @@ export interface RoundResult {
   burglary?: boolean;
   burglaryAmount?: number;
   burglaryDays?: number[];
+  /**
+   * Curveball events that landed on this team during the round. Optional
+   * because not every round will have one, and older round docs might
+   * predate the event system entirely. The frontend renders these as
+   * cards in the Events section of the Results screen.
+   */
+  events?: RoundEvent[];
+}
+
+/** One row of the curveball-events feed shown on the Results screen. */
+export type RoundEventKind = "burglary" | "food-safety-inspection";
+
+export interface RoundEvent {
+  kind: RoundEventKind;
+  /** Day-of-month numbers (1–31) when the event occurred this round. */
+  days?: number[];
+  /** Dollars stolen across all burglaries in `days` (burglary only). */
+  amount?: number;
+  /** Inspection cleanliness reading 0–100 (inspection only). */
+  cleanlinessPct?: number;
+  /** Inspection rating label (Poor / Sufficient / Good / Excellent). */
+  rating?: "Poor" | "Sufficient" | "Good" | "Excellent";
 }
 
 /**
@@ -453,13 +449,6 @@ export interface RoundResult {
  */
 export type PlayerRole = "operations" | "advertising" | "finance" | "solo";
 
-export const PLAYER_ROLES: PlayerRole[] = [
-  "operations",
-  "advertising",
-  "finance",
-  "solo",
-];
-
 export const PLAYER_ROLE_LABELS: Record<PlayerRole, string> = {
   operations: "Operations",
   advertising: "Bidder",
@@ -467,18 +456,64 @@ export const PLAYER_ROLE_LABELS: Record<PlayerRole, string> = {
   solo: "Solo (all roles)",
 };
 
-/** Phase-owning role mapping per DEC-21. `solo` always passes. */
-export function roleOwnsDecide(role: PlayerRole): boolean {
-  return role === "operations" || role === "solo";
+/**
+ * FE-I15 team-fallback — returns true when *nobody on the team* currently
+ * holds any of the required specialist roles. Lets us relax the role-gate
+ * helpers below (and mirrors the backend's `assertRoleAllowed` fallback
+ * in `backend/functions/index.js`).
+ *
+ * Pass the team's `roleAssignments` map (uid → role | null) and the list
+ * of specialist roles the caller is checking against. Returns `true` if
+ * no assignment equals any of those roles. An empty / missing assignments
+ * map is treated as "no one holds the role" so a team that hasn't
+ * hydrated yet still unlocks the submit button.
+ */
+function teamRoleIsVacant(
+  teamRoleAssignments: Record<string, PlayerRole | null> | undefined | null,
+  requiredRoles: PlayerRole[],
+): boolean {
+  if (!teamRoleAssignments) return true;
+  const held = Object.values(teamRoleAssignments).filter(
+    (r): r is PlayerRole => !!r,
+  );
+  return !held.some((r) => requiredRoles.includes(r));
 }
-export function roleOwnsAdBids(role: PlayerRole): boolean {
-  return role === "advertising" || role === "solo";
+
+/**
+ * Phase-owning role mapping per DEC-21. `solo` always passes. The
+ * optional `teamRoleAssignments` argument (FE-I15) additionally lets
+ * any teammate submit when no one on the team holds the specialist
+ * role — covers 2-player teams, cleared roles, and mid-game
+ * disconnects. Call sites that don't yet plumb team state through fall
+ * back to the strict role-only check.
+ */
+export function roleOwnsDecide(
+  role: PlayerRole,
+  teamRoleAssignments?: Record<string, PlayerRole | null> | null,
+): boolean {
+  if (role === "operations" || role === "solo") return true;
+  return teamRoleIsVacant(teamRoleAssignments ?? null, ["operations"]);
 }
-export function roleOwnsChefBids(role: PlayerRole): boolean {
-  return role === "finance" || role === "solo";
+export function roleOwnsAdBids(
+  role: PlayerRole,
+  teamRoleAssignments?: Record<string, PlayerRole | null> | null,
+): boolean {
+  if (role === "advertising" || role === "solo") return true;
+  return teamRoleIsVacant(teamRoleAssignments ?? null, ["advertising"]);
 }
-export function roleOwnsPricing(role: PlayerRole): boolean {
-  return role === "finance" || role === "solo";
+export function roleOwnsChefBids(
+  role: PlayerRole,
+  teamRoleAssignments?: Record<string, PlayerRole | null> | null,
+): boolean {
+  if (role === "finance" || role === "solo") return true;
+  return teamRoleIsVacant(teamRoleAssignments ?? null, ["finance"]);
+}
+export function roleOwnsPricing(
+  role: PlayerRole,
+  teamRoleAssignments?: Record<string, PlayerRole | null> | null,
+): boolean {
+  if (role === "finance" || role === "solo") return true;
+  return teamRoleIsVacant(teamRoleAssignments ?? null, ["finance"]);
 }
 /**
  * Roster (lay-off + continue) is owned by Operations per the backend
@@ -487,29 +522,36 @@ export function roleOwnsPricing(role: PlayerRole): boolean {
  * blurb read as "Finance owns … roster"; the shipped backend disagrees. If
  * the backend realigns to Finance later, flip this helper to match.
  */
-export function roleOwnsRoster(role: PlayerRole): boolean {
-  return role === "operations" || role === "solo";
+export function roleOwnsRoster(
+  role: PlayerRole,
+  teamRoleAssignments?: Record<string, PlayerRole | null> | null,
+): boolean {
+  if (role === "operations" || role === "solo") return true;
+  return teamRoleIsVacant(teamRoleAssignments ?? null, ["operations"]);
 }
 
-/** Human-readable owner copy used in the disabled-button tooltip. */
+/**
+ * Human-readable owner copy used in the disabled-button tooltip.
+ * Always delegates to `PLAYER_ROLE_LABELS` so the copy here stays in lockstep
+ * with the role-picker and the How-to-Play page (e.g. `advertising → "Bidder"`).
+ */
 export function ownerOfDecide(): string {
-  return "Operations";
+  return PLAYER_ROLE_LABELS.operations;
 }
 export function ownerOfAdBids(): string {
-  return "Advertising";
+  return PLAYER_ROLE_LABELS.advertising;
 }
 export function ownerOfChefBids(): string {
-  return "Finance";
+  return PLAYER_ROLE_LABELS.finance;
 }
 export function ownerOfRoster(): string {
-  return "Operations";
+  return PLAYER_ROLE_LABELS.operations;
 }
 
 export interface Player {
   id: string;
   name: string;
   bakeryName: string;
-  budget: number;
   cumulativeRevenue: number;
   /** Optional team name (DEC-23). Falls back to displayName if absent. */
   teamName?: string;
@@ -528,7 +570,6 @@ export interface GameState {
   player: Player | null;
   players: Player[];
   roundResults: RoundResult[];
-  timeRemaining: number | null;
   auctionTab: AuctionTab;
   pendingDecision: PendingDecisionDraft;
   pendingAdBids: PendingAdBidsDraft;
@@ -580,6 +621,15 @@ export interface GameState {
    * `displayName` in that case.
    */
   teamName: string | null;
+  /**
+   * Live uid → role map for the local player's team (FE-I15). Mirrored
+   * from `/games/{gameId}/teams/{teamId}.roleAssignments`. Used by the
+   * role-gate helpers (`roleOwnsDecide`, etc.) to relax the gate when
+   * nobody on the team holds the required specialist role — for 2-
+   * player teams, cleared roles, or mid-game disconnects. Empty map
+   * before the listener has read the doc (strict gate until then).
+   */
+  teamRoleAssignments: Record<string, PlayerRole | null>;
   /**
    * Server-driven phase end Timestamp (epoch ms) mirrored from
    * `/games/{gameId}.phaseEndsAt`. `null` while the game is paused or

@@ -11,6 +11,7 @@ import { useGame } from "../contexts/GameContext";
 import { PageShell } from "../components/ui/PageShell";
 import { downloadResultsCsv } from "../components/game/RoundHeader";
 import type { RoundResult } from "../types/game";
+import { formatMoney } from "../lib/cost";
 
 /**
  * FE-13 — `/game/conclusion` page, rendered when `phase === "game_over"`.
@@ -42,9 +43,12 @@ interface LeaderboardDocument {
   rankings: LeaderboardRanking[];
 }
 
-function formatMoney(n: number | null | undefined): string {
-  if (typeof n !== "number" || Number.isNaN(n)) return "—";
-  return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+interface ClassRoundSnapshot {
+  round: number;
+  avgRevenueNet?: number | null;
+  avgCustomerCount?: number | null;
+  avgSatisfactionPct?: number | null;
+  playerCount?: number | null;
 }
 
 export function ConclusionPage() {
@@ -55,6 +59,10 @@ export function ConclusionPage() {
     Record<number, RoundResult>
   >({});
   const [expanded, setExpanded] = useState<number | null>(null);
+  // FE-I21: per-round classStats so the conclusion screen can highlight the
+  // class-wide story (best satisfaction round, total customers served, etc.)
+  // alongside the per-bakery rankings.
+  const [classRounds, setClassRounds] = useState<ClassRoundSnapshot[]>([]);
 
   // Subscribe to leaderboard/latest.
   useEffect(() => {
@@ -138,9 +146,88 @@ export function ConclusionPage() {
     return unsubscribe;
   }, [gameId, playerId]);
 
+  // FE-I21: subscribe to /rounds/ for class-wide summary stats. Each round
+  // doc carries a `classStats` block (BE-I05 follow-up populates it more
+  // fully); we tolerate missing fields and just hide the highlight if the
+  // data isn't available.
+  useEffect(() => {
+    if (!gameId) return;
+    const roundsCol = collection(db, "games", gameId, "rounds");
+    const unsubscribe = onSnapshot(
+      roundsCol,
+      (snap) => {
+        const next: ClassRoundSnapshot[] = [];
+        snap.forEach((d) => {
+          const data = d.data() as DocumentData;
+          const cs = (data.classStats ?? null) as DocumentData | null;
+          const m = /^round_(\d+)$/.exec(d.id);
+          const round = m ? Number(m[1]) : null;
+          if (!round) return;
+          next.push({
+            round,
+            avgRevenueNet:
+              typeof cs?.avgRevenueNet === "number" ? cs.avgRevenueNet : null,
+            avgCustomerCount:
+              typeof cs?.avgCustomerCount === "number"
+                ? cs.avgCustomerCount
+                : null,
+            avgSatisfactionPct:
+              typeof cs?.avgSatisfactionPct === "number"
+                ? cs.avgSatisfactionPct
+                : typeof cs?.aggregateSatisfactionPct === "number"
+                  ? cs.aggregateSatisfactionPct
+                  : null,
+            playerCount:
+              typeof cs?.playerCount === "number" ? cs.playerCount : null,
+          });
+        });
+        next.sort((a, b) => a.round - b.round);
+        setClassRounds(next);
+      },
+      (err) => {
+        console.error("conclusion class-stats listener error:", { gameId, err });
+      },
+    );
+    return unsubscribe;
+  }, [gameId]);
+
   const rankings = board?.rankings ?? [];
   const winner = rankings.find((r) => r.rank === 1) ?? null;
   const you = rankings.find((r) => r.playerId === playerId) ?? null;
+
+  // FE-I21: derived class-wide highlights for the summary cards.
+  const classHighlights = (() => {
+    const totalClassRevenue = rankings.reduce((sum, r) => {
+      const v = r.cumulativeRevenue ?? r.revenueNet ?? 0;
+      return typeof v === "number" ? sum + v : sum;
+    }, 0);
+    const totalCustomers = classRounds.reduce((sum, r) => {
+      if (
+        typeof r.avgCustomerCount === "number" &&
+        typeof r.playerCount === "number"
+      ) {
+        return sum + r.avgCustomerCount * r.playerCount;
+      }
+      return sum;
+    }, 0);
+    const bestSat = classRounds.reduce<{
+      round: number | null;
+      pct: number;
+    }>(
+      (best, r) =>
+        typeof r.avgSatisfactionPct === "number" && r.avgSatisfactionPct > best.pct
+          ? { round: r.round, pct: r.avgSatisfactionPct }
+          : best,
+      { round: null, pct: -1 },
+    );
+    return {
+      totalClassRevenue,
+      totalCustomers,
+      bestSatisfactionRound: bestSat.round,
+      bestSatisfactionPct: bestSat.pct >= 0 ? bestSat.pct : null,
+      bakeryCount: rankings.length,
+    };
+  })();
 
   // Fall back to the last round's running revenue if leaderboard hasn't
   // hydrated yet.
@@ -173,20 +260,61 @@ export function ConclusionPage() {
     mergedByRound[round] = { ...mergedByRound[round], ...v };
   }
 
+  // Top three for the celebratory podium graphic shown on the Game Over
+  // screen. Populated from the leaderboard snapshot (1 / 2 / 3). Missing
+  // slots render as placeholder columns so the visual stays balanced.
+  const podiumSlots = [1, 2, 3].map((rank) =>
+    rankings.find((r) => r.rank === rank) ?? null,
+  );
+
   return (
     <PageShell className="conclusion-page">
-      <header className="conclusion-page__header">
-        <div className="conclusion-page__eyebrow">Game over</div>
-        <h1 className="conclusion-page__title">The doors are closed.</h1>
+      <div
+        className="conclusion-page__confetti"
+        aria-hidden="true"
+      >
+        {Array.from({ length: 24 }).map((_, i) => (
+          <span
+            key={i}
+            className="conclusion-page__confetti-piece"
+            style={{
+              left: `${(i * 4 + (i % 3)) % 100}%`,
+              animationDelay: `${(i % 6) * 0.3}s`,
+              background: [
+                "#f59e0b",
+                "#84cc16",
+                "#ef4444",
+                "#3b82f6",
+                "#a855f7",
+                "#ec4899",
+              ][i % 6],
+            }}
+          />
+        ))}
+      </div>
+
+      <header className="conclusion-page__hero">
+        <div className="conclusion-page__eyebrow">Final Whistle</div>
+        <h1 className="conclusion-page__title">
+          🎉 Game Over, Bakers 🎉
+        </h1>
+        <p className="conclusion-page__tagline">
+          Ovens off. Receipts in. Here's how the month shook out.
+        </p>
       </header>
 
       {winner && (
-        <section className="conclusion-page__winner" aria-label="Winner">
+        <section
+          className="conclusion-page__winner conclusion-page__winner--hero"
+          aria-label="Winner"
+        >
           <div className="conclusion-page__winner-crown" aria-hidden="true">
             👑
           </div>
           <div className="conclusion-page__winner-meta">
-            <div className="conclusion-page__winner-label">Winning bakery</div>
+            <div className="conclusion-page__winner-label">
+              Champion Bakery
+            </div>
             <div className="conclusion-page__winner-name">
               {winner.bakeryName || winner.displayName}
               {winner.playerId === playerId && (
@@ -194,9 +322,82 @@ export function ConclusionPage() {
               )}
             </div>
             <div className="conclusion-page__winner-revenue">
-              {formatMoney(winner.cumulativeRevenue ?? winner.revenueNet)} net
-              revenue
+              {formatMoney(winner.cumulativeRevenue ?? winner.revenueNet)}{" "}
+              in cumulative net revenue
             </div>
+          </div>
+        </section>
+      )}
+
+      {rankings.length > 0 && (
+        <section
+          className="conclusion-page__podium"
+          aria-label="Top 3 podium"
+        >
+          <div className="conclusion-page__podium-row">
+            {podiumSlots.map((slot, idx) => {
+              const rank = idx + 1;
+              const tier = rank === 1 ? "gold" : rank === 2 ? "silver" : "bronze";
+              return (
+                <div
+                  key={rank}
+                  className={`podium podium--${tier}${
+                    slot?.playerId === playerId ? " podium--mine" : ""
+                  }`}
+                >
+                  <div className="podium__medal" aria-hidden>
+                    {rank === 1 ? "🥇" : rank === 2 ? "🥈" : "🥉"}
+                  </div>
+                  <div className="podium__bakery">
+                    {slot
+                      ? slot.bakeryName || slot.displayName
+                      : "—"}
+                  </div>
+                  <div className="podium__revenue">
+                    {slot
+                      ? formatMoney(
+                          slot.cumulativeRevenue ?? slot.revenueNet,
+                        )
+                      : "$0"}
+                  </div>
+                  <div className="podium__block">#{rank}</div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* FE-I21: class-wide summary — totals + best satisfaction round. */}
+      {rankings.length > 0 && (
+        <section
+          className="conclusion-page__class-summary"
+          aria-label="Class summary"
+        >
+          <h2 className="conclusion-page__section-title">How the class did</h2>
+          <div className="conclusion-page__class-grid">
+            <StatCard
+              label="Bakeries competing"
+              value={String(classHighlights.bakeryCount)}
+            />
+            <StatCard
+              label="Class net revenue"
+              value={formatMoney(classHighlights.totalClassRevenue)}
+            />
+            {classHighlights.totalCustomers > 0 && (
+              <StatCard
+                label="Customers served"
+                value={Math.round(classHighlights.totalCustomers).toLocaleString()}
+              />
+            )}
+            {classHighlights.bestSatisfactionRound !== null && (
+              <StatCard
+                label="Best satisfaction round"
+                value={`R${classHighlights.bestSatisfactionRound} · ${Math.round(
+                  classHighlights.bestSatisfactionPct ?? 0,
+                )}/100`}
+              />
+            )}
           </div>
         </section>
       )}

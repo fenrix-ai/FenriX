@@ -33,16 +33,19 @@ Revenue must be continuous (not bucketed or categorical) so students can run lin
 
 5 rounds, approximately 42.5 minutes total including setup and explanation time.
 
+The shipped phase order (canonical `PHASE_ORDER` in `backend/functions/modules/phases.js`) runs the market email and both auctions **before** the decide step, so teams know what ads and chefs they have before committing to quantities, menu, sous chefs, and prices.
+
 | Phase | Duration | What Happens |
 |---|---|---|
-| 1. Decide | ~5 min | Players set quantity per product, adjust sous chef count and assignments, and add new menu items. Timer counts down. Pricing is fixed — no price inputs. |
-| 2. Bidding | ~2 min | Ad auction (1 min) + Chef auction (1 min). |
-| 2.5. Roster Management | ~1 min | Players organize their chef roster post-auction. Mandatory if a player won a 4th specialty chef — must lay one off before advancing. Sous chef hiring also available here. |
-| 3. Simulate | ~30 sec | Backend computes throughput, satisfaction, foot traffic, and revenue. Minigame plays during processing. |
-| 4. Review | ~1 min | Players see results: net revenue, amount borrowed (if any), interest charged (if any), satisfaction %, customer count, sell-out flags, leaderboard update. |
-| 4.5. Company Email | — | Market insight email delivered — hints at next round's trending products. Data exportable as CSV. |
-| 5. Repeat | — | Next round begins. New data row appended to player's dataset. |
-| 6. Conclusion | ~2 min | After Round 5 only: Conclusion Screen displays final rankings, net revenue, loan shark charges, budget remaining, and winner banner with full chef roster. Read-only. |
+| 1. Company Email | — | Market-insight email delivered at round start — trends, disruptions, menu experiments. Data from the prior round exportable as CSV here. |
+| 2. Ad Auction | ~1 min | Sealed-bid auction for TV / Radio / Billboard ad slots. |
+| 3. Chef Auction | ~1 min | Sealed-bid auction for specialty chefs drawn from the round's chef pool. |
+| 4. Roster Management | ~1 min | Teams organize their chef roster post-auction — lay off chefs to stay within `specialtyChefCap` (3). Sous chef hiring also available here. |
+| 5. Decide | ~5 min | Players set quantity per product, choose menu (up to 3 offered), assign sous chefs, and set prices. Timer counts down. |
+| 6. Simulate | ~30 sec | Backend computes throughput, satisfaction, foot traffic, customer allocation, revenue, and loan-shark interest. Animation plays during processing. |
+| 7. Review | ~1 min | Players see results: net revenue, amount borrowed (if any), interest charged (if any), satisfaction %, customer count, sell-out flags, leaderboard update, class stats. |
+| 8. Repeat | — | Next round begins at Company Email. New data row appended to player's dataset. |
+| 9. Conclusion | ~2 min | After Round 5 only: Conclusion Screen displays final rankings, net revenue, loan shark charges, budget remaining, and winner banner with full chef roster. Read-only. |
 
 > **Total with roster management and conclusion: ~9.5 min/round × 5 rounds + setup + conclusion = ~54 min.** Schedule should account for the added roster step and end-game screen.
 

@@ -287,18 +287,59 @@ function gameDoc(gameId) {
 // assertRoleAllowed — BE-21 role-gated callable guard
 // Throws HttpsError('permission-denied') unless playerRole is in allowedRoles.
 // The 'solo' role bypasses all checks (single player doing everything).
+//
+// FE-I15 team-fallback (optional 3rd arg):
+//   When `teamRoleAssignments` is provided and *nobody on the team holds
+//   any of the allowedRoles*, this player is permitted to submit even if
+//   their own role isn't in the list. This covers the 2-player team
+//   shape (no one is `operations`) and mid-game edge cases where a
+//   specialist role was cleared or a teammate disconnected. Pass the
+//   team's `roleAssignments` map (uid → role | null) to enable the
+//   fallback; omit it (or pass null) to preserve the strict BE-21 gate.
 // ---------------------------------------------------------------------------
-function assertRoleAllowed(playerRole, allowedRoles) {
+function assertRoleAllowed(playerRole, allowedRoles, teamRoleAssignments) {
   if (playerRole === 'solo') return;
+  if (allowedRoles.includes(playerRole)) return;
+
+  // Team-fallback: if the team doc is supplied and no teammate is
+  // currently holding any of the required roles, allow the action.
+  if (teamRoleAssignments && typeof teamRoleAssignments === 'object') {
+    const heldRoles = Object.values(teamRoleAssignments).filter(Boolean);
+    const someoneHoldsRequired = heldRoles.some((r) => allowedRoles.includes(r));
+    if (!someoneHoldsRequired) return;
+  }
+
   if (!playerRole) {
-    // No role set — team game but player hasn't been assigned yet; block the action.
+    // No role set and no fallback opened the gate — keep the original
+    // BE-21 error so the client still nudges the player to pick a role.
     throw new HttpsError('failed-precondition',
       'You have not been assigned a role yet. Ask your team to set roles first.');
   }
-  if (!allowedRoles.includes(playerRole)) {
-    throw new HttpsError('permission-denied',
-      `Your role "${playerRole}" cannot perform this action. Required: ${allowedRoles.join(' or ')}.`);
+  throw new HttpsError('permission-denied',
+    `Your role "${playerRole}" cannot perform this action. Required: ${allowedRoles.join(' or ')}.`);
+}
+
+// ---------------------------------------------------------------------------
+// assertRoleAllowedWithTeam — FE-I15 helper that reads the caller's team
+// doc inside the transaction and forwards `roleAssignments` to
+// `assertRoleAllowed` so role-gated callables accept the team-fallback.
+// Call right after `pSnap` is available and *before* any writes in the
+// transaction (Firestore forbids reads after writes).
+// ---------------------------------------------------------------------------
+async function assertRoleAllowedWithTeam(tx, gameRef, pSnap, allowedRoles) {
+  const playerRole = pSnap.get('role');
+  // Solo / matching specialist — skip the extra team-doc read.
+  if (playerRole === 'solo' || allowedRoles.includes(playerRole)) return;
+
+  const teamId = getPlayerTeamId(pSnap.data());
+  let teamRoleAssignments = null;
+  if (teamId) {
+    const teamSnap = await tx.get(gameRef.collection('teams').doc(teamId));
+    if (teamSnap.exists) {
+      teamRoleAssignments = (teamSnap.data() || {}).roleAssignments || null;
+    }
   }
+  assertRoleAllowed(playerRole, allowedRoles, teamRoleAssignments);
 }
 
 function getPlayerTeamId(playerData) {
@@ -309,6 +350,33 @@ function getPlayerTeamId(playerData) {
 function getPlayerTeamKey(playerDoc) {
   const data = (playerDoc && typeof playerDoc.data === 'function') ? playerDoc.data() : {};
   return getPlayerTeamId(data) || playerDoc.id;
+}
+
+/**
+ * BE-I02: Scan every player doc and return the set of (teamKey, memberUid,
+ * count) entries whose `specialtyChefs` array exceeds the cap. Used by
+ * advanceGamePhase to block leaving the roster phase while anyone is over.
+ *
+ * Runs outside the phase-transition transaction because collection-wide reads
+ * aren't allowed inside a transaction. The transactional phase check plus the
+ * `expectedFromPhase` guard cover the narrow race window where a player could
+ * add a chef between this scan and the phase write.
+ */
+async function findPlayersOverChefCap(gameRef, specialtyChefCap) {
+  const snap = await gameRef.collection('players').get();
+  const offenders = [];
+  for (const doc of snap.docs) {
+    const chefs = doc.get('specialtyChefs');
+    const count = Array.isArray(chefs) ? chefs.length : 0;
+    if (count > specialtyChefCap) {
+      offenders.push({
+        memberUid: doc.id,
+        teamKey: doc.get('teamId') || doc.id,
+        count,
+      });
+    }
+  }
+  return offenders;
 }
 
 function buildTeamGroupsFromPlayerDocs(playerDocs) {
@@ -489,7 +557,6 @@ async function resolveAndApplyAdAuction(gameRef, round) {
   const roundId = `round_${round}`;
   const roundRef = gameRef.collection('rounds').doc(roundId);
   const playersSnap = await gameRef.collection('players').get();
-  const teamGroups = buildTeamGroupsFromPlayerDocs(playersSnap.docs);
   const playerToTeamKey = new Map(
     playersSnap.docs.map((pd) => [pd.id, getPlayerTeamKey(pd)])
   );
@@ -544,16 +611,6 @@ async function resolveAndApplyAdAuction(gameRef, round) {
     }
     adAuctionResults[winnerKey].adTypes.push(adType);
     adAuctionResults[winnerKey].totalPaid += winningBid;
-
-    const winnerGroup = teamGroups.get(winnerKey);
-    if (winnerGroup) {
-      for (const memberUid of winnerGroup.memberUids) {
-        adAuctionResults[memberUid] = {
-          adTypes: [...adAuctionResults[winnerKey].adTypes],
-          totalPaid: adAuctionResults[winnerKey].totalPaid,
-        };
-      }
-    }
   }
 
   await roundRef.set({
@@ -753,22 +810,16 @@ async function resolveAndApplyChefAuction(gameRef, round, config) {
   const { winners, payments } = resolveChefAuction(chefPool, allBids);
 
   // Write auction results to round doc.
+  // BE-I03: key by team slug only. Earlier code duplicated the entry under
+  // every member uid, which caused the sim aggregator to sum the cost N× for
+  // a team of N (BE-I01). Consumers read by `team.key`, which is the team
+  // slug for multi-member teams and the player uid for solo players.
   const chefAuctionResults = {};
   for (const [winnerKey, chefs] of winners) {
     chefAuctionResults[winnerKey] = {
       chefs,
       totalPaid: payments.get(winnerKey) || 0,
     };
-
-    const winnerGroup = teamGroups.get(winnerKey);
-    if (winnerGroup) {
-      for (const memberUid of winnerGroup.memberUids) {
-        chefAuctionResults[memberUid] = {
-          chefs,
-          totalPaid: payments.get(winnerKey) || 0,
-        };
-      }
-    }
   }
   await roundRef.set({
     chefAuctionResults,
@@ -982,13 +1033,59 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
       }
     }
 
-    // BE-20: auto-assign role from team's available slots
+    // BE-20 / BE-I04: auto-assign role from team's available slots.
+    //
+    // BE-I04 changes the default: teams with < 3 members get `solo` for
+    // everyone. `assertRoleAllowed`'s solo short-circuit lets any member
+    // submit anything, which is what we want when there's nobody to
+    // specialise into Operations / Finance / Advertising. When the team
+    // hits 3 members, we flip everyone onto the specialist roles in
+    // ROLES_ORDER so the classic 3-way split takes effect. Overwrites
+    // happen only for `solo` / null assignments — any specialist role a
+    // player explicitly picked via `setTeamRole` is preserved.
     const ROLES_ORDER = ['finance', 'advertising', 'operations'];
     const existingRoleAssignments = tSnap.exists
       ? ((tSnap.data() || {}).roleAssignments || {})
       : {};
-    const takenRoles = new Set(Object.values(existingRoleAssignments));
-    const autoRole = ROLES_ORDER.find((r) => !takenRoles.has(r)) || 'solo';
+    const currentMemberCount = Object.keys(existingRoleAssignments).length;
+    const nextMemberCount = currentMemberCount + 1;
+
+    let autoRole;
+    const roleFlip = { apply: false, updates: {} };
+
+    if (nextMemberCount <= 2) {
+      autoRole = 'solo';
+    } else if (nextMemberCount === 3) {
+      // 2 → 3 transition. Preserve any specialist role a teammate
+      // already manually picked; fill the remaining slots in
+      // ROLES_ORDER. Include the joining player in the assignment so
+      // the whole team lands on specialist roles in one transaction.
+      const takenSpecialist = new Set(
+        Object.values(existingRoleAssignments).filter(
+          (r) => r && r !== 'solo',
+        ),
+      );
+      const availableSpecialist = ROLES_ORDER.filter((r) => !takenSpecialist.has(r));
+      // Assign joining player first — next in `availableSpecialist`.
+      autoRole = availableSpecialist.shift() || 'solo';
+
+      // Flip existing solo/null members onto the remaining specialist
+      // roles. Walk in a stable order (uid sort) so the flip is
+      // deterministic across Firestore retries.
+      const existingUids = Object.keys(existingRoleAssignments).sort();
+      for (const existingUid of existingUids) {
+        const existingRole = existingRoleAssignments[existingUid];
+        if (existingRole && existingRole !== 'solo') continue;
+        const nextSpecialist = availableSpecialist.shift() || 'solo';
+        roleFlip.updates[existingUid] = nextSpecialist;
+      }
+      roleFlip.apply = Object.keys(roleFlip.updates).length > 0;
+    } else {
+      // 4+ members — beyond the 3-role design. Keep `solo` as the
+      // overflow default; the role picker can still assign specialists
+      // manually if needed.
+      autoRole = 'solo';
+    }
 
     if (pSnap.exists) {
       // Rejoin: refresh display name / bakery name but do not reset progress.
@@ -1044,11 +1141,33 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
         updatedAt: FieldValue.serverTimestamp(),
       });
     } else {
-      transaction.update(teamRef, {
+      const teamUpdate = {
         [`roleAssignments.${auth.uid}`]: autoRole,
         memberCount: FieldValue.increment(1),
         updatedAt: FieldValue.serverTimestamp(),
-      });
+      };
+      // BE-I04: on the 2 → 3 transition we also cascade specialist
+      // roles onto the existing solo/null members in the same
+      // transaction, and mirror those onto their player docs below.
+      if (roleFlip.apply) {
+        for (const [existingUid, nextRole] of Object.entries(roleFlip.updates)) {
+          teamUpdate[`roleAssignments.${existingUid}`] = nextRole;
+        }
+      }
+      transaction.update(teamRef, teamUpdate);
+
+      if (roleFlip.apply) {
+        // Use merge-set rather than update so an existing-but-
+        // partially-written player doc doesn't cause the whole
+        // transaction to fail.
+        for (const [existingUid, nextRole] of Object.entries(roleFlip.updates)) {
+          transaction.set(
+            gameRef.collection('players').doc(existingUid),
+            { role: nextRole, updatedAt: FieldValue.serverTimestamp() },
+            { merge: true },
+          );
+        }
+      }
     }
 
     transaction.set(rosterRef, {
@@ -1177,12 +1296,16 @@ exports.createTeam = onCall(CALLABLE_OPTS, async (request) => {
       throw new HttpsError('aborted', 'Could not allocate a unique team id. Try a slightly different name.');
     }
 
+    // BE-I04: first member is `solo` — the team only has one person
+    // and `assertRoleAllowed`'s solo short-circuit keeps every action
+    // unlocked. The role flips to a specialist when the 3rd member
+    // joins via `joinGame`.
     transaction.set(teamRef, {
       name: teamName,
       teamId: resolvedTeamId,
       logoUrl,
       createdBy: auth.uid,
-      roleAssignments: { [auth.uid]: 'finance' },  // first seat in ROLES_ORDER
+      roleAssignments: { [auth.uid]: 'solo' },
       memberCount: 1,
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
@@ -1196,7 +1319,7 @@ exports.createTeam = onCall(CALLABLE_OPTS, async (request) => {
         displayName,
         bakeryName: teamName,
         teamId: resolvedTeamId,
-        role: 'finance',
+        role: 'solo',
         teamLogoUrl: logoUrl,
         updatedAt: FieldValue.serverTimestamp(),
       });
@@ -1207,7 +1330,7 @@ exports.createTeam = onCall(CALLABLE_OPTS, async (request) => {
         displayName,
         bakeryName: teamName,
         teamId: resolvedTeamId,
-        role: 'finance',
+        role: 'solo',
         joinedAt: FieldValue.serverTimestamp(),
         budgetCurrent: config.startingBudget,
         cumulativeRevenue: 0,
@@ -1390,6 +1513,37 @@ exports.advanceGamePhase = onCall(CALLABLE_OPTS, async (request) => {
   // concurrent admin clicks (Firestore transaction retry would otherwise
   // read the already-advanced phase and advance it a second time).
   const expectedFromPhase = (request.data || {}).expectedFromPhase || null;
+
+  // BE-I02: if we are leaving `roster`, no player may exceed the specialty-
+  // chef cap. Run the collection scan outside the transaction since Firestore
+  // transactions don't allow collection-wide reads. Concurrent writes are
+  // bounded by the transactional phase guard below — worst case a player
+  // gains a chef in the gap, advanceGamePhase fails, professor retries.
+  {
+    const preSnap = await gameRef.get();
+    if (!preSnap.exists) {
+      throw new HttpsError('not-found', 'Game not found.');
+    }
+    if (preSnap.get('professorUid') !== auth.uid && preSnap.get('professorId') !== auth.uid) {
+      throw new HttpsError('permission-denied', 'Only the professor can advance phases.');
+    }
+    const currentPhase = preSnap.get('phase') || '';
+    if (/_roster$/.test(currentPhase)) {
+      const cfgSnap = await gameRef.collection('config').doc('params').get();
+      const cfg = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
+      const cap = numberOrDefault(cfg.specialtyChefCap, 3);
+      const offenders = await findPlayersOverChefCap(gameRef, cap);
+      if (offenders.length) {
+        const detail = Array.from(
+          new Map(offenders.map((o) => [o.teamKey, `${o.teamKey} (${o.count} chefs)`])).values(),
+        ).join(', ');
+        throw new HttpsError(
+          'failed-precondition',
+          `Cannot leave roster — team(s) over chef cap of ${cap}: ${detail}. Use Force Layoff or wait for teams to resolve.`,
+        );
+      }
+    }
+  }
 
   await db.runTransaction(async (transaction) => {
     const [gSnap, cfgSnap] = await Promise.all([
@@ -1666,6 +1820,25 @@ exports.retryStuckSimulation = onCall(CALLABLE_OPTS, async (request) => {
 // ---------------------------------------------------------------------------
 
 /**
+ * BE-I06: Stocked-weighted aggregate fill rate across a player's offered
+ * products. Returns 0 when the player stocked nothing. Input is the
+ * per-product map that `simulation.js` already builds.
+ */
+function aggregateFillRate(perProductSatisfaction) {
+  const entries = Object.values(perProductSatisfaction || {});
+  const totalStocked = entries.reduce(
+    (s, e) => s + numberOrDefault(e && e.qtyStocked, 0),
+    0,
+  );
+  if (totalStocked <= 0) return 0;
+  const weighted = entries.reduce(
+    (s, e) => s + numberOrDefault(e && e.fillRate, 0) * numberOrDefault(e && e.qtyStocked, 0),
+    0,
+  );
+  return weighted / totalStocked;
+}
+
+/**
  * Read all data needed for simulation, invoke the pure simulation engine,
  * and persist results with batch chunking for 150+ player games.
  */
@@ -1794,27 +1967,26 @@ async function runSimulationAndPersist(gameRef, round, config) {
       chefsWon: [],
       chefBidPaid: 0,
     };
-    for (const memberUid of team.memberUids) {
-      const ar = auctionByPlayer.get(memberUid) || {};
-      if (Array.isArray(ar.adWins)) {
-        for (const adType of ar.adWins) {
-          if (!aggregatedAuction.adWins.includes(adType)) {
-            aggregatedAuction.adWins.push(adType);
-          }
-        }
-      } else if (ar.adWon && !aggregatedAuction.adWins.includes(ar.adWon)) {
-        aggregatedAuction.adWins.push(ar.adWon);
-      }
-      aggregatedAuction.adBidPaid += numberOrDefault(ar.adBidPaid, 0);
-      if (Array.isArray(ar.chefsWon)) {
-        for (const chef of ar.chefsWon) {
-          if (!aggregatedAuction.chefsWon.find((c) => c.id === chef.id)) {
-            aggregatedAuction.chefsWon.push(chef);
-          }
+    // BE-I01: auction results are keyed by team slug (see BE-I03 in
+    // resolveAndApplyAdAuction / resolveAndApplyChefAuction). Read once per
+    // team — never iterate memberUids, which double-counted the cost.
+    const ar = auctionByPlayer.get(team.key) || {};
+    if (Array.isArray(ar.adWins)) {
+      for (const adType of ar.adWins) {
+        if (!aggregatedAuction.adWins.includes(adType)) {
+          aggregatedAuction.adWins.push(adType);
         }
       }
-      aggregatedAuction.chefBidPaid += numberOrDefault(ar.chefBidPaid, 0);
+    } else if (ar.adWon) {
+      aggregatedAuction.adWins.push(ar.adWon);
     }
+    aggregatedAuction.adBidPaid = numberOrDefault(ar.adBidPaid, 0);
+    if (Array.isArray(ar.chefsWon)) {
+      for (const chef of ar.chefsWon) {
+        aggregatedAuction.chefsWon.push(chef);
+      }
+    }
+    aggregatedAuction.chefBidPaid = numberOrDefault(ar.chefBidPaid, 0);
     aggregatedAuction.adWon = aggregatedAuction.adWins[0] || null;
 
     const priorSubmittedPrices = (priorDecisionSnapsByUid.get(financeUid) || [])
@@ -1927,6 +2099,7 @@ async function runSimulationAndPersist(gameRef, round, config) {
           revenueNet: r.revenueNet,
           customerCount: r.customerCount,
           aggregateSatisfactionPct: r.aggregateSatisfactionPct,
+          fillRate: aggregateFillRate(r.perProductSatisfaction),
           chefSatisfactionScore: r.chefSatisfactionScore,
           amountBorrowed: r.amountBorrowed,
           interestCharged: r.interestCharged,
@@ -2037,6 +2210,7 @@ async function runSimulationAndPersist(gameRef, round, config) {
       maxRevenueNet: revenues.length ? Math.max(...revenues) : 0,
       minRevenueNet: revenues.length ? Math.min(...revenues) : 0,
       avgCustomerCount: avg(customers),
+      totalCustomerPool: customers.reduce((s, n) => s + n, 0),
       playerCount: results.length,
     },
   }, { merge: true });
@@ -2156,8 +2330,10 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
     if (!gSnap.exists) throw new HttpsError('not-found', 'Game not found.');
     if (!pSnap.exists) throw new HttpsError('failed-precondition', 'Join the game before submitting.');
 
-    // BE-21: operations role (or solo) required to submit decisions
-    assertRoleAllowed(pSnap.get('role'), ['operations']);
+    // BE-21 / FE-I15: operations role (or solo) required to submit
+    // decisions — or any teammate when nobody on the team holds
+    // operations (2-player team, cleared role, etc.).
+    await assertRoleAllowedWithTeam(transaction, gameRef, pSnap, ['operations']);
     _submitDecision_role = pSnap.get('role') || null;
     _submitDecision_displayName = pSnap.get('displayName') || '';
 
@@ -2278,8 +2454,10 @@ exports.submitPrices = onCall(CALLABLE_OPTS, async (request) => {
     if (!gSnap.exists) throw new HttpsError('not-found', 'Game not found.');
     if (!pSnap.exists) throw new HttpsError('failed-precondition', 'Join the game before submitting.');
 
-    // Finance-only (solo players pass through assertRoleAllowed's solo case).
-    assertRoleAllowed(pSnap.get('role'), ['finance']);
+    // Finance-only (solo players pass through assertRoleAllowed's solo
+    // case; FE-I15 also unlocks this for any teammate when no one on
+    // the team holds finance).
+    await assertRoleAllowedWithTeam(transaction, gameRef, pSnap, ['finance']);
     _submitPrices_role = pSnap.get('role') || null;
     _submitPrices_displayName = pSnap.get('displayName') || '';
 
@@ -2372,11 +2550,12 @@ exports.submitBids = onCall(CALLABLE_OPTS, async (request) => {
     if (!gSnap.exists) throw new HttpsError('not-found', 'Game not found.');
     if (!pSnap.exists) throw new HttpsError('failed-precondition', 'Join the game before bidding.');
 
-    // BE-21: advertising role (or solo) for ad bids; finance role (or solo) for chef bids
+    // BE-21 / FE-I15: advertising (ad bids) / finance (chef bids) —
+    // or solo, or any teammate when that role is unfilled.
     if (bidType === 'ad') {
-      assertRoleAllowed(pSnap.get('role'), ['advertising']);
+      await assertRoleAllowedWithTeam(transaction, gameRef, pSnap, ['advertising']);
     } else {
-      assertRoleAllowed(pSnap.get('role'), ['finance']);
+      await assertRoleAllowedWithTeam(transaction, gameRef, pSnap, ['finance']);
     }
     _submitBids_role = pSnap.get('role') || null;
     _submitBids_displayName = pSnap.get('displayName') || '';
@@ -2527,8 +2706,9 @@ exports.layoffChef = onCall(CALLABLE_OPTS, async (request) => {
     if (!gSnap.exists) throw new HttpsError('not-found', 'Game not found.');
     if (!pSnap.exists) throw new HttpsError('failed-precondition', 'Player not in this game.');
 
-    // BE-21: operations role (or solo) required to manage roster
-    assertRoleAllowed(pSnap.get('role'), ['operations']);
+    // BE-21 / FE-I15: operations role (or solo) required to manage
+    // roster — or any teammate when no one on the team holds operations.
+    await assertRoleAllowedWithTeam(transaction, gameRef, pSnap, ['operations']);
 
     const game = gSnap.data();
     const { phase } = parsePhase(game.phase, game.currentRound || game.round);
@@ -2605,8 +2785,9 @@ exports.continueFromRoster = onCall(CALLABLE_OPTS, async (request) => {
     if (!gSnap.exists) throw new HttpsError('not-found', 'Game not found.');
     if (!pSnap.exists) throw new HttpsError('failed-precondition', 'Player not in this game.');
 
-    // BE-21: operations role (or solo) required to complete roster
-    assertRoleAllowed(pSnap.get('role'), ['operations']);
+    // BE-21 / FE-I15: operations role (or solo) required to complete
+    // roster — or any teammate when no one on the team holds operations.
+    await assertRoleAllowedWithTeam(transaction, gameRef, pSnap, ['operations']);
 
     const game = gSnap.data();
     const { phase } = parsePhase(game.phase, game.currentRound || game.round);
@@ -2985,11 +3166,18 @@ exports.setTeamRole = onCall(CALLABLE_OPTS, async (request) => {
 
   const gameId = cleanString(request.data && request.data.gameId);
   const teamId = cleanString(request.data && request.data.teamId);
-  const role   = cleanString(request.data && request.data.role);
+  // BE-I13: accept null / "" / "unassigned" as an explicit clear signal.
+  // The FE's "× Clear" button sends `role: null`; `cleanString(null)`
+  // returns "", so we branch on the empty case before the `!role` guard
+  // below rejects it.
+  const rawRole = request.data && request.data.role;
+  const role = cleanString(rawRole);
+  const isClear =
+    rawRole === null || role === '' || role === 'unassigned';
 
   if (!gameId) throw new HttpsError('invalid-argument', 'gameId is required.');
   if (!teamId) throw new HttpsError('invalid-argument', 'teamId is required.');
-  if (!role)   throw new HttpsError('invalid-argument', 'role is required.');
+  if (!isClear && !role)   throw new HttpsError('invalid-argument', 'role is required.');
 
   const teamRef   = db.collection('games').doc(gameId).collection('teams').doc(teamId);
   const playerRef = db.collection('games').doc(gameId).collection('players').doc(auth.uid);
@@ -3007,6 +3195,20 @@ exports.setTeamRole = onCall(CALLABLE_OPTS, async (request) => {
 
     if (!(auth.uid in roleAssignments)) {
       throw new HttpsError('permission-denied', 'You are not a member of this team.');
+    }
+
+    if (isClear) {
+      // Clearing: null out the team assignment and drop the player's
+      // mirrored role. `solo` is the safe post-clear default on the
+      // player doc — `assertRoleAllowed` treats it as "no gate", which
+      // matches the UX expectation that a cleared player is back to
+      // "can do anything" until they pick again.
+      tx.update(teamRef, {
+        [`roleAssignments.${auth.uid}`]: null,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      tx.update(playerRef, { role: 'solo' });
+      return;
     }
 
     // Reject if another teammate already holds this role.

@@ -89,7 +89,6 @@ const initialState: GameState = {
   player: null,
   players: [],
   roundResults: [],
-  timeRemaining: null,
   auctionTab: "chefs",
   pendingDecision: DEFAULT_PENDING_DECISION,
   pendingAdBids: DEFAULT_PENDING_AD_BIDS,
@@ -110,6 +109,7 @@ const initialState: GameState = {
   role: "solo",
   teamId: null,
   teamName: null,
+  teamRoleAssignments: {},
   phaseEndsAtMs: null,
   leaderboard: [],
   leaderboardError: null,
@@ -129,20 +129,21 @@ type GameAction =
   | { type: "SET_ROLE"; payload: PlayerRole }
   | { type: "SET_TEAM_ID"; payload: string | null }
   | { type: "SET_TEAM_NAME"; payload: string | null }
+  | {
+      type: "SET_TEAM_ROLE_ASSIGNMENTS";
+      payload: Record<string, PlayerRole | null>;
+    }
   | { type: "SET_PHASE_ENDS_AT"; payload: number | null }
   | { type: "SET_PHASE"; payload: GamePhaseString }
   | { type: "SET_ROUND"; payload: number }
   | { type: "SET_PLAYERS"; payload: Player[] }
-  | { type: "ADVANCE_ROUND" }
   | { type: "ADD_RESULT"; payload: RoundResult }
-  | { type: "SET_TIMER"; payload: number | null }
   | { type: "UPDATE_PLAYER"; payload: Partial<Player> }
   | { type: "SET_AUCTION_TAB"; payload: AuctionTab }
   | { type: "SET_CONFIG"; payload: GameConfigParams | null }
   | {
       type: "UPDATE_PENDING_DECISION";
       payload: {
-        sousChefCount?: number;
         menu?: Partial<Record<ProductKey, boolean>>;
         quantities?: Partial<Record<ProductKey, number>>;
         sousChefAssignments?: Partial<Record<ProductKey, number>>;
@@ -200,6 +201,28 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         ? state
         : { ...state, teamName: action.payload };
 
+    case "SET_TEAM_ROLE_ASSIGNMENTS": {
+      // Skip the render if the map is structurally identical. Cheap
+      // shallow compare — the listener writes a fresh object on every
+      // snapshot, so reference equality alone isn't enough to avoid
+      // re-rendering every role-gated component on every team update.
+      const prev = state.teamRoleAssignments;
+      const next = action.payload;
+      const prevKeys = Object.keys(prev);
+      const nextKeys = Object.keys(next);
+      if (prevKeys.length === nextKeys.length) {
+        let identical = true;
+        for (const k of nextKeys) {
+          if (prev[k] !== next[k]) {
+            identical = false;
+            break;
+          }
+        }
+        if (identical) return state;
+      }
+      return { ...state, teamRoleAssignments: next };
+    }
+
     case "SET_PHASE_ENDS_AT":
       return state.phaseEndsAtMs === action.payload
         ? state
@@ -235,14 +258,6 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     case "SET_PLAYERS":
       return { ...state, players: action.payload };
 
-    case "ADVANCE_ROUND":
-      return {
-        ...state,
-        currentRound: state.currentRound + 1,
-        roundResults: [],   // clear stale results from previous round
-        phase: "decide",
-      };
-
     case "ADD_RESULT": {
       const result = action.payload;
       // Dedupe by round — the player-doc snapshot fires multiple times per
@@ -269,9 +284,6 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           : state.chefSatisfactionScores,
       };
     }
-
-    case "SET_TIMER":
-      return { ...state, timeRemaining: action.payload };
 
     case "UPDATE_PLAYER":
       return {

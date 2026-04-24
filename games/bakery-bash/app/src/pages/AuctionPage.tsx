@@ -219,6 +219,7 @@ export function AuctionPage() {
     adBidsSubmitted,
     chefBidsSubmitted,
     role,
+    teamRoleAssignments,
   } = useGame();
   const dispatch = useGameDispatch();
   // Backend writes leader keys as `teamId || playerId` — match that here so
@@ -251,6 +252,10 @@ export function AuctionPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [chefBidInputs, setChefBidInputs] = useState<Record<string, string>>({});
+  // FE-I16: keep the ad-bid input value as a string so an empty field stays
+  // empty (placeholder "0" gives the visual affordance) instead of forcing
+  // a literal "0" character that gets prepended when the user types.
+  const [adBidInputs, setAdBidInputs] = useState<Partial<Record<AdType, string>>>({});
   const [showExpiredPopup, setShowExpiredPopup] = useState(false);
 
   const parsed = parseGamePhase(phase, currentRound);
@@ -289,6 +294,7 @@ export function AuctionPage() {
     setTopBidsLeaderAd({});
     setTopBidsLeaderChef({});
     setChefBidInputs({});
+    setAdBidInputs({});
     if (!gameId || !currentRound) {
       return;
     }
@@ -509,12 +515,13 @@ export function AuctionPage() {
     }
   }, [timerExpired]);
 
-  const timerMinutes = Math.floor(remaining / 60);
-  const timerSeconds = remaining % 60;
-  const timerDisplay = `${timerMinutes}:${timerSeconds
-    .toString()
-    .padStart(2, "0")}`;
-  const timerUrgent = remaining <= 10;
+  // Phase timer display lives exclusively in <RoundHeader /> (it reads
+  // `phaseEndsAt` from the backend and shows a unified clock across every
+  // phase). The AuctionPage used to render a second local timer at
+  // `.auction-page__timer`, which showed a duplicate clock on both bid
+  // tabs — removed. The `remaining` counter + `timerExpired` flag are
+  // kept internal because they still gate the bid inputs + the
+  // timer-expired popup.
 
   const alreadySubmitted =
     (isAdPhase && adBidsSubmitted) || (isChefPhase && chefBidsSubmitted);
@@ -583,10 +590,12 @@ export function AuctionPage() {
     : isChefPhase
     ? ownerOfChefBids()
     : null;
+  // FE-I15: relax the role gate when nobody on the team holds the
+  // specialist role — otherwise a 2-player team can't bid.
   const canSubmitForPhase = isAdPhase
-    ? roleOwnsAdBids(role)
+    ? roleOwnsAdBids(role, teamRoleAssignments)
     : isChefPhase
-    ? roleOwnsChefBids(role)
+    ? roleOwnsChefBids(role, teamRoleAssignments)
     : true;
   const submitTooltip =
     !canSubmitForPhase && ownerLabel
@@ -628,13 +637,9 @@ export function AuctionPage() {
             Chef Hiring
           </button>
         </div>
-        <div
-          className={`auction-page__timer${
-            timerUrgent ? " auction-page__timer--urgent" : ""
-          }`}
-        >
-          {timerDisplay}
-        </div>
+        {/* Phase countdown is owned by <RoundHeader />. The AuctionPage
+            used to render a second local timer here which duplicated the
+            header clock on bid pages; removed so players see exactly one. */}
         {alreadySubmitted && !hasEditableBid && (
           <span
             className="tab__badge tab__badge--submitted auction-page__locked-badge"
@@ -691,12 +696,24 @@ export function AuctionPage() {
                         className="auction-ad__bid-input auction-page__bid-input"
                         placeholder="0"
                         min={0}
-                        value={pendingAdBids[ad.id] ?? 0}
+                        value={
+                          adBidInputs[ad.id] ??
+                          (pendingAdBids[ad.id] ? String(pendingAdBids[ad.id]) : "")
+                        }
                         disabled={timerExpired || !isAdPhase || isLockedAdBid(ad.id)}
                         readOnly={!isAdPhase || isLockedAdBid(ad.id)}
-                        onChange={(e) =>
-                          setAdBid(ad.id, parseInt(e.target.value, 10) || 0)
-                        }
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          setAdBidInputs((prev) => ({ ...prev, [ad.id]: raw }));
+                          if (raw === "") {
+                            setAdBid(ad.id, 0);
+                            return;
+                          }
+                          const parsed = parseInt(raw, 10);
+                          if (!isNaN(parsed) && parsed >= 0) {
+                            setAdBid(ad.id, parsed);
+                          }
+                        }}
                       />
                     </div>
                   </div>

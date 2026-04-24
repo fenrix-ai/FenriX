@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useGame } from "../../contexts/GameContext";
 import { CsvInboxModal } from "./CsvInboxModal";
+import { GameProgressBar } from "./GameProgressBar";
 import {
   PLAYER_ROLE_LABELS,
   parseGamePhase,
@@ -125,20 +126,16 @@ export function RoundHeader() {
   const {
     currentRound,
     totalRounds,
-    timeRemaining,
     teamName,
     player,
     role,
     teamId,
+    teamRoleAssignments,
     phase,
   } = useGame();
 
   const [inboxOpen, setInboxOpen] = useState(false);
-  const phaseSeconds = usePhaseCountdownSeconds();
-  // Prefer the backend-driven `phaseEndsAt` countdown; fall back to the
-  // legacy local `timeRemaining` (only used by AuctionPage's tab timer
-  // until `phaseEndsAt` is wired through there too).
-  const displaySeconds = phaseSeconds ?? timeRemaining;
+  const displaySeconds = usePhaseCountdownSeconds();
 
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);
@@ -154,11 +151,13 @@ export function RoundHeader() {
   const phaseBannerLabel = PHASE_LABELS[parsed.base] ?? phase ?? "";
 
   const roleLabel = PLAYER_ROLE_LABELS[role];
+  // FE-I15: pass team roleAssignments so the "active role" pip also
+  // lights up for teammates filling a vacant specialist role.
   const isActiveRole =
-    (parsed.base === "decide" && roleOwnsDecide(role)) ||
-    (parsed.base === "bid_ad" && roleOwnsAdBids(role)) ||
-    (parsed.base === "bid_chef" && roleOwnsChefBids(role)) ||
-    (parsed.base === "roster" && roleOwnsRoster(role));
+    (parsed.base === "decide" && roleOwnsDecide(role, teamRoleAssignments)) ||
+    (parsed.base === "bid_ad" && roleOwnsAdBids(role, teamRoleAssignments)) ||
+    (parsed.base === "bid_chef" && roleOwnsChefBids(role, teamRoleAssignments)) ||
+    (parsed.base === "roster" && roleOwnsRoster(role, teamRoleAssignments));
 
   return (
     <header className="round-header">
@@ -214,6 +213,10 @@ export function RoundHeader() {
           }
         </div>
       )}
+
+      <div className="round-header__progress">
+        <GameProgressBar />
+      </div>
     </header>
   );
 }

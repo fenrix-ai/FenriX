@@ -2026,7 +2026,17 @@ h3 { font-size: 0.7rem; }
 
 /* ─── Responsive ─────────────────────────────────────────── */
 
-@media (max-width: 960px) {
+/* Keep Bakery / Deli / Barista horizontal on laptops. Tighten the gap at
+   laptop widths before falling back to a stacked column on true mobile.
+   Previously the column fallback kicked in at 960px which stacked the
+   decide page on almost every laptop in split view. */
+@media (max-width: 1080px) {
+  .bakery-view__stations {
+    gap: 0.65rem;
+  }
+}
+
+@media (max-width: 640px) {
   .bakery-view__stations {
     grid-template-columns: 1fr;
   }
@@ -2173,6 +2183,21 @@ h3 { font-size: 0.7rem; }
   font-size: 0.5rem;
   color: var(--dark-roast);
   font-weight: 400;
+}
+
+.professor-page__monitor-claim-banner {
+  margin: 0.6rem 0;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  background: #fef3c7;
+  color: #78350f;
+  border: 2px solid #f59e0b;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.professor-page__monitor-claim-banner strong {
+  font-weight: 700;
 }
 
 .professor-page__monitor-footnote {
@@ -3405,6 +3430,51 @@ h3 { font-size: 0.7rem; }
 .how-to-play__card-label   { display: inline-block; background: var(--caramel, #d97706); color: #fff; font-size: 0.75rem; font-weight: bold; padding: 0.2rem 0.6rem; border-radius: 4px; margin-bottom: 0.6rem; text-transform: uppercase; letter-spacing: 0.05em; }
 .how-to-play__card-tagline { font-size: 1.1rem; font-weight: bold; margin: 0 0 0.5rem; }
 .how-to-play__card-body    { font-size: 0.9rem; line-height: 1.6; margin: 0; color: #444; }
+
+.how-to-play__chef-tiers {
+  margin-top: 1.5rem;
+  background: var(--cream, #fff7e6);
+  border: 2px solid var(--caramel, #d97706);
+  border-radius: 10px;
+  padding: 1.25rem;
+}
+
+.how-to-play__chef-tiers-title {
+  font-family: var(--font-pixel);
+  font-size: 0.75rem;
+  color: var(--dark-roast);
+  margin: 0 0 0.4rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.how-to-play__chef-tiers-hint {
+  font-size: 0.9rem;
+  color: #444;
+  margin: 0 0 0.75rem;
+}
+
+.how-to-play__chef-tier-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.how-to-play__chef-tier-table th,
+.how-to-play__chef-tier-table td {
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid var(--caramel, #d97706);
+  text-align: left;
+}
+
+.how-to-play__chef-tier-table th {
+  font-family: var(--font-pixel);
+  font-size: 0.55rem;
+  color: var(--dark-roast);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
 .landing-page__how-to-play-link { display: block; text-align: center; font-size: 0.85rem; color: var(--caramel, #d97706); margin-top: 0.5rem; text-decoration: underline; }
 
 /* ── Phase banner ───────────────────────────────────────────────────── */
@@ -3460,8 +3530,91 @@ h3 { font-size: 0.7rem; }
 .results-phase__rank            { font-weight: bold; width: 2rem; }
 .results-phase__team-name       { flex: 1; }
 .results-phase__team-revenue    { font-weight: bold; }
-/* ── Burglar banner ─────────────────────────────────────────────────── */
-.results-phase__burglar-banner  { background: #fee2e2; border: 2px solid #ef4444; border-radius: 6px; padding: 0.75rem 1rem; color: #991b1b; font-weight: bold; margin: 1rem 0; }
+
+/* ── Curveball event cards (burglary, food-safety inspection) ──────── */
+.results-phase__event-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.event-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border-radius: 10px;
+  border: 2px solid var(--caramel);
+  background: var(--cream);
+}
+
+.event-card--burglary {
+  border-color: #ef4444;
+  background: #fff1f1;
+}
+
+.event-card--inspection {
+  border-color: var(--caramel);
+  background: rgba(255, 244, 214, 0.9);
+}
+
+.event-card--inspection-poor {
+  border-color: #ef4444;
+  background: #fff1f1;
+}
+
+.event-card--inspection-sufficient {
+  border-color: var(--honey);
+  background: #fff7e6;
+}
+
+.event-card--inspection-good {
+  border-color: var(--lime);
+  background: #f0fff4;
+}
+
+.event-card--inspection-excellent {
+  border-color: var(--sage);
+  background: #ecfdf5;
+}
+
+.event-card__asset {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  image-rendering: pixelated;
+}
+
+.event-card__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.event-card__title {
+  font-family: var(--font-pixel);
+  font-size: 0.7rem;
+  color: var(--dark-roast);
+  margin: 0 0 0.3rem;
+}
+
+.event-card__meta {
+  margin: 0.15rem 0;
+  font-size: 0.85rem;
+  color: var(--espresso);
+}
+
+.event-card__meta--loss {
+  color: #b91c1c;
+  font-weight: 700;
+}
+
+.event-card__hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.78rem;
+  color: #6b4b28;
+  font-style: italic;
+}
 
 /* ── Simulate phase ─────────────────────────────────────────────────── */
 .simulate-phase__burglar-banner { background: #fee2e2; border: 2px solid #ef4444; border-radius: 6px; padding: 0.75rem 1rem; color: #991b1b; font-weight: bold; margin: 0.75rem 1rem; }
@@ -3520,4 +3673,813 @@ h3 { font-size: 0.7rem; }
   transform: scale(2);
   transform-origin: center top;
   margin-bottom: 270px; /* compensate for 2x scale height */
+}
+
+/* ── Ad Winner Banner (Decide screen, rounds 2+) ───────────────────────
+   Rendered at the top of the decide page. Prior to this rule block the
+   component had zero CSS, so the `<section>` + `<ul>` fell back to a
+   full-width vertical list that dominated the page. Compact 4-column
+   strip with per-cell headline / amount. */
+.ad-winner-banner {
+  display: flex;
+  align-items: stretch;
+  gap: 0.75rem;
+  margin: 0 0 0.75rem;
+  padding: 0.55rem 0.75rem;
+  background: var(--dough);
+  border: 2px solid var(--caramel);
+  border-radius: 8px;
+  box-shadow: var(--shadow-pixel);
+  flex-wrap: wrap;
+}
+
+.ad-winner-banner__header {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 108px;
+  padding-right: 0.6rem;
+  border-right: 2px dashed var(--caramel);
+}
+
+.ad-winner-banner__eyebrow {
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  color: var(--dark-roast);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ad-winner-banner__title {
+  font-family: var(--font-pixel);
+  font-size: 0.75rem;
+  color: var(--espresso);
+  margin: 0.15rem 0 0;
+}
+
+.ad-winner-banner__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+  flex: 1;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.ad-winner-banner__cell {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.55rem;
+  background: var(--cream);
+  border: 1.5px solid var(--caramel);
+  border-radius: 6px;
+  min-width: 0;
+}
+
+.ad-winner-banner__icon img {
+  width: 28px;
+  height: 28px;
+  display: block;
+  image-rendering: pixelated;
+}
+
+.ad-winner-banner__content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.ad-winner-banner__surface {
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--dark-roast);
+}
+
+.ad-winner-banner__winner {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--espresso);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ad-winner-banner__amount {
+  font-size: 0.72rem;
+  color: var(--sage);
+  font-weight: 600;
+}
+
+.ad-winner-banner__empty {
+  font-size: 0.75rem;
+  font-style: italic;
+  color: #888;
+}
+
+@media (max-width: 880px) {
+  .ad-winner-banner__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ad-winner-banner__header {
+    border-right: 0;
+    border-bottom: 2px dashed var(--caramel);
+    padding-right: 0;
+    padding-bottom: 0.4rem;
+    width: 100%;
+    flex-direction: row;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+}
+
+/* ── Chef Card (<ChefCard> component, used on Kitchen Roster page) ─────
+   AuctionPage uses its own `.auction-chef*` markup so it wasn't affected,
+   but the Roster page renders `<ChefCard mode="roster" />` and the
+   element classes had no rules — two adjacent spans in `.chef-card__meta`
+   rendered as "AdvancedFrench" with no whitespace. Full ruleset added
+   here so the roster looks intentional.
+
+   NOTE: `.chef-card { position: relative }` + `.chef-card__number`
+   already exist near line ~1464 (from FE-R03 — sequential chef numbering).
+   We extend `.chef-card` here with layout; `position: relative` is
+   inherited from the earlier rule via the cascade, but repeated below
+   defensively so the absolutely-positioned `__number` badge never
+   detaches if the earlier rule is refactored. */
+.chef-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--cream);
+  border: 2px solid var(--caramel);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: var(--shadow-pixel);
+  min-width: 0;
+}
+
+.chef-card__portrait {
+  position: relative;
+  background: var(--dough);
+  border-bottom: 2px solid var(--caramel);
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.chef-card__portrait img {
+  width: 80%;
+  height: 80%;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.chef-card__flag {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font-size: 1.1rem;
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 4px;
+  padding: 1px 4px;
+  line-height: 1;
+}
+
+.chef-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.55rem 0.65rem 0.65rem;
+  min-width: 0;
+}
+
+.chef-card__name {
+  font-family: var(--font-pixel);
+  font-size: 0.7rem;
+  color: var(--espresso);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chef-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  font-size: 0.72rem;
+}
+
+.chef-card__skill {
+  display: inline-block;
+  padding: 1px 6px;
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-radius: 3px;
+  border: 1.5px solid transparent;
+  color: #fff;
+}
+
+.chef-card__skill--novel {
+  background: #7a8ca3;
+  border-color: #5c6c80;
+}
+
+.chef-card__skill--intermediate {
+  background: var(--honey);
+  border-color: var(--caramel);
+  color: var(--espresso);
+}
+
+.chef-card__skill--advanced {
+  background: var(--sage);
+  border-color: #4d6548;
+}
+
+.chef-card__nationality {
+  color: var(--dark-roast);
+  font-style: italic;
+}
+
+.chef-card__footer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding-top: 0.3rem;
+  border-top: 1px dashed var(--caramel);
+}
+
+.chef-card__footer--bid {
+  gap: 0.35rem;
+}
+
+.chef-card__bids {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.chef-card__bid-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 0.72rem;
+}
+
+.chef-card__bid-row--mine {
+  color: var(--sage);
+  font-weight: 600;
+}
+
+.chef-card__bid-label {
+  color: var(--dark-roast);
+}
+
+.chef-card__bid-value {
+  font-family: var(--font-pixel);
+  font-size: 0.65rem;
+  color: var(--espresso);
+}
+
+.chef-card__action {
+  display: flex;
+}
+
+.chef-card__footer--roster {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.chef-card__satisfaction {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.chef-card__satisfaction--high {
+  background: #e9f5ea;
+  color: var(--sage);
+}
+
+.chef-card__satisfaction--mid {
+  background: #fff3d6;
+  color: var(--caramel);
+}
+
+.chef-card__satisfaction--low {
+  background: #fde4e4;
+  color: #b03030;
+}
+
+.chef-card__footer--won {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 0.4rem;
+  justify-content: flex-start;
+}
+
+.chef-card__won-badge {
+  display: inline-block;
+  background: var(--sage);
+  color: #fff;
+  font-family: var(--font-pixel);
+  font-size: 0.55rem;
+  padding: 2px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.chef-card__won-amount {
+  font-size: 0.75rem;
+  color: var(--espresso);
+}
+
+/* ── Results phase KPI tiles ───────────────────────────────────────────
+   The <Kpi> component renders `<span class="__label">` above
+   `<span class="__value">`. Without these rules the two spans rendered
+   inline and produced "Customer satisfaction0/100" etc. */
+.results-phase__kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+  margin: 0.75rem 0 1.25rem;
+}
+
+.results-phase__kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem 0.9rem;
+  background: var(--cream);
+  border: 2px solid var(--caramel);
+  border-radius: 6px;
+  box-shadow: var(--shadow-pixel);
+}
+
+.results-phase__kpi-label {
+  display: block;
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--dark-roast);
+}
+
+.results-phase__kpi-value {
+  display: block;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--espresso);
+}
+
+.results-phase__kpi--animated .results-phase__kpi-value {
+  animation: kpiReveal 420ms ease-out both;
+}
+
+@keyframes kpiReveal {
+  0%   { opacity: 0; transform: translateY(6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── Game progress bar (Apr 22) ───────────────────────── */
+.round-header__progress {
+  grid-column: 1 / -1;
+  margin-top: 0.5rem;
+  width: 100%;
+}
+
+.game-progress {
+  width: 100%;
+}
+
+.game-progress__track {
+  display: flex;
+  gap: 0.35rem;
+  align-items: stretch;
+  padding: 0.25rem;
+  background: rgba(255, 244, 214, 0.4);
+  border: 2px solid var(--caramel);
+  border-radius: 999px;
+}
+
+.game-progress__segment {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem 0.25rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.4);
+  opacity: 0.55;
+  transition: background 0.25s, opacity 0.25s, transform 0.25s;
+  min-width: 0;
+}
+
+.game-progress__segment--complete {
+  background: linear-gradient(135deg, #fde68a, #f59e0b);
+  opacity: 1;
+}
+
+.game-progress__segment--current {
+  background: linear-gradient(135deg, #fef3c7, #f97316);
+  opacity: 1;
+  transform: scale(1.08);
+  box-shadow: 0 0 0 2px var(--dark-roast);
+}
+
+.game-progress__croissant {
+  font-size: 1rem;
+  line-height: 1;
+  filter: grayscale(1);
+  opacity: 0.5;
+}
+
+.game-progress__segment--complete .game-progress__croissant,
+.game-progress__segment--current  .game-progress__croissant {
+  filter: none;
+  opacity: 1;
+}
+
+.game-progress__label {
+  font-family: var(--font-pixel);
+  font-size: 0.4rem;
+  color: var(--dark-roast);
+  letter-spacing: 0.05em;
+  margin-top: 0.1rem;
+}
+
+/* ─── Conclusion / Game Over page — hero + confetti + podium ─── */
+.conclusion-page {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 3rem;
+  position: relative;
+  overflow-x: hidden;
+}
+
+.conclusion-page__confetti {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.conclusion-page__confetti-piece {
+  position: absolute;
+  top: -10%;
+  width: 8px;
+  height: 16px;
+  border-radius: 2px;
+  opacity: 0.85;
+  animation: confettiFall 5s linear infinite;
+  transform-origin: center;
+}
+
+@keyframes confettiFall {
+  0%   { transform: translateY(-20px) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(120vh) rotate(720deg); opacity: 0.4; }
+}
+
+.conclusion-page > *:not(.conclusion-page__confetti) {
+  position: relative;
+  z-index: 1;
+}
+
+.conclusion-page__hero {
+  text-align: center;
+  margin-bottom: 2rem;
+  padding: 2rem 1rem 1.5rem;
+  background: linear-gradient(135deg, #fff3d6 0%, #f59e0b 100%);
+  border: 3px solid var(--caramel);
+  border-radius: 20px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+.conclusion-page__eyebrow {
+  font-family: var(--font-pixel);
+  font-size: 0.6rem;
+  color: var(--dark-roast);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 0.35rem;
+}
+
+.conclusion-page__title {
+  font-size: 1.8rem;
+  color: var(--dark-roast);
+  text-shadow: 3px 3px 0 rgba(255, 255, 255, 0.6);
+  margin: 0 0 0.4rem;
+}
+
+.conclusion-page__tagline {
+  font-family: var(--font-body);
+  color: var(--espresso);
+  font-size: 1rem;
+  margin: 0;
+}
+
+.conclusion-page__winner--hero {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 1.5rem;
+  background: linear-gradient(135deg, #fef3c7 0%, #f59e0b 100%);
+  border: 3px solid #b45309;
+  border-radius: 16px;
+  box-shadow: 0 6px 18px rgba(245, 158, 11, 0.3);
+  margin-bottom: 2rem;
+}
+
+.conclusion-page__winner-crown {
+  font-size: 3.5rem;
+  animation: crownBob 2.2s ease-in-out infinite alternate;
+}
+
+@keyframes crownBob {
+  from { transform: translateY(0) rotate(-4deg); }
+  to   { transform: translateY(-8px) rotate(4deg); }
+}
+
+.conclusion-page__winner-label {
+  font-family: var(--font-pixel);
+  font-size: 0.55rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #7c2d12;
+}
+
+.conclusion-page__winner-name {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--dark-roast);
+  margin: 0.2rem 0;
+}
+
+.conclusion-page__winner-you {
+  color: #b91c1c;
+}
+
+.conclusion-page__winner-revenue {
+  font-family: var(--font-body);
+  font-size: 1rem;
+  color: #7c2d12;
+}
+
+/* Podium row */
+.conclusion-page__podium {
+  margin: 1rem 0 2rem;
+}
+
+.conclusion-page__podium-row {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr 1fr;
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.podium {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.75rem 0.5rem 0;
+  border-radius: 10px 10px 0 0;
+  text-align: center;
+  min-width: 0;
+}
+
+.podium--gold   { background: linear-gradient(180deg, #fde68a, #f59e0b); order: 2; }
+.podium--silver { background: linear-gradient(180deg, #e5e7eb, #9ca3af); order: 1; }
+.podium--bronze { background: linear-gradient(180deg, #fcd9b6, #b45309); order: 3; }
+
+.podium__medal {
+  font-size: 2.3rem;
+  margin-bottom: 0.25rem;
+}
+
+.podium__bakery {
+  font-family: var(--font-body);
+  font-weight: 700;
+  color: var(--dark-roast);
+  font-size: 0.95rem;
+  line-height: 1.15;
+  margin-bottom: 0.15rem;
+  word-break: break-word;
+}
+
+.podium__revenue {
+  font-family: var(--font-pixel);
+  font-size: 0.6rem;
+  color: #3b230e;
+  margin-bottom: 0.5rem;
+}
+
+.podium__block {
+  width: 100%;
+  padding: 0.9rem 0;
+  background: rgba(0, 0, 0, 0.18);
+  color: var(--cream);
+  font-family: var(--font-pixel);
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+}
+
+.podium--gold   .podium__block { padding: 1.6rem 0; background: #b45309; }
+.podium--silver .podium__block { padding: 1.1rem 0; background: #374151; }
+.podium--bronze .podium__block { padding: 0.7rem 0; background: #78350f; }
+
+.podium--mine {
+  outline: 3px solid #ef4444;
+  outline-offset: 2px;
+}
+
+/* ─── Conclusion / Game Over page — stats, leaderboard, rounds ─── */
+.conclusion-page__section-title {
+  font-family: var(--font-pixel);
+  font-size: 0.75rem;
+  color: var(--dark-roast);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin: 0 0 0.75rem;
+}
+
+.conclusion-page__yours-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 2rem;
+}
+
+.conclusion-page__class-summary {
+  margin-bottom: 1.5rem;
+}
+
+.conclusion-page__class-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.75rem;
+}
+
+.conclusion-page__class-summary .conclusion-page__stat {
+  background: linear-gradient(
+    180deg,
+    rgba(245, 158, 11, 0.08),
+    var(--cream)
+  );
+}
+
+.conclusion-page__stat {
+  background: var(--cream);
+  border: 2px solid var(--caramel);
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  text-align: center;
+  box-shadow: 0 2px 0 var(--caramel);
+}
+
+.conclusion-page__stat-label {
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  color: var(--caramel);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-bottom: 0.25rem;
+}
+
+.conclusion-page__stat-value {
+  font-family: var(--font-body);
+  font-weight: 800;
+  color: var(--dark-roast);
+  font-size: 1.15rem;
+}
+
+.conclusion-page__leaderboard,
+.conclusion-page__rounds {
+  background: var(--cream);
+  border: 2px solid var(--caramel);
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.conclusion-page__board-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.conclusion-page__board-table th,
+.conclusion-page__board-table td {
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid rgba(217, 161, 87, 0.4);
+  text-align: left;
+}
+
+.conclusion-page__board-table th {
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  color: var(--dark-roast);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.conclusion-page__board-row--you {
+  background: rgba(245, 158, 11, 0.18);
+  font-weight: 700;
+}
+
+.conclusion-page__round-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.conclusion-page__round-header {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.55rem 0.75rem;
+  background: #fff3d6;
+  border: 2px solid var(--caramel);
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-weight: 600;
+  color: var(--dark-roast);
+}
+
+.conclusion-page__round-num {
+  text-align: left;
+}
+
+.conclusion-page__round-rev {
+  font-family: var(--font-pixel);
+  font-size: 0.55rem;
+  color: var(--caramel);
+}
+
+.conclusion-page__round-body {
+  padding: 0.6rem 0.25rem 0;
+}
+
+.conclusion-page__round-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 0.4rem;
+}
+
+.conclusion-page__mini-kpi {
+  background: rgba(255, 244, 214, 0.8);
+  border: 1px solid var(--caramel);
+  border-radius: 6px;
+  padding: 0.35rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.conclusion-page__mini-kpi--warn {
+  background: #fef2f2;
+  border-color: #ef4444;
+  color: #b91c1c;
+}
+
+.conclusion-page__mini-kpi-label {
+  font-family: var(--font-pixel);
+  font-size: 0.45rem;
+  color: var(--caramel);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.conclusion-page__mini-kpi-value {
+  font-family: var(--font-body);
+  font-weight: 700;
+  color: var(--dark-roast);
+}
+
+.conclusion-page__footer {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  margin-top: 1rem;
+  flex-wrap: wrap;
 }

@@ -110,7 +110,29 @@ async function main() {
   }
   console.log("  ✓ startGame: lobby → round_1_email");
 
-  // advanceGamePhase: round_1_email → round_1_decide
+  // advanceGamePhase: round_1_email → round_1_bid_ad
+  const bidAdResult = await advanceGamePhase({ gameId: GAME_ID });
+  assertEqual(bidAdResult.data.phase, "round_1_bid_ad", "Bid-ad phase mismatch.");
+  assertEqual(bidAdResult.data.round, 1, "Bid-ad round mismatch.");
+
+  gameSnap = await db.doc(`games/${GAME_ID}`).get();
+  assertEqual(gameSnap.get("phase"), "round_1_bid_ad", "Stored bid-ad phase mismatch.");
+  if (!gameSnap.get("phaseEndsAt")) {
+    throw new Error("advanceGamePhase did not store phaseEndsAt for bid_ad.");
+  }
+  console.log("  ✓ advanceGamePhase: round_1_email → round_1_bid_ad");
+
+  // advanceGamePhase: round_1_bid_ad → round_1_bid_chef
+  const bidChefResult = await advanceGamePhase({ gameId: GAME_ID });
+  assertEqual(bidChefResult.data.phase, "round_1_bid_chef", "Bid-chef phase mismatch.");
+  console.log("  ✓ advanceGamePhase: round_1_bid_ad → round_1_bid_chef");
+
+  // advanceGamePhase: round_1_bid_chef → round_1_roster
+  const rosterResult = await advanceGamePhase({ gameId: GAME_ID });
+  assertEqual(rosterResult.data.phase, "round_1_roster", "Roster phase mismatch.");
+  console.log("  ✓ advanceGamePhase: round_1_bid_chef → round_1_roster");
+
+  // advanceGamePhase: round_1_roster → round_1_decide
   const decideResult = await advanceGamePhase({ gameId: GAME_ID });
   assertEqual(decideResult.data.phase, "round_1_decide", "Decide phase mismatch.");
   assertEqual(decideResult.data.round, 1, "Decide round mismatch.");
@@ -120,12 +142,7 @@ async function main() {
   if (!gameSnap.get("phaseEndsAt")) {
     throw new Error("advanceGamePhase did not store phaseEndsAt for decide.");
   }
-  console.log("  ✓ advanceGamePhase: round_1_email → round_1_decide");
-
-  // advanceGamePhase: round_1_decide → round_1_bid_ad
-  const bidAdResult = await advanceGamePhase({ gameId: GAME_ID });
-  assertEqual(bidAdResult.data.phase, "round_1_bid_ad", "Bid-ad phase mismatch.");
-  console.log("  ✓ advanceGamePhase: round_1_decide → round_1_bid_ad");
+  console.log("  ✓ advanceGamePhase: round_1_roster → round_1_decide");
 
   console.log("\nPhase state machine flow passed.");
 }

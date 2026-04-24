@@ -112,15 +112,20 @@ export function GamePage() {
   const {
     gameId,
     playerId,
+    teamId,
     phase,
     currentRound,
     pendingDecision,
     decisionSubmitted,
     pricesSubmitted,
     role,
+    teamRoleAssignments,
     config,
     teamName,
   } = useGame();
+  // BE-I03: auction result docs are keyed by team slug; fall back to the
+  // player uid for solo teams, whose `team.key` on the backend is the uid.
+  const auctionResultKey = teamId || playerId;
   const dispatch = useGameDispatch();
   const navigate = useNavigate();
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -490,7 +495,7 @@ export function GamePage() {
   }, [gameId, currentRound, rosterByUid]);
 
   useEffect(() => {
-    if (!gameId || !playerId || !currentRound) {
+    if (!gameId || !auctionResultKey || !currentRound) {
       setWonAuctionCosts({ ad: 0, chef: 0 });
       return;
     }
@@ -503,12 +508,12 @@ export function GamePage() {
           return;
         }
         const data = snap.data() as DocumentData;
-        const adEntry = (data.adAuctionResults?.[playerId] ?? null) as DocumentData | null;
+        const adEntry = (data.adAuctionResults?.[auctionResultKey] ?? null) as DocumentData | null;
         const ad =
           adEntry && typeof adEntry.totalPaid === "number"
             ? adEntry.totalPaid
             : 0;
-        const chefEntry = (data.chefAuctionResults?.[playerId] ?? null) as DocumentData | null;
+        const chefEntry = (data.chefAuctionResults?.[auctionResultKey] ?? null) as DocumentData | null;
         const chef =
           chefEntry && typeof chefEntry.totalPaid === "number"
             ? chefEntry.totalPaid
@@ -520,7 +525,7 @@ export function GamePage() {
       },
     );
     return unsubscribe;
-  }, [gameId, playerId, currentRound]);
+  }, [gameId, auctionResultKey, currentRound]);
 
   // Redirect into the dedicated phase page when backend says so. This is
   // phase-driven (not a manual navigation after submit).
@@ -652,19 +657,62 @@ export function GamePage() {
     [pendingDecision, config, wonAuctionCosts],
   );
 
+  // FE-I12: the backend can sail through `simulating → results_ready` in
+  // ~2 seconds when conditions are favourable, which means players never
+  // see the (nicely animated) Simulate screen. Hold the SimulatePhase view
+  // for a minimum wall-clock window after we first observe `simulating`,
+  // even if the Firestore phase has already moved on. Acts as a one-way
+  // latch — once we commit to showing the screen, we wait out the timer.
+  const SIMULATE_MIN_DISPLAY_MS = 20_000;
+  const [simHoldUntilMs, setSimHoldUntilMs] = useState<number | null>(null);
+  const [simHoldExpired, setSimHoldExpired] = useState(false);
+
+  useEffect(() => {
+    if (isSimulating && simHoldUntilMs === null) {
+      const until = Date.now() + SIMULATE_MIN_DISPLAY_MS;
+      setSimHoldUntilMs(until);
+      setSimHoldExpired(false);
+    }
+  }, [isSimulating, simHoldUntilMs]);
+
+  useEffect(() => {
+    if (simHoldUntilMs === null) return;
+    const remaining = simHoldUntilMs - Date.now();
+    if (remaining <= 0) {
+      setSimHoldExpired(true);
+      return;
+    }
+    const t = setTimeout(() => setSimHoldExpired(true), remaining);
+    return () => clearTimeout(t);
+  }, [simHoldUntilMs]);
+
+  // Reset the hold whenever we leave the simulate window so the next
+  // round can latch fresh.
+  useEffect(() => {
+    if (!isSimulating && simHoldExpired) {
+      setSimHoldUntilMs(null);
+      setSimHoldExpired(false);
+    }
+  }, [isSimulating, simHoldExpired]);
+
+  const showSimulate =
+    isSimulating || (simHoldUntilMs !== null && !simHoldExpired);
+
   if (!isDecisionPhase) {
     return (
       <PageShell className="game-page">
         <RoundHeader />
         <div className="game-page__content">
-          {isSimulating ? <SimulatePhase /> : <ResultsPhase />}
+          {showSimulate ? <SimulatePhase /> : <ResultsPhase />}
         </div>
       </PageShell>
     );
   }
 
-  // DEC-21: only the Operations role (or solo) may submit Decide.
-  const canSubmit = roleOwnsDecide(role);
+  // DEC-21 / FE-I15: only the Operations role (or solo) may submit
+  // Decide — unless the team has nobody on operations, in which case
+  // any teammate can submit.
+  const canSubmit = roleOwnsDecide(role, teamRoleAssignments);
   const ownerLabel = ownerOfDecide();
   const submitDisabled =
     submitting || decisionSubmitted || !gameId || !canSubmit;
@@ -748,7 +796,7 @@ export function GamePage() {
         }
         action={
           <>
-            {roleOwnsPricing(role) && (
+            {roleOwnsPricing(role, teamRoleAssignments) && (
               <button
                 className="btn btn--secondary game-page__submit"
                 type="button"
