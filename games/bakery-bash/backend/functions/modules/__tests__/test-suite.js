@@ -425,7 +425,7 @@ describe('chef-system.js', () => {
 
   it('generateChefPool produces valid chefs', () => {
     const pool = chefSys.generateChefPool(1, cfg);
-    ok(pool.length >= 6 && pool.length <= 8, `pool size ${pool.length}`);
+    eq(pool.length, cfg.chefPoolSize);
     for (const c of pool) {
       ok(typeof c.id === 'string');
       ok(['novel', 'intermediate', 'advanced'].includes(c.skillTier));
@@ -437,9 +437,8 @@ describe('chef-system.js', () => {
   it('generateChefPool varies by round', () => {
     const p1 = chefSys.generateChefPool(1, cfg);
     const p3 = chefSys.generateChefPool(3, cfg);
-    // Can't guarantee different content but sizes can differ
-    ok(p1.length >= 6);
-    ok(p3.length >= 6);
+    eq(p1.length, cfg.chefPoolSize);
+    eq(p3.length, cfg.chefPoolSize);
   });
 });
 
@@ -975,11 +974,11 @@ describe('phases.js', () => {
 
   it('getNextPhase — full progression', () => {
     deepEq(phases.getNextPhase('lobby', 0, 5), { phase: 'round_1_email', round: 1 });
-    deepEq(phases.getNextPhase('round_1_email', 1, 5), { phase: 'round_1_decide', round: 1 });
-    deepEq(phases.getNextPhase('round_1_decide', 1, 5), { phase: 'round_1_bid_ad', round: 1 });
+    deepEq(phases.getNextPhase('round_1_email', 1, 5), { phase: 'round_1_bid_ad', round: 1 });
     deepEq(phases.getNextPhase('round_1_bid_ad', 1, 5), { phase: 'round_1_bid_chef', round: 1 });
     deepEq(phases.getNextPhase('round_1_bid_chef', 1, 5), { phase: 'round_1_roster', round: 1 });
-    deepEq(phases.getNextPhase('round_1_roster', 1, 5), { phase: 'simulating', round: 1 });
+    deepEq(phases.getNextPhase('round_1_roster', 1, 5), { phase: 'round_1_decide', round: 1 });
+    deepEq(phases.getNextPhase('round_1_decide', 1, 5), { phase: 'simulating', round: 1 });
     deepEq(phases.getNextPhase('simulating', 1, 5), { phase: 'results_ready', round: 1 });
     deepEq(phases.getNextPhase('results_ready', 1, 5), { phase: 'round_2_email', round: 2 });
   });
@@ -990,7 +989,9 @@ describe('phases.js', () => {
 
   it('isValidTransition', () => {
     eq(phases.isValidTransition('lobby', 'round_1_email'), true);
-    eq(phases.isValidTransition('round_1_email', 'round_1_decide'), true);
+    eq(phases.isValidTransition('round_1_email', 'round_1_bid_ad'), true);
+    eq(phases.isValidTransition('round_1_roster', 'round_1_decide'), true);
+    eq(phases.isValidTransition('round_1_decide', 'simulating'), true);
     eq(phases.isValidTransition('simulating', 'results_ready'), true);
     eq(phases.isValidTransition('lobby', 'round_2_email'), false);
   });
