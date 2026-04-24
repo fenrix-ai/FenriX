@@ -88,3 +88,48 @@ describe('useBakeryScene — cat', () => {
     expect(['walking', 'sitting', 'grooming']).toContain(result.current.cat.state)
   })
 })
+
+describe('useBakeryScene — customers (simulate)', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  const baseProps = {
+    mode: 'decide' as const,
+    teamName: 'X',
+    staffCounts: { bakery: 1, deli: 1, barista: 1 },
+    customerCount: 0,
+  }
+
+  const simProps = { ...baseProps, mode: 'simulate' as const, customerCount: 20 }
+
+  it('spawns no customers on Decide mode regardless of customerCount', () => {
+    const { result } = renderHook(() => useBakeryScene({ ...baseProps, customerCount: 20 }))
+    act(() => vi.advanceTimersByTime(10_000))
+    expect(result.current.customers.length).toBe(0)
+  })
+
+  it('spawns at least one customer during Simulate within 10s', () => {
+    const { result, rerender } = renderHook(() => useBakeryScene(simProps))
+    act(() => vi.advanceTimersByTime(10_000))
+    rerender()
+    expect(result.current.customers.length).toBeGreaterThan(0)
+  })
+
+  it('respects a soft cap of 4 customers on-screen', () => {
+    const { result, rerender } = renderHook(() =>
+      useBakeryScene({ ...simProps, customerCount: 999 }),
+    )
+    act(() => vi.advanceTimersByTime(30_000))
+    rerender()
+    expect(result.current.customers.length).toBeLessThanOrEqual(4)
+  })
+
+  it('customer state transitions walking-in → transacting → walking-out', () => {
+    const { result, rerender } = renderHook(() => useBakeryScene(simProps))
+    act(() => vi.advanceTimersByTime(15_000))
+    rerender()
+    const customer = result.current.customers[0]
+    expect(customer).toBeDefined()
+    expect(['walking-in', 'transacting', 'walking-out']).toContain(customer.state)
+  })
+})

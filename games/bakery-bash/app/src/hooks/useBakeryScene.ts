@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { SCENE, type StationKey } from '../components/bakery-scene/scene-geometry'
 import type { BakerySceneMode } from '../components/bakery-scene/PixelBakeryScene'
 import { CAT_FRAME } from '../components/bakery-scene/sprites/cat'
+import { customerTemplates, CUSTOMER_FRAME } from '../components/bakery-scene/sprites/customer-templates'
 
 // ─── Chef ───────────────────────────────────────────────────────────────────
 
@@ -153,6 +154,85 @@ function stepCat(cat: CatInternal, now: number, dtMs: number): CatInternal {
   return cat
 }
 
+// ─── Customer types + constants ──────────────────────────────────────────────
+
+export type CustomerState = 'walking-in' | 'transacting' | 'walking-out'
+
+export interface Customer {
+  id: string
+  variantIndex: number
+  x: number
+  y: number
+  direction: 'left' | 'right'
+  state: CustomerState
+  frame: number
+  targetStation: StationKey
+}
+
+interface CustomerInternal extends Customer {
+  transactionStartMs: number | null
+}
+
+const CUSTOMER_SOFT_CAP = 4
+const CUSTOMER_SPEED_PX_PER_MS = 0.06
+const TRANSACTION_MS = 800
+const CUSTOMER_SPAWN_Y = 246
+const OFF_SCREEN_RIGHT = SCENE.width + 24
+
+let customerIdCounter = 0
+
+function pickStation(staffCounts: Record<StationKey, number>): StationKey {
+  const stations: StationKey[] = ['bakery', 'deli', 'barista']
+  const weighted = stations.flatMap((s) => Array(Math.max(1, staffCounts[s] ?? 1)).fill(s))
+  return weighted[Math.floor(Math.random() * weighted.length)] as StationKey
+}
+
+function spawnCustomer(staffCounts: Record<StationKey, number>): CustomerInternal {
+  const variantIndex = Math.floor(Math.random() * customerTemplates.length)
+  const targetStation = pickStation(staffCounts)
+  return {
+    id: `customer-${customerIdCounter++}`,
+    variantIndex,
+    x: OFF_SCREEN_RIGHT,
+    y: CUSTOMER_SPAWN_Y,
+    direction: 'left',
+    state: 'walking-in',
+    frame: CUSTOMER_FRAME.walkLeft1,
+    targetStation,
+    transactionStartMs: null,
+  }
+}
+
+function stepCustomer(c: CustomerInternal, now: number, dtMs: number): CustomerInternal | null {
+  if (c.state === 'walking-in') {
+    const targetX = SCENE.stations[c.targetStation]
+    const dx = targetX - c.x
+    const step = Math.sign(dx) * CUSTOMER_SPEED_PX_PER_MS * dtMs
+    const nextX = Math.abs(dx) <= Math.abs(step) ? targetX : c.x + step
+    const arrived = nextX === targetX
+    const walkFrame = Math.floor(now / 200) % 2 === 0 ? CUSTOMER_FRAME.walkLeft1 : CUSTOMER_FRAME.walkLeft2
+    return {
+      ...c,
+      x: nextX,
+      frame: arrived ? CUSTOMER_FRAME.idle : walkFrame,
+      state: arrived ? 'transacting' : 'walking-in',
+      transactionStartMs: arrived ? now : null,
+    }
+  }
+  if (c.state === 'transacting') {
+    if (c.transactionStartMs !== null && now - c.transactionStartMs >= TRANSACTION_MS) {
+      return { ...c, state: 'walking-out', direction: 'right', frame: CUSTOMER_FRAME.walkRight1 }
+    }
+    return c
+  }
+  // walking-out
+  const step = CUSTOMER_SPEED_PX_PER_MS * dtMs
+  const nextX = c.x + step
+  if (nextX > OFF_SCREEN_RIGHT) return null
+  const walkFrame = Math.floor(now / 200) % 2 === 0 ? CUSTOMER_FRAME.walkRight1 : CUSTOMER_FRAME.walkRight2
+  return { ...c, x: nextX, frame: walkFrame }
+}
+
 // ─── Hook props / result ─────────────────────────────────────────────────────
 
 export interface UseBakerySceneProps {
@@ -165,6 +245,7 @@ export interface UseBakerySceneProps {
 export interface UseBakerySceneResult {
   chefs: Chef[]
   cat: Cat
+  customers: Customer[]
 }
 
 const CHEF_BOB_MS = 400 // full cycle (frames 0→1→0)
@@ -196,7 +277,7 @@ function computeChefs(staffCounts: Record<StationKey, number>): Chef[] {
 // ─── Hook ────────────────────────────────────────────────────────────────────
 
 export function useBakeryScene(props: UseBakerySceneProps): UseBakerySceneResult {
-  const { staffCounts } = props
+  const { mode, staffCounts, customerCount } = props
   const [bobFrame, setBobFrame] = useState(0)
 
   // Lazy-initialize public cat state using Date.now() so we don't call
@@ -210,12 +291,25 @@ export function useBakeryScene(props: UseBakerySceneProps): UseBakerySceneResult
     return pub
   })
 
+  // Public customer list — updated from the rAF loop (same pattern as cat/bobFrame)
+  const [customers, setCustomers] = useState<Customer[]>([])
+
+  // Stable base spawn interval computed at render time (no Math.random here)
+  const spawnIntervalBaseMs =
+    mode === 'simulate' && customerCount > 0
+      ? Math.max(1500, 120_000 / customerCount)
+      : Infinity
+
   const rafRef = useRef<number | null>(null)
   const startRef = useRef<number | null>(null)
   // lastRef tracks the previous rAF timestamp for dt computation
   const lastRef = useRef<number | null>(null)
   // catRef holds the full internal cat (including targetX / stateUntilMs)
   const catRef = useRef<CatInternal | null>(null)
+  // customersRef is the source of truth for internal customer state
+  const customersRef = useRef<CustomerInternal[]>([])
+  // lastSpawnRef is lazy-initialized on first rAF tick (same pattern as catRef)
+  const lastSpawnRef = useRef<number | null>(null)
 
   useEffect(() => {
     const loop = (now: number) => {
@@ -223,6 +317,7 @@ export function useBakeryScene(props: UseBakerySceneProps): UseBakerySceneResult
       if (startRef.current === null) startRef.current = now
       if (lastRef.current === null) lastRef.current = now
       if (catRef.current === null) catRef.current = initialCat(now)
+      if (lastSpawnRef.current === null) lastSpawnRef.current = now
 
       const dt = now - lastRef.current
       lastRef.current = now
@@ -230,6 +325,34 @@ export function useBakeryScene(props: UseBakerySceneProps): UseBakerySceneResult
       // Advance cat state machine
       if (dt >= 0) {
         catRef.current = stepCat(catRef.current, now, dt)
+      }
+
+      // Advance customer state machines
+      if (mode === 'simulate') {
+        // Step existing customers, filter out ones that walked off-screen
+        const stepped: CustomerInternal[] = []
+        for (const c of customersRef.current) {
+          const next = stepCustomer(c, now, dt)
+          if (next !== null) stepped.push(next)
+        }
+        customersRef.current = stepped
+
+        // Spawn a new customer if under the soft cap and interval has elapsed
+        if (
+          customersRef.current.length < CUSTOMER_SOFT_CAP &&
+          spawnIntervalBaseMs !== Infinity
+        ) {
+          const jitter = Math.random() * 800 - 400
+          if (now - lastSpawnRef.current >= spawnIntervalBaseMs + jitter) {
+            customersRef.current = [...customersRef.current, spawnCustomer(staffCounts)]
+            lastSpawnRef.current = now
+          }
+        }
+      } else {
+        // Not simulate — clear any lingering customers
+        if (customersRef.current.length > 0) {
+          customersRef.current = []
+        }
       }
 
       // Derive public Cat (strip internal fields)
@@ -244,15 +367,23 @@ export function useBakeryScene(props: UseBakerySceneProps): UseBakerySceneResult
       setCat(publicCat)
       setBobFrame(nextBobFrame)
 
+      // Project customers: strip internal transactionStartMs and push to state
+      setCustomers(
+        customersRef.current.map(({ transactionStartMs: _x, ...rest }) => {
+          void _x
+          return rest
+        }),
+      )
+
       rafRef.current = requestAnimationFrame(loop)
     }
     rafRef.current = requestAnimationFrame(loop)
     return () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
     }
-  }, [])
+  }, [mode, staffCounts, customerCount, spawnIntervalBaseMs])
 
   const chefs = computeChefs(staffCounts).map((c) => ({ ...c, frame: bobFrame }))
 
-  return { chefs, cat }
+  return { chefs, cat, customers }
 }
