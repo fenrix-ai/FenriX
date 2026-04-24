@@ -9,6 +9,7 @@ import {
 import { httpsCallable } from "firebase/functions";
 import { useGame, useGameDispatch } from "../contexts/GameContext";
 import { PixelBakeryScene } from "../components/bakery-scene/PixelBakeryScene";
+import { SceneErrorBoundary } from "../components/bakery-scene/SceneErrorBoundary";
 import "../styles/pixel-scene.css";
 import { RoundHeader } from "../components/game/RoundHeader";
 import { BakeryView } from "../components/game/BakeryView";
@@ -692,16 +693,18 @@ export function GamePage() {
           Map game StaffCounts (bakerySousChefs / deliSousChefs /
           baristaSousChefs) → scene StationKey shape { bakery, deli, barista }. */}
       <div className="decide-phase__scene-panel">
-        <PixelBakeryScene
-          mode="decide"
-          teamName={teamName ?? ""}
-          staffCounts={{
-            bakery: pendingDecision.staffCounts.bakerySousChefs,
-            deli: pendingDecision.staffCounts.deliSousChefs,
-            barista: pendingDecision.staffCounts.baristaSousChefs,
-          }}
-          customerCount={0}
-        />
+        <SceneErrorBoundary teamName={teamName ?? ""}>
+          <PixelBakeryScene
+            mode="decide"
+            teamName={teamName ?? ""}
+            staffCounts={{
+              bakery: pendingDecision.staffCounts.bakerySousChefs,
+              deli: pendingDecision.staffCounts.deliSousChefs,
+              barista: pendingDecision.staffCounts.baristaSousChefs,
+            }}
+            customerCount={0}
+          />
+        </SceneErrorBoundary>
       </div>
 
       {/* FE-9 — lock the menu + Hire tab once the player has submitted.

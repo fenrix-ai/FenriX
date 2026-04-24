@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useGame } from "../../contexts/GameContext";
 import { PixelBakeryScene } from '../../components/bakery-scene/PixelBakeryScene';
+import { SceneErrorBoundary } from '../../components/bakery-scene/SceneErrorBoundary';
 import '../../styles/pixel-scene.css';
 
 const TOTAL_DAYS = 30;
@@ -127,16 +128,18 @@ export function SimulatePhase() {
 
         {/* Centre: Bakery visual */}
         <div className="simulate-phase__bakery-visual">
-          <PixelBakeryScene
-            mode="simulate"
-            teamName={teamName ?? ""}
-            staffCounts={{
-              bakery: pendingDecision.staffCounts.bakerySousChefs,
-              deli: pendingDecision.staffCounts.deliSousChefs,
-              barista: pendingDecision.staffCounts.baristaSousChefs,
-            }}
-            customerCount={latestRound?.customerCount ?? 0}
-          />
+          <SceneErrorBoundary teamName={teamName ?? ""}>
+            <PixelBakeryScene
+              mode="simulate"
+              teamName={teamName ?? ""}
+              staffCounts={{
+                bakery: pendingDecision.staffCounts.bakerySousChefs,
+                deli: pendingDecision.staffCounts.deliSousChefs,
+                barista: pendingDecision.staffCounts.baristaSousChefs,
+              }}
+              customerCount={latestRound?.customerCount ?? 0}
+            />
+          </SceneErrorBoundary>
         </div>
 
         {/* Right: Maintenance bars */}
