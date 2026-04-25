@@ -227,18 +227,27 @@ function calculateRoundCosts(decision, auctionResults, cfg = config) {
   const isFlat = typeof rawUnitCost === 'number';
   let stockCost = 0;
   for (const product of Object.keys(stocked)) {
-    const qty = _num(stocked[product]);
+    // Clamp negative or non-finite quantities to 0. Production validators
+    // already reject those, but defense-in-depth here keeps stockCost
+    // non-negative even if a malformed payload slips through (fuzz/edge
+    // case 7.5: NaN/undefined/negative quantities used to produce negative
+    // totalSpent which then propagated into budgetAfter and confused
+    // downstream consumers).
+    const qty = Math.max(0, _num(stocked[product]));
     const cost = isFlat ? rawUnitCost : _num((rawUnitCost && rawUnitCost[product]));
-    stockCost += qty * cost;
+    stockCost += qty * Math.max(0, cost);
   }
 
+  // Same defense for sousChefCount.
+  const rawSous = (decision && decision.sousChefCount) || 0;
+  const sousCount = Math.max(0, _num(rawSous));
   const sousChefHireCost = _sousChefHireCost(
-    (decision && decision.sousChefCount) || 0,
+    sousCount,
     cfg && cfg.sousChefBaseCost
   );
 
-  const adBidCost = (auctionResults && auctionResults.adAuctionWinningBid) || 0;
-  const chefBidCost = (auctionResults && auctionResults.chefAuctionWinningBid) || 0;
+  const adBidCost = Math.max(0, _num((auctionResults && auctionResults.adAuctionWinningBid) || 0));
+  const chefBidCost = Math.max(0, _num((auctionResults && auctionResults.chefAuctionWinningBid) || 0));
 
   const totalSpent = stockCost + sousChefHireCost + adBidCost + chefBidCost;
 
