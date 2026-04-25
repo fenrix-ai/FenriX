@@ -24,7 +24,7 @@ import type {
 export const DEFAULT_HIRE_BASE_COST = 50;
 
 /** Default per-unit production cost when `config.unitCostPerProduct` absent. */
-const DEFAULT_UNIT_COST = 0.5;
+const DEFAULT_UNIT_COST = 1;
 
 /**
  * Multipliers applied to `base` for the 1st, 2nd, 3rd, and 4th hire of a
