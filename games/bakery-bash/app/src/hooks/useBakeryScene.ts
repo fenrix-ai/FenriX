@@ -156,7 +156,26 @@ function stepCat(cat: CatInternal, now: number, dtMs: number): CatInternal {
 
 // ─── Customer types + constants ──────────────────────────────────────────────
 
-export type CustomerState = 'walking-in' | 'transacting' | 'walking-out'
+/**
+ * V9 (Apr 26): split the old single horizontal "walking-in" into a 5-stage
+ * approach so customers actually queue up to the counter:
+ *   1. walking-in:   spawn off-screen-right at floor Y, walk left to station X.
+ *   2. walking-up:   stand at station X, walk *up* (Y decreases) to counter Y.
+ *   3. transacting:  pause briefly at the counter, sale fires.
+ *   4. walking-down: walk back down to floor Y at the same station X.
+ *   5. walking-out:  walk right at floor Y until off-screen.
+ *
+ * The old behaviour spawned customers already at counter Y (198), so they
+ * appeared to "sidestep along the counter" from the right edge, never
+ * approaching it from below. Players asked for the more natural "walk in,
+ * step up to the counter, leave" loop.
+ */
+export type CustomerState =
+  | 'walking-in'
+  | 'walking-up'
+  | 'transacting'
+  | 'walking-down'
+  | 'walking-out'
 
 export interface Customer {
   id: string
@@ -174,12 +193,19 @@ interface CustomerInternal extends Customer {
 }
 
 const CUSTOMER_SOFT_CAP = 4
-const CUSTOMER_SPEED_PX_PER_MS = 0.06
+// V9 (Apr 26): doubled from 0.06 / 0.05 to 0.12 / 0.10 — playtesters
+// reported the bakery felt sluggish; a brisker walk reads as a busy
+// shop without making the approach unreadable.
+const CUSTOMER_SPEED_PX_PER_MS = 0.12
+const CUSTOMER_VERTICAL_SPEED_PX_PER_MS = 0.1
 const TRANSACTION_MS = 800
-// Walking Y chosen so the customer's head is roughly at the counter-bottom
-// line (y=180). Customer sprites are ~24 tall, so Y=198 puts heads at ~198
-// and feet at ~222 — right up against the counter front.
-const CUSTOMER_SPAWN_Y = 198
+/** Y where customers walk along the floor (sprite top — feet ≈ Y+24). */
+const CUSTOMER_FLOOR_Y = 230
+/** Y where customers stand right against the counter (head at counter line).
+ * V9 (Apr 26): nudged up from 198 → 184 so the customer's head reads as
+ * right at the counter line (counter bottom is y=180), instead of
+ * floating below it. */
+const CUSTOMER_COUNTER_Y = 184
 const OFF_SCREEN_RIGHT = SCENE.width + 24
 
 let customerIdCounter = 0
@@ -197,7 +223,7 @@ function spawnCustomer(staffCounts: Record<StationKey, number>): CustomerInterna
     id: `customer-${customerIdCounter++}`,
     variantIndex,
     x: OFF_SCREEN_RIGHT,
-    y: CUSTOMER_SPAWN_Y,
+    y: CUSTOMER_FLOOR_Y,
     direction: 'left',
     state: 'walking-in',
     frame: CUSTOMER_FRAME.walkLeft1,
@@ -206,44 +232,102 @@ function spawnCustomer(staffCounts: Record<StationKey, number>): CustomerInterna
   }
 }
 
+/** Walk-cycle frame for the given direction at this clock time. */
+function pickWalkFrame(direction: 'left' | 'right', now: number): number {
+  const phase = Math.floor(now / 200) % 2 === 0
+  if (direction === 'left') {
+    return phase ? CUSTOMER_FRAME.walkLeft1 : CUSTOMER_FRAME.walkLeft2
+  }
+  return phase ? CUSTOMER_FRAME.walkRight1 : CUSTOMER_FRAME.walkRight2
+}
+
 function stepCustomer(
   c: CustomerInternal,
   now: number,
   dtMs: number,
 ): { next: CustomerInternal | null; triggeredSale: boolean } {
+  // Stage 1 — walk left along the floor toward the station's X column.
   if (c.state === 'walking-in') {
     const targetX = SCENE.stations[c.targetStation]
     const dx = targetX - c.x
     const step = Math.sign(dx) * CUSTOMER_SPEED_PX_PER_MS * dtMs
     const nextX = Math.abs(dx) <= Math.abs(step) ? targetX : c.x + step
     const arrived = nextX === targetX
-    const walkFrame = Math.floor(now / 200) % 2 === 0 ? CUSTOMER_FRAME.walkLeft1 : CUSTOMER_FRAME.walkLeft2
     return {
       next: {
         ...c,
         x: nextX,
-        frame: arrived ? CUSTOMER_FRAME.idle : walkFrame,
-        state: arrived ? 'transacting' : 'walking-in',
+        // On arrival, switch to walking-up at the same X. The stair-step from
+        // floor → counter happens in the next state.
+        frame: arrived ? CUSTOMER_FRAME.idle : pickWalkFrame('left', now),
+        state: arrived ? 'walking-up' : 'walking-in',
+      },
+      triggeredSale: false,
+    }
+  }
+
+  // Stage 2 — walk *up* to the counter at the same X column.
+  if (c.state === 'walking-up') {
+    const dy = CUSTOMER_COUNTER_Y - c.y // negative (we're moving up)
+    const step = -CUSTOMER_VERTICAL_SPEED_PX_PER_MS * dtMs // always negative
+    const nextY = Math.abs(dy) <= Math.abs(step) ? CUSTOMER_COUNTER_Y : c.y + step
+    const arrived = nextY === CUSTOMER_COUNTER_Y
+    return {
+      next: {
+        ...c,
+        y: nextY,
+        // Sprite has no dedicated up-walk frames; alternate the left walk
+        // poses so the legs still shuffle as the customer climbs to the
+        // counter. Idle on arrival so they "settle in" at the counter.
+        frame: arrived ? CUSTOMER_FRAME.idle : pickWalkFrame('left', now),
+        state: arrived ? 'transacting' : 'walking-up',
         transactionStartMs: arrived ? now : null,
       },
       triggeredSale: false,
     }
   }
+
+  // Stage 3 — pause at the counter while the sale clears.
   if (c.state === 'transacting') {
     if (c.transactionStartMs !== null && now - c.transactionStartMs >= TRANSACTION_MS) {
       return {
-        next: { ...c, state: 'walking-out', direction: 'right', frame: CUSTOMER_FRAME.walkRight1 },
+        next: {
+          ...c,
+          state: 'walking-down',
+          direction: 'right',
+          frame: CUSTOMER_FRAME.idle,
+        },
         triggeredSale: true,
       }
     }
     return { next: c, triggeredSale: false }
   }
-  // walking-out
+
+  // Stage 4 — walk back *down* to the floor before exiting.
+  if (c.state === 'walking-down') {
+    const dy = CUSTOMER_FLOOR_Y - c.y // positive (we're moving down)
+    const step = CUSTOMER_VERTICAL_SPEED_PX_PER_MS * dtMs
+    const nextY = Math.abs(dy) <= Math.abs(step) ? CUSTOMER_FLOOR_Y : c.y + step
+    const arrived = nextY === CUSTOMER_FLOOR_Y
+    return {
+      next: {
+        ...c,
+        y: nextY,
+        frame: arrived ? CUSTOMER_FRAME.idle : pickWalkFrame('right', now),
+        state: arrived ? 'walking-out' : 'walking-down',
+      },
+      triggeredSale: false,
+    }
+  }
+
+  // Stage 5 — walk right along the floor and off-screen.
   const step = CUSTOMER_SPEED_PX_PER_MS * dtMs
   const nextX = c.x + step
   if (nextX > OFF_SCREEN_RIGHT) return { next: null, triggeredSale: false }
-  const walkFrame = Math.floor(now / 200) % 2 === 0 ? CUSTOMER_FRAME.walkRight1 : CUSTOMER_FRAME.walkRight2
-  return { next: { ...c, x: nextX, frame: walkFrame }, triggeredSale: false }
+  return {
+    next: { ...c, x: nextX, frame: pickWalkFrame('right', now) },
+    triggeredSale: false,
+  }
 }
 
 // ─── Dollar bill types + constants ───────────────────────────────────────────

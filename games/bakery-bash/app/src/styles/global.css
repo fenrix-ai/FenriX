@@ -499,6 +499,12 @@ h3 { font-size: 0.7rem; }
   line-height: 1.8;
 }
 
+.lobby-page__actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 1rem;
+}
+
 /* ─── Round Header ───────────────────────────────────────── */
 
 .round-header {
@@ -527,11 +533,6 @@ h3 { font-size: 0.7rem; }
 
 .round-header__timer--urgent {
   color: var(--berry);
-  animation: blink 0.6s step-end infinite;
-}
-
-@keyframes blink {
-  50% { opacity: 0; }
 }
 
 
@@ -539,10 +540,12 @@ h3 { font-size: 0.7rem; }
 
 .page-shell.game-page--wide {
   max-width: none;
-  /* Lock the decide-phase layout to viewport height so the dashboard can
-     flex:1 / min-height:0 and the Submit button is always on screen. */
-  height: 100dvh;
-  min-height: 0;
+  /* V8 (Apr 26): bakery preview now sits ABOVE the choices at 1.5×
+     scale, which doesn't leave enough room to viewport-lock the layout
+     anymore. Allow the full page to scroll instead so all controls stay
+     reachable on a desktop monitor. */
+  min-height: 100dvh;
+  height: auto;
   padding: 1rem 1.25rem;
 }
 
@@ -554,13 +557,6 @@ h3 { font-size: 0.7rem; }
    * the grid row stretches the BakeryView to match the sidebar height,
    * leaving a tall empty whitespace below the last station. */
   align-items: start;
-  /* Absorb the remaining vertical space inside .decide-phase__layout
-   * (which itself flexes to fill .page-shell.game-page--wide) and
-   * scroll internally so the round-cost panel + Submit button below
-   * the layout wrapper stay pinned to the viewport. */
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
 }
 
 .game-page__submit {
@@ -1443,7 +1439,6 @@ h3 { font-size: 0.7rem; }
 
 .auction-page__timer--urgent {
   color: var(--berry);
-  animation: blink 0.6s step-end infinite;
 }
 
 .auction-page__hint {
@@ -2919,7 +2914,6 @@ h3 { font-size: 0.7rem; }
 
 .submission-lock--critical .submission-lock__timer-value {
   color: var(--berry);
-  animation: blink 0.6s step-end infinite;
 }
 
 .submission-lock__counts-value {
@@ -3721,7 +3715,10 @@ h3 { font-size: 0.7rem; }
 
 /* ── FE-N09: Product tile unit cost & bakery total committed ─────────── */
 .product-tile__unit-cost { font-size: 0.75rem; color: #888; margin-top: 0.2rem; }
-.bakery-view__total-committed { padding: 0.75rem 1rem; background: var(--cream, #fff7e6); border-top: 2px solid var(--honey, #f59e0b); font-size: 0.9rem; }
+.bakery-view__total-committed { padding: 0.75rem 1rem; background: var(--cream, #fff7e6); border-top: 2px solid var(--honey, #f59e0b); font-size: 0.9rem; display: flex; flex-direction: column; gap: 0.2rem; }
+.bakery-view__total-committed-row { display: flex; justify-content: space-between; align-items: baseline; }
+.bakery-view__total-committed-row--total { font-size: 1.05rem; padding-bottom: 0.25rem; border-bottom: 1px dashed var(--dough, #e8d4a8); margin-bottom: 0.25rem; }
+.bakery-view__total-committed-row:not(.bakery-view__total-committed-row--total) { color: var(--dark-roast, #6b4226); font-size: 0.85rem; padding-left: 0.25rem; }
 
 /* ── FE-N09: Round header timer expired message ──────────────────────── */
 .round-header__timer-expired { font-size: 0.85rem; color: var(--berry, #ef4444); font-weight: bold; }
@@ -3909,19 +3906,21 @@ h3 { font-size: 0.7rem; }
   margin-bottom: calc(270px * 0.2); /* compensate for 1.2x visual height */
 }
 
-/* V5 (Apr 25): compact bakery preview restored at the bottom of the decide
-   screen. Smaller scale than the original side-by-side panel so it doesn't
-   compete with the decision form for vertical space. */
+/* V8 (Apr 25): bakery preview hoisted ABOVE the choices on desktop. The
+   previous 0.65× version below the round-cost panel read as decorative;
+   desktop players asked for their kitchen front-and-center at a readable
+   scale, so we bump to 1.5× and reserve the matching height. */
 .decide-phase__bakery-preview {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.75rem;
-  margin: 1rem 0 0.5rem;
-  padding: 1rem 1rem 0.5rem;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem 0.5rem;
   background: var(--cream, #f7eedd);
   border: 2px solid var(--caramel, #a0522d);
   border-radius: 12px;
+  flex-shrink: 0;
 }
 
 .decide-phase__bakery-preview-header {
@@ -3941,32 +3940,24 @@ h3 { font-size: 0.7rem; }
 }
 
 .decide-phase__bakery-preview-title {
-  margin: 0.4rem 0 0.15rem;
+  margin: 0.25rem 0 0;
   font-size: 0.95rem;
   text-transform: uppercase;
 }
 
-.decide-phase__bakery-preview-hint {
-  margin: 0;
-  font-family: var(--font-body);
-  font-size: 0.85rem;
-  color: var(--dark-roast);
-}
-
 .decide-phase__bakery-preview-stage {
-  /* The PixelBakeryScene's natural height at 1× is roughly 270px; we
-     scale it down so the panel stays under ~200px tall. The wrapper
-     reserves the scaled height so the layout doesn't jump. */
+  /* Native scene is 480×270; at 1.5× scale we reserve 720×405 so the
+     wrapper takes the scaled visual size without clipping. */
   display: flex;
   align-items: flex-start;
   justify-content: center;
   width: 100%;
-  height: calc(270px * 0.65);
+  height: calc(270px * 1.5);
   overflow: hidden;
 }
 
 .decide-phase__bakery-preview-stage .pixel-bakery-scene {
-  transform: scale(0.65);
+  transform: scale(1.5);
   transform-origin: top center;
 }
 
@@ -4506,25 +4497,11 @@ h3 { font-size: 0.7rem; }
   box-shadow: 0 0 0 2px var(--dark-roast);
 }
 
-.game-progress__croissant {
-  font-size: 1rem;
-  line-height: 1;
-  filter: grayscale(1);
-  opacity: 0.5;
-}
-
-.game-progress__segment--complete .game-progress__croissant,
-.game-progress__segment--current  .game-progress__croissant {
-  filter: none;
-  opacity: 1;
-}
-
 .game-progress__label {
   font-family: var(--font-pixel);
-  font-size: 0.4rem;
+  font-size: 0.55rem;
   color: var(--dark-roast);
   letter-spacing: 0.05em;
-  margin-top: 0.1rem;
 }
 
 /* ─── Conclusion / Game Over page — hero + confetti + podium ─── */

@@ -122,13 +122,54 @@ describe('useBakeryScene — customers (simulate)', () => {
     expect(result.current.customers.length).toBeLessThanOrEqual(4)
   })
 
-  it('customer state transitions walking-in → transacting → walking-out', () => {
+  it('customer state cycles through approach → transact → exit', () => {
     const { result, rerender } = renderHook(() => useBakeryScene(simProps))
     act(() => vi.advanceTimersByTime(15_000))
     rerender()
     const customer = result.current.customers[0]
     expect(customer).toBeDefined()
-    expect(['walking-in', 'transacting', 'walking-out']).toContain(customer.state)
+    // V9 added 'walking-up' (floor → counter) and 'walking-down'
+    // (counter → floor) between the original states. After 15s of sim
+    // a customer should be in *some* stage of the approach cycle.
+    expect([
+      'walking-in',
+      'walking-up',
+      'transacting',
+      'walking-down',
+      'walking-out',
+    ]).toContain(customer.state)
+  })
+
+  /**
+   * V9 — verify the customer actually walks UP to the counter after the
+   * horizontal walk. Previously they'd stay at counter Y the whole time
+   * (sidesteppping along the counter from off-screen-right). Now they
+   * spawn at the floor, walk to the station X, and only then climb up.
+   */
+  it('customer climbs to counter Y after reaching the station X', () => {
+    // Sample customer positions every second over a long window. We
+    // expect to see at least one Y value that is *greater* than 200
+    // (floor walk before climbing) AND at least one Y at or near 198
+    // (counter line, where the transaction happens). Two distinct Y
+    // samples prove the walk-up actually animates.
+    const { result, rerender } = renderHook(() => useBakeryScene(simProps))
+    const ySamples = new Set<number>()
+    for (let t = 0; t < 30_000; t += 250) {
+      act(() => vi.advanceTimersByTime(250))
+      rerender()
+      for (const c of result.current.customers) {
+        ySamples.add(Math.round(c.y))
+      }
+    }
+    const sortedY = [...ySamples].sort((a, b) => a - b)
+    // At least one customer should have been seen high (counter Y ≈ 198)
+    // and at least one low (floor Y ≈ 230). If only one Y appears the
+    // walk-up never engaged.
+    const sawCounter = sortedY.some((y) => y <= 200)
+    const sawFloor = sortedY.some((y) => y >= 220)
+    expect({ sortedY, sawCounter, sawFloor }).toEqual(
+      expect.objectContaining({ sawCounter: true, sawFloor: true }),
+    )
   })
 })
 
@@ -144,14 +185,28 @@ describe('useBakeryScene — dollar bills', () => {
   }
 
   it('dollar bills spawn when a customer completes transactionMs', () => {
+    // V9: walking-up + walking-down add ~1.3s to the cycle. Bump the
+    // customer count so the spawn interval drops to the 1500ms floor
+    // and we sample plenty of cycles inside the 60s window — sales
+    // fire on transition into walking-down, and dollars expire
+    // 4_000ms later, so we need to catch the brief window where
+    // either is observable.
     const { result, rerender } = renderHook(() =>
-      useBakeryScene({ ...baseProps, mode: 'simulate', customerCount: 5 }),
+      useBakeryScene({ ...baseProps, mode: 'simulate', customerCount: 80 }),
     )
-    act(() => vi.advanceTimersByTime(30_000))
-    rerender()
-    const anyWalkingOut = result.current.customers.some((c) => c.state === 'walking-out')
-    const anyDollars = result.current.dollars.length > 0
-    expect(anyWalkingOut || anyDollars).toBe(true)
+    let everSawSaleEvidence = false
+    for (let t = 0; t < 60_000; t += 500) {
+      act(() => vi.advanceTimersByTime(500))
+      rerender()
+      const post = result.current.customers.some(
+        (c) => c.state === 'walking-down' || c.state === 'walking-out',
+      )
+      if (post || result.current.dollars.length > 0) {
+        everSawSaleEvidence = true
+        break
+      }
+    }
+    expect(everSawSaleEvidence).toBe(true)
   })
 
   it('each dollar has x, y, createdMs within sane scene bounds', () => {

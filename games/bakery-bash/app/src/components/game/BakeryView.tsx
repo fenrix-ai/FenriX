@@ -8,6 +8,7 @@ import {
 
 import { PRICE_ZONES } from "../../lib/pricing";
 import { PriceInput } from "./PriceInput";
+import { totalStaffCost } from "../../lib/cost";
 
 const UNIT_COST = 0.5;
 
@@ -243,6 +244,7 @@ export function BakeryView({ readOnly = false }: BakeryViewProps) {
     pendingDecision,
     role,
     teamRoleAssignments,
+    config,
   } = useGame();
   const dispatch = useGameDispatch();
   // FE-I15: let any teammate edit prices when no one on the team
@@ -285,9 +287,11 @@ export function BakeryView({ readOnly = false }: BakeryViewProps) {
   };
 
   const allProducts = STATIONS.flatMap((s) => s.products);
-  const totalCommitted = allProducts
+  const bakeryCost = allProducts
     .filter((item) => pendingDecision.menu[item])
     .reduce((sum, item) => sum + (pendingDecision.quantities[item] ?? 0) * UNIT_COST, 0);
+  const staffCost = totalStaffCost(pendingDecision.staffCounts, config);
+  const totalCommitted = bakeryCost + staffCost;
 
   return (
     <div className={`bakery-view${readOnly ? " bakery-view--readonly" : ""}`}>
@@ -354,7 +358,18 @@ export function BakeryView({ readOnly = false }: BakeryViewProps) {
       </div>
 
       <div className="bakery-view__total-committed">
-        Total Committed This Round: <strong>${totalCommitted.toFixed(2)}</strong>
+        <div className="bakery-view__total-committed-row bakery-view__total-committed-row--total">
+          <span>Total Committed This Round</span>
+          <strong>${totalCommitted.toFixed(2)}</strong>
+        </div>
+        <div className="bakery-view__total-committed-row">
+          <span>· Staff</span>
+          <strong>${staffCost.toFixed(2)}</strong>
+        </div>
+        <div className="bakery-view__total-committed-row">
+          <span>· Bakery</span>
+          <strong>${bakeryCost.toFixed(2)}</strong>
+        </div>
       </div>
     </div>
   );

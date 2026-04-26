@@ -419,7 +419,7 @@ export function RosterPhasePage() {
             {submitting === "continue"
               ? "Continuing…"
               : rosterCompleted
-                ? "✓ Submitted"
+                ? "✓ Ready — locked in for next round"
                 : "Continue"}
           </button>
         }

@@ -19,12 +19,12 @@ function getSelloutDays(): Record<Product, number> {
 }
 
 export function SimulatePhase() {
-  const { roundResults, maintenanceBars, teamName, pendingDecision } = useGame();
+  const { roundResults, maintenanceBars, teamName, pendingDecision, currentRound } = useGame();
   const latest = roundResults[roundResults.length - 1];
   const latestRound = latest ?? null;
   const targetRevenue = typeof latest?.revenue === "number" ? latest.revenue : 0;
 
-  const [day, setDay] = useState(1);
+  const [, setDay] = useState(1);
   const [isNight, setIsNight] = useState(false);
   const [displayRevenue, setDisplayRevenue] = useState(0);
   const [soldOut, setSoldOut] = useState<Set<Product>>(new Set());
@@ -85,10 +85,14 @@ export function SimulatePhase() {
 
   return (
     <section className={`simulate-phase simulate-phase--pixel ${isNight ? "simulate-phase--night" : "simulate-phase--day"}`}>
-      {/* Top bar */}
+      {/* Top bar — V9 (Apr 26): replaced "Day N / 30" with the round
+          label since the daily progression is conveyed by the visual
+          alone; the number of in-game "days" was confusing players. The
+          underlying `day` state still drives sellouts and revenue
+          animation, it's just no longer surfaced in the UI. */}
       <div className="simulate-phase__topbar">
         <div className="simulate-phase__day-counter">
-          {reducedMotion ? "Simulating round…" : `Day ${day} / ${TOTAL_DAYS}`}
+          {reducedMotion ? "Simulating round…" : `Round ${currentRound ?? "—"}`}
         </div>
         <div className="simulate-phase__revenue-counter">
           Profit: <strong>{targetRevenue > 0 ? `$${displayRevenue.toLocaleString()}` : "Calculating…"}</strong>

@@ -449,6 +449,16 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
     }, config);
     revenueGross += adWinnerBonus;
 
+    // V9 (Apr 26): if no customers actually walked in AND nothing was sold,
+    // the player wasn't really "open" — `computeGrossRevenue` would still
+    // hand them the $500 base + noise floor (foot-traffic baseline), which
+    // confused playtesters seeing "$527 profit / 0 customers" on the
+    // results screen. Zero out the formula's floor in that case so an
+    // empty bakery shows as $0 (plus any ad-winner bonus they earned).
+    if (customerCount === 0 && totalProductRevenue === 0) {
+      revenueGross = adWinnerBonus;
+    }
+
     // --- Round costs (excluding loan shark) ---
     const costDecision = {
       perProductQtyStocked: decision.quantities || {},
