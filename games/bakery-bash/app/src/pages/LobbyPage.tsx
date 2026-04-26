@@ -126,11 +126,11 @@ export function LobbyPage() {
         {player && (
           <div className="lobby-page__bakery">
             Your bakery: <strong>{teamName ?? player.bakeryName}</strong>{" "}
-            {/* Only render the role badge once the backend has actually
-                assigned the player to a team. Before assignment, every
-                client defaults to "solo", which would lie about role
-                ownership in a real session. */}
-            {teamId && (
+            {/* Only render the badge for an actual specialist role. "solo"
+                is a placeholder backend role that opens every submit while
+                the team is still picking; surfacing it on the lobby card
+                read as if the latest joiner had a unique solo role. */}
+            {teamId && role && role !== "solo" && (
               <span className={`role-badge role-badge--${role}`}>
                 {PLAYER_ROLE_LABELS[role]}
               </span>

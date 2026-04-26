@@ -426,11 +426,23 @@ const GameContext = createContext<GameState>(initialState);
 const GameDispatchContext = createContext<Dispatch<GameAction>>(() => {});
 
 // Survives tab refresh during a live game. AuthProvider restores the Firebase
-// UID via Firebase's own IndexedDB persistence, so the only thing we need to
-// carry across reloads is the game/player linkage — once `gameId` is seeded,
+// UID via Firebase's own persistence layer (IndexedDB in prod, sessionStorage
+// in dev — see `lib/firebase.ts`); the only thing we need to carry across
+// reloads is the game/player linkage — once `gameId` is seeded,
 // `useGameListener` reattaches and Firestore re-hydrates phase/round/etc.
-// localStorage (not sessionStorage) so a closed-and-reopened tab still rejoins.
+//
+// Storage choice mirrors the auth persistence:
+//   • prod → localStorage so a closed-and-reopened tab still rejoins
+//   • dev  → sessionStorage so multi-tab playtesting in one browser keeps
+//     each tab's player linkage independent (otherwise tab 2 inherits
+//     tab 1's playerId from localStorage and the player-doc Firestore
+//     read fails owner-only auth).
 const PERSISTED_SESSION_KEY = "bakery-bash:game-session";
+
+function persistedSessionStorage(): Storage | null {
+  if (typeof window === "undefined") return null;
+  return import.meta.env.DEV ? window.sessionStorage : window.localStorage;
+}
 
 type PersistedSession = {
   gameId: string;
@@ -442,7 +454,9 @@ type PersistedSession = {
 
 function readPersistedSession(): PersistedSession | null {
   try {
-    const raw = window.localStorage.getItem(PERSISTED_SESSION_KEY);
+    const storage = persistedSessionStorage();
+    if (!storage) return null;
+    const raw = storage.getItem(PERSISTED_SESSION_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<PersistedSession>;
     if (
@@ -473,11 +487,13 @@ function readPersistedSession(): PersistedSession | null {
 
 function writePersistedSession(payload: PersistedSession | null): void {
   try {
+    const storage = persistedSessionStorage();
+    if (!storage) return;
     if (!payload) {
-      window.localStorage.removeItem(PERSISTED_SESSION_KEY);
+      storage.removeItem(PERSISTED_SESSION_KEY);
       return;
     }
-    window.localStorage.setItem(PERSISTED_SESSION_KEY, JSON.stringify(payload));
+    storage.setItem(PERSISTED_SESSION_KEY, JSON.stringify(payload));
   } catch {
     // Private mode / quota: acceptable to no-op; a refresh will still sign in,
     // just without the game linkage shortcut.

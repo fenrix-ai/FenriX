@@ -347,12 +347,23 @@ const DEFAULT_GAME_CONFIG = {
   },
 
   phaseDurations: {
-    email: 30,
+    // Apr 25 V5: dropped from 30 → 8s. This is the "Get Ready to Bake
+    // Round N" splash that opens every round (EmailPhasePage, the
+    // pre-decide market-insight screen). 30s was too long for a brief
+    // "Round N starting" intro that doesn't require player input — the
+    // professor can extend it manually if students need more reading
+    // time. 8s lines up with the auto-advance cadence elsewhere.
+    email: 8,
     decide: 300,
     bid_ad: 60,
     bid_chef: 60,
     roster: 60,
-    simulating: 30,
+    // Apr 25 V4: dropped from 30 → 8s. The simulation work itself runs
+    // synchronously inside advanceGamePhase(simulating) and immediately
+    // flips the phase to results_ready when done, so this is just an
+    // upper bound for the professor's auto-advance fallback if the
+    // simulating side-effect somehow stalls. 8s is a generous timeout.
+    simulating: 8,
     results: 60,
   },
 

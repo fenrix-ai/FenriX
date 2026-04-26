@@ -8,6 +8,9 @@ import {
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { useGame, useGameDispatch } from "../contexts/GameContext";
+import { PixelBakeryScene } from "../components/bakery-scene/PixelBakeryScene";
+import { SceneErrorBoundary } from "../components/bakery-scene/SceneErrorBoundary";
+import "../styles/pixel-scene.css";
 import { RoundHeader } from "../components/game/RoundHeader";
 import { BakeryView } from "../components/game/BakeryView";
 import { GameSidebar } from "../components/game/GameSidebar";
@@ -110,6 +113,7 @@ export function GamePage() {
     gameId,
     playerId,
     teamId,
+    teamName,
     phase,
     currentRound,
     pendingDecision,
@@ -663,7 +667,12 @@ export function GamePage() {
   // for a minimum wall-clock window after we first observe `simulating`,
   // even if the Firestore phase has already moved on. Acts as a one-way
   // latch — once we commit to showing the screen, we wait out the timer.
-  const SIMULATE_MIN_DISPLAY_MS = 20_000;
+  //
+  // Apr 25 V4: tightened from 20_000 → 4_000ms. The 20s latch was the
+  // dominant chunk of the perceived 30-second "Round X" delay between
+  // rounds; backend sim work is ~1–2s in practice, so 4s is enough to
+  // see the animation start without making players sit through it.
+  const SIMULATE_MIN_DISPLAY_MS = 4_000;
   const [simHoldUntilMs, setSimHoldUntilMs] = useState<number | null>(null);
   const [simHoldExpired, setSimHoldExpired] = useState(false);
 
@@ -759,6 +768,45 @@ export function GamePage() {
           <span>Products {formatMoney(decisionCost.product)}</span>
           <span>Ads {formatMoney(decisionCost.ad)}</span>
           <span>Chef {formatMoney(decisionCost.chef)}</span>
+        </div>
+      </section>
+
+      {/* V5 (Apr 25): pixel bakery preview restored at the bottom of the
+          decide screen. The original side-by-side layout (commit a13aea1
+          removed) put the scene at 1.2× scale to the left of the form,
+          which pushed the inputs off-screen on laptops; this version sits
+          *below* the cost summary at 0.65× so it's a small flavour
+          element rather than a layout-blocker. Players who want to see
+          how their staffing maps onto the actual bakery still get a
+          live preview that updates as they tweak the sous-chef counts. */}
+      <section
+        className="decide-phase__bakery-preview"
+        aria-label="Live bakery preview"
+      >
+        <header className="decide-phase__bakery-preview-header">
+          <span className="decide-phase__bakery-preview-eyebrow">Live Preview</span>
+          <h3 className="decide-phase__bakery-preview-title">Your Bakery</h3>
+          <p className="decide-phase__bakery-preview-hint">
+            Updates as you change staffing — no scrolling required to keep an
+            eye on it.
+          </p>
+        </header>
+        <div className="decide-phase__bakery-preview-stage">
+          <SceneErrorBoundary teamName={teamName ?? ""}>
+            <PixelBakeryScene
+              mode="decide"
+              teamName={teamName ?? ""}
+              staffCounts={{
+                bakery: pendingDecision.staffCounts.bakerySousChefs,
+                deli: pendingDecision.staffCounts.deliSousChefs,
+                barista: pendingDecision.staffCounts.baristaSousChefs,
+              }}
+              customerCount={0}
+              menu={Object.keys(pendingDecision.menu).filter(
+                (k) => pendingDecision.menu[k as ProductKey],
+              )}
+            />
+          </SceneErrorBoundary>
         </div>
       </section>
       {submitError && (

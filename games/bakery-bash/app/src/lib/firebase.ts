@@ -1,6 +1,11 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore, connectFirestoreEmulator } from "firebase/firestore";
-import { getAuth, connectAuthEmulator } from "firebase/auth";
+import {
+  browserSessionPersistence,
+  connectAuthEmulator,
+  getAuth,
+  setPersistence,
+} from "firebase/auth";
 import { getFunctions, connectFunctionsEmulator } from "firebase/functions";
 import { getStorage, connectStorageEmulator } from "firebase/storage";
 
@@ -35,6 +40,20 @@ if (
   !window.__bakeryBashEmulatorsConnected
 ) {
   window.__bakeryBashEmulatorsConnected = true;
+  // Anonymous Auth defaults to IndexedDB persistence, which is shared across
+  // tabs — so opening tab 1 (Alice), tab 2 (Bob), tab 3 (Carol) in the same
+  // browser sticks every "player" on the same UID and silently rewrites the
+  // single roster doc with whichever displayName landed last. Switching to
+  // sessionStorage in dev gives each tab its own UID (refresh keeps it,
+  // tab close drops it) so multi-player playtesting in one browser actually
+  // produces distinct players. Production keeps the default IndexedDB
+  // persistence so a real student who closes their tab can come back.
+  setPersistence(auth, browserSessionPersistence).catch((err) => {
+    console.warn(
+      "Could not set browserSessionPersistence — falling back to default",
+      err,
+    );
+  });
   connectAuthEmulator(auth, "http://localhost:9099", { disableWarnings: true });
   connectFirestoreEmulator(db, "localhost", 8080);
   connectFunctionsEmulator(functions, "localhost", 5001);

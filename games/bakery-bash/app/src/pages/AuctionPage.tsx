@@ -49,17 +49,24 @@ function chefIcon(nationality: ChefNationality, gender: ChefGender): string {
   return `/assets/chefs/${nationality}-${gender}.svg`;
 }
 
+// V4 fix (Apr 25): labels now match the backend skill-tier vocabulary
+// (Novel / Intermediate / Advanced) — the old "Low / Medium / High" copy
+// confused players because the chef-card on /game/roster already uses the
+// new vocabulary. The CSS colour palette in global.css for
+// `.auction-chef--{low,medium,high}` was retuned to a medal scheme
+// (bronze / silver / gold) so the borders read as a skill *progression*
+// instead of "red = danger".
 const SKILL_CONFIG: Record<
   SkillLevel,
   { label: string; multiplier: number; cssClass: string }
 > = {
-  low: { label: "Low", multiplier: 1.0, cssClass: "auction-chef--low" },
+  low: { label: "Novel", multiplier: 1.0, cssClass: "auction-chef--low" },
   medium: {
-    label: "Medium",
+    label: "Intermediate",
     multiplier: 1.5,
     cssClass: "auction-chef--medium",
   },
-  high: { label: "High", multiplier: 2.0, cssClass: "auction-chef--high" },
+  high: { label: "Advanced", multiplier: 2.0, cssClass: "auction-chef--high" },
 };
 
 interface AdCard {

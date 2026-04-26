@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import {
   doc,
   onSnapshot,
@@ -18,7 +17,6 @@ import {
 } from "../components/game/ChefWinnerBanner";
 import { SubmissionLock } from "../components/game/SubmissionLock";
 import {
-  parseGamePhase,
   toChefCardInput,
   roleOwnsRoster,
   ownerOfRoster,
@@ -83,9 +81,8 @@ const SPECIALTY_CAP = 3;
 
 export function RosterPhasePage() {
   useGamePhaseNav();
-  const { gameId, playerId, teamId, currentRound, phase, role, teamRoleAssignments } =
+  const { gameId, playerId, teamId, currentRound, role, teamRoleAssignments } =
     useGame();
-  const navigate = useNavigate();
 
   const [specialtyChefs, setSpecialtyChefs] = useState<RosterChef[]>([]);
   const [pendingRosterAction, setPendingRosterAction] = useState(false);
@@ -93,11 +90,21 @@ export function RosterPhasePage() {
   // A24-I05 — chef wins just resolved for this round. Subscribed from
   // `games/{gameId}/rounds/round_{N}.chefAuctionResults[{teamKey}]`.
   const [chefWins, setChefWins] = useState<ChefWinnerEntry[]>([]);
+  // V4 fix (Apr 25): the chef auction is resolved as a *post-transaction*
+  // side-effect inside `advanceGamePhase(roster)`, so when the FE first
+  // lands on `/game/roster` the round doc may not yet have
+  // `chefAuctionResults` written. Track whether the resolver has run
+  // (`chefAuctionResolvedAt` timestamp on the round doc) to distinguish
+  // "still resolving" from "you didn't win anything" — the latter was
+  // showing for a few seconds at the top of every roster phase and read
+  // as "we won but it says we didn't".
+  const [chefAuctionResolved, setChefAuctionResolved] = useState(false);
   const auctionResultKey = teamId || playerId || null;
 
   useEffect(() => {
     if (!gameId || !currentRound || !auctionResultKey) {
       setChefWins([]);
+      setChefAuctionResolved(false);
       return;
     }
     const roundRef = doc(
@@ -112,9 +119,14 @@ export function RosterPhasePage() {
       (snap) => {
         if (!snap.exists()) {
           setChefWins([]);
+          setChefAuctionResolved(false);
           return;
         }
         const data = snap.data() as DocumentData;
+        // The backend writes `chefAuctionResolvedAt` (a server timestamp)
+        // alongside `chefAuctionResults` in the same `roundRef.set()`,
+        // so its presence is the canonical "auction is done" signal.
+        setChefAuctionResolved(Boolean(data.chefAuctionResolvedAt));
         const results =
           (data.chefAuctionResults ?? null) as DocumentData | null;
         const entry = results?.[auctionResultKey] as DocumentData | undefined;
@@ -212,18 +224,12 @@ export function RosterPhasePage() {
     return unsubscribe;
   }, [gameId, playerId]);
 
-  // Auto-route as phase changes. Roster → simulating/results_ready → /game.
-  useEffect(() => {
-    if (!gameId || !phase) return;
-    const parsed = parseGamePhase(phase, currentRound);
-    if (parsed.base === "decide") navigate("/game/decide");
-    else if (parsed.base === "email") navigate("/game/email");
-    else if (parsed.base === "bid_ad" || parsed.base === "bid_chef")
-      navigate("/auction");
-    else if (parsed.base === "simulating" || parsed.base === "results_ready")
-      navigate("/game");
-    else if (parsed.base === "game_over") navigate("/game/conclusion");
-  }, [phase, currentRound, navigate]);
+  // V4 fix (Apr 25): the local nav effect that lived here used to race
+  // against `useGamePhaseNav` and `GamePhaseListener` — and pointed
+  // `decide` at `/game/decide` while the others used `/game`, which
+  // caused a quick double-navigate on every roster→decide transition.
+  // The shared `useGamePhaseNav` hook above already covers every base
+  // phase, so the local copy is gone.
 
   // FE-I15: any teammate can act when no one on the team holds
   // operations (2-player team, cleared role, etc.).
@@ -284,6 +290,7 @@ export function RosterPhasePage() {
       <ChefWinnerBanner
         round={currentRound}
         winners={chefWins}
+        resolved={chefAuctionResolved}
       />
 
       <header className="roster-phase-page__header">
@@ -294,6 +301,24 @@ export function RosterPhasePage() {
           ended up with more.
         </p>
       </header>
+
+      {/* V5 (Apr 25): big "locked in" confirmation banner so players see they
+          submitted before they click Continue a second time. The smaller pill
+          inside SubmissionLock is still rendered below as the per-phase
+          consistency, but this top banner is what students notice. */}
+      {rosterCompleted && (
+        <div
+          className="roster-phase-page__submitted-banner"
+          role="status"
+          aria-live="polite"
+        >
+          <span className="roster-phase-page__submitted-banner-icon" aria-hidden="true">✓</span>
+          <span className="roster-phase-page__submitted-banner-text">
+            Roster locked in! Waiting for the rest of the class — your team is
+            ready for round {currentRound}'s decisions.
+          </span>
+        </div>
+      )}
 
       {!canAct && (
         <p className="roster-phase-page__role-gate">

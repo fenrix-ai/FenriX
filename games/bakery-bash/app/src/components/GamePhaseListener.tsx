@@ -9,7 +9,6 @@ import { parseGamePhase } from "../types/game";
 
 const GRACE_SECONDS = 5;
 const FREEZE_SECONDS = 10;
-const TOTAL_WINDOW_MS = (GRACE_SECONDS + FREEZE_SECONDS) * 1000; // 15 s
 
 // A24-I08: only show the "last chance to submit" banner + freeze overlay
 // during phases where students actually have something to submit. Email,
@@ -84,6 +83,33 @@ export function GamePhaseListener() {
     phaseEndsAtMsRef.current = phaseEndsAtMs;
   });
 
+  // V5 fix (Apr 25): if a tab is sitting on a phase-scoped route (e.g.
+  // `/game/roster`, `/auction`, `/game`) but has no `gameId` in context,
+  // the page silently renders empty: useGameListener returns early on
+  // `!gameId`, so no listener attaches, no navigation fires, and the
+  // tab stays on a stale (but cached-looking) UI forever. This happens
+  // when a dev-mode tab is closed and reopened — sessionStorage is wiped
+  // so the persisted game session is gone — but the URL still says we
+  // were mid-game. Detect that orphan state and bounce to the landing
+  // page so the player can rejoin.
+  useEffect(() => {
+    if (gameId) return;
+    const path = location.pathname;
+    const phaseScopedRoutes = [
+      "/team",
+      "/lobby",
+      "/game",
+      "/auction",
+      "/leaderboard",
+    ];
+    const isOnPhaseRoute = phaseScopedRoutes.some(
+      (r) => path === r || path.startsWith(`${r}/`),
+    );
+    if (isOnPhaseRoute) {
+      navigate("/", { replace: true });
+    }
+  }, [gameId, location.pathname, navigate]);
+
   // ── Phase-change navigation ────────────────────────────────────────────────
   useEffect(() => {
     if (!gameId) return;
@@ -133,30 +159,20 @@ export function GamePhaseListener() {
 
       if (pathnameRef.current === target) return;
 
-      // Check if we're inside the grace+freeze window for the current phase.
-      // phaseEndsAtMsRef still holds the OLD phaseEndsAtMs because the
-      // SET_PHASE_ENDS_AT dispatch above hasn't re-rendered yet.
-      const now = Date.now();
-      const windowStart = phaseEndsAtMsRef.current ?? 0;
-      const windowEnd = windowStart + TOTAL_WINDOW_MS;
-      const inWindow = windowStart > 0 && now >= windowStart && now < windowEnd;
-
-      // A new snapshot supersedes any previously deferred navigation.
+      // V4 fix (Apr 25): always navigate immediately on phase change.
+      // The previous deferred-nav code held the navigation back if the
+      // *old* phase's grace+freeze window was still open, but
+      // `phaseEndsAtMsRef` lagged behind by one render and was tracking
+      // the old phase's expiry — so when the professor manually advanced
+      // out of `roster` mid-freeze, players sat on the (now-expired)
+      // roster screen for up to 15 seconds before navigating. The freeze
+      // overlay's job is to lock *inputs* during the gap; navigation
+      // should track Firestore directly.
       if (deferredNavRef.current) {
         clearTimeout(deferredNavRef.current);
         deferredNavRef.current = null;
       }
-
-      if (inWindow) {
-        // Defer navigation until the freeze period ends.
-        const remainingMs = windowEnd - now;
-        deferredNavRef.current = setTimeout(() => {
-          deferredNavRef.current = null;
-          if (pathnameRef.current !== target) navigateRef.current(target);
-        }, remainingMs);
-      } else {
-        navigateRef.current(target);
-      }
+      navigateRef.current(target);
     }, (err) => {
       console.error("games/{gameId} phase listener error:", { gameId, err });
     });
@@ -289,41 +305,16 @@ export function GamePhaseListener() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phaseEndsAtMs, gameId, phase]);
 
-  if (stage === null) return null;
+  // V4 fix (Apr 25): the "Last chance to submit — Xs" banner during the
+  // grace window was redundant with the RoundHeader timer that's already
+  // visible, *and* it appeared as a separate countdown that didn't visibly
+  // line up with the header clock. Render nothing during grace; only the
+  // hard freeze overlay still appears (it's the actual input lock).
+  if (stage === null || stage === "grace") return null;
   // A24-I08 — final render gate, belt-and-suspenders with the useEffect
   // gate above. Covers the window where a phase flips from submission to
   // non-submission while `stage` is still set.
   if (!SUBMISSION_PHASE_BASES.has(parseGamePhase(phase).base)) return null;
-
-  if (stage === "grace") {
-    return (
-      <div style={{
-        position: "fixed",
-        bottom: "1.5rem",
-        left: "50%",
-        transform: "translateX(-50%)",
-        zIndex: 9999,
-        pointerEvents: "none",
-      }}>
-        <div style={{
-          background: "#e65c00",
-          color: "#fff",
-          borderRadius: "2rem",
-          padding: "0.65rem 1.4rem",
-          fontSize: "0.95rem",
-          fontWeight: 600,
-          display: "flex",
-          alignItems: "center",
-          gap: "0.5rem",
-          boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
-          whiteSpace: "nowrap",
-        }}>
-          <span>Last chance to submit —</span>
-          <span style={{ fontSize: "1.2rem", fontWeight: 800 }}>{countdown}s</span>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div style={{
