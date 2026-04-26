@@ -1400,6 +1400,35 @@ describe('decision-validation.js', () => {
 describe('simulation.js — Integration', () => {
   const cfg = config.mergeConfig({});
 
+  it('runSimulation — empty bakery (no menu, no customers) earns $0', () => {
+    // V9 regression — players with no menu items used to bank ~$500 in
+    // gross revenue from `computeGrossRevenue`'s base + noise floor, which
+    // surfaced as "$527 profit / 0 customers" on the results screen and
+    // confused playtesters. An empty bakery should now earn $0 (plus any
+    // ad-winner bonus, if applicable).
+    const players = [{
+      playerId: 'p_empty',
+      displayName: 'Empty',
+      bakeryName: 'Empty Bakery',
+      budgetCurrent: 500000,
+      sousChefCount: 0,
+      specialtyChefs: [],
+      returningCustomersPending: 0,
+      decision: {
+        menu: { croissant: false, cookie: false, bagel: false, sandwich: false, coffee: false, matcha: false },
+        quantities: {},
+        sousChefCount: 0,
+        sousChefAssignments: {},
+      },
+      auctionResults: { adWon: null, adBidPaid: 0, chefBidPaid: 0 },
+    }];
+    const prefs = { modifiers: { croissant: 1.0, cookie: 1.0, bagel: 1.0, sandwich: 1.0, coffee: 1.0, matcha: 1.0 } };
+    const results = simulation.runSimulation(players, prefs, cfg);
+    eq(results[0].customerCount, 0);
+    eq(results[0].revenueGross, 0);
+    eq(results[0].revenueNet, 0);
+  });
+
   it('runSimulation — single player produces valid result', () => {
     const players = [{
       playerId: 'p1',

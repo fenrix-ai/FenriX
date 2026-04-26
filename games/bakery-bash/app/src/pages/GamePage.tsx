@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   collection,
@@ -24,7 +24,6 @@ import { SimulatePhase } from "./phases/SimulatePhase";
 import { ResultsPhase } from "./phases/ResultsPhase";
 import { db, functions } from "../lib/firebase";
 import { humanizeFunctionError } from "../lib/errors";
-import { computeDecisionCost, formatMoney } from "../lib/cost";
 import {
   PRODUCT_KEYS,
   PRODUCT_STATION,
@@ -112,7 +111,6 @@ export function GamePage() {
   const {
     gameId,
     playerId,
-    teamId,
     teamName,
     phase,
     currentRound,
@@ -121,17 +119,12 @@ export function GamePage() {
     pricesSubmitted,
     role,
     teamRoleAssignments,
-    config,
   } = useGame();
-  // BE-I03: auction result docs are keyed by team slug; fall back to the
-  // player uid for solo teams, whose `team.key` on the backend is the uid.
-  const auctionResultKey = teamId || playerId;
   const dispatch = useGameDispatch();
   const navigate = useNavigate();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submittingPrices, setSubmittingPrices] = useState(false);
-  const [wonAuctionCosts, setWonAuctionCosts] = useState({ ad: 0, chef: 0 });
 
   // FE-11 — previous round's ad winners, rendered at the top of Decide.
   // The aggregate `rounds/round_{N}` doc writes
@@ -498,39 +491,6 @@ export function GamePage() {
     return unsubscribe;
   }, [gameId, currentRound, rosterByUid]);
 
-  useEffect(() => {
-    if (!gameId || !auctionResultKey || !currentRound) {
-      setWonAuctionCosts({ ad: 0, chef: 0 });
-      return;
-    }
-    const roundRef = doc(db, "games", gameId, "rounds", `round_${currentRound}`);
-    const unsubscribe = onSnapshot(
-      roundRef,
-      (snap) => {
-        if (!snap.exists()) {
-          setWonAuctionCosts({ ad: 0, chef: 0 });
-          return;
-        }
-        const data = snap.data() as DocumentData;
-        const adEntry = (data.adAuctionResults?.[auctionResultKey] ?? null) as DocumentData | null;
-        const ad =
-          adEntry && typeof adEntry.totalPaid === "number"
-            ? adEntry.totalPaid
-            : 0;
-        const chefEntry = (data.chefAuctionResults?.[auctionResultKey] ?? null) as DocumentData | null;
-        const chef =
-          chefEntry && typeof chefEntry.totalPaid === "number"
-            ? chefEntry.totalPaid
-            : 0;
-        setWonAuctionCosts({ ad, chef });
-      },
-      () => {
-        setWonAuctionCosts({ ad: 0, chef: 0 });
-      },
-    );
-    return unsubscribe;
-  }, [gameId, auctionResultKey, currentRound]);
-
   // Redirect into the dedicated phase page when backend says so. This is
   // phase-driven (not a manual navigation after submit).
   useEffect(() => {
@@ -656,10 +616,6 @@ export function GamePage() {
 
   const isDecisionPhase = basePhase === "decide";
   const isSimulating = basePhase === "simulating";
-  const decisionCost = useMemo(
-    () => computeDecisionCost(pendingDecision, config, wonAuctionCosts),
-    [pendingDecision, config, wonAuctionCosts],
-  );
 
   // FE-I12: the backend can sail through `simulating → results_ready` in
   // ~2 seconds when conditions are favourable, which means players never
@@ -668,11 +624,12 @@ export function GamePage() {
   // even if the Firestore phase has already moved on. Acts as a one-way
   // latch — once we commit to showing the screen, we wait out the timer.
   //
-  // Apr 25 V4: tightened from 20_000 → 4_000ms. The 20s latch was the
-  // dominant chunk of the perceived 30-second "Round X" delay between
-  // rounds; backend sim work is ~1–2s in practice, so 4s is enough to
-  // see the animation start without making players sit through it.
-  const SIMULATE_MIN_DISPLAY_MS = 4_000;
+  // Apr 25 V4: tightened from 20_000 → 4_000ms.
+  // V9 (Apr 26): bumped to 10_000ms — playtesters reported the simulate
+  // screen flashing by too quickly to read the bakery animation; 10s
+  // gives the chefs/customers a few clear cycles before we cut to the
+  // results screen, while still being well under the old 20s latch.
+  const SIMULATE_MIN_DISPLAY_MS = 10_000;
   const [simHoldUntilMs, setSimHoldUntilMs] = useState<number | null>(null);
   const [simHoldExpired, setSimHoldExpired] = useState(false);
 
@@ -753,32 +710,9 @@ export function GamePage() {
         />
       )}
 
-      {/* FE-9 — lock the menu + Hire tab once the player has submitted. */}
-      <div className="game-page__dashboard">
-        <BakeryView readOnly={decisionSubmitted} />
-        <GameSidebar readOnly={decisionSubmitted} />
-      </div>
-      <section className="game-page__round-cost" aria-label="Total cost this round">
-        <div className="game-page__round-cost-label">Total Cost This Round</div>
-        <div className="game-page__round-cost-total">
-          {formatMoney(decisionCost.total)}
-        </div>
-        <div className="game-page__round-cost-breakdown">
-          <span>Staff {formatMoney(decisionCost.staff)}</span>
-          <span>Products {formatMoney(decisionCost.product)}</span>
-          <span>Ads {formatMoney(decisionCost.ad)}</span>
-          <span>Chef {formatMoney(decisionCost.chef)}</span>
-        </div>
-      </section>
-
-      {/* V5 (Apr 25): pixel bakery preview restored at the bottom of the
-          decide screen. The original side-by-side layout (commit a13aea1
-          removed) put the scene at 1.2× scale to the left of the form,
-          which pushed the inputs off-screen on laptops; this version sits
-          *below* the cost summary at 0.65× so it's a small flavour
-          element rather than a layout-blocker. Players who want to see
-          how their staffing maps onto the actual bakery still get a
-          live preview that updates as they tweak the sous-chef counts. */}
+      {/* V8 (Apr 25): pixel bakery preview moved ABOVE the choices so
+          desktop players see their kitchen first, larger scale (1.5x)
+          since this is desktop-only. Updates live as staffing changes. */}
       <section
         className="decide-phase__bakery-preview"
         aria-label="Live bakery preview"
@@ -786,10 +720,6 @@ export function GamePage() {
         <header className="decide-phase__bakery-preview-header">
           <span className="decide-phase__bakery-preview-eyebrow">Live Preview</span>
           <h3 className="decide-phase__bakery-preview-title">Your Bakery</h3>
-          <p className="decide-phase__bakery-preview-hint">
-            Updates as you change staffing — no scrolling required to keep an
-            eye on it.
-          </p>
         </header>
         <div className="decide-phase__bakery-preview-stage">
           <SceneErrorBoundary teamName={teamName ?? ""}>
@@ -809,6 +739,17 @@ export function GamePage() {
           </SceneErrorBoundary>
         </div>
       </section>
+
+      {/* FE-9 — lock the menu + Hire tab once the player has submitted.
+          V9 (Apr 26): the standalone "Total Cost This Round" row was
+          duplicating the per-bucket totals already shown in the BakeryView
+          and StaffTab. Players asked us to drop it; the new "Total
+          Committed This Round" row inside BakeryView shows the bakery /
+          staff split below. */}
+      <div className="game-page__dashboard">
+        <BakeryView readOnly={decisionSubmitted} />
+        <GameSidebar readOnly={decisionSubmitted} />
+      </div>
       {submitError && (
         <p className="game-page__submit-error" role="alert">
           {submitError}

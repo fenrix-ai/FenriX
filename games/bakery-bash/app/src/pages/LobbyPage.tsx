@@ -213,6 +213,18 @@ export function LobbyPage() {
         <p className="lobby-page__status">
           Waiting for the professor to start the game…
         </p>
+
+        {teamId && (
+          <div className="lobby-page__actions">
+            <button
+              type="button"
+              className="btn btn--ghost"
+              onClick={() => navigate("/team")}
+            >
+              ← Back to choose your role
+            </button>
+          </div>
+        )}
       </div>
     </PageShell>
   );

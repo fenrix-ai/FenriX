@@ -31,22 +31,40 @@ const PHASE_LABELS: Record<string, string> = {
  * Column schema for the round-history CSV download. Kept in one place so
  * the header row and row serializer cannot drift apart.
  *
- * Replaces the legacy `staff_count` column with three per-station counts +
- * a dedicated maintenance count, and adds maintenance bar averages per the
- * game-design-proposal CSV spec.
+ * V9 (Apr 26): expanded the export to mirror everything the Results
+ * screen surfaces — gross/net revenue, loan-shark accounting, ad and
+ * chef auction outcomes, per-station maintenance bars, per-product
+ * units sold, and the sellout flag. Players asked for the CSV to be a
+ * full record of the round so they can analyze offline.
  */
 const CSV_COLUMNS = [
   "round",
-  "revenue",
+  "revenue_net",
+  "revenue_gross",
+  "amount_borrowed",
+  "interest_charged",
   "customer_count",
   "customer_satisfaction",
   "chef_satisfaction_score",
-  "avg_cleanliness_pct",
-  "avg_machine_health_pct",
+  "cleanliness_pct",
+  "oven_health_pct",
+  "slicer_health_pct",
+  "espresso_health_pct",
   "bakery_sous_chef_count",
   "deli_sous_chef_count",
   "barista_sous_chef_count",
   "maintenance_guy_count",
+  "ad_won",
+  "ad_paid",
+  "chef_won",
+  "chef_paid",
+  "sellout",
+  "croissants_sold",
+  "cookies_sold",
+  "bagels_sold",
+  "sandwiches_sold",
+  "coffees_sold",
+  "matchas_sold",
 ] as const;
 
 function pct(n: number | undefined | null): string {
@@ -54,35 +72,81 @@ function pct(n: number | undefined | null): string {
   return String(Math.round(n));
 }
 
-function avgMachineHealth(bars: MaintenanceBars | undefined): string {
-  if (!bars) return "";
-  const { ovenHealth, slicerHealth, espressoHealth } = bars;
-  const parts = [ovenHealth, slicerHealth, espressoHealth].filter(
-    (n): n is number => typeof n === "number" && Number.isFinite(n),
-  );
-  if (parts.length === 0) return "";
-  const avg = parts.reduce((a, b) => a + b, 0) / parts.length;
-  return String(Math.round(avg));
+function num(n: number | undefined | null): string {
+  return typeof n === "number" && Number.isFinite(n) ? String(n) : "";
 }
 
-function num(n: number | undefined): string {
-  return typeof n === "number" && Number.isFinite(n) ? String(n) : "";
+/** CSV-safe string: wrap in quotes + escape internal quotes if needed. */
+function csvCell(value: string | undefined | null): string {
+  if (value === undefined || value === null) return "";
+  const s = String(value);
+  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+function bar(bars: MaintenanceBars | undefined, key: keyof MaintenanceBars): string {
+  return pct(bars?.[key]);
 }
 
 function serializeRow(r: RoundResult): string {
   const counts: Partial<StaffCounts> = r.staffCounts ?? {};
+  const breakdown = r.productBreakdown ?? {};
+  // Prefer revenueNet for the headline figure but emit gross alongside so
+  // analysts can audit the loan-shark deduction.
+  const revenueNet =
+    typeof r.revenueNet === "number"
+      ? r.revenueNet
+      : typeof r.revenue === "number"
+        ? r.revenue
+        : undefined;
+  // Ad winner: backend emits a single `adWon` string (TV / Billboard / Radio
+  // / Newspaper) plus an `adWins` array on multi-win rounds. Join the array
+  // when present so players don't lose data; fall back to the singular.
+  const adWon =
+    Array.isArray(r.adWins) && r.adWins.length > 0
+      ? r.adWins.join("; ")
+      : r.adWon ?? r.auctionResults?.adWon ?? "";
+  // Chef winner — names preferred, ids as fallback. The chef-name array
+  // lives on `chefsWon`; pre-FE-4 results docs only carried a single id
+  // on `auctionResults.chefWon`.
+  const chefWon =
+    Array.isArray(r.chefsWon) && r.chefsWon.length > 0
+      ? r.chefsWon
+          .map((c) => (c?.name && String(c.name).trim()) || c?.id || "")
+          .filter((s) => s)
+          .join("; ")
+      : r.auctionResults?.chefWon ?? "";
+
   return [
     r.round,
-    r.revenue,
+    num(revenueNet),
+    num(r.revenueGross),
+    num(r.amountBorrowed),
+    num(r.interestCharged),
     r.customerCount,
     r.customerSatisfaction,
     pct(r.chefSatisfactionScore),
-    pct(r.maintenanceBars?.cleanliness),
-    avgMachineHealth(r.maintenanceBars),
+    bar(r.maintenanceBars, "cleanliness"),
+    bar(r.maintenanceBars, "ovenHealth"),
+    bar(r.maintenanceBars, "slicerHealth"),
+    bar(r.maintenanceBars, "espressoHealth"),
     num(counts.bakerySousChefs),
     num(counts.deliSousChefs),
     num(counts.baristaSousChefs),
     num(counts.maintenanceGuys),
+    csvCell(adWon),
+    num(r.adPaid),
+    csvCell(chefWon),
+    num(r.chefBidPaid),
+    r.selloutAnywhere ? "1" : "0",
+    num(breakdown.croissant),
+    num(breakdown.cookie),
+    num(breakdown.bagel),
+    num(breakdown.sandwich),
+    num(breakdown.coffee),
+    num(breakdown.matcha),
   ].join(",");
 }
 

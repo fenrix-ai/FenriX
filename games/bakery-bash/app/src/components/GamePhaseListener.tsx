@@ -233,13 +233,44 @@ export function GamePhaseListener() {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
         if (cancelled || !res.ok) return;
+        // V8 (Apr 26): also fetch phaseEndsAt + paused so pause/resume reflects
+        // even when the Firestore watch stream is stalled. Previously the poll
+        // only mirrored `phase`, which meant a paused game still ticked the
+        // student's timer down to zero (and auto-advance fired) because
+        // phaseEndsAtMs in context was never re-set to null.
         const json = (await res.json()) as {
-          fields?: { phase?: { stringValue?: string } };
+          fields?: {
+            phase?: { stringValue?: string };
+            phaseEndsAt?: { timestampValue?: string; nullValue?: null };
+            paused?: { booleanValue?: boolean; nullValue?: null };
+          };
         };
         if (cancelled) return;
         const livePhase = json.fields?.phase?.stringValue;
-        if (typeof livePhase !== "string" || livePhase === "lobby") return;
-        if (pathnameRef.current.startsWith("/professor")) return;
+        if (typeof livePhase !== "string") return;
+
+        // Mirror phaseEndsAt: timestampValue → ms, anything else (nullValue
+        // or absent) → null. This is what makes pause stop the visible
+        // countdown when the SDK has stalled.
+        const endsRaw = json.fields?.phaseEndsAt;
+        const endsMs =
+          endsRaw && typeof endsRaw.timestampValue === "string"
+            ? Date.parse(endsRaw.timestampValue)
+            : null;
+        dispatch({
+          type: "SET_PHASE_ENDS_AT",
+          payload: Number.isFinite(endsMs) ? (endsMs as number) : null,
+        });
+
+        if (livePhase === "lobby") return;
+        if (pathnameRef.current.startsWith("/professor")) {
+          // Professor stays on /professor; just keep phase + ends in sync.
+          if (phaseNameRef.current !== livePhase) {
+            dispatch({ type: "SET_PHASE", payload: livePhase });
+            phaseNameRef.current = livePhase;
+          }
+          return;
+        }
 
         const base = parseGamePhase(livePhase).base;
         let target: string;
@@ -249,6 +280,15 @@ export function GamePhaseListener() {
         else if (base === "game_over") target = "/game/conclusion";
         else target = "/game";
 
+        // Always keep context phase fresh when we have a confirmed live read,
+        // even if pathname already matches. Previously we returned early when
+        // pathname === target, which left context.phase stale during in-place
+        // transitions (e.g. decide → simulating → results_ready, all under
+        // /game) and stranded the student on the decide UI.
+        if (phaseNameRef.current !== livePhase) {
+          dispatch({ type: "SET_PHASE", payload: livePhase });
+          phaseNameRef.current = livePhase;
+        }
         if (pathnameRef.current === target) return;
 
         // Race guard: a poll request started under phase P1 can resolve
@@ -256,10 +296,6 @@ export function GamePhaseListener() {
         // for phase P2. In that window pathname is /P2 (correct) but the
         // poll's `livePhase` is still P1 (stale REST read), and the naive
         // "force-nav to livePhase target" would yank the user back to /P1.
-        // Detect by comparing the snapshot's last-known phase
-        // (`phaseNameRef.current`, set in the onSnapshot callback above)
-        // against the poll's `livePhase` — if they disagree AND we're
-        // already on the snapshot's target, the snapshot is fresher; skip.
         const knownPhase = phaseNameRef.current;
         if (knownPhase && knownPhase !== livePhase) {
           const knownBase = parseGamePhase(knownPhase).base;
@@ -274,16 +310,13 @@ export function GamePhaseListener() {
 
         // Mismatch the snapshot couldn't explain — the SDK watch stream
         // is most likely stalled (the V7 scenario this poll exists for).
-        // Force-navigate and dispatch the live phase so other components
-        // recover too.
+        // Force-navigate so other components recover too.
         console.warn("REST poll: phase/path mismatch — forcing nav", {
           livePhase,
           target,
           pathname: pathnameRef.current,
           knownPhase,
         });
-        dispatch({ type: "SET_PHASE", payload: livePhase });
-        phaseNameRef.current = livePhase;
         navigateRef.current(target);
       } catch {
         // Network blips are fine — the next tick retries. Do not
@@ -292,9 +325,13 @@ export function GamePhaseListener() {
       }
     };
 
-    const interval = setInterval(poll, 3000);
+    // V8 (Apr 26): tightened from 3s → 1.5s so pause/resume + phase
+    // transitions reflect more quickly when the SDK is stalled. Cost is
+    // a single extra GET per second per active player; the game doc is
+    // small and this only runs while a session is active.
+    const interval = setInterval(poll, 1500);
     // Run once immediately so a fresh mount catches up without waiting
-    // for the first 3s tick.
+    // for the first tick.
     void poll();
     return () => {
       cancelled = true;
