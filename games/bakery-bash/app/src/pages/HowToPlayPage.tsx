@@ -89,17 +89,17 @@ const HOW_TO_PLAY_STAGES = [
 
 const CHEF_TIERS = [
   {
-    tier: "Tier 1 — Novel",
+    tier: "Tier 1 — Low",
     multiplier: "1.0×",
     body: "Entry-level specialty chefs. Solid production, cheap to acquire.",
   },
   {
-    tier: "Tier 2 — Intermediate",
+    tier: "Tier 2 — Medium",
     multiplier: "1.5×",
     body: "Experienced specialty chefs. Moderate bid floor, reliable output.",
   },
   {
-    tier: "Tier 3 — Advanced",
+    tier: "Tier 3 — High",
     multiplier: "2.0×",
     body: "Top-tier specialty chefs. High minimum bid, but double production.",
   },

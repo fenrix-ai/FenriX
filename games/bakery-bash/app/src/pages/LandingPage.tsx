@@ -27,6 +27,12 @@ interface LobbyTeam {
   teamId: string;
   name: string;
   memberCount: number;
+  /**
+   * V4 (Apr 25): per-team bakery emoji written on createTeam / joinGame's
+   * team-creation path. May be null on teams created before this field
+   * was introduced; the FE falls back to 🥐 in that case.
+   */
+  emoji: string | null;
 }
 
 interface GetTeamsInLobbyResponse {
@@ -162,6 +168,10 @@ export function LandingPage() {
                 ? data.name
                 : d.id,
             memberCount,
+            emoji:
+              typeof data.emoji === "string" && data.emoji.length > 0
+                ? data.emoji
+                : null,
           };
         });
         setLobbyTeams(teams);
@@ -451,7 +461,7 @@ export function LandingPage() {
                         disabled={disabled}
                       >
                         <div className="team-select__logo team-select__logo--placeholder" aria-hidden>
-                          🥐
+                          {t.emoji ?? "🥐"}
                         </div>
                         <span className="team-select__name">{t.name}</span>
                         <span className="team-select__count">

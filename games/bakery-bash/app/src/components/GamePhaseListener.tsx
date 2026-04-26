@@ -4,12 +4,17 @@ import { doc, onSnapshot, type DocumentData } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { useGame, useGameDispatch } from "../contexts/GameContext";
 import { useGameListener } from "../hooks/useGameListener";
-import { db, functions } from "../lib/firebase";
+import { auth, db, functions } from "../lib/firebase";
 import { parseGamePhase } from "../types/game";
 
-const GRACE_SECONDS = 5;
-const FREEZE_SECONDS = 10;
-const TOTAL_WINDOW_MS = (GRACE_SECONDS + FREEZE_SECONDS) * 1000; // 15 s
+// V6 (Apr 26): cut grace + freeze from 5+10=15s down to 1+2=3s. After
+// bidding closes, players were sitting through "Times up — waiting for
+// professor" for ~15 seconds before the next phase started, which felt
+// dead and broke the rhythm. The freeze still exists so a slow submitter
+// has a couple of seconds to land their bid; it just doesn't pad every
+// transition with a noticeable wait.
+const GRACE_SECONDS = 1;
+const FREEZE_SECONDS = 2;
 
 // A24-I08: only show the "last chance to submit" banner + freeze overlay
 // during phases where students actually have something to submit. Email,
@@ -19,16 +24,19 @@ const SUBMISSION_PHASE_BASES = new Set(["bid_ad", "bid_chef", "roster", "decide"
 /**
  * App-level listener that stays mounted regardless of route.
  *
- * Phase-change navigation: navigates when Firestore phase changes. If a
- * change arrives while the grace/freeze window is active, navigation is
- * deferred until the window ends. The window is derived directly from
- * phaseEndsAtMs so there's no race between the timer callbacks and incoming
- * Firestore snapshots.
+ * Phase-change navigation: navigates immediately when the Firestore phase
+ * changes (V4 fix — the previous deferred-nav scheme stranded players on
+ * the old phase when a professor advanced manually mid-freeze). The
+ * grace/freeze overlay locks *inputs* during the gap, but no longer holds
+ * navigation back. A 3-second REST poll (V7) runs in parallel as a
+ * fallback against the Firebase 12.12.x watch-stream stall.
  *
- * Timer-expiry sequence (student view):
- *   0–5 s  → orange banner, inputs still live ("Last chance — 5s")
- *   5–15 s → full-screen blocking overlay ("Locked — advancing in 10…")
- *   15 s   → overlay clears; professor's auto-advance fires via ProfessorPage
+ * Timer-expiry sequence (student view, V6 timings):
+ *   0–1 s → grace window: inputs still live, no extra UI (the orange
+ *           "Last chance" banner was removed in V4 — the RoundHeader
+ *           clock is the only countdown visible).
+ *   1–3 s → freeze: full-screen blocking overlay ("Locked — advancing in N").
+ *   3 s   → overlay clears; professor's auto-advance fires via ProfessorPage.
  */
 export function GamePhaseListener() {
   const { gameId, playerId, phase, phaseEndsAtMs } = useGame();
@@ -84,6 +92,33 @@ export function GamePhaseListener() {
     phaseEndsAtMsRef.current = phaseEndsAtMs;
   });
 
+  // V5 fix (Apr 25): if a tab is sitting on a phase-scoped route (e.g.
+  // `/game/roster`, `/auction`, `/game`) but has no `gameId` in context,
+  // the page silently renders empty: useGameListener returns early on
+  // `!gameId`, so no listener attaches, no navigation fires, and the
+  // tab stays on a stale (but cached-looking) UI forever. This happens
+  // when a dev-mode tab is closed and reopened — sessionStorage is wiped
+  // so the persisted game session is gone — but the URL still says we
+  // were mid-game. Detect that orphan state and bounce to the landing
+  // page so the player can rejoin.
+  useEffect(() => {
+    if (gameId) return;
+    const path = location.pathname;
+    const phaseScopedRoutes = [
+      "/team",
+      "/lobby",
+      "/game",
+      "/auction",
+      "/leaderboard",
+    ];
+    const isOnPhaseRoute = phaseScopedRoutes.some(
+      (r) => path === r || path.startsWith(`${r}/`),
+    );
+    if (isOnPhaseRoute) {
+      navigate("/", { replace: true });
+    }
+  }, [gameId, location.pathname, navigate]);
+
   // ── Phase-change navigation ────────────────────────────────────────────────
   useEffect(() => {
     if (!gameId) return;
@@ -133,30 +168,20 @@ export function GamePhaseListener() {
 
       if (pathnameRef.current === target) return;
 
-      // Check if we're inside the grace+freeze window for the current phase.
-      // phaseEndsAtMsRef still holds the OLD phaseEndsAtMs because the
-      // SET_PHASE_ENDS_AT dispatch above hasn't re-rendered yet.
-      const now = Date.now();
-      const windowStart = phaseEndsAtMsRef.current ?? 0;
-      const windowEnd = windowStart + TOTAL_WINDOW_MS;
-      const inWindow = windowStart > 0 && now >= windowStart && now < windowEnd;
-
-      // A new snapshot supersedes any previously deferred navigation.
+      // V4 fix (Apr 25): always navigate immediately on phase change.
+      // The previous deferred-nav code held the navigation back if the
+      // *old* phase's grace+freeze window was still open, but
+      // `phaseEndsAtMsRef` lagged behind by one render and was tracking
+      // the old phase's expiry — so when the professor manually advanced
+      // out of `roster` mid-freeze, players sat on the (now-expired)
+      // roster screen for up to 15 seconds before navigating. The freeze
+      // overlay's job is to lock *inputs* during the gap; navigation
+      // should track Firestore directly.
       if (deferredNavRef.current) {
         clearTimeout(deferredNavRef.current);
         deferredNavRef.current = null;
       }
-
-      if (inWindow) {
-        // Defer navigation until the freeze period ends.
-        const remainingMs = windowEnd - now;
-        deferredNavRef.current = setTimeout(() => {
-          deferredNavRef.current = null;
-          if (pathnameRef.current !== target) navigateRef.current(target);
-        }, remainingMs);
-      } else {
-        navigateRef.current(target);
-      }
+      navigateRef.current(target);
     }, (err) => {
       console.error("games/{gameId} phase listener error:", { gameId, err });
     });
@@ -166,6 +191,114 @@ export function GamePhaseListener() {
         clearTimeout(deferredNavRef.current);
         deferredNavRef.current = null;
       }
+    };
+  }, [gameId, dispatch]);
+
+  // V7 fix (Apr 26): REST-based phase poll that bypasses the Firestore
+  // SDK entirely. The user reported V6's snapshot-based navigation
+  // *still* doesn't move players from /game/roster to /game when the
+  // professor advances. Root cause: the Firebase 12.12.x JS SDK
+  // intermittently silently stalls its watch stream after a sequence
+  // of writes (especially noticeable in dev against the emulator with
+  // multi-tab sessions). When that happens onSnapshot stops delivering
+  // updates AND getDoc through the same client also fails, so the
+  // memory-cache + watchdog-reload combo from V6 only papers over the
+  // worst cases. Polling Firestore's REST endpoint with native fetch()
+  // sidesteps the SDK completely — even if every other listener in
+  // the app is dead, this loop keeps the player on the correct page.
+  // Production keeps the same poll (cheap: one GET per 3s, no auth
+  // needed because the game doc is publicly readable per firestore.rules
+  // line 44 `allow read: if signedIn()` — wait, signedIn requires auth.
+  // For prod we attach the auth token. For dev/emulator the rules are
+  // also enforced but the emulator accepts the same token format.
+  useEffect(() => {
+    if (!gameId) return;
+
+    const projectId =
+      import.meta.env.VITE_FIREBASE_PROJECT_ID ?? "bakery-bash-54d12";
+    const restBase = import.meta.env.DEV
+      ? `http://127.0.0.1:8080/v1/projects/${projectId}/databases/(default)/documents/games/${gameId}`
+      : `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/games/${gameId}`;
+
+    let cancelled = false;
+
+    const poll = async () => {
+      if (cancelled) return;
+      try {
+        // Get fresh auth token. In prod this proves we're signed in;
+        // emulator ignores the value but the request shape is the same.
+        const token = await auth.currentUser?.getIdToken().catch(() => null);
+        if (cancelled) return;
+        const res = await fetch(restBase, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (cancelled || !res.ok) return;
+        const json = (await res.json()) as {
+          fields?: { phase?: { stringValue?: string } };
+        };
+        if (cancelled) return;
+        const livePhase = json.fields?.phase?.stringValue;
+        if (typeof livePhase !== "string" || livePhase === "lobby") return;
+        if (pathnameRef.current.startsWith("/professor")) return;
+
+        const base = parseGamePhase(livePhase).base;
+        let target: string;
+        if (base === "bid_ad" || base === "bid_chef") target = "/auction";
+        else if (base === "email") target = "/game/email";
+        else if (base === "roster") target = "/game/roster";
+        else if (base === "game_over") target = "/game/conclusion";
+        else target = "/game";
+
+        if (pathnameRef.current === target) return;
+
+        // Race guard: a poll request started under phase P1 can resolve
+        // *after* the snapshot listener has already received and navigated
+        // for phase P2. In that window pathname is /P2 (correct) but the
+        // poll's `livePhase` is still P1 (stale REST read), and the naive
+        // "force-nav to livePhase target" would yank the user back to /P1.
+        // Detect by comparing the snapshot's last-known phase
+        // (`phaseNameRef.current`, set in the onSnapshot callback above)
+        // against the poll's `livePhase` — if they disagree AND we're
+        // already on the snapshot's target, the snapshot is fresher; skip.
+        const knownPhase = phaseNameRef.current;
+        if (knownPhase && knownPhase !== livePhase) {
+          const knownBase = parseGamePhase(knownPhase).base;
+          let knownTarget: string;
+          if (knownBase === "bid_ad" || knownBase === "bid_chef") knownTarget = "/auction";
+          else if (knownBase === "email") knownTarget = "/game/email";
+          else if (knownBase === "roster") knownTarget = "/game/roster";
+          else if (knownBase === "game_over") knownTarget = "/game/conclusion";
+          else knownTarget = "/game";
+          if (pathnameRef.current === knownTarget) return;
+        }
+
+        // Mismatch the snapshot couldn't explain — the SDK watch stream
+        // is most likely stalled (the V7 scenario this poll exists for).
+        // Force-navigate and dispatch the live phase so other components
+        // recover too.
+        console.warn("REST poll: phase/path mismatch — forcing nav", {
+          livePhase,
+          target,
+          pathname: pathnameRef.current,
+          knownPhase,
+        });
+        dispatch({ type: "SET_PHASE", payload: livePhase });
+        phaseNameRef.current = livePhase;
+        navigateRef.current(target);
+      } catch {
+        // Network blips are fine — the next tick retries. Do not
+        // dispatch anything that could clobber the snapshot listener's
+        // last-known state.
+      }
+    };
+
+    const interval = setInterval(poll, 3000);
+    // Run once immediately so a fresh mount catches up without waiting
+    // for the first 3s tick.
+    void poll();
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
     };
   }, [gameId, dispatch]);
 
@@ -289,41 +422,16 @@ export function GamePhaseListener() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phaseEndsAtMs, gameId, phase]);
 
-  if (stage === null) return null;
+  // V4 fix (Apr 25): the "Last chance to submit — Xs" banner during the
+  // grace window was redundant with the RoundHeader timer that's already
+  // visible, *and* it appeared as a separate countdown that didn't visibly
+  // line up with the header clock. Render nothing during grace; only the
+  // hard freeze overlay still appears (it's the actual input lock).
+  if (stage === null || stage === "grace") return null;
   // A24-I08 — final render gate, belt-and-suspenders with the useEffect
   // gate above. Covers the window where a phase flips from submission to
   // non-submission while `stage` is still set.
   if (!SUBMISSION_PHASE_BASES.has(parseGamePhase(phase).base)) return null;
-
-  if (stage === "grace") {
-    return (
-      <div style={{
-        position: "fixed",
-        bottom: "1.5rem",
-        left: "50%",
-        transform: "translateX(-50%)",
-        zIndex: 9999,
-        pointerEvents: "none",
-      }}>
-        <div style={{
-          background: "#e65c00",
-          color: "#fff",
-          borderRadius: "2rem",
-          padding: "0.65rem 1.4rem",
-          fontSize: "0.95rem",
-          fontWeight: 600,
-          display: "flex",
-          alignItems: "center",
-          gap: "0.5rem",
-          boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
-          whiteSpace: "nowrap",
-        }}>
-          <span>Last chance to submit —</span>
-          <span style={{ fontSize: "1.2rem", fontWeight: 800 }}>{countdown}s</span>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div style={{

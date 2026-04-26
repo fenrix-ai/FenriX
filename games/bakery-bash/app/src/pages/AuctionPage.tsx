@@ -49,6 +49,9 @@ function chefIcon(nationality: ChefNationality, gender: ChefGender): string {
   return `/assets/chefs/${nationality}-${gender}.svg`;
 }
 
+// V6 (Apr 26): users want the original Low / Medium / High labels back; the
+// bronze/silver/gold border palette stays so the visual progression is
+// preserved.
 const SKILL_CONFIG: Record<
   SkillLevel,
   { label: string; multiplier: number; cssClass: string }
@@ -645,6 +648,15 @@ export function AuctionPage() {
       return () => clearTimeout(t);
     }
   }, [timerExpired]);
+
+  // V7 (Apr 26): clear the "Auction timer is up!" popup the moment the
+  // phase actually changes. Previously the popup hung around for its
+  // full 4s timeout even after the player had already advanced from
+  // bid_ad to bid_chef, so the chef-auction screen opened with a stale
+  // "results will display shortly" banner about the ad auction.
+  useEffect(() => {
+    setShowExpiredPopup(false);
+  }, [basePhase]);
 
   // Phase timer display lives exclusively in <RoundHeader /> (it reads
   // `phaseEndsAt` from the backend and shows a unified clock across every

@@ -393,9 +393,52 @@ h3 { font-size: 0.7rem; }
   margin-bottom: 1.5rem;
 }
 
-.lobby-page__players h2 {
+.lobby-page__players h2,
+.lobby-page__teams h2 {
   font-size: 0.7rem;
   margin-bottom: 0.75rem;
+}
+
+/* V6 (Apr 26): teams + members layout for the lobby. Each team renders
+   as a card with the team name as a heading and members listed below. */
+.lobby-page__team-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin: 0 0 1.5rem;
+  padding: 0;
+}
+.lobby-page__team {
+  font-family: var(--font-body);
+  padding: 0.7rem 1rem;
+  background: var(--flour);
+  border: 2px solid var(--dough);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.lobby-page__team--you {
+  background: var(--honey);
+  border-color: var(--caramel);
+}
+.lobby-page__team-name {
+  font-family: var(--font-pixel);
+  font-size: 0.7rem;
+  color: var(--dark-roast);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+}
+.lobby-page__team-members {
+  list-style: disc;
+  padding-left: 1.4rem;
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--espresso);
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
 }
 
 .lobby-page__player-list {
@@ -1459,19 +1502,25 @@ h3 { font-size: 0.7rem; }
   letter-spacing: 0.05em;
 }
 
+/* V7 (Apr 26): user-requested palette — gray for low, orange for
+   medium, gold stays for high. Reads as drab → warm → premium so the
+   skill progression is unmistakable on a glance. */
 .auction-chef--low {
-  border-color: #c0392b;
-  box-shadow: inset 0 0 0 1px #e74c3c44;
+  /* Low: muted gray */
+  border-color: #8a8e94;
+  box-shadow: inset 0 0 0 1px #c0c4caaa;
 }
 
 .auction-chef--medium {
-  border-color: #b8860b;
-  box-shadow: inset 0 0 0 1px #daa52044;
+  /* Medium: warm orange */
+  border-color: #d97a2c;
+  box-shadow: inset 0 0 0 1px #f0a866aa;
 }
 
 .auction-chef--high {
-  border-color: #5ea05e;
-  box-shadow: inset 0 0 0 1px #7bc97b44;
+  /* High: rich gold */
+  border-color: #c9a227;
+  box-shadow: inset 0 0 0 1px #f0d068aa;
 }
 
 .auction-chef__portrait {
@@ -1501,22 +1550,23 @@ h3 { font-size: 0.7rem; }
   border: 1px solid;
 }
 
+/* V7 (Apr 26): match the new gray/orange/gold border palette. */
 .auction-chef__skill-tag--low {
-  background: #c0392b;
+  background: #8a8e94;
   color: #fff;
-  border-color: #922b21;
+  border-color: #5d6166;
 }
 
 .auction-chef__skill-tag--medium {
-  background: #b8860b;
+  background: #d97a2c;
   color: #fff;
-  border-color: #8b6508;
+  border-color: #a85916;
 }
 
 .auction-chef__skill-tag--high {
-  background: #5ea05e;
+  background: #c9a227;
   color: #fff;
-  border-color: #3e7a3e;
+  border-color: #8b6e10;
 }
 
 .auction-chef__info {
@@ -2499,6 +2549,15 @@ h3 { font-size: 0.7rem; }
 
 .team-page__title {
   margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* V4 (Apr 25): per-team bakery emoji, sized to match the title text. */
+.team-page__emoji {
+  font-size: 1.5em;
+  line-height: 1;
 }
 
 .team-page__hello {
@@ -2886,10 +2945,19 @@ h3 { font-size: 0.7rem; }
 
 .submission-lock__locked {
   font-family: var(--font-pixel);
-  font-size: 0.6rem;
-  color: var(--sage);
+  /* V5 (Apr 25): bumped from 0.6rem → 0.85rem and added a chip background +
+     border so the "Locked in" confirmation actually reads at a glance. The
+     previous treatment was the same size as a label and players were
+     missing it / pressing Continue twice on the kitchen-roster screen. */
+  font-size: 0.85rem;
+  color: #fff;
+  background: var(--sage, #5ea05e);
+  border: 2px solid #3e7a3e;
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  box-shadow: 0 2px 6px rgba(62, 122, 62, 0.35);
 }
 
 .submission-lock__action {
@@ -3118,6 +3186,37 @@ h3 { font-size: 0.7rem; }
  * -------------------------------------------------------------------- */
 .roster-phase-page__header {
   margin-bottom: 1rem;
+}
+
+/* V5 (Apr 25): prominent "locked in" banner that appears at the top of the
+   kitchen roster screen after the player presses Continue. Without this the
+   only confirmation was a 0.6rem pill at the bottom of the page that
+   students missed, leading to "did it actually submit?" double-clicks. */
+.roster-phase-page__submitted-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin: 0 0 1.25rem;
+  padding: 0.95rem 1.1rem;
+  background: linear-gradient(135deg, #5ea05e 0%, #7bc97b 100%);
+  color: #fff;
+  border: 3px solid #3e7a3e;
+  border-radius: 0.75rem;
+  font-family: var(--font-pixel);
+  font-size: 0.85rem;
+  line-height: 1.35;
+  box-shadow: 0 4px 16px rgba(62, 122, 62, 0.35);
+}
+
+.roster-phase-page__submitted-banner-icon {
+  font-size: 1.6rem;
+  font-weight: 800;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.roster-phase-page__submitted-banner-text {
+  flex: 1;
 }
 
 .roster-phase-page__slots {
@@ -3810,6 +3909,67 @@ h3 { font-size: 0.7rem; }
   margin-bottom: calc(270px * 0.2); /* compensate for 1.2x visual height */
 }
 
+/* V5 (Apr 25): compact bakery preview restored at the bottom of the decide
+   screen. Smaller scale than the original side-by-side panel so it doesn't
+   compete with the decision form for vertical space. */
+.decide-phase__bakery-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1rem 0 0.5rem;
+  padding: 1rem 1rem 0.5rem;
+  background: var(--cream, #f7eedd);
+  border: 2px solid var(--caramel, #a0522d);
+  border-radius: 12px;
+}
+
+.decide-phase__bakery-preview-header {
+  text-align: center;
+  font-family: var(--font-pixel);
+}
+
+.decide-phase__bakery-preview-eyebrow {
+  display: inline-block;
+  background: var(--caramel, #a0522d);
+  color: #fff;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.55rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.decide-phase__bakery-preview-title {
+  margin: 0.4rem 0 0.15rem;
+  font-size: 0.95rem;
+  text-transform: uppercase;
+}
+
+.decide-phase__bakery-preview-hint {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  color: var(--dark-roast);
+}
+
+.decide-phase__bakery-preview-stage {
+  /* The PixelBakeryScene's natural height at 1× is roughly 270px; we
+     scale it down so the panel stays under ~200px tall. The wrapper
+     reserves the scaled height so the layout doesn't jump. */
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  width: 100%;
+  height: calc(270px * 0.65);
+  overflow: hidden;
+}
+
+.decide-phase__bakery-preview-stage .pixel-bakery-scene {
+  transform: scale(0.65);
+  transform-origin: top center;
+}
+
 /* ── Ad Winner Banner (Decide screen, rounds 2+) ───────────────────────
    Rendered at the top of the decide page. Prior to this rule block the
    component had zero CSS, so the `<section>` + `<ul>` fell back to a
@@ -4133,20 +4293,21 @@ h3 { font-size: 0.7rem; }
   color: #fff;
 }
 
+/* V7 (Apr 26): align kitchen-roster chef cards with the new gray /
+   orange / gold palette used in the auction grid. */
 .chef-card__skill--novel {
-  background: #7a8ca3;
-  border-color: #5c6c80;
+  background: #8a8e94;
+  border-color: #5d6166;
 }
 
 .chef-card__skill--intermediate {
-  background: var(--honey);
-  border-color: var(--caramel);
-  color: var(--espresso);
+  background: #d97a2c;
+  border-color: #a85916;
 }
 
 .chef-card__skill--advanced {
-  background: var(--sage);
-  border-color: #4d6548;
+  background: #c9a227;
+  border-color: #8b6e10;
 }
 
 .chef-card__nationality {

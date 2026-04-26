@@ -21,6 +21,13 @@
 
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { setGlobalOptions } = require('firebase-functions/v2');
+
+// Halve per-function CPU to fit the project's Cloud Run CPU quota.
+// 256MiB memory + 0.5 CPU is plenty for these short-lived Firestore-bound
+// callables, and avoids "total allowable CPU per project per region" deploy
+// failures when many revisions are rolling at once.
+setGlobalOptions({ cpu: 0.5 });
 
 // Allow Firebase ID tokens (anonymous + real users) to invoke callables.
 // Without this, Cloud Run blocks requests at the IAM layer before they
@@ -237,6 +244,22 @@ function slugifyTeamName(name) {
   if (base.length >= 2) return base;
   // Fallback — caller should still uniqueness-check within the game.
   return `team-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * V4 (Apr 25): bakery-themed emoji palette used as the team logo on the
+ * team-select grid + team page. Picked randomly on createTeam so each
+ * team gets a distinct icon instead of every card defaulting to 🥐.
+ * Keep these all bakery / café flavoured so the visual stays on-brand.
+ */
+const TEAM_EMOJI_POOL = [
+  '🥐', '🥖', '🥨', '🍞', '🥯',
+  '🍩', '🍪', '🧁', '🎂', '🍰',
+  '🥧', '🍮', '🍯', '☕', '🥛',
+  '🍓', '🥥', '🍫', '🌰', '🥜',
+];
+function pickTeamEmoji() {
+  return TEAM_EMOJI_POOL[Math.floor(Math.random() * TEAM_EMOJI_POOL.length)];
 }
 
 /**
@@ -1087,59 +1110,15 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
       }
     }
 
-    // BE-20 / BE-I04: auto-assign role from team's available slots.
-    //
-    // BE-I04 changes the default: teams with < 3 members get `solo` for
-    // everyone. `assertRoleAllowed`'s solo short-circuit lets any member
-    // submit anything, which is what we want when there's nobody to
-    // specialise into Operations / Finance / Advertising. When the team
-    // hits 3 members, we flip everyone onto the specialist roles in
-    // ROLES_ORDER so the classic 3-way split takes effect. Overwrites
-    // happen only for `solo` / null assignments — any specialist role a
-    // player explicitly picked via `setTeamRole` is preserved.
-    const ROLES_ORDER = ['finance', 'advertising', 'operations'];
-    const existingRoleAssignments = tSnap.exists
-      ? ((tSnap.data() || {}).roleAssignments || {})
-      : {};
-    const currentMemberCount = Object.keys(existingRoleAssignments).length;
-    const nextMemberCount = currentMemberCount + 1;
-
-    let autoRole;
-    const roleFlip = { apply: false, updates: {} };
-
-    if (nextMemberCount <= 2) {
-      autoRole = 'solo';
-    } else if (nextMemberCount === 3) {
-      // 2 → 3 transition. Preserve any specialist role a teammate
-      // already manually picked; fill the remaining slots in
-      // ROLES_ORDER. Include the joining player in the assignment so
-      // the whole team lands on specialist roles in one transaction.
-      const takenSpecialist = new Set(
-        Object.values(existingRoleAssignments).filter(
-          (r) => r && r !== 'solo',
-        ),
-      );
-      const availableSpecialist = ROLES_ORDER.filter((r) => !takenSpecialist.has(r));
-      // Assign joining player first — next in `availableSpecialist`.
-      autoRole = availableSpecialist.shift() || 'solo';
-
-      // Flip existing solo/null members onto the remaining specialist
-      // roles. Walk in a stable order (uid sort) so the flip is
-      // deterministic across Firestore retries.
-      const existingUids = Object.keys(existingRoleAssignments).sort();
-      for (const existingUid of existingUids) {
-        const existingRole = existingRoleAssignments[existingUid];
-        if (existingRole && existingRole !== 'solo') continue;
-        const nextSpecialist = availableSpecialist.shift() || 'solo';
-        roleFlip.updates[existingUid] = nextSpecialist;
-      }
-      roleFlip.apply = Object.keys(roleFlip.updates).length > 0;
-    } else {
-      // 4+ members — beyond the 3-role design. Keep `solo` as the
-      // overflow default; the role picker can still assign specialists
-      // manually if needed.
-      autoRole = 'solo';
-    }
+    // BE-20 / BE-I04 (revised Apr 25): every joiner gets `solo` as the
+    // backend role. `assertRoleAllowed`'s solo short-circuit (and the
+    // team-fallback when no teammate holds a required role) keeps every
+    // submit unlocked while the team is still picking. The 2→3 cascade
+    // that previously force-flipped everyone onto specialist roles was
+    // removed — it stole the choice away (the picker only re-enabled
+    // *after* every role was already taken, leaving nothing to pick).
+    // `setTeamRole` is now the only path onto a specialist role.
+    const autoRole = 'solo';
 
     if (pSnap.exists) {
       // Rejoin: refresh display name / bakery name but do not reset progress.
@@ -1185,39 +1164,21 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
       transaction.set(teamRef, {
         name: effectiveBakeryName,
         teamId,
+        // V4 (Apr 25): match createTeam — pick a random emoji on the
+        // legacy team-{N} auto-create path too, so every team has a
+        // distinct icon regardless of which entry path created it.
+        emoji: pickTeamEmoji(),
         roleAssignments: { [auth.uid]: autoRole },
         memberCount: 1,
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });
     } else {
-      const teamUpdate = {
+      transaction.update(teamRef, {
         [`roleAssignments.${auth.uid}`]: autoRole,
         memberCount: FieldValue.increment(1),
         updatedAt: FieldValue.serverTimestamp(),
-      };
-      // BE-I04: on the 2 → 3 transition we also cascade specialist
-      // roles onto the existing solo/null members in the same
-      // transaction, and mirror those onto their player docs below.
-      if (roleFlip.apply) {
-        for (const [existingUid, nextRole] of Object.entries(roleFlip.updates)) {
-          teamUpdate[`roleAssignments.${existingUid}`] = nextRole;
-        }
-      }
-      transaction.update(teamRef, teamUpdate);
-
-      if (roleFlip.apply) {
-        // Use merge-set rather than update so an existing-but-
-        // partially-written player doc doesn't cause the whole
-        // transaction to fail.
-        for (const [existingUid, nextRole] of Object.entries(roleFlip.updates)) {
-          transaction.set(
-            gameRef.collection('players').doc(existingUid),
-            { role: nextRole, updatedAt: FieldValue.serverTimestamp() },
-            { merge: true },
-          );
-        }
-      }
+      });
     }
 
     transaction.set(rosterRef, {
@@ -1344,12 +1305,19 @@ exports.createTeam = onCall(CALLABLE_OPTS, async (request) => {
 
     // BE-I04: first member is `solo` — the team only has one person
     // and `assertRoleAllowed`'s solo short-circuit keeps every action
-    // unlocked. The role flips to a specialist when the 3rd member
-    // joins via `joinGame`.
+    // unlocked. Players stay `solo` until they manually pick via
+    // `setTeamRole` (the auto-cascade on the 3rd join was removed in
+    // V6/V7 — see the matching comment in `joinGame`).
+    //
+    // V4 (Apr 25): pick a random bakery emoji for this team so the team
+    // cards don't all default to the same croissant. The emoji is part
+    // of the team doc so every member sees the same icon, and joiners
+    // pick it up via `getTeamsInLobby` and the team-doc subscription.
     transaction.set(teamRef, {
       name: teamName,
       teamId: resolvedTeamId,
       createdBy: auth.uid,
+      emoji: pickTeamEmoji(),
       roleAssignments: { [auth.uid]: 'solo' },
       memberCount: 1,
       createdAt: FieldValue.serverTimestamp(),
@@ -1466,6 +1434,12 @@ exports.getTeamsInLobby = onCall(CALLABLE_OPTS, async (request) => {
       teamId: d.id,
       name: typeof data.name === 'string' ? data.name : d.id,
       memberCount: numberOrDefault(data.memberCount, Object.keys(roleAssignments).length),
+      // V4 (Apr 25): random per-team bakery emoji used as the team-card
+      // logo on the join screen. Older teams created before this field
+      // was introduced fall back to 🥐 in the FE.
+      emoji: typeof data.emoji === 'string' && data.emoji.length > 0
+        ? data.emoji
+        : null,
     };
   });
 

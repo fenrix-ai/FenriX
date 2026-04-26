@@ -361,7 +361,10 @@ export function ProfessorPage() {
       base === "bid_chef" ||
       base === "roster" ||
       base === "decide";
-    const extraDelay = submissionPhase ? 15_000 : 0;
+    // V6 (Apr 26): keep this in sync with GRACE+FREEZE in
+    // GamePhaseListener — see the matching comment there. 3s feels much
+    // tighter than the old 15s "waiting for professor" pause.
+    const extraDelay = submissionPhase ? 3_000 : 0;
     const delay = Math.max(0, msUntilExpiry) + extraDelay;
     const expectedFromPhase = phase;
     const t = setTimeout(() => {
