@@ -638,19 +638,47 @@ async function resolveAndApplyAdAuction(gameRef, round) {
 // Writes { uid: { status, submittedAt, displayName, role } } to
 // games/{gameId}/submissions/{submissionDocId} with merge so the professor
 // dashboard can track per-player submission state in real time.
+//
+// Also maintains /submissionCounts/{submissionDocId} = { count, updatedAt }
+// in the same transaction. The counts mirror is readable by all signed-in
+// users (see firestore.rules) so the player-facing SubmissionLock can show
+// "X / Y submitted" without exposing per-player submission identities. The
+// count is only incremented when the uid was not already marked submitted,
+// so re-submissions don't double-count.
+//
 // submissionDocId pattern: "round_{N}_{phase}"  e.g. "round_1_decide"
 // Non-fatal: logged and swallowed on failure.
 // ---------------------------------------------------------------------------
 async function recordSubmission(gameRef, submissionDocId, uid, displayName, role) {
+  const submissionRef = gameRef.collection('submissions').doc(submissionDocId);
+  const countRef = gameRef.collection('submissionCounts').doc(submissionDocId);
   try {
-    await gameRef.collection('submissions').doc(submissionDocId).set({
-      [uid]: {
-        status: 'submitted',
-        submittedAt: Timestamp.now(),
-        displayName: displayName || '',
-        role: role || null,
-      },
-    }, { merge: true });
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(submissionRef);
+      const existing = snap.exists ? (snap.data() || {}) : {};
+      const wasAlreadySubmitted =
+        existing[uid] && existing[uid].status === 'submitted';
+
+      tx.set(submissionRef, {
+        [uid]: {
+          status: 'submitted',
+          submittedAt: Timestamp.now(),
+          displayName: displayName || '',
+          role: role || null,
+        },
+      }, { merge: true });
+
+      if (!wasAlreadySubmitted) {
+        tx.set(countRef, {
+          count: FieldValue.increment(1),
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+      } else {
+        tx.set(countRef, {
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+      }
+    });
   } catch (err) {
     logger.warn('recordSubmission side-effect failed — non-fatal.', {
       gameId: gameRef.id, submissionDocId, uid, error: err && err.message,
@@ -756,6 +784,7 @@ async function resetPendingPlayerStateForRound(gameRef) {
       'pendingBids.ad': null,
       'pendingBids.chef': null,
       pendingRosterAction: false,
+      rosterCompleted: false,
       updatedAt: FieldValue.serverTimestamp(),
     });
     opsInBatch++;
@@ -2244,6 +2273,7 @@ async function runSimulationAndPersist(gameRef, round, config) {
       revenueGross: r.revenueGross,
       customerCount: r.customerCount,
       budgetAfter: r.budgetAfter,
+      amountBorrowed: r.amountBorrowed || 0,
     }));
 
   const revenues = results.map((r) => r.revenueNet);
@@ -2723,16 +2753,21 @@ exports.submitBids = onCall(CALLABLE_OPTS, async (request) => {
     const existing = await transaction.get(bidsRef);
     const roundSnap = await transaction.get(roundRef);
     const merged = existing.exists ? existing.data() : { round };
-    const topBids = objectOrDefault((roundSnap.exists && roundSnap.data().topBids) || {}, {});
+    const roundData = (roundSnap.exists && roundSnap.data()) || {};
+    const topBids = objectOrDefault(roundData.topBids || {}, {});
+    const topBidsLeader = objectOrDefault(roundData.topBidsLeader || {}, {});
+    const myTeamKey = getPlayerTeamKey(pSnap);
 
     if (bidType === 'ad') {
       const existingAd = objectOrDefault(merged.ad, {});
       const currentTopAd = objectOrDefault(topBids.ad, {});
+      const currentTopLeaderAd = objectOrDefault(topBidsLeader.ad, {});
       for (const adType of AD_TYPES) {
         const existingAmount = numberOrDefault(existingAd[adType], 0);
         const currentTop = numberOrDefault(currentTopAd[adType], 0);
         const nextAmount = numberOrDefault(validated[adType], 0);
-        if (existingAmount > 0 && existingAmount === currentTop && nextAmount !== existingAmount) {
+        const isActualLeader = currentTopLeaderAd[adType] === myTeamKey;
+        if (existingAmount > 0 && existingAmount === currentTop && isActualLeader && nextAmount !== existingAmount) {
           throw new HttpsError(
             'failed-precondition',
             `You already hold the top bid for ${adType} and cannot change it until another team outbids you.`
@@ -2747,11 +2782,13 @@ exports.submitBids = onCall(CALLABLE_OPTS, async (request) => {
         if (bid && bid.chefId) existingChefMap[bid.chefId] = numberOrDefault(bid.amount, 0);
       }
       const currentTopChef = objectOrDefault(topBids.chef, {});
+      const currentTopLeaderChef = objectOrDefault(topBidsLeader.chef, {});
       for (const bid of validated) {
         if (!bid || !bid.chefId) continue;
         const existingAmount = numberOrDefault(existingChefMap[bid.chefId], 0);
         const currentTop = numberOrDefault(currentTopChef[bid.chefId], 0);
-        if (existingAmount > 0 && existingAmount === currentTop && numberOrDefault(bid.amount, 0) !== existingAmount) {
+        const isActualLeader = currentTopLeaderChef[bid.chefId] === myTeamKey;
+        if (existingAmount > 0 && existingAmount === currentTop && isActualLeader && numberOrDefault(bid.amount, 0) !== existingAmount) {
           throw new HttpsError(
             'failed-precondition',
             'You already hold the top bid for that chef and cannot change it until another team outbids you.'
@@ -3591,6 +3628,7 @@ exports.resetGame = onCall(CALLABLE_OPTS, async (request) => {
   await Promise.all([
     deleteCollectionDocs(gameRef.collection('rounds')),
     deleteCollectionDocs(gameRef.collection('submissions')),
+    deleteCollectionDocs(gameRef.collection('submissionCounts')),
     deleteCollectionDocs(gameRef.collection('marketInsights')),
     deleteCollectionDocs(gameRef.collection('leaderboard')),
     deleteCollectionDocs(gameRef.collection('conclusion')),

@@ -162,11 +162,31 @@ service cloud.firestore {
       // BE-22: Professor submission-state mirror. Written
       // exclusively by Cloud Functions (submitDecision,
       // submitBids, continueFromRoster). Readable only by
-      // the professor (custom claim: professor == true).
+      // the professor (custom claim: professor == true) or
+      // the game's professor UID. Contains per-player
+      // submission status, displayName, role, and timestamps —
+      // do NOT widen this rule. Player-facing UIs that need a
+      // submission count should read /submissionCounts/{doc}
+      // (count-only mirror written alongside this doc).
       // Doc IDs follow the pattern "round_{N}_{phase}".
       // ─────────────────────────────────────────────────────
       match /submissions/{doc} {
         allow read: if isProfessor() || isGameProfessor(gameId);
+        allow write: if false;
+      }
+
+      // ─────────────────────────────────────────────────────
+      // /games/{gameId}/submissionCounts/{doc}
+      // Public-safe count mirror for /submissions. Schema:
+      //   { count: number, updatedAt: Timestamp }
+      // Written exclusively by Cloud Functions in lockstep
+      // with /submissions. Readable by any signed-in player so
+      // the SubmissionLock footer can show "X / Y submitted"
+      // without leaking opposing-team submission identities.
+      // Doc IDs follow the pattern "round_{N}_{phase}".
+      // ─────────────────────────────────────────────────────
+      match /submissionCounts/{doc} {
+        allow read: if signedIn();
         allow write: if false;
       }
     }

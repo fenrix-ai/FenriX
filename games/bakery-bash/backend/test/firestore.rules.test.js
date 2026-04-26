@@ -408,6 +408,10 @@ describe("Bakery Bash Firestore security rules", () => {
           phase: "decide",
           submittedCount: 2,
         });
+        await setDoc(
+          doc(db, "games", GAME_ID, "submissionCounts", "round_1_decide"),
+          { count: 2 }
+        );
       });
     });
 
@@ -420,6 +424,23 @@ describe("Bakery Bash Firestore security rules", () => {
     it("non-professor signed-in user cannot read submissions", async () => {
       await assertFails(
         getDoc(doc(authedDb(OTHER_UID), "games", GAME_ID, "submissions", "round_1_decide"))
+      );
+    });
+
+    it("any signed-in user can read submissionCounts", async () => {
+      await assertSucceeds(
+        getDoc(
+          doc(authedDb(OTHER_UID), "games", GAME_ID, "submissionCounts", "round_1_decide")
+        )
+      );
+    });
+
+    it("clients cannot write submissionCounts", async () => {
+      await assertFails(
+        setDoc(
+          doc(authedDb(PLAYER_A), "games", GAME_ID, "submissionCounts", "round_1_decide"),
+          { count: 99 }
+        )
       );
     });
 

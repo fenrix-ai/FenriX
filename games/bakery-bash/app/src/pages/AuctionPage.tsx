@@ -228,6 +228,7 @@ export function AuctionPage() {
     chefBidsSubmitted,
     role,
     teamRoleAssignments,
+    config,
   } = useGame();
   const dispatch = useGameDispatch();
   // Backend writes leader keys as `teamId || playerId` — match that here so
@@ -683,6 +684,25 @@ export function AuctionPage() {
     [isAdPhase, pendingAdBids, topBidsAd, topBidsLeaderAd, myTeamKey],
   );
 
+  // True when the player has matched the top bid but someone else submitted
+  // first and will win the tie — they need to raise to actually win.
+  const isTiedAdBid = useCallback(
+    (adType: AdType) => {
+      const myBid = pendingAdBids[adType] ?? 0;
+      const topBid = topBidsAd[adType] ?? 0;
+      const leader = topBidsLeaderAd[adType];
+      return (
+        myBid > 0 &&
+        topBid > 0 &&
+        myBid === topBid &&
+        !!myTeamKey &&
+        !!leader &&
+        leader !== myTeamKey
+      );
+    },
+    [pendingAdBids, topBidsAd, topBidsLeaderAd, myTeamKey],
+  );
+
   const isLockedChefBid = useCallback(
     (chefId: string) => {
       if (!isChefPhase) return true;
@@ -698,6 +718,23 @@ export function AuctionPage() {
       );
     },
     [isChefPhase, pendingChefBids, topBidsChef, topBidsLeaderChef, myTeamKey],
+  );
+
+  const isTiedChefBid = useCallback(
+    (chefId: string) => {
+      const myBid = pendingChefBids[chefId] ?? 0;
+      const topBid = topBidsChef[chefId] ?? 0;
+      const leader = topBidsLeaderChef[chefId];
+      return (
+        myBid > 0 &&
+        topBid > 0 &&
+        myBid === topBid &&
+        !!myTeamKey &&
+        !!leader &&
+        leader !== myTeamKey
+      );
+    },
+    [pendingChefBids, topBidsChef, topBidsLeaderChef, myTeamKey],
   );
 
   const hasEditableAdBid = isAdPhase
@@ -792,7 +829,12 @@ export function AuctionPage() {
                   Slots where you already lead are locked.
                 </p>
               )}
-              {AD_CARDS.map((ad) => (
+              {AD_CARDS.map((ad) => {
+                const adMinBid = config?.adBidMinimums?.[ad.id] ?? null;
+                const adInputVal = parseInt(adBidInputs[ad.id] ?? "", 10);
+                const adBelowMinimum =
+                  adMinBid !== null && !isNaN(adInputVal) && adInputVal > 0 && adInputVal < adMinBid;
+                return (
                 <div key={ad.id} className="auction-ad">
                   <img
                     src={ad.icon}
@@ -811,13 +853,19 @@ export function AuctionPage() {
                         : "--"}
                     </span>
                   </div>
+                  {adMinBid !== null && (
+                    <div className="auction-ad__min-bid">
+                      <span className="auction-ad__min-bid-label">Min Bid</span>
+                      <span className="auction-ad__min-bid-value">${adMinBid.toLocaleString()}</span>
+                    </div>
+                  )}
                   <div className="auction-ad__bid">
                     <label className="auction-ad__bid-label">Your Bid</label>
                     <div className="auction-page__bid-wrapper">
                       <span className="auction-page__bid-prefix">$</span>
                       <input
                         type="number"
-                        className="auction-ad__bid-input auction-page__bid-input"
+                        className={`auction-ad__bid-input auction-page__bid-input${adBelowMinimum ? " auction-ad__bid-input--error" : ""}`}
                         placeholder="0"
                         min={0}
                         value={
@@ -826,6 +874,7 @@ export function AuctionPage() {
                         }
                         disabled={timerExpired || !isAdPhase || isLockedAdBid(ad.id)}
                         readOnly={!isAdPhase || isLockedAdBid(ad.id)}
+                        aria-invalid={adBelowMinimum ? "true" : undefined}
                         onChange={(e) => {
                           const raw = e.target.value;
                           setAdBidInputs((prev) => ({ ...prev, [ad.id]: raw }));
@@ -840,9 +889,20 @@ export function AuctionPage() {
                         }}
                       />
                     </div>
+                    {adBelowMinimum && (
+                      <p className="auction-ad__bid-error" role="alert">
+                        Bid at least ${adMinBid!.toLocaleString()} to qualify.
+                      </p>
+                    )}
+                    {!adBelowMinimum && isTiedAdBid(ad.id) && (
+                      <p className="auction-page__tied-warning" role="alert">
+                        ⚠ Tied — raise your bid to win
+                      </p>
+                    )}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -943,6 +1003,11 @@ export function AuctionPage() {
                       {belowMinimum && (
                         <p className="auction-chef__bid-error" role="alert">
                           Bid above the minimum bid.
+                        </p>
+                      )}
+                      {!belowMinimum && isTiedChefBid(chef.id) && (
+                        <p className="auction-page__tied-warning" role="alert">
+                          ⚠ Tied — raise your bid to win
                         </p>
                       )}
                       <button

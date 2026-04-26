@@ -70,10 +70,10 @@ interface SubmissionEntry {
 
 /** Which phases of a round have a corresponding submissions doc. */
 const SUBMISSION_PHASES: Array<{ key: BasePhase; label: string }> = [
-  { key: "decide", label: "Decide" },
   { key: "bid_ad", label: "Ad Bids" },
   { key: "bid_chef", label: "Chef Bids" },
   { key: "roster", label: "Roster" },
+  { key: "decide", label: "Decide" },
 ];
 
 export function ProfessorPage() {

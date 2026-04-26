@@ -23,23 +23,22 @@ import type { RoundResult } from "../types/game";
  * document:
  *
  *   1. `/games/{gameId}/leaderboard/latest` — ranked rollup written by
- *      `simulateRound`. Includes `budgetCurrent` per entry.
+ *      `simulateRound`. Includes `budgetAfter` and the current round's
+ *      `amountBorrowed` per entry. `signedIn`-readable.
  *   2. `/games/{gameId}/players/{uid}/rounds/*` — per-round history we
- *      aggregate into a single CSV via `downloadResultsCsv`.
- *
- * Both reads require the signed-in user to have the `professor: true`
- * custom claim (see `firestore.rules`). Without it the listeners
- * surface permission-denied errors and the page renders an inline
- * remediation note.
+ *      aggregate for the multi-player CSV export AND for cumulative
+ *      lifetime borrowing stats (the leaderboard's `amountBorrowed` is
+ *      per-round; "Borrowers" = anyone who borrowed in any round).
+ *      Restricted to the player's owner OR the game's professor (see
+ *      `firestore.rules#match /players/{playerId}/rounds/{roundId}`),
+ *      so non-professor users will get permission-denied here.
  */
 
 /**
  * Matches the rankings shape written by `simulateRound` into
  * `/games/{gameId}/leaderboard/latest` (see
  * `backend/functions/index.js` around line 1136). The backend writes
- * `budgetAfter` (not `budgetCurrent`) and does not include
- * `amountBorrowed` / `cumulativeRevenue` directly — those are only
- * available on per-player round docs.
+ * `budgetAfter` (not `budgetCurrent`) and includes `amountBorrowed`.
  */
 interface ProfessorRanking {
   rank: number;
@@ -52,6 +51,7 @@ interface ProfessorRanking {
   customerCount?: number;
   budgetAfter?: number;
   budgetCurrent?: number;
+  amountBorrowed?: number;
 }
 
 interface ProfessorLeaderboardDoc {
@@ -95,6 +95,8 @@ function readRanking(data: DocumentData): ProfessorRanking {
       typeof data.budgetAfter === "number" ? data.budgetAfter : undefined,
     budgetCurrent:
       typeof data.budgetCurrent === "number" ? data.budgetCurrent : undefined,
+    amountBorrowed:
+      typeof data.amountBorrowed === "number" ? data.amountBorrowed : undefined,
   };
 }
 
@@ -252,8 +254,6 @@ export function ProfessorLeaderboardPage() {
       0,
     );
     const totalBudget = r.reduce((sum, e) => sum + (rankingBudget(e) ?? 0), 0);
-    // Per-player `amountBorrowed` is on round docs, not the leaderboard, so we
-    // aggregate from the fan-out history map below.
     return {
       count: r.length,
       avgRevenue: totalRevenue / r.length,
@@ -261,16 +261,32 @@ export function ProfessorLeaderboardPage() {
     };
   }, [board?.rankings]);
 
-  const borrowerCount = useMemo(() => {
-    const uids = new Set<string>();
-    Object.entries(historyByUid).forEach(([uid, rows]) => {
-      const anyBorrowed = rows.some(
-        (r) => (readNumber(r.amountBorrowed) ?? 0) > 0,
-      );
-      if (anyBorrowed) uids.add(uid);
+  // Lifetime borrowing per uid. The leaderboard's `amountBorrowed` is the
+  // CURRENT round's value (see `runSimulationAndPersist`), so a player who
+  // borrowed in round 1 and recovered by round 2 would silently drop out of
+  // a current-round-only "Borrowers" stat. Aggregate across the per-player
+  // round subscriptions instead. Falls back to the leaderboard's per-round
+  // value if history hasn't loaded for that uid yet (e.g. round 1 in
+  // progress, or pre-fan-out warmup).
+  const borrowedTotalByUid = useMemo(() => {
+    const totals: Record<string, number> = {};
+    Object.entries(historyByUid).forEach(([uid, rounds]) => {
+      let sum = 0;
+      for (const r of rounds) {
+        sum += readNumber(r.amountBorrowed) ?? 0;
+      }
+      totals[uid] = sum;
     });
-    return uids.size;
+    return totals;
   }, [historyByUid]);
+
+  const borrowerCount = useMemo(() => {
+    return (board?.rankings ?? []).filter((r) => {
+      const fromHistory = borrowedTotalByUid[r.playerId];
+      if (typeof fromHistory === "number" && fromHistory > 0) return true;
+      return (readNumber(r.amountBorrowed) ?? 0) > 0;
+    }).length;
+  }, [board?.rankings, borrowedTotalByUid]);
 
   const onExportAll = () => {
     // Multi-player CSV: one row per (player, round). Adds a `bakery` and
@@ -437,14 +453,11 @@ export function ProfessorLeaderboardPage() {
                 readNumber(entry.cumulativeRevenue) ??
                 0;
               const budget = rankingBudget(entry) ?? 0;
-              // Aggregate `amountBorrowed` across every round doc we have
-              // cached for this player. Leaderboard rankings don't include
-              // this field directly.
-              const history = historyByUid[entry.playerId] ?? [];
-              const borrowedTotal = history.reduce(
-                (sum, r) => sum + (readNumber(r.amountBorrowed) ?? 0),
-                0,
-              );
+              const fromHistory = borrowedTotalByUid[entry.playerId];
+              const borrowedTotal =
+                typeof fromHistory === "number" && fromHistory > 0
+                  ? fromHistory
+                  : readNumber(entry.amountBorrowed) ?? 0;
               return (
                 <tr key={entry.playerId || entry.rank}>
                   <td>{entry.rank}</td>

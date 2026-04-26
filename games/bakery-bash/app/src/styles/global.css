@@ -1629,6 +1629,40 @@ h3 { font-size: 0.7rem; }
   margin: 0.2rem 0 0;
 }
 
+.auction-ad__min-bid {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  padding: 0.25rem 0.4rem;
+}
+
+.auction-ad__min-bid-label {
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  color: var(--dark-roast);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.auction-ad__min-bid-value {
+  font-family: var(--font-body);
+  font-weight: 600;
+  color: var(--espresso);
+}
+
+.auction-ad__bid-input--error {
+  border-color: var(--berry) !important;
+  background: rgba(220, 58, 90, 0.08);
+}
+
+.auction-ad__bid-error {
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  color: var(--berry);
+  margin: 0.2rem 0 0;
+}
+
 /* ─── Advertisements Grid ───────────────────────────────── */
 
 .auction-ads__grid {
@@ -3575,6 +3609,12 @@ h3 { font-size: 0.7rem; }
 .auction-page__bid-wrapper { display: flex; align-items: center; gap: 4px; }
 .auction-page__bid-prefix  { font-weight: bold; font-size: 1rem; line-height: 1; }
 .auction-page__bid-input   { width: 130px; min-width: 130px; }
+.auction-page__tied-warning {
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #c05c00;
+}
 .auction-page__ad-description { font-size: 0.875rem; color: #555; line-height: 1.5; margin: 0 0 1rem; padding: 0.75rem; background: var(--cream, #fff7e6); border-radius: 6px; border-left: 3px solid var(--honey, #f59e0b); }
 
 /* ── Auction timer expired popup ────────────────────────────────────── */
