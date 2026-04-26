@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useGameDispatch } from "../contexts/GameContext";
 import { useAuth } from "../contexts/AuthContext";
 import { PageShell } from "../components/ui/PageShell";
+import { callJoinGame } from "../lib/firebase";
 
 export function LandingPage() {
   const [playerName, setPlayerName] = useState("");
@@ -27,28 +28,34 @@ export function LandingPage() {
       return;
     }
 
+    if (!user) {
+      setError("Please wait for authentication...");
+      return;
+    }
+
     setJoining(true);
 
     try {
-      // TODO: Validate game code against Firestore and join the game session.
-      // For now, simulate joining with a local state update.
+      const result = await callJoinGame(gameCode.toUpperCase(), playerName.trim());
+
       dispatch({
         type: "JOIN_GAME",
         payload: {
-          gameId: gameCode.toUpperCase(),
+          gameId: result.data.gameId,
           gameCode: gameCode.toUpperCase(),
           player: {
-            id: user?.uid ?? crypto.randomUUID(),
+            id: user.uid,
             name: playerName.trim(),
             bakeryName: `${playerName.trim()}'s Bakery`,
-            budget: 5000,
+            budget: 2000,
             cumulativeRevenue: 0,
           },
         },
       });
       navigate("/lobby");
-    } catch {
-      setError("Could not join game. Check the code and try again.");
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "Could not join game. Check the code and try again.";
+      setError(errorMessage);
     } finally {
       setJoining(false);
     }

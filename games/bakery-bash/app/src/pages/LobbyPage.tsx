@@ -2,12 +2,15 @@ import { useGame } from "../contexts/GameContext";
 import { PageShell } from "../components/ui/PageShell";
 
 export function LobbyPage() {
-  const { player, players, gameCode } = useGame();
+  const { player, players, gameCode, totalPlayers, phase } = useGame();
+  const allPlayers = player ? [player, ...players.filter((p) => p.id !== player.id)] : players;
 
   return (
     <PageShell className="lobby-page">
       <div className="lobby-page__card">
-        <h1 className="lobby-page__title">Waiting Room</h1>
+        <h1 className="lobby-page__title">
+          {phase === "lobby" ? "Waiting Room" : "Game in Progress"}
+        </h1>
 
         {gameCode && (
           <div className="lobby-page__code">
@@ -17,30 +20,28 @@ export function LobbyPage() {
 
         {player && (
           <div className="lobby-page__bakery">
-            Your bakery: <strong>{player.bakeryName}</strong>
+            Your bakery: <strong>{player.displayName || player.name}</strong>
           </div>
         )}
 
         <div className="lobby-page__players">
-          <h2>Players ({players.length || 1})</h2>
+          <h2>Players ({totalPlayers || allPlayers.length || 1})</h2>
           <ul className="lobby-page__player-list">
-            {player && (
-              <li className="lobby-page__player lobby-page__player--you">
-                {player.name} (you)
+            {allPlayers.map((p) => (
+              <li
+                key={p.id}
+                className={`lobby-page__player ${p.id === player?.id ? "lobby-page__player--you" : ""}`}
+              >
+                {p.displayName || p.name} {p.id === player?.id ? "(you)" : ""}
               </li>
-            )}
-            {players
-              .filter((p) => p.id !== player?.id)
-              .map((p) => (
-                <li key={p.id} className="lobby-page__player">
-                  {p.name}
-                </li>
-              ))}
+            ))}
           </ul>
         </div>
 
         <p className="lobby-page__status">
-          Waiting for the professor to start the game…
+          {phase === "lobby"
+            ? "Waiting for the professor to start the game…"
+            : `Game has started! Phase: ${phase}`}
         </p>
       </div>
     </PageShell>

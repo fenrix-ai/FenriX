@@ -1,70 +1,55 @@
-import { useState } from "react";
+import { useGame } from "../../../contexts/GameContext";
 
-const AD_TYPES = ["TV", "Radio", "Newspaper", "Billboard"] as const;
-const CHEFS = [
-  { id: "chef-1", name: "Chef #1", specialty: "Pastry" },
-  { id: "chef-2", name: "Chef #2", specialty: "Bread" },
-  { id: "chef-3", name: "Chef #3", specialty: "Drinks" },
-];
+const AD_BONUSES: Record<string, number> = {
+  TV: 200,
+  Billboard: 150,
+  Radio: 100,
+  Newspaper: 75,
+};
 
 export function AuctionTab() {
-  const [adBids, setAdBids] = useState<Record<string, number>>({});
-  const [chefBids, setChefBids] = useState<Record<string, number>>({});
+  const { player, config } = useGame();
+  const adBonuses = config?.adBonuses ?? AD_BONUSES;
 
-  const setAdBid = (ad: string, value: number) => {
-    setAdBids((prev) => ({ ...prev, [ad]: Math.max(0, value) }));
-  };
-
-  const setChefBid = (id: string, value: number) => {
-    setChefBids((prev) => ({ ...prev, [id]: Math.max(0, value) }));
-  };
+  const pendingAdBid = player?.pendingBids?.adBid;
+  const pendingChefBid = player?.pendingBids?.chefBid;
 
   return (
     <div className="auction-tab">
-      <h3 className="sidebar-tab__title">Auction</h3>
+      <h3 className="sidebar-tab__title">Auction Bids</h3>
+      <p className="sidebar-tab__hint">Your submitted bids for this round.</p>
 
       <div className="auction-tab__section">
-        <h4 className="auction-tab__section-title">Ad Slots</h4>
-        <div className="auction-tab__grid">
-          {AD_TYPES.map((ad) => (
-            <div key={ad} className="auction-tab__card">
-              <span className="auction-tab__card-name">{ad}</span>
-              <input
-                type="number"
-                className="auction-tab__bid-input"
-                placeholder="$0"
-                min={0}
-                value={adBids[ad] ?? ""}
-                onChange={(e) =>
-                  setAdBid(ad, parseInt(e.target.value) || 0)
-                }
-              />
+        <h4 className="auction-tab__section-title">Ad Slot Bids</h4>
+        <div style={{ fontSize: "0.9rem", color: "#666" }}>
+          {pendingAdBid?.adType ? (
+            <div>
+              <strong>{pendingAdBid.adType}</strong> — ${pendingAdBid.amount.toLocaleString()}
+              <br />
+              <span style={{ color: "#888" }}>
+                Bonus if won: +${(adBonuses[pendingAdBid.adType] ?? 0).toLocaleString()}
+              </span>
             </div>
-          ))}
+          ) : (
+            <span>No ad bid submitted</span>
+          )}
         </div>
       </div>
 
       <div className="auction-tab__section">
-        <h4 className="auction-tab__section-title">Chef Hiring</h4>
-        <div className="auction-tab__grid">
-          {CHEFS.map((chef) => (
-            <div key={chef.id} className="auction-tab__card">
-              <span className="auction-tab__card-name">{chef.name}</span>
-              <span className="auction-tab__card-detail">
-                {chef.specialty}
+        <h4 className="auction-tab__section-title">Chef Bids</h4>
+        <div style={{ fontSize: "0.9rem", color: "#666" }}>
+          {pendingChefBid && pendingChefBid.amount > 0 ? (
+            <div>
+              <strong>${pendingChefBid.amount.toLocaleString()}</strong> bid
+              <br />
+              <span style={{ color: "#888" }}>
+                Skill: 0–100 random | Bonus: skill × $5/round
               </span>
-              <input
-                type="number"
-                className="auction-tab__bid-input"
-                placeholder="$0"
-                min={0}
-                value={chefBids[chef.id] ?? ""}
-                onChange={(e) =>
-                  setChefBid(chef.id, parseInt(e.target.value) || 0)
-                }
-              />
             </div>
-          ))}
+          ) : (
+            <span>No chef bid submitted</span>
+          )}
         </div>
       </div>
     </div>

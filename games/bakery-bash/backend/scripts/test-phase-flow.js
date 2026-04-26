@@ -33,7 +33,7 @@ function assertPhaseEndTime(value, message) {
   }
 }
 
-async function seedLobbyGame(db, professorId) {
+async function seedLobbyGame(db, professorId, playerId) {
   await db.doc(`games/${GAME_ID}`).set({
     joinCode: "PHASE1",
     phase: "lobby",
@@ -41,7 +41,7 @@ async function seedLobbyGame(db, professorId) {
     totalRounds: 5,
     phaseEndTime: null,
     submittedCount: 0,
-    totalPlayers: 0,
+    totalPlayers: 1,
     paused: false,
     professorId,
     createdAt: null,
@@ -50,11 +50,39 @@ async function seedLobbyGame(db, professorId) {
   });
 
   await db.doc(`games/${GAME_ID}/config/params`).set({
+    startingBudget: 2000,
     phaseDurations: {
       closing_hours: 180,
       auction: 90,
       open_for_business: 30,
       results: 60,
+    },
+  });
+
+  await db.doc(`games/${GAME_ID}/players/${playerId}`).set({
+    uid: playerId,
+    displayName: "Test Player",
+    joinedAt: null,
+    budgetCurrent: 2000,
+    creditBalance: 0,
+    cumulativeRevenue: 0,
+    pendingDecision: {
+      submitted: false,
+      submittedAt: null,
+      staffCount: 3,
+      adSpend: 0,
+      menu: { croissant: true, cookie: true, bagel: true, sandwich: false, latte: false, matchaLatte: false },
+      productPrices: { croissant: 0, cookie: 0, bagel: 0, sandwich: 0, latte: 0, matchaLatte: 0 },
+      quantities: { croissant: 0, cookie: 0, bagel: 0, sandwich: 0, latte: 0, matchaLatte: 0 },
+    },
+    pendingBids: {
+      adBid: { adType: null, amount: 0 },
+      chefBid: { skillLevel: 0, amount: 0 },
+    },
+    lastRoundResult: {
+      round: 0, revenue: 0, customerCount: 0, customerSatisfaction: 0,
+      headchefSkill: 0, adTypeWon: null,
+      productsSold: { croissant: 0, cookie: 0, bagel: 0, sandwich: 0, latte: 0, matchaLatte: 0 },
     },
   });
 }
@@ -81,7 +109,8 @@ async function main() {
 
   const anonymousUser = await signInAnonymously(auth);
   const professorId = anonymousUser.user.uid;
-  await seedLobbyGame(db, professorId);
+  const playerId = `player_${professorId}`;
+  await seedLobbyGame(db, professorId, playerId);
 
   const startGame = httpsCallable(functions, "startGame");
   const advanceGamePhase = httpsCallable(functions, "advanceGamePhase");

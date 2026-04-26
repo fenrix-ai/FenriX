@@ -1,15 +1,18 @@
 import { useState } from "react";
-
-const COST_PER_STAFF = 150;
+import { useGame } from "../../../contexts/GameContext";
 
 export function StaffTab() {
   const [staffCount, setStaffCount] = useState(1);
+  const { config } = useGame();
+
+  const costPerStaff = config?.costPerStaffPerRound ?? 50;
+  const totalCost = staffCount * costPerStaff;
 
   return (
     <div className="staff-tab">
       <h3 className="sidebar-tab__title">Staff</h3>
       <p className="sidebar-tab__hint">
-        Hire staff to serve customers faster.
+        Hire staff to serve customers. Cost: ${costPerStaff}/staff per round.
       </p>
 
       <div className="staff-tab__control">
@@ -36,7 +39,7 @@ export function StaffTab() {
       </div>
 
       <div className="staff-tab__cost">
-        Cost: <strong>${(staffCount * COST_PER_STAFF).toLocaleString()}</strong>
+        Cost: <strong>${totalCost.toLocaleString()}</strong>
       </div>
     </div>
   );

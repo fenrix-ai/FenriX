@@ -1037,11 +1037,41 @@ async function claimSimulationRun(gameId, roundId) {
       submittedCount,
       phaseStartedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
-    });
+});
     shouldRun = true;
   });
 
   return shouldRun;
+}
+
+/**
+ * Mark a simulation as failed and roll the game phase back to closing_hours.
+ *
+ * Recovery path: professor calls advanceGamePhase again, which walks through
+ * auction → open_for_business and re-triggers the simulation. Rolling back to
+ * closing_hours (not auction) gives players the option to revise decisions if
+ * the failure was caused by invalid data, while keeping existing decisions
+ * intact if they choose not to resubmit.
+ */
+async function markSimulationFailed(gameId, roundId, error) {
+  const gameRef = db.collection("games").doc(gameId);
+  const configSnap = await gameRef.collection("config").doc("params").get();
+  const config = mergeConfig(configSnap.exists ? configSnap.data() : {});
+  const failureUpdate = {
+    simulationStatus: "failed",
+    simulationError:
+      error instanceof Error ? error.message : "Unknown simulation error",
+    failedAt: FieldValue.serverTimestamp(),
+  };
+
+  await gameRef.collection("rounds").doc(roundId).set(failureUpdate, { merge: true });
+  await gameRef.update({
+    phase: "closing_hours",
+    phaseEndTime: phaseEndTimeFromNow(config, "closing_hours"),
+    phaseStartedAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+    submittedCount: 0,
+  });
 }
 
 /**
@@ -1213,6 +1243,10 @@ async function runRoundSimulation(gameId, roundId) {
         round: roundNumber,
         revenue,
         customerCount,
+        totalCosts,
+        budgetDelta,
+        budgetBefore,
+        budgetAfter,
         customerSatisfaction: satisfaction,
         headchefSkill,
         adTypeWon,

@@ -21,6 +21,7 @@ export default function App() {
             <Route path="/game" element={<GamePage />} />
             <Route path="/game/:phase" element={<GamePage />} />
             <Route path="/auction" element={<AuctionPage />} />
+            <Route path="/results" element={<GamePage />} />
             <Route path="/leaderboard" element={<LeaderboardPage />} />
             <Route path="/professor" element={<ProfessorPage />} />
           </Routes>

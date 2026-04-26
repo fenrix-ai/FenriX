@@ -1,19 +1,4 @@
-export type GamePhase = "lobby" | "decide" | "bid" | "auction" | "simulate" | "results";
-
-export type ChefNationality = "american" | "french" | "italian" | "japanese";
-export type ChefGender = "m" | "f";
-export type SkillLevel = "low" | "medium" | "high";
-
-export interface ChefListing {
-  id: string;
-  nationality: ChefNationality;
-  gender: ChefGender;
-  name: string;
-  skill: SkillLevel;
-  multiplier: number;
-}
-
-export type AuctionTab = "chefs" | "ads";
+export type GamePhase = "lobby" | "closing_hours" | "auction" | "open_for_business" | "results" | "game_over";
 
 export type MenuItemId =
   | "croissant"
@@ -23,40 +8,87 @@ export type MenuItemId =
   | "latte"
   | "matcha-latte";
 
-export type AdType = "tv" | "radio" | "newspaper" | "billboard";
+export type AdType = "TV" | "Billboard" | "Radio" | "Newspaper";
 
-export interface MenuItem {
-  id: MenuItemId;
-  name: string;
-  unlocked: boolean;
-  basePrice: number;
-  quantity: number;
-}
-
-export interface PlayerDecisions {
-  quantities: Record<MenuItemId, number>;
+export interface PendingDecision {
+  submitted: boolean;
+  submittedAt: number | null;
   staffCount: number;
-  adBids: Record<AdType, number>;
-  chefBids: Record<string, number>;
+  adSpend: number;
+  menu: Record<string, boolean>;
+  productPrices: Record<string, number>;
+  quantities: Record<string, number>;
 }
 
-export interface RoundResult {
+export interface PendingBids {
+  adBid: {
+    adType: string | null;
+    amount: number;
+  };
+  chefBid: {
+    skillLevel: number;
+    amount: number;
+  };
+}
+
+export interface LastRoundResult {
   round: number;
   revenue: number;
   customerCount: number;
   customerSatisfaction: number;
-  auctionResults: {
-    adWon: AdType | null;
-    chefWon: string | null;
-  };
+  headchefSkill: number;
+  adTypeWon: string | null;
+  productsSold: Record<string, number>;
 }
 
 export interface Player {
   id: string;
+  uid: string;
   name: string;
-  bakeryName: string;
-  budget: number;
+  displayName: string;
+  joinedAt: number | null;
+  budgetCurrent: number;
+  creditBalance: number;
   cumulativeRevenue: number;
+  pendingDecision: PendingDecision;
+  pendingBids: PendingBids;
+  lastRoundResult: LastRoundResult;
+}
+
+export interface GameConfig {
+  startingBudget: number;
+  costPerStaffPerRound: number;
+  unitCostPerProduct: number;
+  revenueModel: {
+    base: number;
+    staffCoefficient: number;
+    priceCoefficient: number;
+    adSpendCoefficient: number;
+    numProductsCoefficient: number;
+    noiseMin: number;
+    noiseMax: number;
+  };
+  adBonuses: Record<string, number>;
+  chefBonusPerPoint: number;
+  customerPoolMultiplier: number;
+  phaseDurations: Record<string, number>;
+}
+
+export interface RoundResult {
+  roundId: string;
+  round: number;
+  simulationStatus: string;
+  auctionResults: Record<string, unknown>;
+  classStats: Record<string, unknown>;
+}
+
+export interface LeaderboardEntry {
+  rank: number;
+  playerId: string;
+  displayName: string;
+  cumulativeRevenue: number;
+  lastRoundRevenue: number;
+  rankChange: number;
 }
 
 export interface GameState {
@@ -65,9 +97,9 @@ export interface GameState {
   phase: GamePhase;
   currentRound: number;
   totalRounds: number;
+  config: GameConfig | null;
   player: Player | null;
   players: Player[];
-  roundResults: RoundResult[];
-  timeRemaining: number | null;
-  auctionTab: AuctionTab;
+  rounds: RoundResult[];
+  phaseEndTime: number | null;
 }

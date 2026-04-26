@@ -1,8 +1,8 @@
 import { useState } from "react";
-import type { MenuItemId } from "../../../types/game";
+import { useGame } from "../../../contexts/GameContext";
 
 interface MenuEntry {
-  id: MenuItemId;
+  id: string;
   name: string;
   basePrice: number;
   unlocked: boolean;
@@ -19,6 +19,9 @@ const MENU_ITEMS: MenuEntry[] = [
 
 export function MenuTab() {
   const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const { config } = useGame();
+
+  const unitCost = config?.unitCostPerProduct ?? 1;
 
   const setQty = (id: string, value: number) => {
     setQuantities((prev) => ({ ...prev, [id]: Math.max(0, value) }));
@@ -27,13 +30,13 @@ export function MenuTab() {
   const totalCost = MENU_ITEMS.reduce((sum, item) => {
     if (!item.unlocked) return sum;
     const qty = quantities[item.id] ?? 0;
-    return sum + item.basePrice * qty;
+    return sum + qty * unitCost;
   }, 0);
 
   return (
     <div className="menu-tab">
       <h3 className="sidebar-tab__title">Menu</h3>
-      <p className="sidebar-tab__hint">Set how many of each item to stock.</p>
+      <p className="sidebar-tab__hint">Set how many of each item to stock. Stock cost: ${unitCost}/unit.</p>
 
       <div className="menu-tab__list">
         {MENU_ITEMS.map((item) => (
@@ -46,7 +49,7 @@ export function MenuTab() {
             <div className="menu-tab__item-info">
               <span className="menu-tab__item-name">{item.name}</span>
               <span className="menu-tab__item-price">
-                ${item.basePrice.toFixed(2)}
+                ${item.basePrice.toFixed(2)} retail
               </span>
             </div>
             {item.unlocked ? (
