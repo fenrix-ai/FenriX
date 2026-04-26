@@ -638,19 +638,47 @@ async function resolveAndApplyAdAuction(gameRef, round) {
 // Writes { uid: { status, submittedAt, displayName, role } } to
 // games/{gameId}/submissions/{submissionDocId} with merge so the professor
 // dashboard can track per-player submission state in real time.
+//
+// Also maintains /submissionCounts/{submissionDocId} = { count, updatedAt }
+// in the same transaction. The counts mirror is readable by all signed-in
+// users (see firestore.rules) so the player-facing SubmissionLock can show
+// "X / Y submitted" without exposing per-player submission identities. The
+// count is only incremented when the uid was not already marked submitted,
+// so re-submissions don't double-count.
+//
 // submissionDocId pattern: "round_{N}_{phase}"  e.g. "round_1_decide"
 // Non-fatal: logged and swallowed on failure.
 // ---------------------------------------------------------------------------
 async function recordSubmission(gameRef, submissionDocId, uid, displayName, role) {
+  const submissionRef = gameRef.collection('submissions').doc(submissionDocId);
+  const countRef = gameRef.collection('submissionCounts').doc(submissionDocId);
   try {
-    await gameRef.collection('submissions').doc(submissionDocId).set({
-      [uid]: {
-        status: 'submitted',
-        submittedAt: Timestamp.now(),
-        displayName: displayName || '',
-        role: role || null,
-      },
-    }, { merge: true });
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(submissionRef);
+      const existing = snap.exists ? (snap.data() || {}) : {};
+      const wasAlreadySubmitted =
+        existing[uid] && existing[uid].status === 'submitted';
+
+      tx.set(submissionRef, {
+        [uid]: {
+          status: 'submitted',
+          submittedAt: Timestamp.now(),
+          displayName: displayName || '',
+          role: role || null,
+        },
+      }, { merge: true });
+
+      if (!wasAlreadySubmitted) {
+        tx.set(countRef, {
+          count: FieldValue.increment(1),
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+      } else {
+        tx.set(countRef, {
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+      }
+    });
   } catch (err) {
     logger.warn('recordSubmission side-effect failed — non-fatal.', {
       gameId: gameRef.id, submissionDocId, uid, error: err && err.message,
@@ -3600,6 +3628,7 @@ exports.resetGame = onCall(CALLABLE_OPTS, async (request) => {
   await Promise.all([
     deleteCollectionDocs(gameRef.collection('rounds')),
     deleteCollectionDocs(gameRef.collection('submissions')),
+    deleteCollectionDocs(gameRef.collection('submissionCounts')),
     deleteCollectionDocs(gameRef.collection('marketInsights')),
     deleteCollectionDocs(gameRef.collection('leaderboard')),
     deleteCollectionDocs(gameRef.collection('conclusion')),
