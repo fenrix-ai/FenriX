@@ -313,7 +313,7 @@ function stepCustomer(
       next: {
         ...c,
         y: nextY,
-        frame: arrived ? pickWalkFrame('right', now) : pickWalkFrame('right', now),
+        frame: arrived ? CUSTOMER_FRAME.idle : pickWalkFrame('right', now),
         state: arrived ? 'walking-out' : 'walking-down',
       },
       triggeredSale: false,

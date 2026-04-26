@@ -280,22 +280,29 @@ export function GamePhaseListener() {
         else if (base === "game_over") target = "/game/conclusion";
         else target = "/game";
 
-        // Always keep context phase fresh when we have a confirmed live read,
-        // even if pathname already matches. Previously we returned early when
-        // pathname === target, which left context.phase stale during in-place
-        // transitions (e.g. decide → simulating → results_ready, all under
-        // /game) and stranded the student on the decide UI.
-        if (phaseNameRef.current !== livePhase) {
-          dispatch({ type: "SET_PHASE", payload: livePhase });
-          phaseNameRef.current = livePhase;
+        // V8: in-place transition (pathname already matches target) —
+        // refresh context.phase without navigating. This handles the
+        // decide → simulating → results_ready case where every phase
+        // shares /game; previously we returned early here and left
+        // context.phase stale, stranding the student on the decide UI.
+        // Same-URL refresh is safe even if the poll is briefly stale —
+        // a subsequent poll or snapshot fire will correct it, and no
+        // navigation can yank the user away.
+        if (pathnameRef.current === target) {
+          if (phaseNameRef.current !== livePhase) {
+            dispatch({ type: "SET_PHASE", payload: livePhase });
+            phaseNameRef.current = livePhase;
+          }
+          return;
         }
-        if (pathnameRef.current === target) return;
 
         // Race guard: a poll request started under phase P1 can resolve
         // *after* the snapshot listener has already received and navigated
         // for phase P2. In that window pathname is /P2 (correct) but the
         // poll's `livePhase` is still P1 (stale REST read), and the naive
         // "force-nav to livePhase target" would yank the user back to /P1.
+        // Read phaseNameRef *before* any write so the guard reflects the
+        // snapshot's last-known phase, not the poll's.
         const knownPhase = phaseNameRef.current;
         if (knownPhase && knownPhase !== livePhase) {
           const knownBase = parseGamePhase(knownPhase).base;
@@ -310,7 +317,11 @@ export function GamePhaseListener() {
 
         // Mismatch the snapshot couldn't explain — the SDK watch stream
         // is most likely stalled (the V7 scenario this poll exists for).
-        // Force-navigate so other components recover too.
+        // Force-navigate and dispatch so other components recover too.
+        if (phaseNameRef.current !== livePhase) {
+          dispatch({ type: "SET_PHASE", payload: livePhase });
+          phaseNameRef.current = livePhase;
+        }
         console.warn("REST poll: phase/path mismatch — forcing nav", {
           livePhase,
           target,
