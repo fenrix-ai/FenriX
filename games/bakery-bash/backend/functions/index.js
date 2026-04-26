@@ -756,6 +756,7 @@ async function resetPendingPlayerStateForRound(gameRef) {
       'pendingBids.ad': null,
       'pendingBids.chef': null,
       pendingRosterAction: false,
+      rosterCompleted: false,
       updatedAt: FieldValue.serverTimestamp(),
     });
     opsInBatch++;
@@ -2244,6 +2245,7 @@ async function runSimulationAndPersist(gameRef, round, config) {
       revenueGross: r.revenueGross,
       customerCount: r.customerCount,
       budgetAfter: r.budgetAfter,
+      amountBorrowed: r.amountBorrowed || 0,
     }));
 
   const revenues = results.map((r) => r.revenueNet);
@@ -2723,16 +2725,21 @@ exports.submitBids = onCall(CALLABLE_OPTS, async (request) => {
     const existing = await transaction.get(bidsRef);
     const roundSnap = await transaction.get(roundRef);
     const merged = existing.exists ? existing.data() : { round };
-    const topBids = objectOrDefault((roundSnap.exists && roundSnap.data().topBids) || {}, {});
+    const roundData = (roundSnap.exists && roundSnap.data()) || {};
+    const topBids = objectOrDefault(roundData.topBids || {}, {});
+    const topBidsLeader = objectOrDefault(roundData.topBidsLeader || {}, {});
+    const myTeamKey = getPlayerTeamKey(pSnap);
 
     if (bidType === 'ad') {
       const existingAd = objectOrDefault(merged.ad, {});
       const currentTopAd = objectOrDefault(topBids.ad, {});
+      const currentTopLeaderAd = objectOrDefault(topBidsLeader.ad, {});
       for (const adType of AD_TYPES) {
         const existingAmount = numberOrDefault(existingAd[adType], 0);
         const currentTop = numberOrDefault(currentTopAd[adType], 0);
         const nextAmount = numberOrDefault(validated[adType], 0);
-        if (existingAmount > 0 && existingAmount === currentTop && nextAmount !== existingAmount) {
+        const isActualLeader = currentTopLeaderAd[adType] === myTeamKey;
+        if (existingAmount > 0 && existingAmount === currentTop && isActualLeader && nextAmount !== existingAmount) {
           throw new HttpsError(
             'failed-precondition',
             `You already hold the top bid for ${adType} and cannot change it until another team outbids you.`
@@ -2747,11 +2754,13 @@ exports.submitBids = onCall(CALLABLE_OPTS, async (request) => {
         if (bid && bid.chefId) existingChefMap[bid.chefId] = numberOrDefault(bid.amount, 0);
       }
       const currentTopChef = objectOrDefault(topBids.chef, {});
+      const currentTopLeaderChef = objectOrDefault(topBidsLeader.chef, {});
       for (const bid of validated) {
         if (!bid || !bid.chefId) continue;
         const existingAmount = numberOrDefault(existingChefMap[bid.chefId], 0);
         const currentTop = numberOrDefault(currentTopChef[bid.chefId], 0);
-        if (existingAmount > 0 && existingAmount === currentTop && numberOrDefault(bid.amount, 0) !== existingAmount) {
+        const isActualLeader = currentTopLeaderChef[bid.chefId] === myTeamKey;
+        if (existingAmount > 0 && existingAmount === currentTop && isActualLeader && numberOrDefault(bid.amount, 0) !== existingAmount) {
           throw new HttpsError(
             'failed-precondition',
             'You already hold the top bid for that chef and cannot change it until another team outbids you.'

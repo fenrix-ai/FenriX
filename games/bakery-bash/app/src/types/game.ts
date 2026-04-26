@@ -349,6 +349,7 @@ export interface GameConfigParams {
   unitCostPerProduct?: number;
   phaseDurations?: Record<string, number>;
   adBonuses?: Partial<Record<AdType, number>>;
+  adBidMinimums?: Partial<Record<AdType, number>>;
   // Legacy (pre-rewrite seed doc). Kept so UI can fall back if the canonical
   // field is not yet present in Firestore.
   costPerStaffPerRound?: number;

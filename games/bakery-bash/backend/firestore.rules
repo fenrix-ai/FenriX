@@ -166,7 +166,7 @@ service cloud.firestore {
       // Doc IDs follow the pattern "round_{N}_{phase}".
       // ─────────────────────────────────────────────────────
       match /submissions/{doc} {
-        allow read: if isProfessor() || isGameProfessor(gameId);
+        allow read: if signedIn();
         allow write: if false;
       }
     }
