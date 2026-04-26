@@ -73,10 +73,12 @@ const NATIONALITY_LABEL: Record<ChefNationality, string> = {
   japanese: "Japanese",
 };
 
+// V6 (Apr 26): users prefer the original tier vocabulary; the bronze/
+// silver/gold colour palette stays so the visual progression is unchanged.
 const SKILL_LABEL: Record<ChefSkillTier, string> = {
-  novel: "Novel",
-  intermediate: "Intermediate",
-  advanced: "Advanced",
+  novel: "Low",
+  intermediate: "Medium",
+  advanced: "High",
 };
 
 export function ChefCard(props: ChefCardProps) {

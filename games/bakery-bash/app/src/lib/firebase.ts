@@ -1,5 +1,10 @@
 import { initializeApp } from "firebase/app";
-import { getFirestore, connectFirestoreEmulator } from "firebase/firestore";
+import {
+  connectFirestoreEmulator,
+  getFirestore,
+  initializeFirestore,
+  memoryLocalCache,
+} from "firebase/firestore";
 import {
   browserSessionPersistence,
   connectAuthEmulator,
@@ -19,7 +24,20 @@ const firebaseConfig = {
 };
 
 export const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app);
+
+// V6 fix (Apr 26): in dev, use a memory-only Firestore cache instead of the
+// default IndexedDB-backed cache. Multi-tab dev playtesting (each tab a
+// distinct UID via browserSessionPersistence on the auth side) was tripping
+// the Firestore SDK's shared IndexedDB instance into "Unexpected state (ID:
+// ca9)" assertion failures partway through a round. Once that fired the
+// snapshot listener stopped delivering updates, so phase changes never
+// reached the player tab and nobody navigated off /game/roster when the
+// professor advanced. Memory cache is per-tab so it can't corrupt across
+// tabs. Production keeps the default IndexedDB cache because real students
+// play in a single tab and benefit from offline persistence.
+export const db = import.meta.env.DEV
+  ? initializeFirestore(app, { localCache: memoryLocalCache() })
+  : getFirestore(app);
 export const auth = getAuth(app);
 export const functions = getFunctions(app);
 export const storage = getStorage(app);
@@ -58,4 +76,48 @@ if (
   connectFirestoreEmulator(db, "localhost", 8080);
   connectFunctionsEmulator(functions, "localhost", 5001);
   connectStorageEmulator(storage, "localhost", 9199);
+
+  // V6 watchdog (Apr 26): if the Firestore SDK enters the "Unexpected
+  // state (ID: ca9)" assertion-failure loop in dev, the entire client
+  // becomes unusable — every subsequent onSnapshot/getDoc throws and
+  // phase-change snapshots never propagate. Detect a sustained burst
+  // of those assertions and reload the page; AuthProvider +
+  // GameContext rehydrate the session so the user lands back on the
+  // current phase with a fresh client. Production is unaffected
+  // (single-tab playtest doesn't trigger the assertion). Threshold is
+  // intentionally conservative (15 hits in a 5s window) so a single
+  // transient error doesn't cause an unwanted reload.
+  const ASSERTION_PATTERN = /INTERNAL ASSERTION FAILED.*ID: (ca9|b815)/;
+  const RELOAD_THRESHOLD = 15;
+  const RELOAD_WINDOW_MS = 5000;
+  const assertionTimestamps: number[] = [];
+  let reloadScheduled = false;
+  const origConsoleError = console.error.bind(console);
+  console.error = (...args: unknown[]) => {
+    origConsoleError(...args);
+    if (reloadScheduled) return;
+    let msg = "";
+    for (const a of args) {
+      if (typeof a === "string") msg += a;
+      else if (a && typeof a === "object" && "message" in a) {
+        msg += String((a as { message?: unknown }).message ?? "");
+      }
+    }
+    if (!ASSERTION_PATTERN.test(msg)) return;
+    const now = Date.now();
+    assertionTimestamps.push(now);
+    while (
+      assertionTimestamps.length > 0 &&
+      now - assertionTimestamps[0] > RELOAD_WINDOW_MS
+    ) {
+      assertionTimestamps.shift();
+    }
+    if (assertionTimestamps.length >= RELOAD_THRESHOLD) {
+      reloadScheduled = true;
+      origConsoleError(
+        "🔄 Firestore SDK stuck in assertion-failure loop — reloading page in 1s to recover.",
+      );
+      setTimeout(() => window.location.reload(), 1000);
+    }
+  };
 }

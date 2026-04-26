@@ -42,10 +42,12 @@ function chefIcon(nationality: ChefNationality, gender: ChefGender): string {
   return `/assets/chefs/${nationality}-${gender}.svg`;
 }
 
+// V6 (Apr 26): revert to the original Low/Medium/High labels — see the
+// matching note in ChefCard.tsx.
 const SKILL_LABEL: Record<NonNullable<ChefWinnerEntry["skillTier"]>, string> = {
-  novel: "Novel",
-  intermediate: "Intermediate",
-  advanced: "Advanced",
+  novel: "Low",
+  intermediate: "Medium",
+  advanced: "High",
   base: "Base",
 };
 

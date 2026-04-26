@@ -326,34 +326,29 @@ const DEFAULT_GAME_CONFIG = {
     Newspaper: 0.025,
   },
 
-  // Balance pass 15: minimum bid = 80% of bonus value. Pass 14 set min =
-  // bonus which fully closed the cash arbitrage but ALSO removed any reason
-  // for engaged players to bid (foot traffic alone wasn't enough to cover
-  // their other operating costs). At 80%, the per-ad margin is $0.8k–$4k,
-  // total uncontested margin across all 4 ads = $8.8k/round, $44k over a
-  // 5-round game. That's bounded enough that "win all 4 ads" doesn't
-  // dominate, but still rewards engaged play with a small cash bonus when
-  // winning ad bidding wars.
-  //
-  // Combined with the ad-foot-traffic bonus (+30% capped) and the
-  // adversarialCeilingCounter sanity-check strategy in the test suite,
-  // tournament balance now lands engaged play at +$5k–$12k profit and
-  // adversarial counter at +$7k (no longer a dominant strategy).
+  // V7 (Apr 26): per-ad minimum bid floor removed at the user's request.
+  // Earlier balance work (pass 14/15 below) set these to 80% of bonus to
+  // close a "$1 bid wins everything" cash arbitrage, but the floors were
+  // invisible in the UI and confused playtesters: "I bid for all of them
+  // but I only won newspaper" — they'd bid the same amount on every slot
+  // and only the cheapest one cleared its (hidden) floor. Setting the
+  // minimums to 0 lets every positive bid count. The arbitrage worry is
+  // already handled by the foot-traffic-bonus cap (+30%) and the
+  // adSpendCoeff: 0 in revenueCoefficients.
   adBidMinimums: {
-    TV: 16000,        // 80% of $20,000 → max uncontested margin $4,000
-    Billboard: 10000, // 80% of $12,500 → max uncontested margin $2,500
-    Radio: 6000,      // 80% of $7,500  → max uncontested margin $1,500
-    Newspaper: 3200,  // 80% of $4,000  → max uncontested margin $800
+    TV: 0,
+    Billboard: 0,
+    Radio: 0,
+    Newspaper: 0,
   },
 
   phaseDurations: {
-    // Apr 25 V5: dropped from 30 → 8s. This is the "Get Ready to Bake
-    // Round N" splash that opens every round (EmailPhasePage, the
-    // pre-decide market-insight screen). 30s was too long for a brief
-    // "Round N starting" intro that doesn't require player input — the
-    // professor can extend it manually if students need more reading
-    // time. 8s lines up with the auto-advance cadence elsewhere.
-    email: 8,
+    // Apr 25 V5: dropped from 30 → 8s. The "Get Ready to Bake Round N"
+    // splash that opens every round.
+    // Apr 26 V6: bumped 8 → 15s after playtester said R1 felt too short
+    // to read. 15s is a compromise: long enough to read "Round N starting,
+    // here's the market insight" but still well under the old 30s.
+    email: 15,
     decide: 300,
     bid_ad: 60,
     bid_chef: 60,

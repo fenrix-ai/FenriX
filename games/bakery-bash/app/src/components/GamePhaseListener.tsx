@@ -4,11 +4,17 @@ import { doc, onSnapshot, type DocumentData } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { useGame, useGameDispatch } from "../contexts/GameContext";
 import { useGameListener } from "../hooks/useGameListener";
-import { db, functions } from "../lib/firebase";
+import { auth, db, functions } from "../lib/firebase";
 import { parseGamePhase } from "../types/game";
 
-const GRACE_SECONDS = 5;
-const FREEZE_SECONDS = 10;
+// V6 (Apr 26): cut grace + freeze from 5+10=15s down to 1+2=3s. After
+// bidding closes, players were sitting through "Times up — waiting for
+// professor" for ~15 seconds before the next phase started, which felt
+// dead and broke the rhythm. The freeze still exists so a slow submitter
+// has a couple of seconds to land their bid; it just doesn't pad every
+// transition with a noticeable wait.
+const GRACE_SECONDS = 1;
+const FREEZE_SECONDS = 2;
 
 // A24-I08: only show the "last chance to submit" banner + freeze overlay
 // during phases where students actually have something to submit. Email,
@@ -182,6 +188,87 @@ export function GamePhaseListener() {
         clearTimeout(deferredNavRef.current);
         deferredNavRef.current = null;
       }
+    };
+  }, [gameId, dispatch]);
+
+  // V7 fix (Apr 26): REST-based phase poll that bypasses the Firestore
+  // SDK entirely. The user reported V6's snapshot-based navigation
+  // *still* doesn't move players from /game/roster to /game when the
+  // professor advances. Root cause: the Firebase 12.12.x JS SDK
+  // intermittently silently stalls its watch stream after a sequence
+  // of writes (especially noticeable in dev against the emulator with
+  // multi-tab sessions). When that happens onSnapshot stops delivering
+  // updates AND getDoc through the same client also fails, so the
+  // memory-cache + watchdog-reload combo from V6 only papers over the
+  // worst cases. Polling Firestore's REST endpoint with native fetch()
+  // sidesteps the SDK completely — even if every other listener in
+  // the app is dead, this loop keeps the player on the correct page.
+  // Production keeps the same poll (cheap: one GET per 3s, no auth
+  // needed because the game doc is publicly readable per firestore.rules
+  // line 44 `allow read: if signedIn()` — wait, signedIn requires auth.
+  // For prod we attach the auth token. For dev/emulator the rules are
+  // also enforced but the emulator accepts the same token format.
+  useEffect(() => {
+    if (!gameId) return;
+
+    const projectId =
+      import.meta.env.VITE_FIREBASE_PROJECT_ID ?? "bakery-bash-54d12";
+    const restBase = import.meta.env.DEV
+      ? `http://127.0.0.1:8080/v1/projects/${projectId}/databases/(default)/documents/games/${gameId}`
+      : `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/games/${gameId}`;
+
+    let cancelled = false;
+
+    const poll = async () => {
+      if (cancelled) return;
+      try {
+        // Get fresh auth token. In prod this proves we're signed in;
+        // emulator ignores the value but the request shape is the same.
+        const token = await auth.currentUser?.getIdToken().catch(() => null);
+        const res = await fetch(restBase, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!res.ok) return;
+        const json = (await res.json()) as {
+          fields?: { phase?: { stringValue?: string } };
+        };
+        const livePhase = json.fields?.phase?.stringValue;
+        if (typeof livePhase !== "string" || livePhase === "lobby") return;
+        if (pathnameRef.current.startsWith("/professor")) return;
+
+        const base = parseGamePhase(livePhase).base;
+        let target: string;
+        if (base === "bid_ad" || base === "bid_chef") target = "/auction";
+        else if (base === "email") target = "/game/email";
+        else if (base === "roster") target = "/game/roster";
+        else if (base === "game_over") target = "/game/conclusion";
+        else target = "/game";
+
+        if (pathnameRef.current === target) return;
+        // Mismatch: snapshot listener missed an update. Force-navigate
+        // and dispatch the live phase so other components recover too.
+        console.warn("REST poll: phase/path mismatch — forcing nav", {
+          livePhase,
+          target,
+          pathname: pathnameRef.current,
+        });
+        dispatch({ type: "SET_PHASE", payload: livePhase });
+        phaseNameRef.current = livePhase;
+        navigateRef.current(target);
+      } catch {
+        // Network blips are fine — the next tick retries. Do not
+        // dispatch anything that could clobber the snapshot listener's
+        // last-known state.
+      }
+    };
+
+    const interval = setInterval(poll, 3000);
+    // Run once immediately so a fresh mount catches up without waiting
+    // for the first 3s tick.
+    void poll();
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
     };
   }, [gameId, dispatch]);
 

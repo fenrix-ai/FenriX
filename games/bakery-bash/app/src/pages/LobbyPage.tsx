@@ -144,8 +144,17 @@ export function LobbyPage() {
           </p>
         )}
 
-        <div className="lobby-page__players">
+        <div className="lobby-page__teams">
+          {/* V6 (Apr 26): users wanted teams + members rather than a flat
+              numbered roster. Roster docs carry `bakeryName`, which is the
+              team name for players who joined via createTeam (the only
+              codepath that creates teams in V6). Group on bakeryName so
+              each team renders as one card with its members listed below
+              the team name. The roster count is preserved as a heading
+              suffix so professors still see the live join count. */}
           <h2>
+            Teams ({rosterReady ? new Set(roster.map((e) => e.bakeryName ?? e.displayName)).size : "—"})
+            {" · "}
             Players ({rosterReady ? roster.length : "—"})
           </h2>
 
@@ -155,48 +164,50 @@ export function LobbyPage() {
             </p>
           )}
 
-          <ul className="lobby-page__player-list">
-            {showFallback ? (
-              <li className="lobby-page__player lobby-page__player--you">
-                <span className="lobby-page__player-name">
-                  {player!.name} (you)
-                </span>
-                {player!.bakeryName && (
-                  <span className="lobby-page__player-bakery">
-                    {player!.bakeryName}
-                  </span>
-                )}
+          {showFallback ? (
+            <ul className="lobby-page__team-list">
+              <li className="lobby-page__team lobby-page__team--you">
+                <div className="lobby-page__team-name">
+                  {player!.bakeryName ?? player!.name}
+                </div>
+                <ul className="lobby-page__team-members">
+                  <li>{player!.name} (you)</li>
+                </ul>
               </li>
-            ) : (
-              roster.map((entry, i) => {
-                const isYou = entry.uid === playerId;
-                return (
-                  <li
-                    key={entry.uid}
-                    className={`lobby-page__player${
-                      isYou ? " lobby-page__player--you" : ""
-                    }`}
-                  >
-                    <span
-                      className="lobby-page__player-rank"
-                      aria-hidden="true"
+            </ul>
+          ) : (
+            <ul className="lobby-page__team-list">
+              {(() => {
+                const groups = new Map<string, typeof roster>();
+                for (const entry of roster) {
+                  const key = entry.bakeryName ?? entry.displayName;
+                  if (!groups.has(key)) groups.set(key, []);
+                  groups.get(key)!.push(entry);
+                }
+                return Array.from(groups.entries()).map(([teamLabel, members]) => {
+                  const youOnThisTeam = members.some((m) => m.uid === playerId);
+                  return (
+                    <li
+                      key={teamLabel}
+                      className={`lobby-page__team${
+                        youOnThisTeam ? " lobby-page__team--you" : ""
+                      }`}
                     >
-                      {i + 1}.
-                    </span>
-                    <span className="lobby-page__player-name">
-                      {entry.displayName}
-                      {isYou && " (you)"}
-                    </span>
-                    {entry.bakeryName && (
-                      <span className="lobby-page__player-bakery">
-                        {entry.bakeryName}
-                      </span>
-                    )}
-                  </li>
-                );
-              })
-            )}
-          </ul>
+                      <div className="lobby-page__team-name">{teamLabel}</div>
+                      <ul className="lobby-page__team-members">
+                        {members.map((m) => (
+                          <li key={m.uid}>
+                            {m.displayName}
+                            {m.uid === playerId && " (you)"}
+                          </li>
+                        ))}
+                      </ul>
+                    </li>
+                  );
+                });
+              })()}
+            </ul>
+          )}
         </div>
 
         <p className="lobby-page__status">
