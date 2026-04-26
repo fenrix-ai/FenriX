@@ -35,9 +35,19 @@ export const app = initializeApp(firebaseConfig);
 // professor advanced. Memory cache is per-tab so it can't corrupt across
 // tabs. Production keeps the default IndexedDB cache because real students
 // play in a single tab and benefit from offline persistence.
-export const db = import.meta.env.DEV
-  ? initializeFirestore(app, { localCache: memoryLocalCache() })
-  : getFirestore(app);
+//
+// HMR guard: Firebase's app singleton survives Vite hot-module reloads,
+// so re-evaluating this module would call `initializeFirestore` a second
+// time on the same app and throw `failed-precondition`. Catch the second
+// call and fall back to the already-initialized instance.
+export const db = (() => {
+  if (!import.meta.env.DEV) return getFirestore(app);
+  try {
+    return initializeFirestore(app, { localCache: memoryLocalCache() });
+  } catch {
+    return getFirestore(app);
+  }
+})();
 export const auth = getAuth(app);
 export const functions = getFunctions(app);
 export const storage = getStorage(app);

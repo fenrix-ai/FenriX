@@ -24,16 +24,19 @@ const SUBMISSION_PHASE_BASES = new Set(["bid_ad", "bid_chef", "roster", "decide"
 /**
  * App-level listener that stays mounted regardless of route.
  *
- * Phase-change navigation: navigates when Firestore phase changes. If a
- * change arrives while the grace/freeze window is active, navigation is
- * deferred until the window ends. The window is derived directly from
- * phaseEndsAtMs so there's no race between the timer callbacks and incoming
- * Firestore snapshots.
+ * Phase-change navigation: navigates immediately when the Firestore phase
+ * changes (V4 fix — the previous deferred-nav scheme stranded players on
+ * the old phase when a professor advanced manually mid-freeze). The
+ * grace/freeze overlay locks *inputs* during the gap, but no longer holds
+ * navigation back. A 3-second REST poll (V7) runs in parallel as a
+ * fallback against the Firebase 12.12.x watch-stream stall.
  *
- * Timer-expiry sequence (student view):
- *   0–5 s  → orange banner, inputs still live ("Last chance — 5s")
- *   5–15 s → full-screen blocking overlay ("Locked — advancing in 10…")
- *   15 s   → overlay clears; professor's auto-advance fires via ProfessorPage
+ * Timer-expiry sequence (student view, V6 timings):
+ *   0–1 s → grace window: inputs still live, no extra UI (the orange
+ *           "Last chance" banner was removed in V4 — the RoundHeader
+ *           clock is the only countdown visible).
+ *   1–3 s → freeze: full-screen blocking overlay ("Locked — advancing in N").
+ *   3 s   → overlay clears; professor's auto-advance fires via ProfessorPage.
  */
 export function GamePhaseListener() {
   const { gameId, playerId, phase, phaseEndsAtMs } = useGame();
@@ -225,13 +228,15 @@ export function GamePhaseListener() {
         // Get fresh auth token. In prod this proves we're signed in;
         // emulator ignores the value but the request shape is the same.
         const token = await auth.currentUser?.getIdToken().catch(() => null);
+        if (cancelled) return;
         const res = await fetch(restBase, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
-        if (!res.ok) return;
+        if (cancelled || !res.ok) return;
         const json = (await res.json()) as {
           fields?: { phase?: { stringValue?: string } };
         };
+        if (cancelled) return;
         const livePhase = json.fields?.phase?.stringValue;
         if (typeof livePhase !== "string" || livePhase === "lobby") return;
         if (pathnameRef.current.startsWith("/professor")) return;
@@ -245,12 +250,37 @@ export function GamePhaseListener() {
         else target = "/game";
 
         if (pathnameRef.current === target) return;
-        // Mismatch: snapshot listener missed an update. Force-navigate
-        // and dispatch the live phase so other components recover too.
+
+        // Race guard: a poll request started under phase P1 can resolve
+        // *after* the snapshot listener has already received and navigated
+        // for phase P2. In that window pathname is /P2 (correct) but the
+        // poll's `livePhase` is still P1 (stale REST read), and the naive
+        // "force-nav to livePhase target" would yank the user back to /P1.
+        // Detect by comparing the snapshot's last-known phase
+        // (`phaseNameRef.current`, set in the onSnapshot callback above)
+        // against the poll's `livePhase` — if they disagree AND we're
+        // already on the snapshot's target, the snapshot is fresher; skip.
+        const knownPhase = phaseNameRef.current;
+        if (knownPhase && knownPhase !== livePhase) {
+          const knownBase = parseGamePhase(knownPhase).base;
+          let knownTarget: string;
+          if (knownBase === "bid_ad" || knownBase === "bid_chef") knownTarget = "/auction";
+          else if (knownBase === "email") knownTarget = "/game/email";
+          else if (knownBase === "roster") knownTarget = "/game/roster";
+          else if (knownBase === "game_over") knownTarget = "/game/conclusion";
+          else knownTarget = "/game";
+          if (pathnameRef.current === knownTarget) return;
+        }
+
+        // Mismatch the snapshot couldn't explain — the SDK watch stream
+        // is most likely stalled (the V7 scenario this poll exists for).
+        // Force-navigate and dispatch the live phase so other components
+        // recover too.
         console.warn("REST poll: phase/path mismatch — forcing nav", {
           livePhase,
           target,
           pathname: pathnameRef.current,
+          knownPhase,
         });
         dispatch({ type: "SET_PHASE", payload: livePhase });
         phaseNameRef.current = livePhase;

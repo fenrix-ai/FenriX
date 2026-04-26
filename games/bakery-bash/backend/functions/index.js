@@ -1276,8 +1276,9 @@ exports.createTeam = onCall(CALLABLE_OPTS, async (request) => {
 
     // BE-I04: first member is `solo` — the team only has one person
     // and `assertRoleAllowed`'s solo short-circuit keeps every action
-    // unlocked. The role flips to a specialist when the 3rd member
-    // joins via `joinGame`.
+    // unlocked. Players stay `solo` until they manually pick via
+    // `setTeamRole` (the auto-cascade on the 3rd join was removed in
+    // V6/V7 — see the matching comment in `joinGame`).
     //
     // V4 (Apr 25): pick a random bakery emoji for this team so the team
     // cards don't all default to the same croissant. The emoji is part
