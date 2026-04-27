@@ -160,10 +160,14 @@ contention, no cascade.
 **Plan**
 1. Schema: new doc `games/{gameId}/teams/{teamId}/state/pending` with
    `{ ad: {...}, chef: [...], decisionDraft: {...} }`
-2. Backend: `submitBids` writes to that doc instead of cascading to teammates;
+2. Backend: `submitBids` writes to that doc instead of cascading to teammates
+   (current cascade is in `backend/functions/index.js` around the `submitBids`
+   transaction's `for (const teamPlayerDoc of teamPlayerDocs)` loop);
    `submitDecision` does the same for `pendingDecision`
-3. Frontend: hooks read from the team doc instead of merging across teammate
-   player docs (look at `useGameListener.ts` line 252 area)
+3. Frontend: each teammate currently hydrates `pendingDecision` from their own
+   player doc snapshot in `app/src/pages/GamePage.tsx` (the player listener's
+   `data.pendingDecision` block). Switch that hydration to subscribe to the
+   new team doc instead.
 4. Migrate: backfill existing `players[].pendingBids` into the new team doc
    on first read (or just blow it away — pendingBids is round-scoped anyway)
 5. Firestore rules: team members can read their team's pending doc
