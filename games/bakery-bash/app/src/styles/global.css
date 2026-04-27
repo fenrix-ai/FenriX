@@ -2330,6 +2330,60 @@ h3 { font-size: 0.7rem; }
   flex-wrap: wrap;
 }
 
+.professor-page__warmup-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.65rem;
+  border-radius: 999px;
+  font-family: var(--font-pixel);
+  font-size: 0.55rem;
+  letter-spacing: 0.04em;
+  border: 2px solid var(--dough);
+  background: var(--cream);
+  color: var(--dark-roast);
+  align-self: center;
+}
+
+.professor-page__warmup-pill--done {
+  border-color: var(--sage);
+  color: var(--sage);
+  animation: warmup-pill-pop 280ms ease-out;
+}
+
+.professor-page__warmup-pill--partial {
+  border-color: var(--berry);
+  color: var(--berry);
+}
+
+.professor-page__warmup-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  font-size: 0.7rem;
+  font-weight: bold;
+}
+
+.professor-page__warmup-spinner {
+  width: 10px;
+  height: 10px;
+  background: var(--caramel);
+  animation: pixel-spin 1s steps(4) infinite;
+  box-shadow:
+    3px 0 0 var(--golden),
+    -3px 0 0 var(--golden),
+    0 3px 0 var(--golden),
+    0 -3px 0 var(--golden);
+}
+
+@keyframes warmup-pill-pop {
+  0%   { transform: scale(0.85); opacity: 0; }
+  60%  { transform: scale(1.05); opacity: 1; }
+  100% { transform: scale(1);    opacity: 1; }
+}
+
 .professor-page__field {
   display: flex;
   flex-direction: column;

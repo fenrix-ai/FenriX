@@ -226,6 +226,15 @@ function requireAuth(request, message = 'Sign in before continuing.') {
   return request.auth;
 }
 
+// T2.1: warm-up short-circuit. The professor's "Warm up servers" button
+// invokes each hot callable with { _warmup: true } ~30s before class so
+// Cloud Run spins up an instance per service before students arrive. Gen 2
+// callables each get their own Cloud Run service, so a single warmAll
+// callable can't substitute — every hot callable needs its own short-circuit.
+function isWarmupRequest(request) {
+  return request?.data?._warmup === true;
+}
+
 function cleanGameId(value) {
   const gameId = cleanString(value);
   if (!/^[A-Za-z0-9_-]{3,80}$/.test(gameId)) {
@@ -1017,6 +1026,7 @@ exports.createGame = onCall(CALLABLE_OPTS, async (request) => {
 // ===========================================================================
 
 exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request, 'Sign in before joining a game.');
   const data = request.data || {};
 
@@ -1215,6 +1225,7 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
 // Output: { gameId, playerId, teamId, teamName }
 
 exports.createTeam = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request, 'Sign in before creating a team.');
   const data = request.data || {};
 
@@ -1521,6 +1532,7 @@ exports.startGame = onCall(CALLABLE_OPTS, async (request) => {
 // ===========================================================================
 
 exports.advanceGamePhase = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request, 'Sign in before advancing phases.');
   const gameId = cleanGameId((request.data || {}).gameId);
   const gameRef = gameDoc(gameId);
@@ -2366,6 +2378,7 @@ async function persistConclusion(gameRef, totalRounds, config) {
 // ===========================================================================
 
 exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request, 'Sign in before submitting decisions.');
   const data = request.data || {};
   const gameId = cleanGameId(data.gameId);
@@ -2545,6 +2558,7 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
 // Multiple submits during a single Decide phase are allowed — latest wins.
 
 exports.submitPrices = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request, 'Sign in before submitting prices.');
   const data = request.data || {};
   const gameId = cleanGameId(data.gameId);
@@ -2648,6 +2662,7 @@ exports.submitPrices = onCall(CALLABLE_OPTS, async (request) => {
 // ===========================================================================
 
 exports.submitBids = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request, 'Sign in before bidding.');
   const data = request.data || {};
   const gameId = cleanGameId(data.gameId);
