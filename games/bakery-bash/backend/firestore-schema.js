@@ -97,8 +97,8 @@ const GameConfigDocument = {
   phaseDurations: {
     email: 30,                    // market-insight reading window
     decide: 300,                  // menu + quantities + sous chef hiring
-    bid_ad: 60,                   // sealed ad bids
-    bid_chef: 60,                 // sealed chef bids
+    bid_ad: 90,                   // sealed ad bids
+    bid_chef: 90,                 // sealed chef bids
     roster: 60,                   // layoff / continue specialty chef roster
     simulating: 30,               // server-side simulation (auto-advances)
     results: 60,                  // results review
