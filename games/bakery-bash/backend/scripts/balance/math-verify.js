@@ -395,7 +395,7 @@ const baseDecision = {
 
 const noStockPlayer = {
   playerId: 'p-nostock', displayName: 'NoStock', bakeryName: 'NS',
-  budgetCurrent: 500000,
+  budgetCurrent: 10000,
   decision: baseDecision,
   priorSubmittedPrices: [],
   specialtyChefs: [],
@@ -442,7 +442,7 @@ console.log('=== J. Sellout cap ===');
 // sellout fires (allocated 240 > stocked 200) → cap to 45.
 const selloutPlayer = {
   playerId: 'p-sellout', displayName: 'Sellout', bakeryName: 'SO',
-  budgetCurrent: 500000,
+  budgetCurrent: 10000,
   decision: {
     quantities: { croissant: 200 },
     menu:       { croissant: true },
@@ -502,7 +502,7 @@ console.log('=== K. End-to-end profit reconciliation ===');
 const reconPlayer = {
   playerId: 'p-recon',
   displayName: 'Recon', bakeryName: 'RB',
-  budgetCurrent: 500000,
+  budgetCurrent: 10000,
   decision: {
     quantities: { coffee: 100, croissant: 100, bagel: 80, cookie: 80 },
     menu:       { coffee: true, croissant: true, bagel: true, cookie: true },
@@ -515,7 +515,7 @@ const reconPlayer = {
   sousChefCount: 4,
   returningCustomersPending: 0,
   cleanliness_pct: 100,
-  auctionResults: { adWins: ['TV'], adBidPaid: 5000, chefBidPaid: 2750, chefsWon: [] },
+  auctionResults: { adWins: ['TV'], adBidPaid: 100, chefBidPaid: 55, chefsWon: [] },
 };
 
 const reconResult = sim.runSimulation([reconPlayer], neutralRoundPrefs, cfg, { gameId: 'recon', round: 1 });
@@ -525,18 +525,20 @@ const rr = reconResult[0];
 const stockUnits = 100 + 100 + 80 + 80;
 const handStockCost = stockUnits * cfg.unitCostPerProduct;
 const handSousCost = chefMod.getTotalSousChefHireCost(4, cfg);
-const handAdCost = 5000;
-const handChefCost = 2750;
+const handAdCost = 100;
+const handChefCost = 55;
 const handTotalSpent = handStockCost + handSousCost + handAdCost + handChefCost;
 check('K.1 totalSpent matches hand-compute', rr.totalSpent, handTotalSpent);
 
-// Budget after = budget + revenueNet - totalSpent
-const handBudgetAfter = Math.round(500000 + rr.revenueNet - handTotalSpent);
+// Budget after = budget + revenueNet - totalSpent. Use the fixture's own
+// budgetCurrent so this assertion stays valid if the fixture is rescaled.
+const handBudgetAfter = Math.round(reconPlayer.budgetCurrent + rr.revenueNet - handTotalSpent);
 check('K.2 budgetAfter = budget + revenueNet - totalSpent', rr.budgetAfter, handBudgetAfter, 1);
 
-// Revenue formula reconciliation (within noise)
+// Revenue formula reconciliation (within noise). adSpend term derives from
+// the fixture so the hand-compute survives a future rebalance of ad bids.
 const handBaseRev = c.base + c.sousChefCoeff * 4 + c.satisfactionCoeff * rr.aggregateSatisfactionPct +
-                   c.adSpendCoeff * 5000 + c.numProductsCoeff * 4;
+                   c.adSpendCoeff * reconPlayer.auctionResults.adBidPaid + c.numProductsCoeff * 4;
 let handProductRev = 0;
 for (const breakdown of Object.values(rr.revenueBreakdown || {})) {
   handProductRev += breakdown.revenue;
