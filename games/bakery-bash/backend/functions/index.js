@@ -112,6 +112,12 @@ const {
   recomputeAndCacheSubmittedCount,
 } = require('./modules/sharded-counter');
 
+const {
+  captureGameSnapshot,
+  restoreGameSnapshot,
+  pruneOldSnapshots,
+} = require('./modules/snapshot');
+
 // The following modules are part of the full backend surface. They are
 // required only where needed so that missing optional helpers do not break
 // the lobby / decision / bid flows.
@@ -1529,6 +1535,23 @@ exports.startGame = onCall(CALLABLE_OPTS, async (request) => {
     marketEmailAt: FieldValue.serverTimestamp(),
   }, { merge: true });
 
+  // T2.4: auto-snapshot at round 1 start (kicks off the per-round
+  // checkpointing — see the matching hook in advanceGamePhase). Best-effort,
+  // fire-and-forget — never block startGame on snapshot success.
+  captureGameSnapshot(db, gameRef, { capturedBy: 'auto', capturedByUid: auth.uid })
+    .then((res) => {
+      logger.info('auto-snapshot ok (startGame)', {
+        gameId, round: 1, snapshotId: res.snapshotId,
+        totalDocs: res.totalDocs, totalBytes: res.totalBytes, elapsedMs: res.elapsedMs,
+      });
+      return pruneOldSnapshots(db, gameRef);
+    })
+    .catch((err) => {
+      logger.warn('auto-snapshot failed (startGame) — non-fatal.', {
+        gameId, error: err && err.message,
+      });
+    });
+
   return { gameId, phase: 'round_1_email', round: 1 };
 });
 
@@ -1686,6 +1709,25 @@ exports.advanceGamePhase = onCall(CALLABLE_OPTS, async (request) => {
         marketEmail: insight,
         marketEmailAt: FieldValue.serverTimestamp(),
       }, { merge: true });
+
+      // T2.4: auto-snapshot at the start of every round so the professor
+      // can "restart this round" if anything goes sideways mid-round.
+      // Best-effort and fire-and-forget — a snapshot failure must not block
+      // the phase advance. Pruning is also fire-and-forget.
+      captureGameSnapshot(db, gameRef, { capturedBy: 'auto', capturedByUid: null })
+        .then((res) => {
+          logger.info('auto-snapshot ok', {
+            gameId, round, snapshotId: res.snapshotId,
+            totalDocs: res.totalDocs, totalBytes: res.totalBytes,
+            elapsedMs: res.elapsedMs,
+          });
+          return pruneOldSnapshots(db, gameRef);
+        })
+        .catch((err) => {
+          logger.warn('auto-snapshot failed — non-fatal.', {
+            gameId, round, error: err && err.message,
+          });
+        });
     }
 
     if (basePhaseName === 'bid_chef') {
@@ -3835,4 +3877,111 @@ exports.resetGame = onCall(CALLABLE_OPTS, async (request) => {
   await commitBatch();
 
   return { gameId, phase: 'lobby' };
+});
+
+// ---------------------------------------------------------------------------
+// T2.4 — Save / restore from the professor UI
+// ---------------------------------------------------------------------------
+
+/**
+ * Verify the caller is the professor for this game. Mirrors the
+ * `professorUid` / `professorId` check used by `resetGame`. Throws
+ * permission-denied on mismatch.
+ */
+async function assertCallerIsProfessor(gameRef, authUid) {
+  const gameSnap = await gameRef.get();
+  if (!gameSnap.exists) {
+    throw new HttpsError('not-found', 'Game not found.');
+  }
+  if (
+    gameSnap.get('professorUid') !== authUid &&
+    gameSnap.get('professorId') !== authUid
+  ) {
+    throw new HttpsError('permission-denied', 'Only the professor can do that.');
+  }
+}
+
+/**
+ * createSnapshot — manual checkpoint button on the professor page. Captures
+ * the entire game state into `games/{gameId}/snapshots/{snapshotId}` (chunked
+ * across the `chunks` subcollection) and prunes old snapshots on the way out.
+ *
+ * Returns: { snapshotId, totalChunks, totalBytes, totalDocs, round, phase, elapsedMs }
+ */
+exports.createSnapshot = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
+  const auth = requireAuth(request, 'Sign in before saving a snapshot.');
+  const gameId = cleanGameId((request.data || {}).gameId);
+  const gameRef = gameDoc(gameId);
+
+  await assertCallerIsProfessor(gameRef, auth.uid);
+
+  const result = await captureGameSnapshot(db, gameRef, {
+    capturedByUid: auth.uid,
+    capturedBy: 'manual',
+  });
+
+  // Best-effort retention sweep — never block the caller on this.
+  pruneOldSnapshots(db, gameRef).catch((err) => {
+    logger.warn('createSnapshot prune failed — non-fatal.', {
+      gameId, error: err && err.message,
+    });
+  });
+
+  logger.info('createSnapshot ok', {
+    gameId,
+    capturedByUid: auth.uid,
+    snapshotId: result.snapshotId,
+    round: result.round,
+    phase: result.phase,
+    totalDocs: result.totalDocs,
+    totalBytes: result.totalBytes,
+    elapsedMs: result.elapsedMs,
+  });
+
+  return result;
+});
+
+/**
+ * restoreSnapshot — destructive. Pauses the game, deletes drift docs not in
+ * the snapshot, then writes every doc from the snapshot back. Players need
+ * to refresh after this lands; their anonymous Firebase Auth UIDs persist
+ * so the player docs they restore into still match.
+ *
+ * Always logs to Cloud Logging with the calling uid for audit.
+ *
+ * Args: { gameId, snapshotId }
+ * Returns: { written, deleted, snapshotId, round, phase }
+ */
+exports.restoreSnapshot = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
+  const auth = requireAuth(request, 'Sign in before restoring a snapshot.');
+  const data = request.data || {};
+  const gameId = cleanGameId(data.gameId);
+  const snapshotId = cleanString(data.snapshotId);
+  if (!/^snap_[A-Za-z0-9_]+$/.test(snapshotId)) {
+    throw new HttpsError('invalid-argument', 'snapshotId is required.');
+  }
+
+  const gameRef = gameDoc(gameId);
+  await assertCallerIsProfessor(gameRef, auth.uid);
+
+  const startedAt = Date.now();
+  const result = await restoreGameSnapshot(db, gameRef, snapshotId);
+  const elapsedMs = Date.now() - startedAt;
+
+  // Audit trail — every restore is logged with the calling uid, the
+  // snapshot id, and the round/phase that was restored.
+  logger.info('restoreSnapshot ok', {
+    gameId,
+    restoredByUid: auth.uid,
+    snapshotId,
+    round: result.round,
+    phase: result.phase,
+    written: result.written,
+    deleted: result.deleted,
+    elapsedMs,
+  });
+
+  return { ...result, elapsedMs };
 });
