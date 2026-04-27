@@ -205,7 +205,9 @@ check('D.1 fillRate 0.0 → 0 (critical)', satMod.fillRateToSatisfactionPct(0.0)
 check('D.2 fillRate 0.5 (poor band start) → 21', satMod.fillRateToSatisfactionPct(0.5), 21);
 check('D.3 fillRate 0.7 (adequate band start) → 46', satMod.fillRateToSatisfactionPct(0.7), 46);
 check('D.4 fillRate 0.85 (good band start) → 66', satMod.fillRateToSatisfactionPct(0.85), 66);
-check('D.5 fillRate 1.0 (excellent band start) → 86', satMod.fillRateToSatisfactionPct(1.0), 86);
+// PR #97: saturated demand returns maxSat (100), not minSat. Spec says
+// "fill rate >= 1.0 → top of excellent."
+check('D.5 fillRate 1.0 (saturated excellent) → 100', satMod.fillRateToSatisfactionPct(1.0), 100);
 
 // Interpolation: poor band [0.50, 0.70), midpoint 0.60 → halfway from 21 to 45
 check('D.6 fillRate 0.6 (mid-poor) → 33',
@@ -217,10 +219,10 @@ check('D.7 fillRate 0.925 (mid-good) → 75.5',
   satMod.fillRateToSatisfactionPct(0.925),
   66 + 0.5 * (85 - 66));
 
-// Excellent band — at min (86) since position is 0 in infinite band
-check('D.8 fillRate 2.0 (saturated excellent) → 86',
+// Excellent band — saturated/surplus demand caps at max (100).
+check('D.8 fillRate 2.0 (saturated excellent) → 100',
   satMod.fillRateToSatisfactionPct(2.0),
-  86);
+  100);
 
 // ---------------------------------------------------------------------------
 // E. Foot-traffic modifier components

@@ -460,7 +460,7 @@ describe('satisfaction.js', () => {
 
   it('fillRateToSatisfactionPct — boundaries', () => {
     eq(sat.fillRateToSatisfactionPct(0), 0);
-    eq(sat.fillRateToSatisfactionPct(1.0), 86); // start of excellent
+    eq(sat.fillRateToSatisfactionPct(1.0), 100); // saturated → top of excellent (PR #97 fix)
     ok(sat.fillRateToSatisfactionPct(0.5) <= 21, 'border of critical/poor');
   });
 

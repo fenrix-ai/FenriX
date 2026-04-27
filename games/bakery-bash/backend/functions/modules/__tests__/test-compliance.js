@@ -360,7 +360,7 @@ section('A3. Chef System');
   // Specialty chef cap = 3
   assert(DEFAULT_GAME_CONFIG.specialtyChefCap === 3, 'Specialty chef cap = 3');
 
-  // Chef pool generation produces 6-8 chefs
+  // Chef pool generation matches the configured pool size.
   const pool = generateChefPool(1, cfg);
   assert(pool.length === cfg.chefPoolSize,
     `Chef pool size = cfg.chefPoolSize (${cfg.chefPoolSize}, got ${pool.length})`);
