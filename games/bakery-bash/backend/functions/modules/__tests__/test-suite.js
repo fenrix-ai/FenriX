@@ -95,8 +95,8 @@ describe('config.js', () => {
   const cfg = config.mergeConfig({});
 
   it('has correct defaults', () => {
-    eq(cfg.startingBudget, 500000);
-    eq(cfg.sousChefBaseCost, 500);
+    eq(cfg.startingBudget, 10000);
+    eq(cfg.sousChefBaseCost, 10);
     eq(cfg.loanSharkInterestRate, 0.10);
     eq(cfg.totalRounds, 5);
   });
@@ -122,18 +122,18 @@ describe('config.js', () => {
   it('mergeConfig applies overrides', () => {
     const c2 = config.mergeConfig({ startingBudget: 5000 });
     eq(c2.startingBudget, 5000);
-    eq(c2.sousChefBaseCost, 500); // unchanged
+    eq(c2.sousChefBaseCost, 10); // unchanged
   });
 
   it('mergeConfig rejects bad types', () => {
     const c3 = config.mergeConfig({ startingBudget: 'garbage' });
-    eq(c3.startingBudget, 500000); // falls back to default
+    eq(c3.startingBudget, 10000); // falls back to default
   });
 
   it('adBonuses partial override', () => {
     const c4 = config.mergeConfig({ adBonuses: { TV: 999 } });
     eq(c4.adBonuses.TV, 999);
-    eq(c4.adBonuses.Radio, 7500); // untouched (balance-tuned default)
+    eq(c4.adBonuses.Radio, 150); // untouched (balance-tuned default)
   });
 
   it('CHEF_SPAWN_RATES sums to 1.0 per round', () => {
@@ -392,14 +392,18 @@ describe('chef-system.js', () => {
   });
 
   it('getSousChefCost escalation', () => {
-    eq(chefSys.getSousChefCost(0, cfg), 500);     // 1.0 × 500
-    eq(chefSys.getSousChefCost(1, cfg), 750);     // 1.5 × 500
-    eq(chefSys.getSousChefCost(2, cfg), 1125);    // 2.25 × 500
-    eq(chefSys.getSousChefCost(3, cfg), 1500);    // 3.0 × 500
+    // Multipliers are derived from cfg.sousChefBaseCost so the assertions
+    // hold across future economy rescales.
+    const base = cfg.sousChefBaseCost;
+    near(chefSys.getSousChefCost(0, cfg), 1.0  * base, 1e-6);
+    near(chefSys.getSousChefCost(1, cfg), 1.5  * base, 1e-6);
+    near(chefSys.getSousChefCost(2, cfg), 2.25 * base, 1e-6);
+    near(chefSys.getSousChefCost(3, cfg), 3.0  * base, 1e-6);
   });
 
   it('getTotalSousChefHireCost sums correctly', () => {
-    near(chefSys.getTotalSousChefHireCost(4, cfg), 500 + 750 + 1125 + 1500, 0.01);
+    const base = cfg.sousChefBaseCost;
+    near(chefSys.getTotalSousChefHireCost(4, cfg), (1.0 + 1.5 + 2.25 + 3.0) * base, 0.01);
   });
 
   it('resolveChefAuction — highest bid wins', () => {
@@ -1624,7 +1628,7 @@ describe('simulation.js — Integration', () => {
     const ctx = { gameId: 'ad-bonus-bb', round: 1 };
     const winR = simulation.runSimulation([makePlayer('Billboard')], {}, cfg, ctx);
     const noWinR = simulation.runSimulation([makePlayer(null)], {}, cfg, ctx);
-    eq(winR[0].revenueGross - noWinR[0].revenueGross, cfg.adBonuses.Billboard, 'Billboard bonus');
+    near(winR[0].revenueGross - noWinR[0].revenueGross, cfg.adBonuses.Billboard, 1e-6, 'Billboard bonus');
   });
 
   it('runSimulation — no ad won → no flat bonus applied', () => {
@@ -1747,7 +1751,7 @@ describe('simulation.js — Integration', () => {
     ok(noWinR[0].amountBorrowed > 0, 'non-winner also overspends → borrows');
     // Same expenses on both sides → identical loanSharkDeduction.
     // Diff in revenueNet should equal the full TV bonus.
-    eq(winR[0].revenueNet - noWinR[0].revenueNet, cfg.adBonuses.TV,
+    near(winR[0].revenueNet - noWinR[0].revenueNet, cfg.adBonuses.TV, 1e-6,
        'TV bonus flows through to revenueNet even under loan-shark');
   });
 });
