@@ -241,12 +241,14 @@ service cloud.firestore {
       // flag stragglers who silently disconnected (closed laptop, wifi
       // drop, etc.) so they can be told to refresh. Schema:
       //   { uid: string, lastSeenAt: Timestamp, displayName?: string }
-      // Read by anyone signed in (it's just liveness — no PII beyond what's
-      // already in /roster). Writeable only by the player themselves, only
-      // to fields in the allowed set, and `uid` must match their auth uid.
+      // Read is professor-only (matches /submissions and /snapshots), so
+      // students can't enumerate other players' tab activity. The player
+      // can still read/write their OWN doc, which is all the heartbeat
+      // hook needs. Writes are restricted to the player themselves, only
+      // to fields in the allowed set, with `uid` matching their auth uid.
       // ─────────────────────────────────────────────────────
       match /presence/{playerId} {
-        allow read: if signedIn();
+        allow read: if isProfessor() || isGameProfessor(gameId) || isOwner(playerId);
         allow create, update: if isOwner(playerId)
           && request.resource.data.uid == request.auth.uid
           && request.resource.data.keys().hasOnly(['uid', 'lastSeenAt', 'displayName']);

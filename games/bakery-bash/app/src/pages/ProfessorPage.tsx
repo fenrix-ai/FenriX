@@ -1016,8 +1016,11 @@ export function ProfessorPage() {
       {/* T3.2 — disconnect banner. Surfaces players whose presence ping is
           stale by >60s OR who have no presence doc at all (their tab is
           backgrounded or they closed it). Only renders when there's
-          something actionable so it stays out of the way otherwise. */}
-      {gameId && monitorRows.length > 0 && (() => {
+          something actionable so it stays out of the way otherwise.
+          Gated on `isRunning` so the lobby (where heartbeats haven't started
+          for late joiners and presence docs haven't landed yet) and the
+          game-over screen don't flash a false "everyone disconnected" alert. */}
+      {gameId && monitorRows.length > 0 && isRunning && (() => {
         const STALE_MS = 60_000;
         const disconnected: { uid: string; name: string }[] = [];
         for (const row of monitorRows) {
