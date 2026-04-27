@@ -99,6 +99,11 @@ const {
   recomputeAndCacheSubmissions,
 } = require('./modules/sharded-submissions');
 
+const {
+  writeUidToSubmittedCountShard,
+  recomputeAndCacheSubmittedCount,
+} = require('./modules/sharded-counter');
+
 // The following modules are part of the full backend surface. They are
 // required only where needed so that missing optional helpers do not break
 // the lobby / decision / bid flows.
@@ -2488,8 +2493,12 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
         });
       }
 
+      // T3.3: submittedCount is no longer incremented here. The single-doc
+      // FieldValue.increment(1) was the next contention point at 25–70 students;
+      // it's been replaced by per-uid shard writes after the transaction
+      // (writeUidToSubmittedCountShard below) plus an aggregator trigger
+      // (onSubmittedCountShardWritten) that recomputes game.submittedCount.
       transaction.update(gameRef, {
-        submittedCount: FieldValue.increment(1),
         updatedAt: FieldValue.serverTimestamp(),
       });
     });
@@ -2507,6 +2516,20 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
       stack: err && err.stack,
     });
     throw new HttpsError('internal', `submitDecision failed: ${err && err.message ? err.message : err}`);
+  }
+
+  // T3.3: bump the sharded submission counter. The aggregator trigger
+  // recomputes game.submittedCount from these shards. Best-effort: if this
+  // fails the player's decision is still saved (the transaction above
+  // already committed); the count just lags briefly until the next submit.
+  if (roundId) {
+    try {
+      await writeUidToSubmittedCountShard(gameRef, roundId, uid);
+    } catch (shardErr) {
+      logger.warn('writeUidToSubmittedCountShard failed — non-fatal.', {
+        gameId, uid, roundId, error: shardErr && shardErr.message,
+      });
+    }
   }
 
   // BE-22: mirror submission state for professor dashboard
@@ -3339,6 +3362,32 @@ exports.onSubmissionShardWritten = onDocumentWritten(
 );
 
 // ---------------------------------------------------------------------------
+// onSubmittedCountShardWritten — aggregate sharded uid sets into the game
+// doc's `submittedCount` field. Each `submitDecision` writes to one shard
+// under `submittedCountShards/round_{N}/shards/{idx}`; this trigger recounts
+// the current round's shards and writes to `game.submittedCount` (skipping
+// no-op writes). Same `concurrency: 1` + skip-no-op pattern as the others.
+// See `modules/sharded-counter.js`.
+// ---------------------------------------------------------------------------
+exports.onSubmittedCountShardWritten = onDocumentWritten(
+  {
+    document: 'games/{gameId}/submittedCountShards/{roundDocId}/shards/{shardIdx}',
+    concurrency: 1,
+  },
+  async (event) => {
+    const { gameId } = event.params;
+    const gameRef = gameDoc(gameId);
+    try {
+      await recomputeAndCacheSubmittedCount(gameRef);
+    } catch (err) {
+      logger.warn('onSubmittedCountShardWritten aggregation failed — non-fatal.', {
+        gameId, error: err && err.message,
+      });
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
 // updateTeamName — any team member may rename their team.
 // ---------------------------------------------------------------------------
 exports.updateTeamName = onCall(CALLABLE_OPTS, async (request) => {
@@ -3677,13 +3726,14 @@ exports.resetGame = onCall(CALLABLE_OPTS, async (request) => {
   const playerDocs = playersSnap.docs;
 
   // Wipe game-level + per-player subcollections in parallel. deleteCollectionDocs
-  // chunks at BATCH_OP_LIMIT internally. `rounds` and `submissions` use
-  // recursiveDelete because they own shard subcollections (`topBidsShards`,
-  // `shards`) that would otherwise survive the reset and pollute the next
-  // game's aggregate writes.
+  // chunks at BATCH_OP_LIMIT internally. `rounds`, `submissions`, and
+  // `submittedCountShards` use recursiveDelete because they own shard
+  // subcollections (`topBidsShards`, `shards`) that would otherwise survive
+  // the reset and pollute the next game's aggregate writes.
   await Promise.all([
     db.recursiveDelete(gameRef.collection('rounds')),
     db.recursiveDelete(gameRef.collection('submissions')),
+    db.recursiveDelete(gameRef.collection('submittedCountShards')),
     deleteCollectionDocs(gameRef.collection('submissionCounts')),
     deleteCollectionDocs(gameRef.collection('marketInsights')),
     deleteCollectionDocs(gameRef.collection('leaderboard')),
