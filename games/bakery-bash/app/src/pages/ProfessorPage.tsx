@@ -76,6 +76,21 @@ const SUBMISSION_PHASES: Array<{ key: BasePhase; label: string }> = [
   { key: "decide", label: "Decide" },
 ];
 
+/**
+ * T2.1 — hot callables warmed by the "Warm up servers" button. Each is its
+ * own Cloud Run service in Gen 2, so we have to invoke each one to pre-spin
+ * its instance pool. Keep in sync with `isWarmupRequest` short-circuits in
+ * `backend/functions/index.js`.
+ */
+const WARMUP_CALLABLES = [
+  "submitBids",
+  "submitDecision",
+  "submitPrices",
+  "advanceGamePhase",
+  "joinGame",
+  "createTeam",
+] as const;
+
 export function ProfessorPage() {
   const { gameId: contextGameId, currentRound, gameCode, phaseEndsAtMs } = useGame();
   const dispatch = useGameDispatch();
@@ -543,6 +558,39 @@ export function ProfessorPage() {
     }
   };
 
+  const onWarmup = async () => {
+    setError(null);
+    setInfo(null);
+    setPendingAction("warmup");
+    const startedAt = Date.now();
+    try {
+      const results = await Promise.allSettled(
+        WARMUP_CALLABLES.map((name) => {
+          const callable = httpsCallable<
+            { _warmup: true },
+            { ok?: boolean; warm?: boolean }
+          >(functions, name);
+          return callable({ _warmup: true });
+        }),
+      );
+      const failed = results.filter((r) => r.status === "rejected").length;
+      const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1);
+      if (failed === 0) {
+        setInfo(
+          `Servers warm in ${elapsedSec}s. Ready for class — start the game whenever students are in.`,
+        );
+      } else {
+        setError(
+          `Warmed ${WARMUP_CALLABLES.length - failed}/${WARMUP_CALLABLES.length} servers in ${elapsedSec}s; ${failed} failed. Students may see a brief delay on the failed ones.`,
+        );
+      }
+    } catch (err) {
+      setError(humanizeFunctionError(err, "Could not warm up servers."));
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
   const onCreateGame = async () => {
     setError(null);
     setInfo(null);
@@ -633,6 +681,19 @@ export function ProfessorPage() {
             title={!user ? "Sign in first." : "Create a new game."}
           >
             {pendingAction === "create" ? "Creating…" : "Create Game"}
+          </button>
+          <button
+            type="button"
+            className="btn btn--secondary"
+            disabled={busy || !user}
+            onClick={onWarmup}
+            title={
+              !user
+                ? "Sign in first."
+                : "Wake up the cloud servers ~30 seconds before class so the first round of student clicks isn't slow."
+            }
+          >
+            {pendingAction === "warmup" ? "Warming up…" : "Warm up servers"}
           </button>
         </div>
 
