@@ -3,7 +3,10 @@ import { Link } from "react-router-dom";
 import {
   collection,
   doc,
+  limit,
   onSnapshot,
+  orderBy,
+  query,
   type DocumentData,
   type Timestamp,
 } from "firebase/firestore";
@@ -68,6 +71,29 @@ interface SubmissionEntry {
   role?: string | null;
 }
 
+/**
+ * T2.4 — index doc for one snapshot under `games/{gameId}/snapshots/{id}`.
+ * The chunked payload lives one level down at `…/snapshots/{id}/chunks/{N}`
+ * and is server-only; the FE only ever reads metadata here.
+ */
+interface SnapshotIndexEntry {
+  id: string;
+  phase: string;
+  round: number;
+  capturedAt?: Timestamp | null;
+  capturedBy?: "auto" | "manual";
+  totalDocs?: number;
+}
+
+function formatSnapshotTime(t: Timestamp | null | undefined): string {
+  if (!t) return "—";
+  try {
+    return t.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return "—";
+  }
+}
+
 /** Which phases of a round have a corresponding submissions doc. */
 const SUBMISSION_PHASES: Array<{ key: BasePhase; label: string }> = [
   { key: "bid_ad", label: "Ad Bids" },
@@ -102,6 +128,13 @@ export function ProfessorPage() {
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+
+  // T2.4 — most-recent snapshot for the "Last saved …" indicator and the
+  // "Restart from last save" button. Subscription is below; null until the
+  // first snapshot lands or if the prof can't read the snapshots subcollection.
+  const [latestSnapshot, setLatestSnapshot] = useState<SnapshotIndexEntry | null>(null);
+  const [showRestoreDialog, setShowRestoreDialog] = useState(false);
+  const [restoreConfirm, setRestoreConfirm] = useState("");
 
   // Warmup pill state. Persists past `pendingAction` reset so the professor
   // gets a clear "done" confirmation next to the button, then auto-fades.
@@ -330,6 +363,49 @@ export function ProfessorPage() {
       unsubs.forEach((u) => u());
     };
   }, [gameId, currentRound]);
+
+  // T2.4 — subscribe to the most recent snapshot index doc for the
+  // "Last saved …" indicator. Listing this collection requires the
+  // professor custom claim or being the game's professorUid (see rules
+  // for `match /snapshots/{snapshotId}`); a permission-denied just hides
+  // the indicator gracefully.
+  useEffect(() => {
+    if (!gameId) {
+      setLatestSnapshot(null);
+      return;
+    }
+    const snapshotsRef = collection(db, "games", gameId, "snapshots");
+    const q = query(snapshotsRef, orderBy("capturedAt", "desc"), limit(1));
+    const unsubscribe = onSnapshot(
+      q,
+      (snap) => {
+        if (snap.empty) {
+          setLatestSnapshot(null);
+          return;
+        }
+        const d = snap.docs[0];
+        const data = d.data() as DocumentData;
+        setLatestSnapshot({
+          id: d.id,
+          phase: typeof data.phase === "string" ? data.phase : "unknown",
+          round: typeof data.round === "number" ? data.round : 0,
+          capturedAt: (data.capturedAt as Timestamp | undefined) ?? null,
+          capturedBy:
+            data.capturedBy === "manual" || data.capturedBy === "auto"
+              ? data.capturedBy
+              : undefined,
+          totalDocs: typeof data.totalDocs === "number" ? data.totalDocs : undefined,
+        });
+      },
+      (err) => {
+        // Permission-denied is the expected fallback for a non-professor
+        // signed-in user — just hide the indicator.
+        console.debug("snapshots listener error:", err);
+        setLatestSnapshot(null);
+      },
+    );
+    return unsubscribe;
+  }, [gameId]);
 
   // ----- Callables -----
   const callCallable = useCallback(
@@ -569,6 +645,59 @@ export function ProfessorPage() {
       setInfo("Phase extended by 1 minute.");
     } catch (err) {
       setError(humanizeFunctionError(err, "Could not extend phase. Please try again."));
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
+  // T2.4 — manual checkpoint. Auto-saves run at the start of every round
+  // (server-side hook in advanceGamePhase + startGame), so this is just
+  // for the rare case where the prof wants to checkpoint mid-round.
+  const onSaveNow = async () => {
+    if (!gameId) {
+      setError("No active game to save.");
+      return;
+    }
+    setError(null);
+    setInfo(null);
+    setPendingAction("save-snapshot");
+    try {
+      const callable = httpsCallable<
+        { gameId: string },
+        { snapshotId: string; round: number; phase: string; totalBytes: number; elapsedMs: number }
+      >(functions, "createSnapshot");
+      const res = await callable({ gameId });
+      const kb = (res.data.totalBytes / 1024).toFixed(1);
+      setInfo(
+        `Saved checkpoint at round ${res.data.round} (${kb} KB, ${res.data.elapsedMs} ms).`,
+      );
+    } catch (err) {
+      setError(humanizeFunctionError(err, "Could not save a checkpoint."));
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
+  // T2.4 — restore from the most recent snapshot. Backend always pauses
+  // the game and runs the destructive "clean" pass; this just kicks it off.
+  const onRestoreLastSave = async () => {
+    if (!gameId || !latestSnapshot) return;
+    setError(null);
+    setInfo(null);
+    setPendingAction("restore-snapshot");
+    try {
+      const callable = httpsCallable<
+        { gameId: string; snapshotId: string },
+        { snapshotId: string; round: number; phase: string; written: number; deleted: number; elapsedMs: number }
+      >(functions, "restoreSnapshot");
+      const res = await callable({ gameId, snapshotId: latestSnapshot.id });
+      setInfo(
+        `Restored to round ${res.data.round} (${res.data.written} docs written, ${res.data.deleted} drift docs removed). Game is paused — tell players to refresh, then click Resume.`,
+      );
+      setShowRestoreDialog(false);
+      setRestoreConfirm("");
+    } catch (err) {
+      setError(humanizeFunctionError(err, "Could not restore from snapshot."));
     } finally {
       setPendingAction(null);
     }
@@ -839,6 +968,16 @@ export function ProfessorPage() {
         );
       })()}
 
+      {/* T2.4: "Last saved" indicator. Hidden until the prof has at least
+          one snapshot — auto-save fires when the game enters round 1. */}
+      {gameId && latestSnapshot && (
+        <p className="professor-page__last-saved">
+          Last saved: round {latestSnapshot.round} ·{" "}
+          {formatSnapshotTime(latestSnapshot.capturedAt)}
+          {latestSnapshot.capturedBy === "manual" && " (manual)"}
+        </p>
+      )}
+
       <div className="professor-page__controls">
         <button
           className="btn btn--primary"
@@ -918,6 +1057,31 @@ export function ProfessorPage() {
           title="Clear all round data and send players back to the lobby (BE-6)."
         >
           {pendingAction === "reset" ? "Resetting…" : "Reset Game"}
+        </button>
+
+        {/* T2.4: save / restart-this-round panic buttons. */}
+        <button
+          type="button"
+          className="btn btn--small btn--secondary"
+          disabled={!gameId || controlsDisabled || !user || pendingAction === "save-snapshot"}
+          onClick={onSaveNow}
+          title="Save a manual checkpoint right now. Auto-saves run at the start of every round; this is for ad-hoc saves."
+        >
+          {pendingAction === "save-snapshot" ? "Saving…" : "Save Now"}
+        </button>
+
+        <button
+          type="button"
+          className="btn btn--small btn--danger"
+          disabled={!gameId || !latestSnapshot || controlsDisabled}
+          onClick={() => setShowRestoreDialog(true)}
+          title={
+            latestSnapshot
+              ? `Restore the game to round ${latestSnapshot.round} (saved at ${formatSnapshotTime(latestSnapshot.capturedAt)}). The game will be paused after restore.`
+              : "No checkpoints to restore from yet — auto-save kicks in at the start of round 1."
+          }
+        >
+          Restart from last save
         </button>
 
         <Link
@@ -1036,6 +1200,68 @@ export function ProfessorPage() {
 
       {gameId && rosterReady && monitorRows.length === 0 && !rosterError && (
         <p className="professor-page__note">No players have joined yet.</p>
+      )}
+
+      {/* T2.4: typed-confirmation dialog for restore. Mirrors the
+          `RESTORE <gameId>` safety pattern from `scripts/restore-game.js`
+          — destructive, must not be one-click. */}
+      {showRestoreDialog && latestSnapshot && (
+        <div
+          className="professor-page__restore-overlay"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="restore-dialog-title"
+        >
+          <div className="professor-page__restore-dialog">
+            <h2
+              id="restore-dialog-title"
+              className="professor-page__restore-title"
+            >
+              Restart from last save?
+            </h2>
+            <p>
+              This will roll the game back to <strong>round {latestSnapshot.round}</strong>{" "}
+              (saved at {formatSnapshotTime(latestSnapshot.capturedAt)}). All progress since that
+              checkpoint will be lost. The game will be paused on restore — tell players to
+              refresh, then click Resume.
+            </p>
+            <p>
+              To confirm, type <code>RESTORE round_{latestSnapshot.round}</code> below:
+            </p>
+            <input
+              className="professor-page__restore-input"
+              value={restoreConfirm}
+              onChange={(e) => setRestoreConfirm(e.target.value)}
+              placeholder={`RESTORE round_${latestSnapshot.round}`}
+              autoFocus
+              disabled={pendingAction === "restore-snapshot"}
+            />
+            <div className="professor-page__restore-actions">
+              <button
+                type="button"
+                className="btn btn--small"
+                onClick={() => {
+                  setShowRestoreDialog(false);
+                  setRestoreConfirm("");
+                }}
+                disabled={pendingAction === "restore-snapshot"}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn--small btn--danger"
+                onClick={onRestoreLastSave}
+                disabled={
+                  restoreConfirm !== `RESTORE round_${latestSnapshot.round}` ||
+                  pendingAction === "restore-snapshot"
+                }
+              >
+                {pendingAction === "restore-snapshot" ? "Restoring…" : "Confirm restore"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </PageShell>
   );

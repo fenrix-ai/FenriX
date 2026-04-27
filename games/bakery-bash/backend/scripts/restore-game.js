@@ -38,7 +38,14 @@ const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 const { initializeApp, applicationDefault } = require('firebase-admin/app');
-const { getFirestore, Timestamp, GeoPoint } = require('firebase-admin/firestore');
+const { getFirestore } = require('firebase-admin/firestore');
+
+// T2.4: deserialize / walkDocs come from the shared module so the CLI
+// and the server-side `restoreSnapshot` callable agree on the wire shape.
+const {
+  deserialize,
+  walkDocs,
+} = require('../functions/modules/snapshot');
 
 const PROJECT_ID = 'bakery-bash-54d12';
 const BATCH_SIZE = 450; // Firestore hard limit is 500 ops/batch
@@ -85,38 +92,6 @@ function configureFirebase(prod) {
     console.log(`[restore] target = emulator @ ${process.env.FIRESTORE_EMULATOR_HOST}`);
   }
   return getFirestore();
-}
-
-function deserialize(value) {
-  if (value === null || value === undefined) return value;
-  if (Array.isArray(value)) return value.map(deserialize);
-  if (typeof value === 'object') {
-    if (value.__ts && typeof value.__ts.s === 'number') {
-      return new Timestamp(value.__ts.s, value.__ts.n || 0);
-    }
-    if (value.__geo) return new GeoPoint(value.__geo.lat, value.__geo.lng);
-    if (value.__ref) {
-      throw new Error(`Snapshot contains DocumentReference (path=${value.__ref}); restore not supported.`);
-    }
-    const out = {};
-    for (const k of Object.keys(value)) out[k] = deserialize(value[k]);
-    return out;
-  }
-  return value;
-}
-
-function* walkDocs(docNode, parentPath) {
-  if (!docNode || !docNode.exists) return;
-  const docPath = parentPath
-    ? `${parentPath}/${docNode.id}`
-    : `games/${docNode.id}`;
-  yield { path: docPath, data: docNode.data };
-  if (!docNode.subcollections) return;
-  for (const [collName, docs] of Object.entries(docNode.subcollections)) {
-    for (const d of docs) {
-      yield* walkDocs(d, `${docPath}/${collName}`);
-    }
-  }
 }
 
 function rewriteRootGameId(docPath, originalId, newId) {

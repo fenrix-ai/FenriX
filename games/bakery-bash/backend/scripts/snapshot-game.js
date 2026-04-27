@@ -22,7 +22,17 @@
 const fs = require('fs');
 const path = require('path');
 const { initializeApp, applicationDefault } = require('firebase-admin/app');
-const { getFirestore, Timestamp } = require('firebase-admin/firestore');
+const { getFirestore } = require('firebase-admin/firestore');
+
+// T2.4: serialize / dumpDoc / dumpCollection / countDocs all live in the
+// shared module now so the CLI and the server-side `createSnapshot`
+// callable share one implementation.
+const {
+  serialize,
+  dumpDoc,
+  dumpCollection,
+  countDocs,
+} = require('../functions/modules/snapshot');
 
 const PROJECT_ID = 'bakery-bash-54d12';
 
@@ -50,71 +60,17 @@ function configureFirebase(prod) {
   return getFirestore();
 }
 
-function serialize(value) {
-  if (value === null || value === undefined) return value;
-  if (value instanceof Timestamp) {
-    return { __ts: { s: value.seconds, n: value.nanoseconds } };
-  }
-  if (value instanceof Date) {
-    return { __ts: { s: Math.floor(value.getTime() / 1000), n: (value.getTime() % 1000) * 1e6 } };
-  }
-  if (Array.isArray(value)) return value.map(serialize);
-  if (typeof value === 'object') {
-    if (value._latitude !== undefined && value._longitude !== undefined) {
-      return { __geo: { lat: value._latitude, lng: value._longitude } };
-    }
-    if (value.path && typeof value.path === 'string' && value.firestore) {
-      return { __ref: value.path };
-    }
-    const out = {};
-    for (const k of Object.keys(value)) out[k] = serialize(value[k]);
-    return out;
-  }
-  return value;
-}
-
-async function dumpDoc(docRef) {
-  const snap = await docRef.get();
-  const collections = await docRef.listCollections();
-  const sub = {};
-  for (const coll of collections) {
-    sub[coll.id] = await dumpCollection(coll);
-  }
-  return {
-    id: snap.id,
-    exists: snap.exists,
-    data: snap.exists ? serialize(snap.data()) : null,
-    subcollections: Object.keys(sub).length ? sub : undefined,
-  };
-}
-
-async function dumpCollection(collRef) {
-  const snap = await collRef.get();
-  const docs = [];
-  for (const d of snap.docs) {
-    docs.push(await dumpDoc(d.ref));
-  }
-  return docs;
-}
-
 async function snapshotGame(db, gameId) {
   const start = Date.now();
   const gameRef = db.collection('games').doc(gameId);
-  const dump = await dumpDoc(gameRef);
+  // Match the server callable: skip the `snapshots` subcollection so the
+  // JSON file doesn't embed prior chunked snapshots.
+  const dump = await dumpDoc(gameRef, { excludeSubcollections: ['snapshots'] });
   if (!dump.exists) {
     throw new Error(`Game ${gameId} does not exist.`);
   }
   const elapsed = Date.now() - start;
   return { dump, elapsed };
-}
-
-function countDocs(node) {
-  let n = node && node.exists ? 1 : 0;
-  if (!node || !node.subcollections) return n;
-  for (const coll of Object.values(node.subcollections)) {
-    for (const d of coll) n += countDocs(d);
-  }
-  return n;
 }
 
 async function main() {

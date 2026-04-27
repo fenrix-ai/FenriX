@@ -233,6 +233,26 @@ service cloud.firestore {
           allow write: if false;
         }
       }
+
+      // ─────────────────────────────────────────────────────
+      // /games/{gameId}/snapshots/{snapshotId}
+      // T2.4: Per-round game-state snapshots for crash recovery. Index
+      // docs are readable by the professor only so they can list available
+      // restore points on the prof UI; the chunked payload subcollection
+      // is server-only (FE never reassembles a snapshot — that's done by
+      // the `restoreSnapshot` callable on the backend). Written
+      // exclusively by Cloud Functions (auto-snapshot in advanceGamePhase
+      // and the manual createSnapshot callable).
+      // ─────────────────────────────────────────────────────
+      match /snapshots/{snapshotId} {
+        allow read: if isProfessor() || isGameProfessor(gameId);
+        allow write: if false;
+
+        match /chunks/{chunkIdx} {
+          allow read: if false;
+          allow write: if false;
+        }
+      }
     }
   }
 }
