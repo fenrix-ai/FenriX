@@ -121,12 +121,14 @@ function deserialize(value) {
 // Recursive Firestore dump
 // ---------------------------------------------------------------------------
 
-async function dumpDoc(docRef) {
+async function dumpDoc(docRef, opts) {
+  const exclude = (opts && opts.excludeSubcollections) || null;
   const snap = await docRef.get();
   const collections = await docRef.listCollections();
   const sub = {};
   for (const coll of collections) {
-    sub[coll.id] = await dumpCollection(coll);
+    if (exclude && exclude.includes(coll.id)) continue;
+    sub[coll.id] = await dumpCollection(coll, opts);
   }
   return {
     id: snap.id,
@@ -136,11 +138,11 @@ async function dumpDoc(docRef) {
   };
 }
 
-async function dumpCollection(collRef) {
+async function dumpCollection(collRef, opts) {
   const snap = await collRef.get();
   const docs = [];
   for (const d of snap.docs) {
-    docs.push(await dumpDoc(d.ref));
+    docs.push(await dumpDoc(d.ref, opts));
   }
   return docs;
 }
@@ -199,7 +201,10 @@ async function captureGameSnapshot(db, gameRef, opts) {
   }
 
   const start = Date.now();
-  const dump = await dumpDoc(gameRef);
+  // Skip the `snapshots` subcollection so we never embed prior snapshots'
+  // chunks inside this snapshot — that would grow quadratically and on
+  // restore would re-write stale snapshot docs back into Firestore.
+  const dump = await dumpDoc(gameRef, { excludeSubcollections: ['snapshots'] });
   if (!dump.exists) {
     throw new Error(`captureGameSnapshot: game ${gameRef.id} does not exist`);
   }

@@ -63,7 +63,9 @@ function configureFirebase(prod) {
 async function snapshotGame(db, gameId) {
   const start = Date.now();
   const gameRef = db.collection('games').doc(gameId);
-  const dump = await dumpDoc(gameRef);
+  // Match the server callable: skip the `snapshots` subcollection so the
+  // JSON file doesn't embed prior chunked snapshots.
+  const dump = await dumpDoc(gameRef, { excludeSubcollections: ['snapshots'] });
   if (!dump.exists) {
     throw new Error(`Game ${gameId} does not exist.`);
   }
