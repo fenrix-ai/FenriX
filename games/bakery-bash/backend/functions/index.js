@@ -3677,10 +3677,13 @@ exports.resetGame = onCall(CALLABLE_OPTS, async (request) => {
   const playerDocs = playersSnap.docs;
 
   // Wipe game-level + per-player subcollections in parallel. deleteCollectionDocs
-  // chunks at BATCH_OP_LIMIT internally.
+  // chunks at BATCH_OP_LIMIT internally. `rounds` and `submissions` use
+  // recursiveDelete because they own shard subcollections (`topBidsShards`,
+  // `shards`) that would otherwise survive the reset and pollute the next
+  // game's aggregate writes.
   await Promise.all([
-    deleteCollectionDocs(gameRef.collection('rounds')),
-    deleteCollectionDocs(gameRef.collection('submissions')),
+    db.recursiveDelete(gameRef.collection('rounds')),
+    db.recursiveDelete(gameRef.collection('submissions')),
     deleteCollectionDocs(gameRef.collection('submissionCounts')),
     deleteCollectionDocs(gameRef.collection('marketInsights')),
     deleteCollectionDocs(gameRef.collection('leaderboard')),
