@@ -22,9 +22,13 @@
  * - Per-round partitioning: shards live under `round_{N}` so the count
  *   resets implicitly at round transitions (no shard wipe needed; the
  *   aggregator just reads the new round's shards, which start empty).
- * - Aggregator: reads game.round, reads that round's shards, counts
- *   distinct uids, writes to `game.submittedCount`. Skips the write when
- *   unchanged (matches PR #98's idempotent aggregator pattern).
+ * - Aggregator: takes the round from the triggering shard's path (not
+ *   `game.currentRound`), counts distinct uids, writes to
+ *   `game.submittedCount`. Skips the write when unchanged. Using the
+ *   path's round avoids a cross-round race where a late shard write from
+ *   round N, fired after the game has advanced to N+1, would otherwise
+ *   overwrite the new round's count with N+1's empty shards. Matches
+ *   PR #98's `recomputeAndCacheTopBids(gameRef, round)` shape.
  *
  * Throughput
  * ──────────
@@ -88,18 +92,22 @@ async function readAndCountSubmittedUids(gameRef, roundDocId) {
 }
 
 /**
- * Aggregator: read shards for the game's current round, count distinct
- * uids, write to `game.submittedCount` (skip if unchanged).
+ * Aggregator: count distinct uids for `round` (the round number from the
+ * triggering shard's path), write to `game.submittedCount` if it has
+ * changed AND the game is still on that round. The currentRound guard
+ * prevents a late-firing trigger from a previous round from clobbering
+ * the freshly-zeroed count after `advancePhase`.
  *
  * Idempotent — safe to call concurrently with other instances. The trigger
  * uses `concurrency: 1` to serialise writes anyway.
  */
-async function recomputeAndCacheSubmittedCount(gameRef) {
+async function recomputeAndCacheSubmittedCount(gameRef, round) {
+  if (!Number.isFinite(round) || round <= 0) return { changed: false };
   const gameSnap = await gameRef.get();
   if (!gameSnap.exists) return { changed: false };
   const game = gameSnap.data() || {};
-  const round = numberOrDefault(game.currentRound || game.round, 0);
-  if (round <= 0) return { changed: false };
+  const currentRound = numberOrDefault(game.currentRound || game.round, 0);
+  if (currentRound !== round) return { changed: false, skipped: 'stale-round' };
   const roundDocId = `round_${round}`;
   const count = await readAndCountSubmittedUids(gameRef, roundDocId);
   const existing = numberOrDefault(game.submittedCount, 0);

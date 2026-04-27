@@ -3247,14 +3247,15 @@ exports.exportProfessorCsv = onCall(CALLABLE_OPTS, async (request) => {
 // ===========================================================================
 
 /**
- * Observational trigger: when a player's decision is written, log whether
- * every player has now submitted. The actual simulation is triggered by the
- * professor advancing through the phase state machine.
+ * Observational trigger: when a player's decision is written, log that the
+ * submission landed. The actual simulation is triggered by the professor
+ * advancing through the phase state machine.
  *
- * CRIT-01 / MED-12 / HIGH-08 fix: this trigger no longer writes
- * submittedCount to the game doc. `submitDecision`'s transactional
- * `FieldValue.increment(1)` is the sole authoritative writer, which is
- * race-safe for concurrent submissions. The trigger is purely observational.
+ * CRIT-01 / MED-12 / HIGH-08 fix: this trigger does not write
+ * `submittedCount` to the game doc — only `onSubmittedCountShardWritten`
+ * does, by aggregating sharded uid intake docs. Concurrent submissions
+ * stay race-safe because each shard write is keyed by uid (idempotent)
+ * and the aggregator is gated on the round from the shard's path.
  */
 exports.onDecisionSubmitted = onDocumentCreated(
   'games/{gameId}/players/{playerId}/decisions/{roundId}',
@@ -3284,16 +3285,15 @@ exports.onDecisionSubmitted = onDocumentCreated(
         return;
       }
 
-      // Read the game doc's submittedCount (set by submitDecision's increment).
-      const submittedCount = numberOrDefault(game.submittedCount, 0);
-
+      // `game.submittedCount` is now eventually-consistent via
+      // `onSubmittedCountShardWritten`, so we don't compute `allSubmitted`
+      // here — it would be off-by-N depending on trigger ordering. The
+      // aggregator is the source of truth for the count.
       logger.info('Decision submitted.', {
         gameId,
         playerId,
         round,
-        submittedCount,
         totalPlayers: playersSnap.size,
-        allSubmitted: submittedCount >= playersSnap.size,
       });
     } catch (err) {
       logger.error('onDecisionSubmitted failure.', {
@@ -3365,8 +3365,9 @@ exports.onSubmissionShardWritten = onDocumentWritten(
 // onSubmittedCountShardWritten — aggregate sharded uid sets into the game
 // doc's `submittedCount` field. Each `submitDecision` writes to one shard
 // under `submittedCountShards/round_{N}/shards/{idx}`; this trigger recounts
-// the current round's shards and writes to `game.submittedCount` (skipping
-// no-op writes). Same `concurrency: 1` + skip-no-op pattern as the others.
+// THAT round's shards (parsed from the path, not the live game doc) and
+// writes to `game.submittedCount` only if the game is still on that round.
+// Same `concurrency: 1` + skip-no-op pattern as `onTopBidsShardWritten`.
 // See `modules/sharded-counter.js`.
 // ---------------------------------------------------------------------------
 exports.onSubmittedCountShardWritten = onDocumentWritten(
@@ -3375,13 +3376,16 @@ exports.onSubmittedCountShardWritten = onDocumentWritten(
     concurrency: 1,
   },
   async (event) => {
-    const { gameId } = event.params;
+    const { gameId, roundDocId } = event.params;
+    const match = /^round_(\d+)$/.exec(roundDocId);
+    if (!match) return;
+    const round = Number(match[1]);
     const gameRef = gameDoc(gameId);
     try {
-      await recomputeAndCacheSubmittedCount(gameRef);
+      await recomputeAndCacheSubmittedCount(gameRef, round);
     } catch (err) {
       logger.warn('onSubmittedCountShardWritten aggregation failed — non-fatal.', {
-        gameId, error: err && err.message,
+        gameId, round, error: err && err.message,
       });
     }
   }
