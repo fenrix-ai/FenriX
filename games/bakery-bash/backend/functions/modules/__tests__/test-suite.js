@@ -1414,7 +1414,7 @@ describe('simulation.js — Integration', () => {
       playerId: 'p_empty',
       displayName: 'Empty',
       bakeryName: 'Empty Bakery',
-      budgetCurrent: 500000,
+      budgetCurrent: 10000,
       sousChefCount: 0,
       specialtyChefs: [],
       returningCustomersPending: 0,
@@ -1595,7 +1595,7 @@ describe('simulation.js — Integration', () => {
       playerId: 'p1',
       displayName: 'Solo',
       bakeryName: 'Solo Bakery',
-      budgetCurrent: 500000,
+      budgetCurrent: 10000,
       sousChefCount: 0,
       specialtyChefs: [],
       returningCustomersPending: 0,
@@ -1618,7 +1618,7 @@ describe('simulation.js — Integration', () => {
   it('runSimulation — Billboard winner gets $37.5k flat bonus (DEC-04)', () => {
     const makePlayer = (adWon) => ({
       playerId: 'p1', displayName: 'Solo', bakeryName: 'Solo Bakery',
-      budgetCurrent: 500000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
+      budgetCurrent: 10000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
       decision: {
         menu: { croissant: true }, quantities: { croissant: 10 },
         sousChefCount: 0, sousChefAssignments: {},
@@ -1634,7 +1634,7 @@ describe('simulation.js — Integration', () => {
   it('runSimulation — no ad won → no flat bonus applied', () => {
     const player = {
       playerId: 'p1', displayName: 'Solo', bakeryName: 'Solo Bakery',
-      budgetCurrent: 500000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
+      budgetCurrent: 10000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
       decision: {
         menu: { croissant: true }, quantities: { croissant: 10 },
         sousChefCount: 0, sousChefAssignments: {},
@@ -1652,7 +1652,7 @@ describe('simulation.js — Integration', () => {
   it('runSimulation — Radio winner gets flat bonus (DEC-04)', () => {
     const makePlayer = (adWon) => ({
       playerId: 'p1', displayName: 'Solo', bakeryName: 'Solo Bakery',
-      budgetCurrent: 500000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
+      budgetCurrent: 10000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
       decision: {
         menu: { croissant: true }, quantities: { croissant: 10 },
         sousChefCount: 0, sousChefAssignments: {},
@@ -1668,7 +1668,7 @@ describe('simulation.js — Integration', () => {
   it('runSimulation — Newspaper winner gets flat bonus (DEC-04)', () => {
     const makePlayer = (adWon) => ({
       playerId: 'p1', displayName: 'Solo', bakeryName: 'Solo Bakery',
-      budgetCurrent: 500000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
+      budgetCurrent: 10000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
       decision: {
         menu: { croissant: true }, quantities: { croissant: 10 },
         sousChefCount: 0, sousChefAssignments: {},
@@ -1687,7 +1687,7 @@ describe('simulation.js — Integration', () => {
   it('runSimulation — unknown adWon string contributes no bonus', () => {
     const player = {
       playerId: 'p1', displayName: 'Solo', bakeryName: 'Solo Bakery',
-      budgetCurrent: 500000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
+      budgetCurrent: 10000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
       decision: {
         menu: { croissant: true }, quantities: { croissant: 10 },
         sousChefCount: 0, sousChefAssignments: {},
@@ -1708,7 +1708,7 @@ describe('simulation.js — Integration', () => {
   it('runSimulation — flat ad bonus stacks with adSpend coefficient', () => {
     const makePlayer = (adWon, adBidPaid) => ({
       playerId: 'p1', displayName: 'Solo', bakeryName: 'Solo Bakery',
-      budgetCurrent: 500000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
+      budgetCurrent: 10000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
       decision: {
         menu: { croissant: true }, quantities: { croissant: 10 },
         sousChefCount: 0, sousChefAssignments: {},
@@ -2037,7 +2037,7 @@ describe('simulation.js — productPrices wiring (POST-01)', () => {
           productPrices: { coffee: 5.00 }, // above catalog default of $4.00
         },
         specialtyChefs: [],
-        budgetCurrent: 500000,
+        budgetCurrent: 10000,
         returningCustomersPending: 0,
         priorSubmittedPrices: [],
         auctionResults: {},
@@ -2068,7 +2068,7 @@ describe('simulation.js — productPrices wiring (POST-01)', () => {
           // no productPrices this round — should carry over from priors
         },
         specialtyChefs: [],
-        budgetCurrent: 500000,
+        budgetCurrent: 10000,
         returningCustomersPending: 0,
         priorSubmittedPrices: [{ coffee: 4.50 }, { coffee: 3.75 }], // most recent last
         auctionResults: {},
@@ -2097,7 +2097,7 @@ describe('simulation.js — floor vs ceiling smoke test (POST-01)', () => {
     playerId: id,
     displayName: id,
     bakeryName: `${id} Bakery`,
-    budgetCurrent: 500000,
+    budgetCurrent: 10000,
     specialtyChefs: [],
     returningCustomersPending: 0,
     priorSubmittedPrices: [],

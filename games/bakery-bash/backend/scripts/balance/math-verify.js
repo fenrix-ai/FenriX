@@ -525,8 +525,8 @@ const rr = reconResult[0];
 const stockUnits = 100 + 100 + 80 + 80;
 const handStockCost = stockUnits * cfg.unitCostPerProduct;
 const handSousCost = chefMod.getTotalSousChefHireCost(4, cfg);
-const handAdCost = 100;
-const handChefCost = 55;
+const handAdCost = reconPlayer.auctionResults.adBidPaid;
+const handChefCost = reconPlayer.auctionResults.chefBidPaid;
 const handTotalSpent = handStockCost + handSousCost + handAdCost + handChefCost;
 check('K.1 totalSpent matches hand-compute', rr.totalSpent, handTotalSpent);
 

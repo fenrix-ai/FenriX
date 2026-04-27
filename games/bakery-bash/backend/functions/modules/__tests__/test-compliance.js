@@ -146,7 +146,10 @@ section('A1. Revenue Formula');
     rc.adSpendCoeff * 1000 +
     rc.numProductsCoeff * 4 +
     200;
-  const noiseTolerance = Math.max(rc.noiseMax - rc.noiseMin, 1);
+  // Noise is clamped to [noiseMin, noiseMax], so the maximum deviation from
+  // formulaBase is bounded by max(|noiseMin|, noiseMax). +1 floor avoids a
+  // zero-tolerance window when noise is disabled.
+  const noiseTolerance = Math.max(Math.abs(rc.noiseMin), rc.noiseMax) + 1;
   assert(typeof r === 'number' && Number.isFinite(r),    'Revenue formula returns a finite number');
   assert(r >= formulaBase - noiseTolerance && r <= formulaBase + noiseTolerance,
     'Revenue formula value within noise bounds',
@@ -763,17 +766,8 @@ for (let round = 1; round <= 4; round++) {
          prefs.neutral.length === 1 && prefs.cold.length === 1,
     `Round ${round}: preferences have correct distribution`);
 
-  // Phase sequence verification
-  const phaseSequence = [
-    `round_${round}_email`,
-    `round_${round}_decide`,
-    `round_${round}_bid_ad`,
-    `round_${round}_bid_chef`,
-    `round_${round}_roster`,
-    'simulating',
-    'results_ready',
-  ];
-  let currentPhase = round === 1 ? 'lobby' : `round_${round-1}_roster`;
+  // Phase sequence verification — round 1 enters via `lobby → round_1_email`.
+  // Mid-round transitions are exhaustively asserted in Section A7.
   if (round === 1) {
     const next = getNextPhase('lobby', 0, 4);
     assert(next.phase === 'round_1_email', `Round 1: lobby → round_1_email`);

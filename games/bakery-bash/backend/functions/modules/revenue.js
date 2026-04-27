@@ -215,7 +215,7 @@ function _sousChefHireCost(count, baseCost) {
  *   chefAuctionWinningBid?: number
  * }} auctionResults
  * @param {Object} cfg - uses cfg.unitCostPerProduct { product: cost } and
- *   cfg.sousChefBaseCost (default 500).
+ *   cfg.sousChefBaseCost (default 10 — see DEFAULT_GAME_CONFIG).
  * @returns {{
  *   stockCost: number,
  *   sousChefHireCost: number,
