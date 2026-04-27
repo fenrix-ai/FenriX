@@ -24,9 +24,9 @@ type Tab = (typeof TABS)[number];
 const tabId = (tab: Tab) => `game-sidebar-tab-${tab.toLowerCase()}`;
 const panelId = (tab: Tab) => `game-sidebar-panel-${tab.toLowerCase()}`;
 
-const TIER1_COST = 2500;
-const TIER2_COST = 7500;
-const COMPETITOR_INTEL_COST = 5000;
+const TIER1_COST = 50;
+const TIER2_COST = 150;
+const COMPETITOR_INTEL_COST = 100;
 
 /**
  * FE-9 — `readOnly` is threaded into `StaffTab` so the steppers and

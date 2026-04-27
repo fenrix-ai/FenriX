@@ -9,10 +9,9 @@
  * Verifies:
  *  - Per-round result docs exist with correct shape
  *  - Budget tracking across rounds is consistent
- *  - Ad auction results are recorded
+ *  - Ad auction resolves to the highest bidder (no min-bid floor in V7+)
  *  - Chef rosters accumulate within the cap
  *  - Cumulative profit at game end matches per-round sum
- *  - The new ad bid minimum (Balance pass 12) is enforced
  *  - Sellout cap reflected in per-product results
  *
  * Run via:
@@ -108,7 +107,9 @@ async function main() {
     createdAt: FieldValue.serverTimestamp(),
   });
 
-  // Use defaults — don't override, so balance pass 12 ad floors apply
+  // Use defaults — don't override the params doc, so the test exercises
+  // whatever DEFAULT_GAME_CONFIG currently ships (V7: no ad-bid floor,
+  // 50× rescaled budget/bonuses).
   await db.doc(`games/${GAME_ID}/config/params`).set({});
 
   // 2 solo teams

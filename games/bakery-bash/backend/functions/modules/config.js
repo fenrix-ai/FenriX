@@ -426,6 +426,18 @@ const DEFAULT_GAME_CONFIG = {
     // 2% sting — same proportional pain as the old $10k on $500k.
     burglaryAmount: 200,
   },
+
+  // Balance pass 16: data-purchase costs rescaled 50× to stay proportional
+  // to the new $10k starting budget. Old values ($5k/$2.5k/$7.5k) were
+  // 25–75% of the new budget — economically prohibitive and unplayable.
+  // New values preserve the original proportions ($5k was 1% of old $500k →
+  // $100 is 1% of new $10k, etc.). These were previously inline fallbacks
+  // in functions/index.js with no DEFAULT_GAME_CONFIG entry; promoting them
+  // here lets professors override via Firestore config like every other
+  // tunable parameter.
+  competitorInsightCost: 100,
+  chefDataTier1Cost: 50,
+  chefDataTier2Cost: 150,
 };
 
 // ---------------------------------------------------------------------------
@@ -588,6 +600,10 @@ function mergeConfig(rawConfig) {
       burglaryChance:    numberOrDefault((raw.curveballs || {}).burglaryChance,    d.curveballs.burglaryChance),
       burglaryAmount:    numberOrDefault((raw.curveballs || {}).burglaryAmount,    d.curveballs.burglaryAmount),
     },
+
+    competitorInsightCost: numberOrDefault(raw.competitorInsightCost, d.competitorInsightCost),
+    chefDataTier1Cost:     numberOrDefault(raw.chefDataTier1Cost,     d.chefDataTier1Cost),
+    chefDataTier2Cost:     numberOrDefault(raw.chefDataTier2Cost,     d.chefDataTier2Cost),
   };
 }
 
