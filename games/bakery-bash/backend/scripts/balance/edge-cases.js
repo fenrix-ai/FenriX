@@ -91,7 +91,7 @@ console.log('\n=== 2. Full chef-cap (3 advanced chefs) at R5 ===');
     },
     priorSubmittedPrices: [], specialtyChefs: chefs, sousChefCount: 4,
     returningCustomersPending: 100, cleanliness_pct: 100,
-    auctionResults: { adWins: ['TV'], adBidPaid: 16500, chefBidPaid: 0, chefsWon: [] },
+    auctionResults: { adWins: ['TV'], adBidPaid: 330, chefBidPaid: 0, chefsWon: [] },
   }];
   const result = sim.runSimulation(players, { modifiers: { coffee: 1, croissant: 1, bagel: 1, cookie: 1, sandwich: 1, matcha: 1 } }, cfg, { gameId: 'e2', round: 5 });
   const r = result[0];

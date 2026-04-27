@@ -45,7 +45,7 @@ console.log('\n=== A. Determinism ===');
     },
     priorSubmittedPrices: [], specialtyChefs: [], sousChefCount: 2,
     returningCustomersPending: 0, cleanliness_pct: 100,
-    auctionResults: { adWins: ['TV'], adBidPaid: 16500, chefBidPaid: 0, chefsWon: [] },
+    auctionResults: { adWins: ['TV'], adBidPaid: 330, chefBidPaid: 0, chefsWon: [] },
   };
   const prefs = { modifiers: { coffee: 1, croissant: 1, bagel: 1, cookie: 1, sandwich: 1, matcha: 1 } };
 
