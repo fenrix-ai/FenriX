@@ -93,7 +93,7 @@ async function seedGame(db, gameId, teams, professorUid) {
       adSpendCoeff: 0, numProductsCoeff: 0, noiseMin: 0, noiseMax: 0,
     },
     adBonuses: { TV: 400, Billboard: 250, Radio: 150, Newspaper: 80 },
-    phaseDurations: { email: 30, decide: 300, bid_ad: 60, bid_chef: 60, roster: 60, simulating: 30, results: 60 },
+    phaseDurations: { email: 30, decide: 300, bid_ad: 90, bid_chef: 90, roster: 60, simulating: 30, results: 60 },
     totalRounds: 5,
   });
 

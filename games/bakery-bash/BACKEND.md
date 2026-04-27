@@ -57,8 +57,8 @@ lobby
 |---|---|
 | email | ~30s (or auto-advance after dismiss) |
 | decide | ~5 min |
-| bid_ad | ~1 min |
-| bid_chef | ~1 min |
+| bid_ad | ~90s |
+| bid_chef | ~90s |
 | roster | ~1 min (forced if specialty chefs > 3) |
 | simulating | ~30s (compute time) |
 | results | ~1 min (or until professor advances) |
