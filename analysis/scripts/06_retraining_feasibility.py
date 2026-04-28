@@ -124,9 +124,9 @@ def main() -> None:
     test_game = make_game_observations(test_df)
     y_test = test_df[target].values
 
-    # The dataset training set is the full pool (528 rows).
-    # The 'in-game observations' are sampled from a separate slice of the pool.
-    # Reserve last 240 of the pool for in-game observations (max 24 teams × 10 rounds).
+    # The pool is 528 rows; training uses the first 288 and the last 240
+    # are reserved as a separate slice for sampled 'in-game observations'
+    # (max 24 teams × 10 rounds).
     obs_pool_idx = list(range(len(pool_df) - 240, len(pool_df)))
     train_pool_idx = list(range(len(pool_df) - 240))
     train_df = pool_df.iloc[train_pool_idx].reset_index(drop=True)
