@@ -2359,7 +2359,7 @@ async function runSimulationAndPersist(gameRef, round, config) {
                   bakerySousChefs: r.csvRow.bakery_sous_chef_count || 0,
                   deliSousChefs: r.csvRow.deli_sous_chef_count || 0,
                   baristaSousChefs: r.csvRow.barista_sous_chef_count || 0,
-                  maintenanceGuys: r.csvRow.maintenance_guy_count || 0,
+                  maintenanceGuys: r.csvRow.maintenance_staff_count || 0,
                 }
               : null)
             || objectOrDefault(
@@ -4344,6 +4344,9 @@ exports.resetGame = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
       lastRoundResult: FieldValue.delete(),
       consecutiveMissedRounds: 0,
       disconnected: false,
+      equipmentGrade: 'C',
+      cleanlinessScore: 75,
+      cleanlinessGrade: 'B',
       updatedAt: FieldValue.serverTimestamp(),
     });
     ops += 1;

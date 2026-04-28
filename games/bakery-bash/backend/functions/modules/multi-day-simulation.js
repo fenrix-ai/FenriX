@@ -37,6 +37,7 @@ const { runSimulation, computeReturningCustomersEarned } = require('./simulation
 const { calculateRoundCosts } = require('./revenue');
 const { calculateLoanShark, updateBudget } = require('./loan-shark');
 const { buildCsvRow } = require('./csv-export');
+const { nextEquipmentGrade, tierUpgradeCost, gradeFromScore, cleanlinessDriftDelta } = require('./equipment-cleanliness');
 
 /**
  * Build a per-day deterministic demand-variability multiplier.
@@ -238,9 +239,36 @@ function runMonthlySimulation(players, roundPreferences, cfg = config, { gameId 
       chefAuctionWinningBid: chefBidPaid,
     };
     const roundCosts = calculateRoundCosts(costDecision, costAuction, cfg);
-    const totalSpent = roundCosts.totalSpent;
+    let totalSpent = roundCosts.totalSpent;
 
+    // ---- Maintenance staff cost ----
+    const maintenanceStaffCount = (decision.staffCounts && Number(decision.staffCounts.maintenanceGuys)) || 0;
+    const maintenanceCost = Math.max(0, maintenanceStaffCount) * ((cfg && cfg.MAINTENANCE_STAFF_COST) || 20);
+    totalSpent += maintenanceCost;
+
+    // ---- Equipment upgrade processing ----
+    const upgradeRequested = !!decision.equipmentUpgradePurchased;
+    const _eqGradeForRound = p.equipmentGrade || 'C';
+    const _nextGrade = nextEquipmentGrade(_eqGradeForRound);
+    const _upgradeCost = tierUpgradeCost(_eqGradeForRound);
+    let nextRoundEquipmentGrade = _eqGradeForRound;
+    let equipmentUpgradeApplied = false;
     const budgetCurrent = _num(p.budgetCurrent);
+    if (upgradeRequested && _nextGrade && _upgradeCost && (budgetCurrent - totalSpent) >= _upgradeCost) {
+      totalSpent += _upgradeCost;
+      nextRoundEquipmentGrade = _nextGrade;
+      equipmentUpgradeApplied = true;
+    }
+
+    // ---- Cleanliness drift (carry-forward from daily sims) ----
+    // The daily simulations compute cleanliness drift each day independently.
+    // Surface the day-29 result's cleanlinessScore/cleanlinessGrade which
+    // represents the end-of-month state for carry-forward to the next round.
+    const cleanlinessScore = typeof last.cleanlinessScore === 'number'
+      ? last.cleanlinessScore
+      : (_num(p.cleanlinessScore) || 75);
+    const cleanlinessGrade = last.cleanlinessGrade || gradeFromScore(cleanlinessScore);
+
     const loanResult = calculateLoanShark(totalSpent, budgetCurrent, cfg);
     const amountBorrowed = loanResult.borrowed;
     const interestCharged = loanResult.interest;
@@ -303,6 +331,11 @@ function runMonthlySimulation(players, roundPreferences, cfg = config, { gameId 
       displayName: p.displayName,
       bakeryName: p.bakeryName,
       round,
+      // Equipment + cleanliness fields for professor CSV.
+      equipmentGrade: nextRoundEquipmentGrade,
+      cleanlinessGrade,
+      cleanlinessScore,
+      equipmentUpgradePurchased: equipmentUpgradeApplied,
     });
 
     monthlyResults.push({
@@ -329,6 +362,11 @@ function runMonthlySimulation(players, roundPreferences, cfg = config, { gameId 
       csvRow: monthlyCsvRow,
       productPrices: last.productPrices,
       revenueBreakdown: last.revenueBreakdown,
+      // Equipment + cleanliness state for this round's result.
+      equipmentGrade: nextRoundEquipmentGrade,
+      cleanlinessScore,
+      cleanlinessGrade,
+      equipmentUpgradeApplied,
       // Daily breakdown for CSV per-day rows.
       dailyResults: dailyApportioned,
     });
