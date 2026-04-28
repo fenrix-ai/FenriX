@@ -546,7 +546,7 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
     const _maintenanceStaffCount = (decision.staffCounts && Number(decision.staffCounts.maintenanceGuys)) || 0;
     const _currentScore = Number.isFinite(p.cleanlinessScore) ? p.cleanlinessScore : 75;
     const _delta = cleanlinessDriftDelta(_maintenanceStaffCount, customerCount);
-    const cleanlinessScoreNext = Math.max(0, Math.min(100, _currentScore + _delta));
+    const cleanlinessScoreNext = Math.round(Math.max(0, Math.min(100, _currentScore + _delta)));
     const cleanlinessGradeNext = gradeFromScore(cleanlinessScoreNext);
 
     // HIGH-07 fix: use the canonical updateBudget formula from loan-shark.js.

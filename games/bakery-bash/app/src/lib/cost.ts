@@ -13,12 +13,14 @@
  * running cost so the player sees worst-case spend before submission.
  */
 import type {
+  EquipmentGrade,
   GameConfigParams,
   PendingAdBidsDraft,
   PendingDecisionDraft,
   ProductKey,
   StaffCounts,
 } from "../types/game";
+import { tierUpgradeCost } from "./equipment";
 
 /** Default per-hire base when Firestore `config/params` hasn't resolved.
  * Matches `sousChefBaseCost` in backend/functions/modules/config.js (post
@@ -53,6 +55,9 @@ export function totalRoleCost(base: number, count: number): number {
   return total;
 }
 
+/** Default flat per-round cost per maintenance staffer. Mirrors backend MAINTENANCE_STAFF_COST. */
+export const DEFAULT_MAINTENANCE_STAFF_COST = 20;
+
 /**
  * Resolve the per-role base costs from the live `config` doc, with sensible
  * fallbacks. `maintenanceBaseCost` falls back to the sous chef base, which in
@@ -73,17 +78,23 @@ export function resolveBaseCosts(config: GameConfigParams | null): {
   return { sousBase, maintBase };
 }
 
-/** Total staffing cost for the round (all four roles, escalation applied). */
+/** Total staffing cost for the round (all four roles, escalation applied).
+ *
+ * Sous chefs use the escalating multiplier curve (1× / 1.5× / 2.25× / …).
+ * Maintenance Guys use a FLAT rate per head (mirrors backend simulation.js
+ * and multi-day-simulation.js `maintenanceCost = count * MAINTENANCE_STAFF_COST`).
+ */
 export function totalStaffCost(
   staffCounts: StaffCounts,
   config: GameConfigParams | null,
 ): number {
-  const { sousBase, maintBase } = resolveBaseCosts(config);
+  const { sousBase } = resolveBaseCosts(config);
+  const maintFlatRate = config?.maintenanceStaffCost ?? DEFAULT_MAINTENANCE_STAFF_COST;
   return (
     totalRoleCost(sousBase, staffCounts.bakerySousChefs) +
     totalRoleCost(sousBase, staffCounts.deliSousChefs) +
     totalRoleCost(sousBase, staffCounts.baristaSousChefs) +
-    totalRoleCost(maintBase, staffCounts.maintenanceGuys)
+    maintFlatRate * (staffCounts.maintenanceGuys ?? 0)
   );
 }
 
@@ -134,6 +145,8 @@ export interface DecisionCostBreakdown {
   product: number;
   ad: number;
   chef: number;
+  /** Cost of an equipment upgrade if equipmentUpgradePurchased is toggled. 0 otherwise. */
+  equipmentUpgrade: number;
   total: number;
 }
 
@@ -141,6 +154,7 @@ export function computeDecisionCost(
   pendingDecision: PendingDecisionDraft,
   config: GameConfigParams | null,
   auctionCosts?: { ad?: number; chef?: number },
+  equipmentGrade?: EquipmentGrade | null,
 ): DecisionCostBreakdown {
   const staff = totalStaffCost(pendingDecision.staffCounts, config);
   const product = totalProductCost(
@@ -150,7 +164,20 @@ export function computeDecisionCost(
   );
   const ad = auctionCosts?.ad ?? 0;
   const chef = auctionCosts?.chef ?? 0;
-  return { staff, product, ad, chef, total: staff + product + ad + chef };
+  // Include equipment upgrade cost when the player has toggled the upgrade.
+  // tierUpgradeCost returns null when already at max grade (no upgrade possible).
+  const equipmentUpgrade =
+    pendingDecision.equipmentUpgradePurchased && equipmentGrade
+      ? (tierUpgradeCost(equipmentGrade) ?? 0)
+      : 0;
+  return {
+    staff,
+    product,
+    ad,
+    chef,
+    equipmentUpgrade,
+    total: staff + product + ad + chef + equipmentUpgrade,
+  };
 }
 
 /** Convenience: full round cost from the current pending draft + config. */

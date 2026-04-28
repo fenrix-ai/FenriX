@@ -13,6 +13,7 @@ import { functions } from "../../lib/firebase";
 import { PRICE_ZONES } from "../../lib/pricing";
 import { PriceInput } from "./PriceInput";
 import { totalStaffCost, totalProductCost } from "../../lib/cost";
+import { tierUpgradeCost } from "../../lib/equipment";
 
 /**
  * Product display metadata — prices are fixed per FRONTEND.md rule #2.
@@ -291,6 +292,7 @@ export function BakeryView({ readOnly = false }: BakeryViewProps) {
     gameId,
     unlockedProducts,
     budgetCurrent,
+    equipmentGrade,
   } = useGame();
   const dispatch = useGameDispatch();
   // FE-I15: let any teammate edit prices when no one on the team
@@ -374,7 +376,13 @@ export function BakeryView({ readOnly = false }: BakeryViewProps) {
   );
   const staffCost = totalStaffCost(pendingDecision.staffCounts, config);
   const miscSpent = pendingDecision.miscSpent;
-  const totalCommitted = bakeryCost + staffCost + miscSpent;
+  // Include equipment upgrade cost in the committed total when toggled,
+  // so the grand total matches what the backend will deduct.
+  const equipmentUpgradeCost =
+    pendingDecision.equipmentUpgradePurchased && equipmentGrade
+      ? (tierUpgradeCost(equipmentGrade) ?? 0)
+      : 0;
+  const totalCommitted = bakeryCost + staffCost + miscSpent + equipmentUpgradeCost;
   const unitCost = config?.unitCostPerProduct ?? 1;
   const cannotAfford = budgetCurrent !== null && budgetCurrent < unlockCost;
   const lockedRemaining = STATIONS.flatMap((s) => s.products).filter(
@@ -493,6 +501,12 @@ export function BakeryView({ readOnly = false }: BakeryViewProps) {
           <span>· Miscellaneous</span>
           <strong>${miscSpent.toFixed(2)}</strong>
         </div>
+        {equipmentUpgradeCost > 0 && (
+          <div className="bakery-view__total-committed-row">
+            <span>· Equipment Upgrade</span>
+            <strong>${equipmentUpgradeCost.toLocaleString()}</strong>
+          </div>
+        )}
       </div>
     </div>
   );

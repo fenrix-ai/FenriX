@@ -347,6 +347,8 @@ export interface GameConfigParams {
   sousChefBaseCost?: number;
   /** Per-hire base cost for Maintenance Guys. Defaults to the sous chef cost. */
   maintenanceBaseCost?: number;
+  /** Flat per-round cost per maintenance staffer. Defaults to 20. */
+  maintenanceStaffCost?: number;
   startingBudget?: number;
   unitCostPerProduct?: number;
   phaseDurations?: Record<string, number>;
