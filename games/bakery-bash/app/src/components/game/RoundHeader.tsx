@@ -59,6 +59,22 @@ const CSV_COLUMNS = [
   "chef_won",
   "chef_paid",
   "sellout",
+  // -- Decision inputs (P1, 2026-04-27): student-side X for re-training. --
+  // The CSV without these is outcome-only and a student can't fit y ~ X.
+  "num_products",
+  "price_croissant",
+  "price_cookie",
+  "price_bagel",
+  "price_sandwich",
+  "price_coffee",
+  "price_matcha",
+  "croissant_qty_stocked",
+  "cookie_qty_stocked",
+  "bagel_qty_stocked",
+  "sandwich_qty_stocked",
+  "coffee_qty_stocked",
+  "matcha_qty_stocked",
+  // -- Decision outcomes --
   "croissants_sold",
   "cookies_sold",
   "bagels_sold",
@@ -93,6 +109,9 @@ function bar(bars: MaintenanceBars | undefined, key: keyof MaintenanceBars): str
 function serializeRow(r: RoundResult): string {
   const counts: Partial<StaffCounts> = r.staffCounts ?? {};
   const breakdown = r.productBreakdown ?? {};
+  // P1 (2026-04-27): decision-input fields surfaced from the backend.
+  const prices = r.productPrices ?? {};
+  const stocked = r.quantitiesStocked ?? {};
   // Prefer revenueNet for the headline figure but emit gross alongside so
   // analysts can audit the loan-shark deduction.
   const revenueNet =
@@ -141,6 +160,21 @@ function serializeRow(r: RoundResult): string {
     csvCell(chefWon),
     num(r.chefBidPaid),
     r.selloutAnywhere ? "1" : "0",
+    // -- Decision inputs (P1) --
+    num(r.numProducts),
+    num(prices.croissant),
+    num(prices.cookie),
+    num(prices.bagel),
+    num(prices.sandwich),
+    num(prices.coffee),
+    num(prices.matcha),
+    num(stocked.croissant),
+    num(stocked.cookie),
+    num(stocked.bagel),
+    num(stocked.sandwich),
+    num(stocked.coffee),
+    num(stocked.matcha),
+    // -- Decision outcomes --
     num(breakdown.croissant),
     num(breakdown.cookie),
     num(breakdown.bagel),
