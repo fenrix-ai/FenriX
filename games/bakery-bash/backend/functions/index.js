@@ -742,19 +742,49 @@ async function resetPendingPlayerStateForRound(gameRef) {
  * T2.2: Clear every team's round-scoped pending doc so round N doesn't
  * surface round N-1 staged bids / decision drafts to teammates. Mirrors
  * `resetPendingPlayerStateForRound` for the new per-team transient-state
- * doc. Called from the same email-phase transition. Idempotent: writes
- * with merge so missing docs are created fresh, existing docs are reset.
+ * doc. Called from the same email-phase transition.
+ *
+ * NOTE: uses `set` *without* merge on purpose. Firestore set-merge
+ * deep-merges nested maps, so an empty-map field like `menu: {}` would
+ * be a no-op against an existing populated map and the previous round's
+ * menu / quantities / staffCounts would survive into round N (surfacing
+ * a stale draft to teammates after the per-player reset — which uses
+ * dot-paths and clears correctly — already ran). A full overwrite is
+ * safe here: this runs in `advanceGamePhase`'s post-transaction side-
+ * effects, by which point the phase is already `email` and every submit
+ * callable rejects with `failed-precondition`, so there are no
+ * concurrent writers to lose work to.
+ *
+ * `decisionDraft.productPrices` is carried over across the reset so
+ * Finance's last submitted prices default the next round's form
+ * (POST-01 — same semantic as the per-player reset, which preserves
+ * `pendingDecision.productPrices` by leaving it out of its dot-path
+ * update list). We read each team's existing pending doc in parallel
+ * via `db.getAll` to keep the carry-over cheap even at 25+ teams.
  */
 async function resetPendingTeamStateForRound(gameRef) {
   const teamsSnap = await gameRef.collection('teams').get();
   if (teamsSnap.empty) return;
 
+  const refs = teamsSnap.docs.map((td) => teamPendingDocRef(gameRef, td.id));
+  const existingSnaps = refs.length > 0 ? await db.getAll(...refs) : [];
+
   const BATCH_SIZE = 400;
   let batch = db.batch();
   let opsInBatch = 0;
 
-  for (const teamDoc of teamsSnap.docs) {
-    batch.set(teamPendingDocRef(gameRef, teamDoc.id), {
+  for (let i = 0; i < teamsSnap.docs.length; i++) {
+    const ref = refs[i];
+    const ex = existingSnaps[i];
+    const prevDraft = (ex && ex.exists && ex.data()) ? ex.data().decisionDraft : null;
+    const carryoverPrices = (prevDraft
+      && prevDraft.productPrices
+      && typeof prevDraft.productPrices === 'object'
+      && !Array.isArray(prevDraft.productPrices))
+      ? prevDraft.productPrices
+      : {};
+
+    batch.set(ref, {
       ad: null,
       chef: null,
       decisionDraft: {
@@ -767,10 +797,12 @@ async function resetPendingTeamStateForRound(gameRef) {
         sousChefAssignments: {},
         staffCounts: {},
         maintenanceTasks: [],
+        productPrices: carryoverPrices,
+        pricesSubmitted: false,
       },
       updatedByUid: null,
       updatedAt: FieldValue.serverTimestamp(),
-    }, { merge: true });
+    });
     opsInBatch++;
     if (opsInBatch >= BATCH_SIZE) {
       await batch.commit();
@@ -2689,9 +2721,11 @@ exports.submitPrices = onCall(CALLABLE_OPTS, async (request) => {
 
     const currentRound = numberOrDefault(game.currentRound || game.round, 1);
     const teamId = getPlayerTeamId(pSnap.data());
-    const teamPlayerDocs = teamId
-      ? (await transaction.get(gameRef.collection('players').where('teamId', '==', teamId))).docs
-      : [pSnap];
+    // T2.2 follow-up: dropped the `players where teamId == X` cascade read.
+    // The submitter's own player doc still gets the same `pendingDecision.*`
+    // writes (so the submitter's UI is unchanged); the team-shared signals
+    // are mirrored once to the per-team pending doc instead of fanning out
+    // to every teammate's player doc.
     // Note: cfgSnap is read for parity with submitDecision even though the
     // price validator doesn't need it today. Future work may apply per-game
     // zone overrides from config.
@@ -2726,18 +2760,41 @@ exports.submitPrices = onCall(CALLABLE_OPTS, async (request) => {
     // true and need no propagation; we only sync optional products.
     const OPTIONAL = ['sandwich', 'coffee', 'matcha'];
     const rawMenu = objectOrDefault(data.menu, {});
-    const menuUpdate = {};
+    const optionalMenuPatch = {};
     for (const p of OPTIONAL) {
-      menuUpdate[`pendingDecision.menu.${p}`] = rawMenu[p] === true;
+      optionalMenuPatch[p] = rawMenu[p] === true;
+    }
+    const playerMenuUpdate = {};
+    for (const p of OPTIONAL) {
+      playerMenuUpdate[`pendingDecision.menu.${p}`] = optionalMenuPatch[p];
     }
 
-    for (const teamPlayerDoc of teamPlayerDocs) {
-      transaction.update(teamPlayerDoc.ref, {
-        'pendingDecision.productPrices': validated,
-        'pendingDecision.pricesSubmitted': true,
-        ...menuUpdate,
+    transaction.update(playerRef, {
+      'pendingDecision.productPrices': validated,
+      'pendingDecision.pricesSubmitted': true,
+      ...playerMenuUpdate,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    // T2.2 follow-up: mirror the team-shared price/menu signals to the
+    // per-team pending doc. The deep-merge semantics of `set` with
+    // `merge: true` work cleanly for these top-level keys under
+    // `decisionDraft` — we're either creating new fields or replacing
+    // leaf values (productPrices is a flat map of price scalars,
+    // pricesSubmitted is a boolean, menu.* are booleans). An Operations
+    // submit that lands later writes the full `menu` map and the deep
+    // merge correctly overlays the optional keys we wrote here.
+    if (teamId) {
+      const teamDraftPatch = {
+        productPrices: validated,
+        pricesSubmitted: true,
+        menu: optionalMenuPatch,
+      };
+      transaction.set(teamPendingDocRef(gameRef, teamId), {
+        decisionDraft: teamDraftPatch,
+        updatedByUid: uid,
         updatedAt: FieldValue.serverTimestamp(),
-      });
+      }, { merge: true });
     }
   });
 
