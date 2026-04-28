@@ -87,6 +87,13 @@ export function GameSidebar({ readOnly = false }: GameSidebarProps) {
         csv: data.csv,
         filename: `competitor-intel-round-${prevRound}.csv`,
       });
+      // Tally the spend on the BakeryView "Miscellaneous" receipt row so the
+      // player sees the deduction line up with the budget. Server is the
+      // source of truth for the actual ledger; this is UI-only.
+      dispatch({
+        type: "ADD_MISC_SPEND",
+        payload: { amount: COMPETITOR_INTEL_COST },
+      });
       setInfo("Intel added to your CSV Inbox.");
     } catch (err) {
       const message =
@@ -122,6 +129,11 @@ export function GameSidebar({ readOnly = false }: GameSidebarProps) {
           tier === 1
             ? "chef-specialties.csv"
             : "chef-profiles.csv",
+      });
+      // Tally the spend on the BakeryView "Miscellaneous" receipt row.
+      dispatch({
+        type: "ADD_MISC_SPEND",
+        payload: { amount: tier === 1 ? TIER1_COST : TIER2_COST },
       });
       setPurchasedThisSession((prev) => ({ ...prev, [`tier${tier}`]: true }));
       setInfo(`Tier ${tier} chef data added to your CSV Inbox.`);

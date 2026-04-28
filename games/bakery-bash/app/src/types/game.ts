@@ -346,6 +346,16 @@ export interface PendingDecisionDraft {
   maintenanceTasks: MaintenanceTask[];
   /** POST-01: Finance-owned per-product prices. */
   productPrices: Record<ProductKey, number>;
+  /**
+   * Apr 28 2026 — running tally of immediate-charge purchases made during
+   * this round's decide phase (product unlocks, competitor intel, chef-data
+   * tiers). Surfaces these on the "Total Committed This Round" receipt as a
+   * "Miscellaneous" line so players see the spend line up with the budget
+   * deduction. Reset to 0 on round transition (see SET_ROUND in
+   * GameContext); never sent to the backend (server-authoritative budget
+   * deductions own the actual ledger).
+   */
+  miscSpent: number;
 }
 
 /** Shape passed as `adBids` to `submitBids({ bidType: "ad" })`. */
@@ -383,6 +393,12 @@ export interface GameConfigParams {
    * DEFAULT_PRODUCT_UNLOCK_COST when missing.
    */
   productUnlockCost?: number;
+  /**
+   * Roster cap for specialty chefs (PR #108 added the consumer in
+   * RosterPhasePage but missed declaring the field — restoring it here
+   * unblocks `tsc -b`). Defaults to 3 when missing.
+   */
+  specialtyChefCap?: number;
   // Legacy (pre-rewrite seed doc). Kept so UI can fall back if the canonical
   // field is not yet present in Firestore.
   costPerStaffPerRound?: number;

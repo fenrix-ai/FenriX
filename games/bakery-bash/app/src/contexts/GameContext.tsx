@@ -66,6 +66,7 @@ function buildDefaultDecisionDraft(): PendingDecisionDraft {
     staffCounts: { ...DEFAULT_STAFF_COUNTS },
     maintenanceTasks: [],
     productPrices,
+    miscSpent: 0,
   };
 }
 
@@ -177,6 +178,7 @@ type GameAction =
   | { type: "SET_LEADERBOARD"; payload: LeaderboardRanking[] }
   | { type: "SET_LEADERBOARD_ERROR"; payload: string | null }
   | { type: "ADD_ACQUIRED_CSV"; payload: AcquiredCsv }
+  | { type: "ADD_MISC_SPEND"; payload: { amount: number } }
   | {
       type: "SET_TEAM_UNLOCKS";
       payload: { unlockedProducts: ProductKey[]; unlocksPurchased: number };
@@ -422,6 +424,20 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             )
           : [...state.acquiredCsvs, action.payload];
       return { ...state, acquiredCsvs: next };
+    }
+
+    case "ADD_MISC_SPEND": {
+      const delta = Number.isFinite(action.payload.amount)
+        ? Math.max(0, action.payload.amount)
+        : 0;
+      if (delta === 0) return state;
+      return {
+        ...state,
+        pendingDecision: {
+          ...state.pendingDecision,
+          miscSpent: state.pendingDecision.miscSpent + delta,
+        },
+      };
     }
 
     case "SET_TEAM_UNLOCKS": {
