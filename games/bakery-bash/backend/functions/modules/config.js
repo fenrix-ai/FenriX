@@ -683,6 +683,47 @@ function mergeConfig(rawConfig) {
 }
 
 // ---------------------------------------------------------------------------
+// Equipment & Cleanliness (rework, 2026-04-28)
+// ---------------------------------------------------------------------------
+
+const EQUIPMENT_GRADES = ['F', 'E', 'D', 'C', 'B', 'A'];
+
+const EQUIPMENT_TIER_COSTS = {
+  // Cost to upgrade FROM the listed grade (so 'F' → cost to go F→E)
+  F: 400, E: 600, D: 800, C: 1000, B: 1200, A: 0,
+};
+
+const EQUIPMENT_CAPACITY_FACTOR = {
+  F: 0.90, E: 0.94, D: 0.97, C: 1.00, B: 1.03, A: 1.07,
+};
+
+const EQUIPMENT_SATISFACTION_FACTOR = {
+  F: 0.95, E: 0.97, D: 0.99, C: 1.00, B: 1.02, A: 1.05,
+};
+
+const CLEANLINESS_SATISFACTION_FACTOR = {
+  F: 0.90, E: 0.94, D: 0.97, C: 1.00, B: 1.03, A: 1.07,
+};
+
+// Score-to-grade bands. 0-100 internal score → letter grade.
+const CLEANLINESS_BANDS = [
+  { grade: 'F', min:  0, max: 17  },
+  { grade: 'E', min: 17, max: 34  },
+  { grade: 'D', min: 34, max: 51  },
+  { grade: 'C', min: 51, max: 68  },
+  { grade: 'B', min: 68, max: 85  },
+  { grade: 'A', min: 85, max: 101 },  // 100 falls in A
+];
+
+const CLEANLINESS_STAFF_BOOST_PER_HEAD = 20;
+const CLEANLINESS_DRAIN_PER_CUSTOMER   = 0.20;
+const MAINTENANCE_STAFF_COST = 20;
+
+const DEFAULT_EQUIPMENT_GRADE         = 'C';
+const DEFAULT_CLEANLINESS_SCORE       = 75;  // mid-B
+const DEFAULT_MAINTENANCE_STAFF_COUNT = 2;
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
@@ -709,4 +750,16 @@ module.exports = {
   numberOrDefault,
   objectOrDefault,
   cleanString,
+  EQUIPMENT_GRADES,
+  EQUIPMENT_TIER_COSTS,
+  EQUIPMENT_CAPACITY_FACTOR,
+  EQUIPMENT_SATISFACTION_FACTOR,
+  CLEANLINESS_SATISFACTION_FACTOR,
+  CLEANLINESS_BANDS,
+  CLEANLINESS_STAFF_BOOST_PER_HEAD,
+  CLEANLINESS_DRAIN_PER_CUSTOMER,
+  MAINTENANCE_STAFF_COST,
+  DEFAULT_EQUIPMENT_GRADE,
+  DEFAULT_CLEANLINESS_SCORE,
+  DEFAULT_MAINTENANCE_STAFF_COUNT,
 };
