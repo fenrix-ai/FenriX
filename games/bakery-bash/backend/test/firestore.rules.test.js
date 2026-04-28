@@ -22,46 +22,55 @@ const PLAYER_B = "uid_player_b";
 
 let testEnv;
 
+// Mirror production canonical shapes from `resetPendingPlayerStateForRound` /
+// `joinGame` (backend/functions/index.js) and `PendingDecisionDraft` /
+// `StaffCounts` (app/src/types/game.ts). These fixtures are seeded through
+// `withSecurityRulesDisabled` so the rules don't actually enforce inner
+// shape — but keeping them in sync with production avoids confusing the
+// next person who reads this file looking for the canonical schema.
 const pendingDecision = {
   submitted: false,
   submittedAt: null,
-  staffCount: 3,
-  adSpend: 0,
+  round: null,
   menu: {
+    coffee: false,
     croissant: true,
-    cookie: true,
     bagel: true,
+    cookie: true,
     sandwich: false,
-    latte: false,
-    matchaLatte: false,
-  },
-  productPrices: {
-    croissant: 0,
-    cookie: 0,
-    bagel: 0,
-    sandwich: 0,
-    latte: 0,
-    matchaLatte: 0,
+    matcha: false,
   },
   quantities: {
+    coffee: 0,
     croissant: 0,
-    cookie: 0,
     bagel: 0,
+    cookie: 0,
     sandwich: 0,
-    latte: 0,
-    matchaLatte: 0,
+    matcha: 0,
   },
+  sousChefCount: 0,
+  sousChefAssignments: {},
+  staffCounts: {
+    bakerySousChefs: 0,
+    deliSousChefs: 0,
+    baristaSousChefs: 0,
+    maintenanceGuys: 0,
+  },
+  maintenanceTasks: [],
+  productPrices: {
+    coffee: 0,
+    croissant: 0,
+    bagel: 0,
+    cookie: 0,
+    sandwich: 0,
+    matcha: 0,
+  },
+  pricesSubmitted: false,
 };
 
 const pendingBids = {
-  adBid: {
-    adType: null,
-    amount: 0,
-  },
-  chefBid: {
-    skillLevel: 0,
-    amount: 0,
-  },
+  ad: null,
+  chef: null,
 };
 
 function playerDocument(uid, displayName) {
@@ -74,22 +83,7 @@ function playerDocument(uid, displayName) {
     cumulativeRevenue: 0,
     pendingDecision,
     pendingBids,
-    lastRoundResult: {
-      round: 0,
-      revenue: 0,
-      customerCount: 0,
-      customerSatisfaction: 0,
-      headchefSkill: 0,
-      adTypeWon: null,
-      productsSold: {
-        croissant: 0,
-        cookie: 0,
-        bagel: 0,
-        sandwich: 0,
-        latte: 0,
-        matchaLatte: 0,
-      },
-    },
+    lastRoundResult: null,
   };
 }
 
@@ -308,7 +302,10 @@ describe("Bakery Bash Firestore security rules", () => {
     await assertSucceeds(updateDoc(playerRef, { displayName: "Crumb Club" }));
     await assertSucceeds(updateDoc(playerRef, { pendingDecision: {
       ...pendingDecision,
-      staffCount: 4,
+      staffCounts: {
+        ...pendingDecision.staffCounts,
+        bakerySousChefs: 1,
+      },
     } }));
     await assertFails(updateDoc(playerRef, { budgetCurrent: 999999 }));
     await assertFails(updateDoc(playerRef, { creditBalance: 999999 }));
@@ -378,11 +375,19 @@ describe("Bakery Bash Firestore security rules", () => {
       setDoc(decisionRef, {
         round: 1,
         submittedAt: null,
-        staffCount: 3,
-        adSpend: 0,
+        staffCounts: {
+          bakerySousChefs: 1,
+          deliSousChefs: 0,
+          baristaSousChefs: 0,
+          maintenanceGuys: 0,
+        },
       })
     );
-    await assertFails(updateDoc(decisionRef, { staffCount: 99 }));
+    await assertFails(
+      updateDoc(decisionRef, {
+        "staffCounts.bakerySousChefs": 99,
+      })
+    );
     await assertFails(deleteDoc(decisionRef));
 
     // POST-01: productPrices written by submitPrices (Admin SDK) — client

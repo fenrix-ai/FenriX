@@ -42,6 +42,16 @@ setGlobalOptions({ cpu: 0.5 });
 // reach the onCall handler, causing 401s instead of auth checks.
 const CALLABLE_OPTS = { invoker: 'public' };
 
+// Callables that fan out widely across the game tree (simulation, snapshot
+// capture/restore, CSV exports across 70 players × 5 rounds) get a 2x
+// safety margin over the Cloud Functions Gen 2 default of 60s. Phase
+// advancement at 70 players runs simulation + chef-pool generation +
+// auto-snapshot upload back-to-back, and a slow Firestore round-trip on
+// the snapshot chunks could push the cumulative time past 60s. The
+// remaining hot callables (`submitBids`, `submitDecision`, `submitPrices`,
+// `joinGame`, `createTeam`) finish well under the default and stay there.
+const HEAVY_CALLABLE_OPTS = { ...CALLABLE_OPTS, timeoutSeconds: 120 };
+
 const { getApps, initializeApp } = require('firebase-admin/app');
 const {
   FieldValue,
@@ -83,9 +93,7 @@ const {
   resolveChefAuction,
 } = require('./modules/chef-system');
 
-const {
-  runSimulation,
-} = require('./modules/simulation');
+const { runMonthlySimulation } = require('./modules/multi-day-simulation');
 
 const {
   buildCsvString,
@@ -415,6 +423,28 @@ function getPlayerTeamKey(playerDoc) {
 }
 
 /**
+ * T2.2: Single per-team transient-state doc for round-scoped pending bids
+ * and decision drafts. Replaces the previous cascade pattern where
+ * `submitBids` / `submitDecision` wrote `pendingBids` / `pendingDecision`
+ * to every teammate's `players/{uid}` doc — which contended at 3+ members.
+ * Now each team has one doc that any teammate can subscribe to.
+ *
+ * Shape: { ad?, chef?, decisionDraft?, updatedByUid, updatedAt }
+ *   - `ad` mirrors `pendingBids.ad` (the validated bid map)
+ *   - `chef` mirrors `pendingBids.chef` (validated bid array)
+ *   - `decisionDraft` mirrors the team-shared `pendingDecision.*` fields
+ *     written by Operations' `submitDecision` (menu, quantities, staffCounts,
+ *     maintenanceTasks, sousChef*, submitted, submittedAt, round) and
+ *     Finance's `submitPrices` (productPrices, pricesSubmitted, optional
+ *     menu picks). `submitDecision`'s POST-01 gate also reads
+ *     `decisionDraft.pricesSubmitted` from this doc to decide whether
+ *     Finance has posted prices for the current round.
+ */
+function teamPendingDocRef(gameRef, teamId) {
+  return gameRef.collection('teams').doc(teamId).collection('state').doc('pending');
+}
+
+/**
  * BE-I02: Scan every player doc and return the set of (teamKey, memberUid,
  * count) entries whose `specialtyChefs` array exceeds the cap. Used by
  * advanceGamePhase to block leaving the roster phase while anyone is over.
@@ -706,6 +736,81 @@ async function resetPendingPlayerStateForRound(gameRef) {
       'pendingBids.chef': null,
       pendingRosterAction: false,
       rosterCompleted: false,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    opsInBatch++;
+    if (opsInBatch >= BATCH_SIZE) {
+      await batch.commit();
+      batch = db.batch();
+      opsInBatch = 0;
+    }
+  }
+  if (opsInBatch > 0) await batch.commit();
+}
+
+/**
+ * T2.2: Clear every team's round-scoped pending doc so round N doesn't
+ * surface round N-1 staged bids / decision drafts to teammates. Mirrors
+ * `resetPendingPlayerStateForRound` for the new per-team transient-state
+ * doc. Called from the same email-phase transition.
+ *
+ * NOTE: uses `set` *without* merge on purpose. Firestore set-merge
+ * deep-merges nested maps, so an empty-map field like `menu: {}` would
+ * be a no-op against an existing populated map and the previous round's
+ * menu / quantities / staffCounts would survive into round N (surfacing
+ * a stale draft to teammates after the per-player reset — which uses
+ * dot-paths and clears correctly — already ran). A full overwrite is
+ * safe here: this runs in `advanceGamePhase`'s post-transaction side-
+ * effects, by which point the phase is already `email` and every submit
+ * callable rejects with `failed-precondition`, so there are no
+ * concurrent writers to lose work to.
+ *
+ * `decisionDraft.productPrices` is carried over across the reset so
+ * Finance's last submitted prices default the next round's form
+ * (POST-01 — same semantic as the per-player reset, which preserves
+ * `pendingDecision.productPrices` by leaving it out of its dot-path
+ * update list). We read each team's existing pending doc in parallel
+ * via `db.getAll` to keep the carry-over cheap even at 25+ teams.
+ */
+async function resetPendingTeamStateForRound(gameRef) {
+  const teamsSnap = await gameRef.collection('teams').get();
+  if (teamsSnap.empty) return;
+
+  const refs = teamsSnap.docs.map((td) => teamPendingDocRef(gameRef, td.id));
+  const existingSnaps = refs.length > 0 ? await db.getAll(...refs) : [];
+
+  const BATCH_SIZE = 400;
+  let batch = db.batch();
+  let opsInBatch = 0;
+
+  for (let i = 0; i < teamsSnap.docs.length; i++) {
+    const ref = refs[i];
+    const ex = existingSnaps[i];
+    const prevDraft = (ex && ex.exists && ex.data()) ? ex.data().decisionDraft : null;
+    const carryoverPrices = (prevDraft
+      && prevDraft.productPrices
+      && typeof prevDraft.productPrices === 'object'
+      && !Array.isArray(prevDraft.productPrices))
+      ? prevDraft.productPrices
+      : {};
+
+    batch.set(ref, {
+      ad: null,
+      chef: null,
+      decisionDraft: {
+        submitted: false,
+        submittedAt: null,
+        round: null,
+        menu: {},
+        quantities: {},
+        sousChefCount: 0,
+        sousChefAssignments: {},
+        staffCounts: {},
+        maintenanceTasks: [],
+        productPrices: carryoverPrices,
+        pricesSubmitted: false,
+      },
+      updatedByUid: null,
       updatedAt: FieldValue.serverTimestamp(),
     });
     opsInBatch++;
@@ -1436,7 +1541,7 @@ exports.startGame = onCall(CALLABLE_OPTS, async (request) => {
 // advanceGamePhase
 // ===========================================================================
 
-exports.advanceGamePhase = onCall(CALLABLE_OPTS, async (request) => {
+exports.advanceGamePhase = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request, 'Sign in before advancing phases.');
   const gameId = cleanGameId((request.data || {}).gameId);
@@ -1570,6 +1675,10 @@ exports.advanceGamePhase = onCall(CALLABLE_OPTS, async (request) => {
       // no-op since all fields are already at their join-time defaults, but
       // it's idempotent and cheap so we run it unconditionally.
       await resetPendingPlayerStateForRound(gameRef);
+      // T2.2: same reset for the per-team pending doc (the new home for
+      // team-shared transient state). Independent batch — these docs live
+      // under `teams/{id}/state/pending`, not under `players/{uid}`.
+      await resetPendingTeamStateForRound(gameRef);
 
       // Write the market-insight email for the entering round.
       const prefs = await loadRoundPreferences(gameRef, round);
@@ -1696,7 +1805,7 @@ exports.advanceGamePhase = onCall(CALLABLE_OPTS, async (request) => {
  *   - failed-precondition — game is not actually stuck (phase ≠ 'simulating',
  *                  or simulation is still running within the 60s threshold).
  */
-exports.retryStuckSimulation = onCall(CALLABLE_OPTS, async (request) => {
+exports.retryStuckSimulation = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request, 'Sign in before recovering stuck simulations.');
   const gameId = cleanGameId((request.data || {}).gameId);
@@ -2014,7 +2123,11 @@ async function runSimulationAndPersist(gameRef, round, config) {
   // -----------------------------------------------------------------------
   // Pure sim
   // -----------------------------------------------------------------------
-  const results = runSimulation(players, prefs, config, { gameId: gameRef.id, round });
+  // P2 (2026-04-27): runMonthlySimulation wraps runSimulation in a 30-day
+  // loop. Returns the same monthly aggregate shape as runSimulation plus a
+  // `dailyResults` array. Existing consumers (results[i].revenueNet, etc.)
+  // continue to work — those are still the monthly aggregates.
+  const results = runMonthlySimulation(players, prefs, config, { gameId: gameRef.id, round });
 
   // Per-team sim-input budget, keyed by playerId (== team.key). Used below to
   // write budgetBefore alongside budgetAfter on each player round doc, which
@@ -2105,6 +2218,49 @@ async function runSimulationAndPersist(gameRef, round, config) {
               (memberData.pendingDecision && memberData.pendingDecision.staffCounts) || {},
               {},
             ),
+          // P1 (2026-04-27): surface decision inputs so the student CSV can
+          // emit them. Without these the frontend CSV is outcome-only and
+          // students can't fit y ~ X for in-game re-training.
+          productPrices:
+            r.csvRow && typeof r.csvRow === 'object'
+              ? {
+                  croissant: numberOrDefault(r.csvRow.price_croissant, null),
+                  cookie: numberOrDefault(r.csvRow.price_cookie, null),
+                  bagel: numberOrDefault(r.csvRow.price_bagel, null),
+                  sandwich: numberOrDefault(r.csvRow.price_sandwich, null),
+                  coffee: numberOrDefault(r.csvRow.price_coffee, null),
+                  matcha: numberOrDefault(r.csvRow.price_matcha, null),
+                }
+              : null,
+          quantitiesStocked:
+            r.csvRow && typeof r.csvRow === 'object'
+              ? {
+                  croissant: numberOrDefault(r.csvRow.croissant_qty_stocked, 0),
+                  cookie: numberOrDefault(r.csvRow.cookie_qty_stocked, 0),
+                  bagel: numberOrDefault(r.csvRow.bagel_qty_stocked, 0),
+                  sandwich: numberOrDefault(r.csvRow.sandwich_qty_stocked, 0),
+                  coffee: numberOrDefault(r.csvRow.coffee_qty_stocked, 0),
+                  matcha: numberOrDefault(r.csvRow.matcha_qty_stocked, 0),
+                }
+              : null,
+          numProducts: numberOrDefault(r.csvRow && r.csvRow.num_products, 0),
+          // P2 (2026-04-27): lightweight per-day summary so the frontend
+          // CSV download can emit one row per day per round. Decision
+          // inputs (constant across the round) are read from the
+          // round-level fields above; daily values just fill in the
+          // outcome columns that vary day to day.
+          dailyBreakdown: Array.isArray(r.dailyResults)
+            ? r.dailyResults.map((d) => ({
+                day: d.day,
+                revenueGross: d.revenueGross,
+                revenueNet: d.revenueNet,
+                amountBorrowed: d.amountBorrowed || 0,
+                interestCharged: d.interestCharged || 0,
+                customerCount: d.customerCount,
+                aggregateSatisfactionPct: d.aggregateSatisfactionPct,
+                burglary: d.burglary || false,
+              }))
+            : [],
         },
         updatedAt: FieldValue.serverTimestamp(),
       };
@@ -2170,6 +2326,17 @@ async function runSimulationAndPersist(gameRef, round, config) {
       });
 
       opsInBatch += OPS_PER_PLAYER;
+
+      // P2 (2026-04-27): per-day breakdown lives on lastRoundResult
+      // (`dailyBreakdown` field) — the frontend reads it from there and
+      // emits one CSV row per day from in-memory state. We do NOT persist
+      // separate per-day csvRow Firestore docs because no consumer reads
+      // them (CsvInboxModal pulls from GameContext.roundResults; the
+      // professor CSV reads only the monthly csvRow doc above). Persisting
+      // 30 extra docs per player per round (16x write amplification)
+      // would burn quota for unread data. If a future feature (e.g.,
+      // cross-team CSV pool, P3) needs the daily docs, add the writes
+      // back then.
     }
   }
 
@@ -2351,11 +2518,23 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
       // direct callable invocation) can't bypass it. Skipped for solo
       // players and teams with no Finance seat — those paths submit prices
       // implicitly via `submitPrices`'s solo / fallback handling.
+      //
+      // T2.2 follow-up: read `pricesSubmitted` from the per-team pending
+      // doc rather than the caller's own player doc — `submitPrices` no
+      // longer cascades that flag onto teammates' player docs, so
+      // Operations' own doc never sees it.
       let teamRoleAssignmentsForGate = null;
+      let teamPendingDraftForGate = null;
       if (teamId) {
-        const teamSnap = await transaction.get(gameRef.collection('teams').doc(teamId));
+        const [teamSnap, teamPendingSnap] = await Promise.all([
+          transaction.get(gameRef.collection('teams').doc(teamId)),
+          transaction.get(teamPendingDocRef(gameRef, teamId)),
+        ]);
         if (teamSnap.exists) {
           teamRoleAssignmentsForGate = (teamSnap.data() || {}).roleAssignments || null;
+        }
+        if (teamPendingSnap.exists) {
+          teamPendingDraftForGate = (teamPendingSnap.data() || {}).decisionDraft || null;
         }
       }
       const teamHasFinance = teamRoleAssignmentsForGate
@@ -2365,8 +2544,9 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
         && _submitDecision_role !== 'solo'
         && _submitDecision_role !== 'finance'
       ) {
-        const pending = pSnap.get('pendingDecision') || {};
-        if (pending.pricesSubmitted !== true) {
+        const teamPricesSubmitted = teamPendingDraftForGate
+          && teamPendingDraftForGate.pricesSubmitted === true;
+        if (!teamPricesSubmitted) {
           throw new HttpsError(
             'failed-precondition',
             'Waiting for your Finance teammate to submit prices for this round.',
@@ -2374,9 +2554,12 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
         }
       }
 
-      const teamPlayerDocs = teamId
-        ? (await transaction.get(gameRef.collection('players').where('teamId', '==', teamId))).docs
-        : [pSnap];
+      // T2.2: dropped the `players where teamId == X` read that previously
+      // backed a cascade write across teammates' player docs. The submitter's
+      // own player doc still gets the full `pendingDecision.*` write below
+      // (no behaviour change for the submitter); the team-shared draft is
+      // mirrored once to `teams/{teamId}/state/pending` so other teammates
+      // can subscribe without contending on each other's player docs.
 
       // Validate using the decision-validation module (pure).
       // ValidationError is a plain JS error — convert to HttpsError so the
@@ -2424,23 +2607,45 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
       // POST-01: use dot-paths rather than replacing the whole `pendingDecision`
       // so Finance's `pendingDecision.productPrices` (written by submitPrices)
       // isn't clobbered when Operations submits after Finance.
-      for (const teamPlayerDoc of teamPlayerDocs) {
-        transaction.update(teamPlayerDoc.ref, {
-          'pendingDecision.submitted': true,
-          'pendingDecision.submittedAt': Timestamp.now(),
-          'pendingDecision.round': currentRound,
-          'pendingDecision.menu': validated.menu || {},
-          'pendingDecision.quantities': validated.quantities || {},
-          'pendingDecision.sousChefCount': validated.sousChefCount || 0,
-          'pendingDecision.sousChefAssignments': validated.sousChefAssignments || {},
-          'pendingDecision.staffCounts': objectOrDefault(data.staffCounts, {}),
-          'pendingDecision.maintenanceTasks': Array.isArray(data.maintenanceTasks)
-            ? data.maintenanceTasks
-            : [],
-          consecutiveMissedRounds: 0,
-          disconnected: false,
+      const submittedAtTs = Timestamp.now();
+      const draftFields = {
+        submitted: true,
+        submittedAt: submittedAtTs,
+        round: currentRound,
+        menu: validated.menu || {},
+        quantities: validated.quantities || {},
+        sousChefCount: validated.sousChefCount || 0,
+        sousChefAssignments: validated.sousChefAssignments || {},
+        staffCounts: objectOrDefault(data.staffCounts, {}),
+        maintenanceTasks: Array.isArray(data.maintenanceTasks)
+          ? data.maintenanceTasks
+          : [],
+      };
+      transaction.update(playerRef, {
+        'pendingDecision.submitted': draftFields.submitted,
+        'pendingDecision.submittedAt': draftFields.submittedAt,
+        'pendingDecision.round': draftFields.round,
+        'pendingDecision.menu': draftFields.menu,
+        'pendingDecision.quantities': draftFields.quantities,
+        'pendingDecision.sousChefCount': draftFields.sousChefCount,
+        'pendingDecision.sousChefAssignments': draftFields.sousChefAssignments,
+        'pendingDecision.staffCounts': draftFields.staffCounts,
+        'pendingDecision.maintenanceTasks': draftFields.maintenanceTasks,
+        consecutiveMissedRounds: 0,
+        disconnected: false,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+
+      // T2.2: mirror the team-shared draft to one per-team doc so other
+      // teammates' UIs can react without us having to fan out to each
+      // teammate's player doc. Solo players (no teamId) skip this — their
+      // own player doc IS the source of truth.
+      if (teamId) {
+        transaction.set(teamPendingDocRef(gameRef, teamId), {
+          decisionDraft: draftFields,
+          updatedByUid: uid,
           updatedAt: FieldValue.serverTimestamp(),
-        });
+        }, { merge: true });
       }
 
       // T3.3: submittedCount is no longer incremented here. The single-doc
@@ -2543,9 +2748,11 @@ exports.submitPrices = onCall(CALLABLE_OPTS, async (request) => {
 
     const currentRound = numberOrDefault(game.currentRound || game.round, 1);
     const teamId = getPlayerTeamId(pSnap.data());
-    const teamPlayerDocs = teamId
-      ? (await transaction.get(gameRef.collection('players').where('teamId', '==', teamId))).docs
-      : [pSnap];
+    // T2.2 follow-up: dropped the `players where teamId == X` cascade read.
+    // The submitter's own player doc still gets the same `pendingDecision.*`
+    // writes (so the submitter's UI is unchanged); the team-shared signals
+    // are mirrored once to the per-team pending doc instead of fanning out
+    // to every teammate's player doc.
     // Note: cfgSnap is read for parity with submitDecision even though the
     // price validator doesn't need it today. Future work may apply per-game
     // zone overrides from config.
@@ -2580,18 +2787,41 @@ exports.submitPrices = onCall(CALLABLE_OPTS, async (request) => {
     // true and need no propagation; we only sync optional products.
     const OPTIONAL = ['sandwich', 'coffee', 'matcha'];
     const rawMenu = objectOrDefault(data.menu, {});
-    const menuUpdate = {};
+    const optionalMenuPatch = {};
     for (const p of OPTIONAL) {
-      menuUpdate[`pendingDecision.menu.${p}`] = rawMenu[p] === true;
+      optionalMenuPatch[p] = rawMenu[p] === true;
+    }
+    const playerMenuUpdate = {};
+    for (const p of OPTIONAL) {
+      playerMenuUpdate[`pendingDecision.menu.${p}`] = optionalMenuPatch[p];
     }
 
-    for (const teamPlayerDoc of teamPlayerDocs) {
-      transaction.update(teamPlayerDoc.ref, {
-        'pendingDecision.productPrices': validated,
-        'pendingDecision.pricesSubmitted': true,
-        ...menuUpdate,
+    transaction.update(playerRef, {
+      'pendingDecision.productPrices': validated,
+      'pendingDecision.pricesSubmitted': true,
+      ...playerMenuUpdate,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    // T2.2 follow-up: mirror the team-shared price/menu signals to the
+    // per-team pending doc. The deep-merge semantics of `set` with
+    // `merge: true` work cleanly for these top-level keys under
+    // `decisionDraft` — we're either creating new fields or replacing
+    // leaf values (productPrices is a flat map of price scalars,
+    // pricesSubmitted is a boolean, menu.* are booleans). An Operations
+    // submit that lands later writes the full `menu` map and the deep
+    // merge correctly overlays the optional keys we wrote here.
+    if (teamId) {
+      const teamDraftPatch = {
+        productPrices: validated,
+        pricesSubmitted: true,
+        menu: optionalMenuPatch,
+      };
+      transaction.set(teamPendingDocRef(gameRef, teamId), {
+        decisionDraft: teamDraftPatch,
+        updatedByUid: uid,
         updatedAt: FieldValue.serverTimestamp(),
-      });
+      }, { merge: true });
     }
   });
 
@@ -2668,9 +2898,10 @@ exports.submitBids = onCall(CALLABLE_OPTS, async (request) => {
     _submitBids_round = round;
     const config = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
     const teamId = getPlayerTeamId(pSnap.data());
-    const teamPlayerDocs = teamId
-      ? (await transaction.get(gameRef.collection('players').where('teamId', '==', teamId))).docs
-      : [pSnap];
+    // T2.2: dropped the `players where teamId == X` cascade read — the
+    // submitter still gets their own `pendingBids.${bidType}` write below
+    // (no behaviour change for the submitter); other teammates subscribe
+    // to the team pending doc instead of having it cascaded onto theirs.
 
     let validated;
     try {
@@ -2753,11 +2984,20 @@ exports.submitBids = onCall(CALLABLE_OPTS, async (request) => {
     merged[`${bidType}SubmittedAt`] = FieldValue.serverTimestamp();
 
     transaction.set(bidsRef, merged, { merge: true });
-    for (const teamPlayerDoc of teamPlayerDocs) {
-      transaction.update(teamPlayerDoc.ref, {
-        [`pendingBids.${bidType}`]: validated,
+    // T2.2: write submitter's own player doc (preserves the existing
+    // contract — submitter's UI continues to read pendingBids from their
+    // own player doc) and mirror to the per-team pending doc once. Solo
+    // players (no teamId) skip the team mirror.
+    transaction.update(playerRef, {
+      [`pendingBids.${bidType}`]: validated,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    if (teamId) {
+      transaction.set(teamPendingDocRef(gameRef, teamId), {
+        [bidType]: validated,
+        updatedByUid: uid,
         updatedAt: FieldValue.serverTimestamp(),
-      });
+      }, { merge: true });
     }
   });
 
@@ -3017,7 +3257,7 @@ exports.resumeGame = onCall(CALLABLE_OPTS, async (request) => {
 // endGame — force transition to game_over
 // ===========================================================================
 
-exports.endGame = onCall(CALLABLE_OPTS, async (request) => {
+exports.endGame = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request);
   const gameId = cleanGameId((request.data || {}).gameId);
@@ -3106,7 +3346,7 @@ exports.getConclusion = onCall(CALLABLE_OPTS, async (request) => {
 // exportPlayerCsv — player downloads their own round-by-round CSV
 // ===========================================================================
 
-exports.exportPlayerCsv = onCall(CALLABLE_OPTS, async (request) => {
+exports.exportPlayerCsv = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request, 'Sign in to export your data.');
   const gameId = cleanGameId((request.data || {}).gameId);
@@ -3145,7 +3385,7 @@ exports.exportPlayerCsv = onCall(CALLABLE_OPTS, async (request) => {
 // exportProfessorCsv — professor downloads class-wide CSV with player names
 // ===========================================================================
 
-exports.exportProfessorCsv = onCall(CALLABLE_OPTS, async (request) => {
+exports.exportProfessorCsv = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request, 'Sign in to export class data.');
   const gameId = cleanGameId((request.data || {}).gameId);
@@ -3674,16 +3914,17 @@ exports.purchaseChefData = onCall(CALLABLE_OPTS, async (request) => {
 // rebuilding the roster. Authorization checks both `professorUid` (canonical)
 // and `professorId` (legacy alias) to match createGame's write pattern.
 // ---------------------------------------------------------------------------
-exports.resetGame = onCall(CALLABLE_OPTS, async (request) => {
+exports.resetGame = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request);
   const gameId = cleanGameId((request.data || {}).gameId);
   const gameRef = gameDoc(gameId);
 
-  const [gameSnap, cfgSnap, playersSnap] = await Promise.all([
+  const [gameSnap, cfgSnap, playersSnap, teamsSnap] = await Promise.all([
     gameRef.get(),
     gameRef.collection('config').doc('params').get(),
     gameRef.collection('players').get(),
+    gameRef.collection('teams').get(),
   ]);
 
   if (!gameSnap.exists) throw new HttpsError('not-found', 'Game not found.');
@@ -3701,12 +3942,16 @@ exports.resetGame = onCall(CALLABLE_OPTS, async (request) => {
   );
 
   const playerDocs = playersSnap.docs;
+  const teamDocs = teamsSnap.docs;
 
   // Wipe game-level + per-player subcollections in parallel. deleteCollectionDocs
   // chunks at BATCH_OP_LIMIT internally. `rounds`, `submissions`, and
   // `submittedCountShards` use recursiveDelete because they own shard
   // subcollections (`topBidsShards`, `shards`) that would otherwise survive
-  // the reset and pollute the next game's aggregate writes.
+  // the reset and pollute the next game's aggregate writes. Each team's
+  // `state` subcollection holds the T2.2 per-team pending draft and must
+  // also be cleared, otherwise stale `decisionDraft.submitted: true` would
+  // surface to teammates' UIs in the next game.
   await Promise.all([
     db.recursiveDelete(gameRef.collection('rounds')),
     db.recursiveDelete(gameRef.collection('submissions')),
@@ -3723,6 +3968,7 @@ exports.resetGame = onCall(CALLABLE_OPTS, async (request) => {
         gameRef.collection('csvRows').doc(pd.id).collection('rounds'),
       ),
     ),
+    ...teamDocs.map((td) => db.recursiveDelete(td.ref.collection('state'))),
   ]);
 
   // Reset the game doc + each player to lobby defaults in chunked batches.
@@ -3810,7 +4056,7 @@ async function assertCallerIsProfessor(gameRef, authUid) {
  *
  * Returns: { snapshotId, totalChunks, totalBytes, totalDocs, round, phase, elapsedMs }
  */
-exports.createSnapshot = onCall(CALLABLE_OPTS, async (request) => {
+exports.createSnapshot = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request, 'Sign in before saving a snapshot.');
   const gameId = cleanGameId((request.data || {}).gameId);
@@ -3855,7 +4101,7 @@ exports.createSnapshot = onCall(CALLABLE_OPTS, async (request) => {
  * Args: { gameId, snapshotId }
  * Returns: { written, deleted, snapshotId, round, phase }
  */
-exports.restoreSnapshot = onCall(CALLABLE_OPTS, async (request) => {
+exports.restoreSnapshot = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request, 'Sign in before restoring a snapshot.');
   const data = request.data || {};
