@@ -159,7 +159,7 @@ that exist in both models* — to see how including the noise features changes
 the partial-effect estimates a student would learn.
 
 **Result: 20 overlap features have ≥25% relative coefficient change between
-FULL and LEAN, and 5 have outright sign flips:**
+FULL and LEAN, with 3 outright sign flips on game-meaningful magnitudes:**
 
 | Feature | coef FULL | coef LEAN | flip? |
 |---|---:|---:|:-:|
@@ -168,6 +168,10 @@ FULL and LEAN, and 5 have outright sign flips:**
 | `sous_chef_count` | +1.69 | **−3.67** | ✅ |
 | `chef_skill_level_intermediate` | −14.30 | −2.77 | (sign same, magnitude 5×) |
 | `primary_ad_channel_tiktok` | +15.25 | **+91.87** | (6× magnitude) |
+
+(The script's full count is 5 sign flips because its threshold is `|coef_lean|
+> 1`; the 2 not shown are on coefficients below the table's top-30 cutoff and
+small enough that a student modeling decisions wouldn't notice the wrong sign.)
 
 Translation: a student running naive OLS on the dataset would conclude:
 - "Hiring more chefs slightly *hurts* sales" (FULL coef −1.91)
@@ -266,11 +270,19 @@ data: [output/06_retraining_curves.csv](output/06_retraining_curves.csv).
 
 ## 5. The telemetry gap: students can't fit y ~ X without X
 
-Audit of the in-game CSV export and Results screen
-(`games/bakery-bash/app/src/components/game/RoundHeader.tsx` lines 40–68;
-`backend/functions/modules/csv-export.js` lines 49–113).
+Audit of the student CSV export and Results screen at the time of analysis
+(`CSV_COLUMNS` in
+[`games/bakery-bash/app/src/components/game/RoundHeader.tsx`](../games/bakery-bash/app/src/components/game/RoundHeader.tsx)
+and
+[`games/bakery-bash/backend/functions/modules/csv-export.js`](../games/bakery-bash/backend/functions/modules/csv-export.js)).
 
-### What the student CSV exports (27 columns, one row per round)
+> **Status update (post #110):** the decision-input columns called out as
+> missing below — `num_products`, `price_*`, `*_qty_stocked` — were added to
+> the student CSV in PR #110, exactly the "Concrete fix" this section
+> recommends. The remaining gaps are `ad_type` and per-product
+> `*_satisfaction_pct`.
+
+### What the student CSV exports (27 columns at analysis time, one row per round)
 
 ```
 round, revenue_net, revenue_gross, amount_borrowed, interest_charged,
