@@ -148,7 +148,6 @@ sweep('sousChefBaseCost', cfg.sousChefBaseCost, [0.5, 0.75, 1.25, 1.5, 2]);
 sweep('revenueCoefficients.satisfactionCoeff', cfg.revenueCoefficients.satisfactionCoeff, [0.5, 0.75, 1.25, 1.5]);
 sweep('adBonuses.TV', cfg.adBonuses.TV, [0.5, 0.75, 1.25, 1.5]);
 sweep('startingBudget', cfg.startingBudget, [0.5, 0.75, 1.25, 1.5]);
-sweep('chefSatisfactionDecay', cfg.chefSatisfactionDecay, [0.5, 1.5]);
 
 console.log('\n\n═══════════════════════════════════════════════════════════════════════');
 console.log('SENSITIVITY SUMMARY');

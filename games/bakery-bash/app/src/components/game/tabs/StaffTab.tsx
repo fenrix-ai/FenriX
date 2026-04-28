@@ -1,7 +1,6 @@
 import { useMemo } from "react";
 import { useGame, useGameDispatch } from "../../../contexts/GameContext";
 import {
-  totalSousChefs,
   type StaffCounts,
 } from "../../../types/game";
 import {
@@ -12,7 +11,6 @@ import {
 } from "../../../lib/cost";
 import { nextEquipmentGrade, tierUpgradeCost } from "../../../lib/equipment";
 
-const OVERCROWDING_THRESHOLD = 4;
 const MAX_PER_ROLE = 20;
 
 interface StepperProps {
@@ -136,9 +134,6 @@ export function StaffTab({ readOnly = false }: StaffTabProps) {
     return staffOnly + upgradeCost;
   }, [staffCounts, config, equipmentGrade, pendingDecision.equipmentUpgradePurchased]);
 
-  const sousChefTotal = totalSousChefs(staffCounts);
-  const overcrowded = sousChefTotal > OVERCROWDING_THRESHOLD;
-
   return (
     <div className={`staff-tab${readOnly ? " staff-tab--readonly" : ""}`}>
       <div className="staff-tab__header">
@@ -207,12 +202,6 @@ export function StaffTab({ readOnly = false }: StaffTabProps) {
           readOnly={readOnly}
         />
       </div>
-
-      {overcrowded && !readOnly && (
-        <p className="staff-tab__warning" role="alert">
-          ⚠ Too many cooks — head chef stressed.
-        </p>
-      )}
 
       <hr className="staff-tab__maintenance-divider" />
       <h3 className="staff-tab__section-heading">Maintenance</h3>
