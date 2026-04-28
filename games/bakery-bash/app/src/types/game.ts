@@ -400,6 +400,17 @@ export interface RoundResult {
   selloutAnywhere?: boolean;
   /** Per-product unit-sold breakdown, used for the Results breakdown table. */
   productBreakdown?: Partial<Record<ProductKey, number>>;
+  /**
+   * P1 (2026-04-27): decision inputs surfaced from the backend so the CSV
+   * export can include them. Required for in-game model re-training —
+   * without these the CSV is outcome-only.
+   */
+  /** Resolved per-product prices the team submitted this round (POST-01). */
+  productPrices?: Partial<Record<ProductKey, number | null>>;
+  /** Per-product quantities the team stocked this round (decision input). */
+  quantitiesStocked?: Partial<Record<ProductKey, number>>;
+  /** Number of products the team offered (3–6, base menu always on). */
+  numProducts?: number;
   /** Ad surface the player won this round, with paid amount. */
   adWon?: AdType | null;
   adWins?: AdType[];
