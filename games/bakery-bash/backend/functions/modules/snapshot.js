@@ -462,6 +462,7 @@ module.exports = {
   FIRESTORE_BATCH_OPS,
   DEFAULT_MAX_SNAPSHOTS_PER_GAME,
   DEFAULT_MAX_AGE_DAYS,
+  NON_SNAPSHOTTED_SUBCOLLECTIONS,
   serialize,
   deserialize,
   dumpDoc,
@@ -470,6 +471,7 @@ module.exports = {
   walkDocs,
   captureGameSnapshot,
   loadSnapshot,
+  listLiveDocPathsForCleanup,
   restoreGameSnapshot,
   pruneOldSnapshots,
 };
