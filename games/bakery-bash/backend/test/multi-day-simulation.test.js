@@ -111,4 +111,60 @@ describe('runMonthlySimulation', () => {
     const burgledDays = out[0].dailyResults.filter((d) => d.burglary).length;
     assert.ok(burgledDays <= 1, `expected ≤1 burgled day, got ${burgledDays}`);
   });
+
+  // ---- Review-fix tests (PR #110 follow-ups) ----
+
+  it('apportions loan-shark deduction so sum of daily revenueNet = monthly revenueNet', () => {
+    // Force a loan: budget $100, real cost ~$610 → borrows ~$510 + interest.
+    const broke = fakePlayer('p_a', { budgetCurrent: 100 });
+    const out = runMonthlySimulation([broke], prefs, config, { gameId: 'g1', round: 1 });
+    const agg = out[0];
+    const dailyNetSum = agg.dailyResults.reduce((s, d) => s + d.revenueNet, 0);
+    assert.ok(Math.abs(agg.revenueNet - dailyNetSum) < 0.01,
+      `monthly revenueNet (${agg.revenueNet}) should equal sum of daily revenueNet (${dailyNetSum})`);
+    // And the same for amount_borrowed and interest_charged.
+    const dailyBorrowSum = agg.dailyResults.reduce((s, d) => s + d.amountBorrowed, 0);
+    const dailyInterestSum = agg.dailyResults.reduce((s, d) => s + d.interestCharged, 0);
+    assert.ok(Math.abs(agg.amountBorrowed - dailyBorrowSum) < 0.01,
+      `monthly amountBorrowed should equal sum of daily; got ${agg.amountBorrowed} vs ${dailyBorrowSum}`);
+    assert.ok(Math.abs(agg.interestCharged - dailyInterestSum) < 0.01,
+      `monthly interestCharged should equal sum of daily; got ${agg.interestCharged} vs ${dailyInterestSum}`);
+  });
+
+  it('monthly csvRow has correct cost / loan-shark / customer columns (not zeros from skipCostAccounting)', () => {
+    // Force loan-shark to fire so we can verify amount_borrowed > 0.
+    const broke = fakePlayer('p_a', { budgetCurrent: 100 });
+    const out = runMonthlySimulation([broke], prefs, config, { gameId: 'g1', round: 1 });
+    const agg = out[0];
+    const row = agg.csvRow || {};
+    // The professor CSV reads from r.csvRow — these columns must reflect
+    // the monthly aggregate, not day-29 with skipCostAccounting=true (which
+    // would have zeros for cost / borrow / interest).
+    assert.ok(row.amount_borrowed > 0,
+      `monthly csvRow.amount_borrowed should be > 0 for overspending team, got ${row.amount_borrowed}`);
+    assert.ok(row.interest_charged > 0,
+      `monthly csvRow.interest_charged should be > 0, got ${row.interest_charged}`);
+    assert.equal(row.revenue, agg.revenueNet,
+      'monthly csvRow.revenue should equal monthly revenueNet (post loan-shark)');
+    assert.equal(row.customer_count, agg.customerCount,
+      'monthly csvRow.customer_count should equal monthly aggregate (sum across days), not day-29 only');
+  });
+
+  it('monthly customer count stays in pre-P2 round-level magnitude (not 30x)', () => {
+    // Pre-P2: a team with 200/200/200 stock, 1 sous, $10k budget would
+    // typically see a few hundred customers per round. After the day-scale
+    // fix (#3), 30 daily sub-sims with demand divided by daysPerRound
+    // should aggregate back to ≈ pre-P2 round-level magnitude.
+    // baseDemand for croissant/cookie/bagel = 240 each = 720 total.
+    // A solo player gets ~all of it (no competitor). Allow generous bounds
+    // to absorb satisfaction / sellout effects.
+    const out = runMonthlySimulation([fakePlayer('p_a')], prefs, config, {
+      gameId: 'g1', round: 1,
+    });
+    const agg = out[0];
+    assert.ok(agg.customerCount < 2000,
+      `monthly customer count should be in pre-P2 range, got ${agg.customerCount} (looks like the 30x scaling bug)`);
+    assert.ok(agg.customerCount > 100,
+      `monthly customer count should be meaningful, got ${agg.customerCount}`);
+  });
 });

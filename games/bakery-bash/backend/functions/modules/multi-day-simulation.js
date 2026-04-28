@@ -12,14 +12,30 @@
  * satisfaction. Without that flag a 30-day month would charge stock cost
  * 30x and loan-shark interest 30x for any team that overspends.
  *
- * Pure: no Firebase deps. All randomness goes through seeded utilities or
- * is derived from gameId/round/day so simulations are reproducible.
+ * Demand scaling: each day's demand pool is `baseDemand * roundMod * dayMult
+ * / daysPerRound`, where dayMult is uniform in [0.7, 1.3]. Sum across the
+ * month ≈ baseDemand * roundMod (preserves pre-P2 round-level KPI magnitude
+ * so the existing economy doesn't need rebalancing).
+ *
+ * Loan-shark apportionment: `loanSharkDeduction` is computed once on the
+ * monthly cost. Per-day `revenueNet` is `revenueGross - daily_share_of_deduction`
+ * where the share is proportional to the day's gross revenue. Per-day
+ * `amount_borrowed` and `interest_charged` are also apportioned the same way.
+ * Sum of daily revenueNet equals monthly revenueNet by construction.
+ *
+ * Reproducibility: revenue and customer outcomes are reproducible per
+ * gameId/round/day via seeded gaussianNoise + the FNV-1a demand multiplier.
+ * Curveballs (burglary roll, burgled-day index) still use Math.random()
+ * to match the pre-PR behaviour of simulation.js — see runSimulation.
+ *
+ * Pure: no Firebase deps.
  */
 
 const config = require('./config');
 const { runSimulation } = require('./simulation');
 const { calculateRoundCosts } = require('./revenue');
 const { calculateLoanShark, updateBudget } = require('./loan-shark');
+const { buildCsvRow } = require('./csv-export');
 
 /**
  * Build a per-day deterministic demand-variability multiplier.
@@ -40,16 +56,17 @@ function demandMultiplierForDay(gameId, round, day, cfg = config) {
 }
 
 /**
- * Apply a per-day multiplier to roundPreferences.modifiers so the daily
- * demand pool wobbles around the round-level baseline.
+ * Apply a per-day scale factor to roundPreferences.modifiers so the daily
+ * demand pool wobbles around `roundMod / daysPerRound`. Sum across the month
+ * ≈ roundMod * baseDemand, matching pre-P2 round-level KPI magnitudes.
  */
-function dayPreferences(roundPreferences, dayMult) {
+function dayPreferences(roundPreferences, dayScale) {
   const baseMods = (roundPreferences && roundPreferences.modifiers)
     ? roundPreferences.modifiers
     : (roundPreferences || {});
   const scaled = {};
   for (const [product, mod] of Object.entries(baseMods)) {
-    scaled[product] = (Number(mod) || 1.0) * dayMult;
+    scaled[product] = (Number(mod) || 1.0) * dayScale;
   }
   return { ...(roundPreferences || {}), modifiers: scaled };
 }
@@ -66,6 +83,12 @@ function runMonthlySimulation(players, roundPreferences, cfg = config, { gameId 
   // produces customer / revenue / satisfaction (no cost, no loan-shark, no
   // burglary, no budget update). The wrapper handles all of those once at
   // the monthly level below.
+  //
+  // Demand is scaled by `dayMult / days` per day, so summing across the
+  // month gives ≈ pre-P2 round-level demand. Without this scaling, monthly
+  // customer count and revenue would be ~30x pre-P2 and the existing
+  // economy (auction bonuses, sous chef costs, starting budget) would be
+  // wildly mis-calibrated.
   const dailyResultsByPlayer = new Map();
   for (const p of players) {
     dailyResultsByPlayer.set(p.playerId, []);
@@ -73,7 +96,8 @@ function runMonthlySimulation(players, roundPreferences, cfg = config, { gameId 
 
   for (let day = 0; day < days; day += 1) {
     const dayMult = demandMultiplierForDay(gameId, round, day, cfg);
-    const dayPrefs = dayPreferences(roundPreferences, dayMult);
+    const dayScale = dayMult / days;
+    const dayPrefs = dayPreferences(roundPreferences, dayScale);
     const dayResults = runSimulation(players, dayPrefs, cfg, {
       gameId, round, day, skipCostAccounting: true,
     });
@@ -100,6 +124,47 @@ function runMonthlySimulation(players, roundPreferences, cfg = config, { gameId 
     const aggregateSatisfactionPct = avg('aggregateSatisfactionPct');
     const chefSatisfactionScore = daily.length ? daily[0].chefSatisfactionScore : 0;
     const last = daily[daily.length - 1] || {};
+
+    // ---- Aggregate per-product satisfaction + qty sold across the month ----
+    // Per-product satisfaction: mean of daily satisfactionPct (skip nulls).
+    // Per-product qty sold: sum of daily qtySold.
+    // Per-product sellout: true if ANY day sold out for that product.
+    const productKeys = new Set();
+    for (const d of daily) {
+      for (const k of Object.keys(d.perProductSatisfaction || {})) productKeys.add(k);
+    }
+    const monthlyPerProductSatisfaction = {};
+    const monthlyPerProductSold = {};
+    const monthlySelloutFlags = {};
+    for (const product of productKeys) {
+      let satSum = 0;
+      let satN = 0;
+      let qtySold = 0;
+      let qtyStocked = 0;
+      let sellout = false;
+      let lastTier = null;
+      let lastFillRate = null;
+      for (const d of daily) {
+        const ps = (d.perProductSatisfaction || {})[product];
+        if (!ps) continue;
+        if (typeof ps.satisfactionPct === 'number') { satSum += ps.satisfactionPct; satN += 1; }
+        qtySold += Number(ps.qtySold) || 0;
+        qtyStocked += Number(ps.qtyStocked) || 0;
+        if (ps.sellout) sellout = true;
+        if (ps.tier) lastTier = ps.tier;
+        if (typeof ps.fillRate === 'number') lastFillRate = ps.fillRate;
+      }
+      monthlyPerProductSatisfaction[product] = {
+        satisfactionPct: satN ? satSum / satN : null,
+        qtySold,
+        qtyStocked,
+        sellout,
+        tier: lastTier,
+        fillRate: lastFillRate,
+      };
+      monthlyPerProductSold[product] = qtySold;
+      monthlySelloutFlags[product] = sellout;
+    }
 
     // ---- Compute MONTHLY cost / loan-shark / budget ONCE ----
     const decision = (p && p.decision) || {};
@@ -143,13 +208,64 @@ function runMonthlySimulation(players, roundPreferences, cfg = config, { gameId 
       actualBurglaryAmount = burglaryAmount;
       budgetAfterBurglary = Math.max(0, budgetAfter - burglaryAmount);
     }
-    // Mark the middle day as the burglary day so the daily breakdown
-    // shows where the hit landed.
-    const burgledDayIndex = burglary ? Math.floor(daily.length / 2) : -1;
+    // Pick a random day in the month for the burglary so it doesn't
+    // always hit mid-month. Math.random matches the burglary roll above.
+    const burgledDayIndex = (burglary && daily.length > 0)
+      ? Math.floor(Math.random() * daily.length)
+      : -1;
     if (burglary && daily[burgledDayIndex]) {
       daily[burgledDayIndex].burglary = true;
       daily[burgledDayIndex].burglaryAmount = actualBurglaryAmount;
     }
+
+    // ---- Apportion loan-shark deduction across days by gross share ----
+    // So sum(daily.revenueNet) === monthly.revenueNet, and per-day loan
+    // figures sum back to the monthly figure. If revenueGross is zero,
+    // every day's net = its gross (== 0).
+    const denom = revenueGross !== 0 ? revenueGross : 1;
+    const dailyApportioned = daily.map((d) => {
+      const share = (d.revenueGross || 0) / denom;
+      return {
+        day: d.day,
+        revenueGross: d.revenueGross,
+        revenueNet: d.revenueGross - loanSharkDeduction * share,
+        amountBorrowed: amountBorrowed * share,
+        interestCharged: interestCharged * share,
+        customerCount: d.customerCount,
+        aggregateSatisfactionPct: d.aggregateSatisfactionPct,
+        perProductCustomers: d.perProductCustomers,
+        perProductSatisfaction: d.perProductSatisfaction,
+        burglary: d.burglary || false,
+        burglaryAmount: d.burglaryAmount || 0,
+        csvRow: d.csvRow,
+      };
+    });
+
+    // ---- Build a proper MONTHLY csvRow using monthly aggregates ----
+    // Previously this returned `last.csvRow`, which was day-29 with
+    // skipCostAccounting=true → cost/loan-shark/customer/revenue columns
+    // were broken in the professor CSV (csvRowRef.set in index.js reads
+    // from r.csvRow). Recompute from monthly inputs so professor CSV
+    // reflects the actual monthly outcome.
+    const monthlyCsvRow = buildCsvRow({
+      decision,
+      specialtyChefs: p.specialtyChefs,
+      perProductSatisfaction: monthlyPerProductSatisfaction,
+      perProductSold: monthlyPerProductSold,
+      selloutFlags: monthlySelloutFlags,
+      customerCount,
+      revenueGross,
+      revenueNet,
+      amountBorrowed,
+      interestCharged,
+      aggregateSatisfactionPct,
+      chefSatisfactionScore,
+      productPrices: last.productPrices || {},
+      playerId: p.playerId,
+      displayName: p.displayName,
+      bakeryName: p.bakeryName,
+      round,
+    });
 
     monthlyResults.push({
       playerId: p.playerId,
@@ -165,7 +281,7 @@ function runMonthlySimulation(players, roundPreferences, cfg = config, { gameId 
       perProductCustomers: last.perProductCustomers || {},
       aggregateSatisfactionPct,
       chefSatisfactionScore,
-      perProductSatisfaction: last.perProductSatisfaction || {},
+      perProductSatisfaction: monthlyPerProductSatisfaction,
       returningCustomersEarned: last.returningCustomersEarned || 0,
       selloutAnywhere: daily.some((d) => d.selloutAnywhere),
       adWon: last.adWon,
@@ -173,25 +289,13 @@ function runMonthlySimulation(players, roundPreferences, cfg = config, { gameId 
       adBidPaid: last.adBidPaid,
       chefsWon: last.chefsWon,
       chefBidPaid: last.chefBidPaid,
-      csvRow: last.csvRow,
+      csvRow: monthlyCsvRow,
       productPrices: last.productPrices,
       revenueBreakdown: last.revenueBreakdown,
       burglary,
       burglaryAmount: actualBurglaryAmount,
       // Daily breakdown for CSV per-day rows.
-      dailyResults: daily.map((d) => ({
-        day: d.day,
-        revenueGross: d.revenueGross,
-        // Per-day net = per-day gross (no per-day cost; cost is monthly).
-        revenueNet: d.revenueGross,
-        customerCount: d.customerCount,
-        aggregateSatisfactionPct: d.aggregateSatisfactionPct,
-        perProductCustomers: d.perProductCustomers,
-        perProductSatisfaction: d.perProductSatisfaction,
-        burglary: d.burglary || false,
-        burglaryAmount: d.burglaryAmount || 0,
-        csvRow: d.csvRow,
-      })),
+      dailyResults: dailyApportioned,
     });
   }
 
