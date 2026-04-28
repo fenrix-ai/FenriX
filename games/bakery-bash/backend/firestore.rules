@@ -169,6 +169,24 @@ service cloud.firestore {
       match /teams/{teamId} {
         allow read: if signedIn();
         allow write: if false;
+
+        // ───────────────────────────────────────────────────
+        // /games/{gameId}/teams/{teamId}/state/{stateDocId}
+        // T2.2: per-team transient round state — `pending` doc
+        // mirrors team-shared `pendingBids` / `pendingDecision`
+        // fields so teammates see what each other has staged
+        // without us cascading the write to every teammate's
+        // player doc. Readable only by team members (player doc's
+        // `teamId` matches this teamId), since the doc reveals
+        // the team's pre-submit bid amounts. Server-only writes —
+        // submitBids / submitDecision are the only writers.
+        // ───────────────────────────────────────────────────
+        match /state/{stateDocId} {
+          allow read: if signedIn()
+            && exists(/databases/$(database)/documents/games/$(gameId)/players/$(request.auth.uid))
+            && get(/databases/$(database)/documents/games/$(gameId)/players/$(request.auth.uid)).data.teamId == teamId;
+          allow write: if false;
+        }
       }
 
       // ─────────────────────────────────────────────────────
@@ -232,6 +250,27 @@ service cloud.firestore {
           allow read: if false;
           allow write: if false;
         }
+      }
+
+      // ─────────────────────────────────────────────────────
+      // /games/{gameId}/presence/{playerId}
+      // T3.2: Liveness ping written by each player every ~30s while their
+      // tab is active. Lets the professor see "X / Y players online" and
+      // flag stragglers who silently disconnected (closed laptop, wifi
+      // drop, etc.) so they can be told to refresh. Schema:
+      //   { uid: string, lastSeenAt: Timestamp, displayName?: string }
+      // Read is professor-only (matches /submissions and /snapshots), so
+      // students can't enumerate other players' tab activity. The player
+      // can still read/write their OWN doc, which is all the heartbeat
+      // hook needs. Writes are restricted to the player themselves, only
+      // to fields in the allowed set, with `uid` matching their auth uid.
+      // ─────────────────────────────────────────────────────
+      match /presence/{playerId} {
+        allow read: if isProfessor() || isGameProfessor(gameId) || isOwner(playerId);
+        allow create, update: if isOwner(playerId)
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.keys().hasOnly(['uid', 'lastSeenAt', 'displayName']);
+        allow delete: if false;
       }
 
       // ─────────────────────────────────────────────────────

@@ -111,6 +111,7 @@ export function GamePage() {
   const {
     gameId,
     playerId,
+    teamId,
     teamName,
     phase,
     currentRound,
@@ -406,6 +407,118 @@ export function GamePage() {
     );
     return unsubscribe;
   }, [gameId, playerId, dispatch]);
+
+  // --- Listener: /games/{gameId}/teams/{teamId}/state/pending — T2.2. ---
+  // Per-team transient round state. `submitBids` / `submitDecision` write
+  // here once instead of cascading the same content into every teammate's
+  // player doc, so 3+ player teams no longer contend on each other's docs.
+  // The submitter's own player doc still gets the same writes (handled by
+  // the listener above) — this listener catches what OTHER teammates
+  // submitted, gated by `updatedByUid !== playerId` to avoid double-
+  // dispatching the submitter's own write through both listeners. Solo
+  // players (no teamId) skip this entirely; their player doc is the only
+  // source of truth.
+  //
+  // Only `decisionDraft` needs to flow into context — `pendingBids` is
+  // never read by the FE (the AuctionPage tracks bids in local React
+  // state and reads the public top-bids aggregate from `rounds/{roundId}`).
+  useEffect(() => {
+    if (!gameId || !teamId || !playerId) return;
+    const teamPendingRef = doc(
+      db,
+      "games",
+      gameId,
+      "teams",
+      teamId,
+      "state",
+      "pending",
+    );
+    const unsubscribe = onSnapshot(
+      teamPendingRef,
+      (snap) => {
+        if (!snap.exists()) return;
+        const data = snap.data() as DocumentData;
+        if (data.updatedByUid === playerId) return;
+        const draft = data.decisionDraft;
+        if (!draft || typeof draft !== "object") return;
+        const incoming = draft as Record<string, unknown>;
+        const update: {
+          menu?: Partial<Record<ProductKey, boolean>>;
+          quantities?: Partial<Record<ProductKey, number>>;
+          sousChefAssignments?: Partial<Record<ProductKey, number>>;
+          staffCounts?: Partial<StaffCounts>;
+          maintenanceTasks?: MaintenanceTask[];
+          productPrices?: Partial<Record<ProductKey, number>>;
+        } = {};
+        if (incoming.menu && typeof incoming.menu === "object") {
+          update.menu = incoming.menu as Partial<Record<ProductKey, boolean>>;
+        }
+        if (incoming.quantities && typeof incoming.quantities === "object") {
+          update.quantities = incoming.quantities as Partial<Record<ProductKey, number>>;
+        }
+        if (
+          incoming.sousChefAssignments
+          && typeof incoming.sousChefAssignments === "object"
+        ) {
+          update.sousChefAssignments =
+            incoming.sousChefAssignments as Partial<Record<ProductKey, number>>;
+        }
+        if (incoming.staffCounts && typeof incoming.staffCounts === "object") {
+          update.staffCounts = incoming.staffCounts as Partial<StaffCounts>;
+        }
+        if (Array.isArray(incoming.maintenanceTasks)) {
+          update.maintenanceTasks = incoming.maintenanceTasks as MaintenanceTask[];
+        }
+        // T2.2 follow-up: `submitPrices` writes the team-shared price + menu
+        // signals here too (productPrices, pricesSubmitted, optional menu
+        // picks) so non-Finance teammates see Finance's submission without
+        // us needing to cascade those writes onto every teammate's player
+        // doc. Same hydration pattern as the player-doc listener above —
+        // skip non-finite numbers defensively so a partial write can't
+        // crater the form.
+        if (
+          incoming.productPrices
+          && typeof incoming.productPrices === "object"
+          && !Array.isArray(incoming.productPrices)
+        ) {
+          const rawPrices = incoming.productPrices as Record<string, unknown>;
+          const hydratedPrices: Partial<Record<ProductKey, number>> = {};
+          for (const key of PRODUCT_KEYS) {
+            const v = rawPrices[key];
+            if (typeof v === "number" && Number.isFinite(v)) {
+              hydratedPrices[key] = v;
+            }
+          }
+          if (Object.keys(hydratedPrices).length > 0) {
+            update.productPrices = hydratedPrices;
+          }
+        }
+        if (Object.keys(update).length > 0) {
+          dispatch({ type: "UPDATE_PENDING_DECISION", payload: update });
+        }
+        if (typeof incoming.submitted === "boolean") {
+          dispatch({
+            type: "SET_DECISION_SUBMITTED",
+            payload: incoming.submitted === true,
+          });
+        }
+        if (typeof incoming.pricesSubmitted === "boolean") {
+          dispatch({
+            type: "SET_PRICES_SUBMITTED",
+            payload: incoming.pricesSubmitted === true,
+          });
+        }
+      },
+      (err) => {
+        console.error("games/teams/state/pending listener error", {
+          gameId,
+          teamId,
+          err,
+        });
+      },
+    );
+    return unsubscribe;
+  }, [gameId, teamId, playerId, dispatch]);
 
   const parsed = parseGamePhase(phase, currentRound);
   const basePhase = parsed.base;
