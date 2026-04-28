@@ -843,6 +843,7 @@ async function resolveAndApplyChefAuction(gameRef, round, config) {
 // ===========================================================================
 
 exports.createGame = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request, 'Sign in before creating a game.');
   const data = request.data || {};
 
@@ -1296,6 +1297,7 @@ exports.createTeam = onCall(CALLABLE_OPTS, async (request) => {
 // callable on every keystroke.
 
 exports.getTeamsInLobby = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request, 'Sign in before browsing teams.');
   const joinCode = cleanString((request.data || {}).joinCode).toUpperCase();
   if (!/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/.test(joinCode)) {
@@ -1351,6 +1353,7 @@ exports.getTeamsInLobby = onCall(CALLABLE_OPTS, async (request) => {
 // ===========================================================================
 
 exports.startGame = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request, 'Sign in before starting a game.');
   const gameId = cleanGameId((request.data || {}).gameId);
   const gameRef = gameDoc(gameId);
@@ -1694,6 +1697,7 @@ exports.advanceGamePhase = onCall(CALLABLE_OPTS, async (request) => {
  *                  or simulation is still running within the 60s threshold).
  */
 exports.retryStuckSimulation = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request, 'Sign in before recovering stuck simulations.');
   const gameId = cleanGameId((request.data || {}).gameId);
   const gameRef = gameDoc(gameId);
@@ -2807,6 +2811,7 @@ exports.submitBids = onCall(CALLABLE_OPTS, async (request) => {
 // ===========================================================================
 
 exports.layoffChef = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request);
   const data = request.data || {};
   const gameId = cleanGameId(data.gameId);
@@ -2883,6 +2888,7 @@ exports.layoffChef = onCall(CALLABLE_OPTS, async (request) => {
 // ===========================================================================
 
 exports.continueFromRoster = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request);
   const data = request.data || {};
   const gameId = cleanGameId(data.gameId);
@@ -2998,14 +3004,21 @@ async function setPausedFlag(request, paused) {
   return { gameId, paused };
 }
 
-exports.pauseGame  = onCall(CALLABLE_OPTS, async (request) => setPausedFlag(request, true));
-exports.resumeGame = onCall(CALLABLE_OPTS, async (request) => setPausedFlag(request, false));
+exports.pauseGame  = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
+  return setPausedFlag(request, true);
+});
+exports.resumeGame = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
+  return setPausedFlag(request, false);
+});
 
 // ===========================================================================
 // endGame — force transition to game_over
 // ===========================================================================
 
 exports.endGame = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request);
   const gameId = cleanGameId((request.data || {}).gameId);
   const gameRef = gameDoc(gameId);
@@ -3064,6 +3077,7 @@ exports.endGame = onCall(CALLABLE_OPTS, async (request) => {
 // ===========================================================================
 
 exports.getConclusion = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request, 'Sign in to view game results.');
   const gameId = cleanGameId((request.data || {}).gameId);
   const gameRef = gameDoc(gameId);
@@ -3093,6 +3107,7 @@ exports.getConclusion = onCall(CALLABLE_OPTS, async (request) => {
 // ===========================================================================
 
 exports.exportPlayerCsv = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request, 'Sign in to export your data.');
   const gameId = cleanGameId((request.data || {}).gameId);
   const gameRef = gameDoc(gameId);
@@ -3131,6 +3146,7 @@ exports.exportPlayerCsv = onCall(CALLABLE_OPTS, async (request) => {
 // ===========================================================================
 
 exports.exportProfessorCsv = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request, 'Sign in to export class data.');
   const gameId = cleanGameId((request.data || {}).gameId);
   const gameRef = gameDoc(gameId);
@@ -3346,6 +3362,7 @@ exports.onSubmittedCountShardWritten = onDocumentWritten(
 // updateTeamName — any team member may rename their team.
 // ---------------------------------------------------------------------------
 exports.updateTeamName = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = request.auth;
   if (!auth) throw new HttpsError('unauthenticated', 'Must be signed in.');
 
@@ -3392,6 +3409,7 @@ exports.updateTeamName = onCall(CALLABLE_OPTS, async (request) => {
 //     keep working without reading the teams collection.
 // ---------------------------------------------------------------------------
 exports.setTeamRole = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = request.auth;
   if (!auth) throw new HttpsError('unauthenticated', 'Must be signed in.');
 
@@ -3654,6 +3672,7 @@ exports.purchaseChefData = onCall(async (request) => {
 // and `professorId` (legacy alias) to match createGame's write pattern.
 // ---------------------------------------------------------------------------
 exports.resetGame = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request);
   const gameId = cleanGameId((request.data || {}).gameId);
   const gameRef = gameDoc(gameId);
