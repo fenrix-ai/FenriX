@@ -4117,6 +4117,10 @@ exports.purchaseProduct = onCall(CALLABLE_OPTS, async (request) => {
     if (gameSnap.get('paused') === true) {
       throw new HttpsError('failed-precondition', 'Game is paused. Purchases are temporarily disabled.');
     }
+    const currentPhase = typeof gameSnap.get('phase') === 'string' ? gameSnap.get('phase') : '';
+    if (!currentPhase.includes('decide')) {
+      throw new HttpsError('failed-precondition', 'Product unlocks only available during Decisions phase.');
+    }
 
     const player = playerSnap.data();
     const teamId = getPlayerTeamId(player);
