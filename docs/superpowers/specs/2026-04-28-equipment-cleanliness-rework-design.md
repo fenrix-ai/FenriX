@@ -78,7 +78,15 @@ The CSV export schema must be regenerated to drop these columns. The published s
 
 ### 4.2 "Head chef" definition
 
-The dataset row reports a single `head_chef_tradition` and `chef_skill_level`. Definition: the bakery's **highest-tier specialty chef** (advanced > intermediate > novel; ties broken by hire order). If the bakery has no specialty chef hired, `head_chef_tradition = american` and `chef_skill_level = novel` (the implicit default head chef). This rule needs to be implemented in the CSV export step.
+The dataset row reports a single `head_chef_tradition` and `chef_skill_level`. Definition: the bakery's **highest-tier specialty chef** (advanced > intermediate > novel; ties broken by hire order). If the bakery has no specialty chef hired, `head_chef_tradition = american` and `chef_skill_level = novel` (the implicit default head chef).
+
+To support tie-breaking, each specialty chef object must carry a **`hireOrder: number`** field, written at hire time (monotonically increasing per bakery). This is a small schema addition; see §9.1.
+
+### 4.3 Product → nationality mapping
+
+Step 2's `tradition_factor` checks whether a product matches the head chef's nationality. The current code has the inverse mapping — `CHEF_NATIONALITIES[nationality].specialties: string[]` ([config.js:220-248](games/bakery-bash/backend/functions/modules/config.js:220)). Computing a `product → nationality[]` lookup at simulation time is fine but couples the simulation to the chef-system module.
+
+**Add a canonical `PRODUCT_SPECIALTIES` constant in `config.js`** that maps each product key to the nationalities that consider it a specialty (most products → exactly one nationality; some may belong to multiple, e.g., bagel could be both american and italian). Derive this from `CHEF_NATIONALITIES` at module load to keep the two in sync, or hand-write it for clarity. Single source of truth for the matching rule.
 
 ---
 
@@ -148,40 +156,45 @@ Step 8 — Revenue
 
 ### 5.1 Multiplier tables
 
-**Equipment factor — capacity** (35% spread):
+**Equipment factor — capacity** (~19% spread, C is neutral):
 
 | Grade | Factor |
 |---|---|
-| F | 0.85 |
-| E | 0.91 |
+| F | 0.90 |
+| E | 0.94 |
 | D | 0.97 |
-| C | 1.03 |
-| B | 1.09 |
-| A | 1.15 |
-
-**Equipment factor — satisfaction** (17% spread):
-
-| Grade | Factor |
-|---|---|
-| F | 0.92 |
-| E | 0.95 |
-| D | 0.98 |
-| C | 1.02 |
-| B | 1.05 |
-| A | 1.08 |
-
-**Cleanliness factor — satisfaction** (25% spread):
-
-| Grade | Factor |
-|---|---|
-| F | 0.85 |
-| E | 0.90 |
-| D | 0.95 |
 | C | 1.00 |
-| B | 1.05 |
-| A | 1.10 |
+| B | 1.03 |
+| A | 1.07 |
 
-Combined max revenue swing across grades (F-only-everything vs. A-only-everything, equipment + cleanliness): roughly **1.45×**. Comparable in magnitude to a fully-staffed sous-chef roster or a winning ad slate — major lever, not runaway dominant.
+**Equipment factor — satisfaction** (~11% spread, C is neutral):
+
+| Grade | Factor |
+|---|---|
+| F | 0.95 |
+| E | 0.97 |
+| D | 0.99 |
+| C | 1.00 |
+| B | 1.02 |
+| A | 1.05 |
+
+**Cleanliness factor — satisfaction** (~19% spread, C is neutral):
+
+| Grade | Factor |
+|---|---|
+| F | 0.90 |
+| E | 0.94 |
+| D | 0.97 |
+| C | 1.00 |
+| B | 1.03 |
+| A | 1.07 |
+
+**Combined revenue swing** (F-everything vs. A-everything across all three multipliers):
+- Worst case: 0.90 × 0.95 × 0.90 = **0.770**
+- Best case: 1.07 × 1.05 × 1.07 = **1.202**
+- Swing: **1.56×**
+
+Comparable in magnitude to a winning ad slate (+30% foot traffic capped) or a 4-sous-chef investment (+40% capacity). Major lever, not runaway dominant. C is the default starting grade and is intentionally neutral (1.00) on every factor.
 
 ---
 
@@ -233,7 +246,9 @@ Default starting score: **75** (mid-B). High enough to give players a few rounds
 cleanliness_score_next = clamp(0, 100, cleanliness_score + Δ)
 ```
 
-At typical engaged-play traffic (~200 customers/round):
+In this formula, `customers` means **the player's allocated customer count for the round, after the competitive split** — i.e., the number of customers that actually walked into this player's bakery, not the total system-wide demand. This is the same value used elsewhere in the simulation as the per-player customer count.
+
+At typical engaged-play traffic (~200 customers/round per player):
 
 | Maintenance staff | Net Δ | Behavior |
 |---|---|---|
@@ -295,6 +310,14 @@ Sits between the 1st sous chef ($10) and 4th sous chef ($30). 2 staff = $40/roun
 | `maintenanceStaffCount` | number | new decision in Decide phase |
 | `equipmentUpgradePurchased` | boolean | new decision in Decide phase |
 
+### 9.1a Added to specialty chef object
+
+| Field | Type | Notes |
+|---|---|---|
+| `hireOrder` | number | monotonically increasing per bakery; assigned at hire time |
+
+Required by §4.2 for head-chef tie-breaking. Existing specialty chefs at migration get hire-order assigned by `hiredAt` timestamp ascending; new hires increment from `max(hireOrder) + 1` per bakery.
+
 ### 9.2 Added to round result
 
 | Field | Type | Notes |
@@ -338,7 +361,20 @@ These are not blocking but should be kept in mind during implementation:
 
 ---
 
-## 11. Files Likely To Change
+## 11. Implementation Impact
+
+The Step 1–8 pipeline in §5 is **a substantial rewrite of the revenue system**, not a localized patch. Implementers should plan accordingly:
+
+- **Current architecture** (in `simulation.js`, `customer-allocation.js`, `satisfaction.js`): per-product demand pools with a competitive satisfaction-weighted split among players, foot-traffic modifier stacked from premium-product / variety / sous-chef / ad bonuses, returning-customer bonus as a discrete tier.
+- **Proposed architecture** (this spec): per-player `customers = base × ads × rep` global pool, then split into per-product demand share via `popularity_p`. Foot-traffic bonuses collapse into the `ads` and `rep` terms only. Returning customers absorbed into a continuous `rep` term.
+
+This change touches `simulation.js`, `customer-allocation.js`, `satisfaction.js`, and `revenue.js` — roughly 500–800 lines of refactor plus rewritten tests. Likely a 3-4 week implementation effort with concurrent UI/config work, plus 1 week of balance-harness validation before merge.
+
+The simplification is intentional: the existing stacking-bonus model has accumulated kludges across multiple balance passes (premium products bonus, variety bonus, sous-chef foot-traffic bonus, etc.). The new model has fewer terms with clearer roles, which makes balance tuning more tractable for the student-dataset use case.
+
+---
+
+## 12. Files Likely To Change
 
 - `games/bakery-bash/app/src/types/game.ts` — type changes (add equipment/cleanliness, remove maintenance bars and chef sat).
 - `games/bakery-bash/backend/functions/modules/config.js` — new tier-cost table, multiplier tables, drift rates; remove burglary config and chef-satisfaction tunables.
@@ -346,6 +382,7 @@ These are not blocking but should be kept in mind during implementation:
 - `games/bakery-bash/backend/functions/modules/chef-system.js` — strip chef-sat math; reduce to `kitchen_strength` based on sous count + skill tier + equipment.
 - `games/bakery-bash/backend/functions/modules/revenue.js` — top-level pipeline orchestration.
 - `games/bakery-bash/backend/functions/modules/simulation.js` — wire cleanliness drift and equipment upgrade application; remove burglary code path.
+- `games/bakery-bash/backend/functions/modules/customer-allocation.js` — adapt or replace to fit the new global-pool customer model (see §10.2).
 - `games/bakery-bash/app/src/components/game/tabs/StatusTab.tsx` — remove maintenance bars; add equipment grade and cleanliness grade.
 - `games/bakery-bash/app/src/pages/phases/DecidePhase.tsx` (or equivalent) — add maintenance-staff and equipment-upgrade controls.
 - CSV export module — drop the columns listed in §4.1 (yelp, location_type, traffic_zone, etc.); add equipment_grade, cleanliness_grade, maintenance_staff_count; add the head-chef resolution step from §4.2.
@@ -354,7 +391,7 @@ These are not blocking but should be kept in mind during implementation:
 
 ---
 
-## 12. Acceptance Criteria
+## 13. Acceptance Criteria
 
 - A new game can be played end-to-end with the new mechanics.
 - The CSV export contains exactly the columns listed in §9.3 — no `yelp_review_count`, no `location_type`, no `traffic_zone`, etc.
