@@ -3175,7 +3175,7 @@ exports.resumeGame = onCall(CALLABLE_OPTS, async (request) => setPausedFlag(requ
 // endGame — force transition to game_over
 // ===========================================================================
 
-exports.endGame = onCall(CALLABLE_OPTS, async (request) => {
+exports.endGame = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
   const auth = requireAuth(request);
   const gameId = cleanGameId((request.data || {}).gameId);
   const gameRef = gameDoc(gameId);
