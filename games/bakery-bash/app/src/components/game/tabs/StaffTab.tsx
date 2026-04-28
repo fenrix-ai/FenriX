@@ -1,9 +1,7 @@
 import { useMemo } from "react";
 import { useGame, useGameDispatch } from "../../../contexts/GameContext";
 import {
-  MAINTENANCE_TASKS,
   totalSousChefs,
-  type MaintenanceTask,
   type StaffCounts,
 } from "../../../types/game";
 import {
@@ -15,13 +13,6 @@ import {
 
 const OVERCROWDING_THRESHOLD = 4;
 const MAX_PER_ROLE = 20;
-
-const MAINTENANCE_TASK_LABELS: Record<MaintenanceTask, string> = {
-  clean: "Clean Store",
-  repair_oven: "Repair Oven (Bakery)",
-  repair_slicer: "Repair Meat Slicer (Deli)",
-  repair_espresso: "Repair Espresso Machine (Barista)",
-};
 
 interface StepperProps {
   title: string;
@@ -119,7 +110,6 @@ export function StaffTab({ readOnly = false }: StaffTabProps) {
   const { sousBase, maintBase } = resolveBaseCosts(config);
 
   const staffCounts = pendingDecision.staffCounts;
-  const maintenanceTasks = pendingDecision.maintenanceTasks;
 
   const setCount = (role: keyof StaffCounts, next: number) => {
     if (readOnly) return;
@@ -127,35 +117,11 @@ export function StaffTab({ readOnly = false }: StaffTabProps) {
     const prev = staffCounts[role];
     if (clamped === prev) return;
 
-    // If maintenance guy count changed, keep `maintenanceTasks` length in sync.
-    let tasks = maintenanceTasks;
-    if (role === "maintenanceGuys") {
-      if (clamped > prev) {
-        tasks = [
-          ...maintenanceTasks,
-          ...Array<MaintenanceTask>(clamped - prev).fill("clean"),
-        ];
-      } else {
-        tasks = maintenanceTasks.slice(0, clamped);
-      }
-    }
-
     dispatch({
       type: "UPDATE_PENDING_DECISION",
       payload: {
         staffCounts: { [role]: clamped } as Partial<StaffCounts>,
-        maintenanceTasks: tasks,
       },
-    });
-  };
-
-  const setTask = (index: number, task: MaintenanceTask) => {
-    if (readOnly) return;
-    const next = maintenanceTasks.slice();
-    next[index] = task;
-    dispatch({
-      type: "UPDATE_PENDING_DECISION",
-      payload: { maintenanceTasks: next },
     });
   };
 
@@ -259,40 +225,6 @@ export function StaffTab({ readOnly = false }: StaffTabProps) {
           }
           readOnly={readOnly}
         />
-
-        {staffCounts.maintenanceGuys > 0 && (
-          <ul className="staff-tab__tasks">
-            {maintenanceTasks.map((task, i) => (
-              <li key={i} className="staff-tab__task-row">
-                {readOnly ? (
-                  <span className="staff-tab__task-label staff-tab__task-label--readonly">
-                    Guy #{i + 1}
-                    <strong className="staff-tab__task-static">
-                      {MAINTENANCE_TASK_LABELS[task]}
-                    </strong>
-                  </span>
-                ) : (
-                  <label className="staff-tab__task-label">
-                    Guy #{i + 1}
-                    <select
-                      className="staff-tab__task-select"
-                      value={task}
-                      onChange={(e) =>
-                        setTask(i, e.target.value as MaintenanceTask)
-                      }
-                    >
-                      {MAINTENANCE_TASKS.map((t) => (
-                        <option key={t} value={t}>
-                          {MAINTENANCE_TASK_LABELS[t]}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
       </div>
 
       {/* Grand total */}

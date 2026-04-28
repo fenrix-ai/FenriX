@@ -10,7 +10,6 @@ import {
   roleOwnsAdBids,
   roleOwnsChefBids,
   roleOwnsRoster,
-  type MaintenanceBars,
   type RoundResult,
   type StaffCounts,
 } from "../../types/game";
@@ -46,10 +45,6 @@ const CSV_COLUMNS = [
   "interest_charged",
   "customer_count",
   "customer_satisfaction",
-  "cleanliness_pct",
-  "oven_health_pct",
-  "slicer_health_pct",
-  "espresso_health_pct",
   "bakery_sous_chef_count",
   "deli_sous_chef_count",
   "barista_sous_chef_count",
@@ -100,10 +95,6 @@ function csvCell(value: string | undefined | null): string {
     return `"${s.replace(/"/g, '""')}"`;
   }
   return s;
-}
-
-function bar(bars: MaintenanceBars | undefined, key: keyof MaintenanceBars): string {
-  return pct(bars?.[key]);
 }
 
 /**
@@ -170,10 +161,6 @@ function serializeRow(r: RoundResult, daily?: DailyRow): string {
     num(interestCharged),
     customerCount,
     customerSatisfaction,
-    bar(r.maintenanceBars, "cleanliness"),
-    bar(r.maintenanceBars, "ovenHealth"),
-    bar(r.maintenanceBars, "slicerHealth"),
-    bar(r.maintenanceBars, "espressoHealth"),
     num(counts.bakerySousChefs),
     num(counts.deliSousChefs),
     num(counts.baristaSousChefs),

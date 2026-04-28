@@ -442,7 +442,7 @@ function getPlayerTeamKey(playerDoc) {
  *   - `chef` mirrors `pendingBids.chef` (validated bid array)
  *   - `decisionDraft` mirrors the team-shared `pendingDecision.*` fields
  *     written by Operations' `submitDecision` (menu, quantities, staffCounts,
- *     maintenanceTasks, sousChef*, submitted, submittedAt, round) and
+ *     sousChef*, submitted, submittedAt, round) and
  *     Finance's `submitPrices` (productPrices, pricesSubmitted, optional
  *     menu picks). `submitDecision`'s POST-01 gate also reads
  *     `decisionDraft.pricesSubmitted` from this doc to decide whether
@@ -740,13 +740,9 @@ async function resetPendingPlayerStateForRound(gameRef) {
       // the previous round and Operations can submit before Finance posts
       // prices for the new round.
       'pendingDecision.pricesSubmitted': false,
-      // Clear round-scoped Operations staffing state. `runSimulationAndPersist`
-      // falls back to `pendingDecision.staffCounts` / `maintenanceTasks` when
-      // the round's decision doc is missing those fields (e.g., a missed
-      // submission), so leaving them in place would cause round N+1 to
-      // inherit round N's staffing.
+      // Clear round-scoped Operations staffing state so round N+1 does not
+      // inherit round N's staffing from a missed submission.
       'pendingDecision.staffCounts': {},
-      'pendingDecision.maintenanceTasks': [],
       'pendingBids.ad': null,
       'pendingBids.chef': null,
       pendingRosterAction: false,
@@ -821,7 +817,6 @@ async function resetPendingTeamStateForRound(gameRef) {
         sousChefCount: 0,
         sousChefAssignments: {},
         staffCounts: {},
-        maintenanceTasks: [],
         productPrices: carryoverPrices,
         pricesSubmitted: false,
       },
@@ -2249,9 +2244,6 @@ async function runSimulationAndPersist(gameRef, round, config) {
             {},
           ),
         ),
-        maintenanceTasks: Array.isArray(decision.maintenanceTasks)
-          ? decision.maintenanceTasks
-          : [],
       },
       specialtyChefs: Array.isArray(canonicalData.specialtyChefs) ? canonicalData.specialtyChefs : [],
       budgetCurrent: simInputBudget,
@@ -2773,18 +2765,13 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
       }
 
       // Merge so an existing Finance-written `productPrices` survives.
-      // POST-01 follow-up: persist `staffCounts` + `maintenanceTasks` on the
-      // decision doc so the simulation (and the professor CSV export) can
-      // read them — validateDecision doesn't touch these fields today, so we
-      // pass them through defensively here instead of inside the validator.
+      // POST-01 follow-up: persist `staffCounts` on the decision doc so the
+      // simulation (and professor CSV export) can read them.
       const decisionPatch = {
         round: currentRound,
         submittedAt: FieldValue.serverTimestamp(),
         ...validated,
         staffCounts: objectOrDefault(data.staffCounts, {}),
-        maintenanceTasks: Array.isArray(data.maintenanceTasks)
-          ? data.maintenanceTasks
-          : [],
       };
       transaction.set(decisionRef, decisionPatch, { merge: true });
 
@@ -2805,9 +2792,6 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
         sousChefCount: validated.sousChefCount || 0,
         sousChefAssignments: validated.sousChefAssignments || {},
         staffCounts: objectOrDefault(data.staffCounts, {}),
-        maintenanceTasks: Array.isArray(data.maintenanceTasks)
-          ? data.maintenanceTasks
-          : [],
       };
       transaction.update(playerRef, {
         'pendingDecision.submitted': draftFields.submitted,
@@ -2818,7 +2802,6 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
         'pendingDecision.sousChefCount': draftFields.sousChefCount,
         'pendingDecision.sousChefAssignments': draftFields.sousChefAssignments,
         'pendingDecision.staffCounts': draftFields.staffCounts,
-        'pendingDecision.maintenanceTasks': draftFields.maintenanceTasks,
         consecutiveMissedRounds: 0,
         disconnected: false,
         updatedAt: FieldValue.serverTimestamp(),
@@ -4349,12 +4332,6 @@ exports.resetGame = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
       pendingRosterAction: false,
       rosterCompleted: false,
       returningCustomersPending: 0,
-      maintenanceBars: {
-        cleanliness: 100,
-        ovenHealth: 100,
-        slicerHealth: 100,
-        espressoHealth: 100,
-      },
       lastRoundResult: FieldValue.delete(),
       consecutiveMissedRounds: 0,
       disconnected: false,
@@ -4687,7 +4664,6 @@ exports.onBotPhaseChange = onDocumentWritten(
             sousChefCount: decisions.sousChefCount || 0,
             sousChefAssignments: decisions.sousChefAssignments || {},
             staffCounts: decisions.staffCounts || {},
-            maintenanceTasks: decisions.maintenanceTasks || [],
             submittedAt: FieldValue.serverTimestamp(),
           }, { merge: true });
 

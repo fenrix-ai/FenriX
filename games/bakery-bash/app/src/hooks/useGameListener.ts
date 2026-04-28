@@ -12,7 +12,6 @@ import {
   PRODUCT_KEYS,
   type GameConfigParams,
   type LeaderboardRanking,
-  type MaintenanceBars,
   type Player,
   type PlayerRole,
   type ProductKey,
@@ -125,19 +124,6 @@ export function useGameListener(gameId: string | null, playerId?: string | null)
         if (!snap.exists()) return;
         const data = snap.data() as DocumentData;
 
-        const bars = data.maintenanceBars as Partial<MaintenanceBars> | undefined;
-        if (
-          bars &&
-          typeof bars.cleanliness === "number" &&
-          typeof bars.ovenHealth === "number" &&
-          typeof bars.slicerHealth === "number" &&
-          typeof bars.espressoHealth === "number"
-        ) {
-          dispatch({
-            type: "SET_MAINTENANCE_BARS",
-            payload: bars as MaintenanceBars,
-          });
-        }
         if (typeof data.budgetCurrent === "number") {
           dispatch({ type: "SET_BUDGET", payload: data.budgetCurrent });
         } else {
@@ -220,10 +206,6 @@ export function useGameListener(gameId: string | null, playerId?: string | null)
                     ? lrr.chefWon
                     : (lrr.chefWon ?? null),
               },
-              maintenanceBars:
-                lrr.maintenanceBars && typeof lrr.maintenanceBars === "object"
-                  ? lrr.maintenanceBars
-                  : undefined,
               staffCounts:
                 lrr.staffCounts && typeof lrr.staffCounts === "object"
                   ? lrr.staffCounts

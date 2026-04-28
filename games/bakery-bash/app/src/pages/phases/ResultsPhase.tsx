@@ -3,7 +3,7 @@ import { doc, onSnapshot, type DocumentData } from "firebase/firestore";
 import { useGame } from "../../contexts/GameContext";
 import { LoanSharkCallout } from "../../components/game/LoanSharkCallout";
 import { downloadResultsCsv } from "../../components/game/RoundHeader";
-import type { MaintenanceBars, ProductKey, RoundEvent } from "../../types/game";
+import type { ProductKey, RoundEvent } from "../../types/game";
 import { formatDaysInRound } from "../../lib/dateSystem";
 import { db } from "../../lib/firebase";
 
@@ -29,31 +29,9 @@ const PRODUCT_LABELS: Record<ProductKey, string> = {
   matcha: "Matchas",
 };
 
-/**
- * FE-4 — end-of-round maintenance bar labels. Matches the labels used in
- * `StatusTab`, minus the warning icon/tier lines since we're rendering a
- * retrospective snapshot rather than a live health indicator.
- */
-const MAINTENANCE_BAR_LABELS: Array<{
-  key: keyof MaintenanceBars;
-  label: string;
-}> = [
-  { key: "cleanliness", label: "Cleanliness" },
-  { key: "ovenHealth", label: "Oven" },
-  { key: "slicerHealth", label: "Meat Slicer" },
-  { key: "espressoHealth", label: "Espresso Machine" },
-];
-
 function formatMoney(n: number | null | undefined): string {
   if (typeof n !== "number" || Number.isNaN(n)) return "—";
   return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-}
-
-function barColor(pct: number): string {
-  if (pct >= 85) return "var(--sage)";
-  if (pct >= 60) return "var(--lime)";
-  if (pct > 30) return "var(--honey)";
-  return "var(--berry)";
 }
 
 function looksLikeInternalChefId(value: string | null | undefined): boolean {
@@ -231,12 +209,6 @@ export function ResultsPhase() {
         ? latest.chefBidPaid
         : null;
 
-  // FE-4 — end-of-round maintenance snapshot. Prefer the per-round
-  // snapshot on the result; fall back to live context state for the
-  // pre-BE-1..BE-10 rollout where results docs may not include it.
-  const endBars: MaintenanceBars | null =
-    latest?.maintenanceBars ?? null;
-
   // Events derived from the result payload.
   const events: RoundEvent[] = Array.isArray(latest?.events) ? latest!.events! : [];
 
@@ -366,57 +338,6 @@ export function ResultsPhase() {
               </li>
             </ul>
           </section>
-
-          {/* FE-4 — maintenance bar snapshot at the end of this round.
-              Helps the player diagnose which bar drained them before they
-              plan next round's maintenance guys. Hidden for legacy
-              results docs that didn't include the snapshot. */}
-          {endBars && (
-            <section
-              className="results-phase__maintenance"
-              aria-label="Maintenance at end of round"
-            >
-              <h3 className="results-phase__section-title">
-                Kitchen Status — End of Round
-              </h3>
-              <ul className="results-phase__maintenance-list">
-                {MAINTENANCE_BAR_LABELS.map(({ key, label }) => {
-                  const rawValue = endBars[key];
-                  const value =
-                    typeof rawValue === "number" ? rawValue : 100;
-                  const clamped = Math.max(0, Math.min(100, value));
-                  const color = barColor(clamped);
-                  return (
-                    <li
-                      key={key}
-                      className="results-phase__maintenance-row"
-                    >
-                      <div className="results-phase__maintenance-header">
-                        <span className="results-phase__maintenance-label">
-                          {label}
-                        </span>
-                        <span
-                          className="results-phase__maintenance-pct"
-                          style={{ color }}
-                        >
-                          {Math.round(clamped)}%
-                        </span>
-                      </div>
-                      <div
-                        className="results-phase__maintenance-track"
-                        aria-hidden
-                      >
-                        <div
-                          className="results-phase__maintenance-fill"
-                          style={{ width: `${clamped}%`, background: color }}
-                        />
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-          )}
 
           {productEntries.length > 0 && (
             <section className="results-phase__breakdown">

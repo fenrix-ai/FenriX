@@ -169,35 +169,6 @@ export const PRODUCT_STATION: Record<ProductKey, StationId> = {
   matcha: "barista",
 };
 
-/**
- * Assignable tasks for a Maintenance Guy. `clean` restores cleanliness; the
- * three `repair_*` options restore the machine attached to the named station.
- * Array length in `PendingDecisionDraft.maintenanceTasks` must equal
- * `staffCounts.maintenanceGuys`.
- */
-export type MaintenanceTask =
-  | "clean"
-  | "repair_oven"
-  | "repair_slicer"
-  | "repair_espresso";
-
-export const MAINTENANCE_TASKS: MaintenanceTask[] = [
-  "clean",
-  "repair_oven",
-  "repair_slicer",
-  "repair_espresso",
-];
-
-/**
- * All four maintenance bars, each 0–100. Cloud Functions own these writes;
- * the client only reads / renders them.
- */
-export interface MaintenanceBars {
-  cleanliness: number;
-  ovenHealth: number;
-  slicerHealth: number;
-  espressoHealth: number;
-}
 
 /**
  * Per-station sous chef counts + one maintenance guy bucket. This replaces
@@ -331,9 +302,6 @@ export interface ProductPriceConfig {
  *
  * Dual-write note: the backend validator (pre BE-1..BE-10) only reads
  * `sousChefCount` + `sousChefAssignments` and silently drops unknown keys.
- * We also send `staffCounts` + `maintenanceTasks` so the backend can start
- * consuming them the moment the maintenance overhaul lands, with no
- * coordinated frontend release required.
  */
 export interface PendingDecisionDraft {
   menu: Record<ProductKey, boolean>;
@@ -344,8 +312,6 @@ export interface PendingDecisionDraft {
   sousChefAssignments: Record<ProductKey, number>;
   /** Station-based sous chef counts + maintenance guys. */
   staffCounts: StaffCounts;
-  /** One task per maintenance guy; length must equal `staffCounts.maintenanceGuys`. */
-  maintenanceTasks: MaintenanceTask[];
   /** When true, simulation will deduct tierUpgradeCost(currentGrade) and bump grade. */
   equipmentUpgradePurchased?: boolean;
   /** POST-01: Finance-owned per-product prices. */
@@ -423,8 +389,6 @@ export interface RoundResult {
     adWon: AdType | null;
     chefWon: string | null;
   };
-  /** Maintenance bar snapshot at the end of this round. */
-  maintenanceBars?: MaintenanceBars;
   /** Optional display names matched to departed chef ids, in order. */
   chefDepartureNames?: string[];
   /** Station-based staff counts the player submitted for this round. */
@@ -649,11 +613,6 @@ export interface GameState {
   adBidsSubmitted: boolean;
   /** Local flag — true after a successful `submitBids` (chef) this round. */
   chefBidsSubmitted: boolean;
-  /**
-   * Live maintenance bars — owned by Cloud Functions, mirrored here via a
-   * Firestore listener. Defaults to 100% for all bars before the first round.
-   */
-  maintenanceBars: MaintenanceBars;
   /** Equipment grade A-F. Default C; bumps one tier per round when upgraded. */
   equipmentGrade: EquipmentGrade;
   /** Cleanliness internal score 0-100. Drifts each round. */
@@ -787,14 +746,6 @@ export interface LeaderboardRanking {
   /** Budget after this round (used for tie-break in conclusion). */
   budgetAfter?: number;
 }
-
-/** Default maintenance bars (all 100%) used on game start / context reset. */
-export const DEFAULT_MAINTENANCE_BARS: MaintenanceBars = {
-  cleanliness: 100,
-  ovenHealth: 100,
-  slicerHealth: 100,
-  espressoHealth: 100,
-};
 
 /** Default per-station staff counts (all zero). */
 export const DEFAULT_STAFF_COUNTS: StaffCounts = {

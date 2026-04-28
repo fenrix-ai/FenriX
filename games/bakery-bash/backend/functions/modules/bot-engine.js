@@ -304,7 +304,6 @@ function applyMistakeToDecide(decisions, mistakeChance, rng) {
     sousChefCount: decisions.sousChefCount,
     sousChefAssignments: decisions.sousChefAssignments,
     staffCounts: decisions.staffCounts,
-    maintenanceTasks: decisions.maintenanceTasks,
   };
   const products = PRODUCT_KEYS.filter(() => rng() < 0.3);
   for (const p of products) {
@@ -676,7 +675,6 @@ function decideOperations(botState, config, personality, difficulty, rng, oppone
     sousChefCount,
     sousChefAssignments: {},
     staffCounts: {},
-    maintenanceTasks: [],
   };
 
   return applyMistakeToDecide(decisions, diffCfg.mistakeChance, rng);
@@ -786,7 +784,6 @@ function predictOpponentFullDecisions(opponent, model, config) {
       sousChefCount: 3,
       sousChefAssignments: {},
       staffCounts: {},
-      maintenanceTasks: [],
     },
     specialtyChefs: chefs,
     sousChefCount: 3,
@@ -805,7 +802,6 @@ function deepCopyDecisions(d) {
     sousChefCount: d.sousChefCount,
     sousChefAssignments: { ...d.sousChefAssignments },
     staffCounts: { ...d.staffCounts },
-    maintenanceTasks: Array.isArray(d.maintenanceTasks) ? [...d.maintenanceTasks] : [],
   };
 }
 
@@ -821,7 +817,6 @@ function evaluateCandidate(botState, candidate, opponentDecisions, config) {
           sousChefCount: candidate.sousChefCount,
           sousChefAssignments: candidate.sousChefAssignments,
           staffCounts: candidate.staffCounts,
-          maintenanceTasks: candidate.maintenanceTasks,
         },
         specialtyChefs: botState.specialtyChefs || [],
         sousChefCount: candidate.sousChefCount,
@@ -928,7 +923,6 @@ function randomBotDecisions(botState, phase, config, rng) {
       sousChefCount: Math.floor(rng() * 6),
       sousChefAssignments: {},
       staffCounts: {},
-      maintenanceTasks: [],
     };
   }
 
@@ -981,7 +975,6 @@ function generateBotDecisions(
         sousChefCount: 0,
         sousChefAssignments: {},
         staffCounts: {},
-        maintenanceTasks: [],
       };
     }
     return {};

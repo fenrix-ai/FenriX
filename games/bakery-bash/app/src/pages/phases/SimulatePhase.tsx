@@ -19,7 +19,7 @@ function getSelloutDays(): Record<Product, number> {
 }
 
 export function SimulatePhase() {
-  const { roundResults, maintenanceBars, teamName, pendingDecision, currentRound } = useGame();
+  const { roundResults, teamName, pendingDecision, currentRound } = useGame();
   const latest = roundResults[roundResults.length - 1];
   const latestRound = latest ?? null;
   const targetRevenue =
@@ -35,8 +35,8 @@ export function SimulatePhase() {
   const [isNight, setIsNight] = useState(false);
   const [displayRevenue, setDisplayRevenue] = useState(0);
   const [soldOut, setSoldOut] = useState<Set<Product>>(new Set());
-  const [, setCleanlinessDisplay] = useState(maintenanceBars?.cleanliness ?? 100);
-  const [, setOvenDisplay] = useState(maintenanceBars?.ovenHealth ?? 100);
+  const [, setCleanlinessDisplay] = useState(100);
+  const [, setOvenDisplay] = useState(100);
 
   const selloutDays = useRef(getSelloutDays());
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -60,8 +60,8 @@ export function SimulatePhase() {
         setSoldOut(newSoldOut);
 
         // Animate maintenance decay
-        setCleanlinessDisplay(prev => Math.max(0, prev - (maintenanceBars?.cleanliness ?? 100) / (TOTAL_DAYS * 3)));
-        setOvenDisplay(prev => Math.max(0, prev - (maintenanceBars?.ovenHealth ?? 100) / (TOTAL_DAYS * 4)));
+        setCleanlinessDisplay(prev => Math.max(0, prev - 100 / (TOTAL_DAYS * 3)));
+        setOvenDisplay(prev => Math.max(0, prev - 100 / (TOTAL_DAYS * 4)));
 
         // Animate revenue
         if (targetRevenue > 0) {
