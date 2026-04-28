@@ -105,7 +105,7 @@ export interface StaffTabProps {
 }
 
 export function StaffTab({ readOnly = false }: StaffTabProps) {
-  const { config, pendingDecision, equipmentGrade } = useGame();
+  const { config, pendingDecision, equipmentGrade, budgetCurrent } = useGame();
   const dispatch = useGameDispatch();
 
   const { sousBase, maintBase } = resolveBaseCosts(config);
@@ -126,10 +126,15 @@ export function StaffTab({ readOnly = false }: StaffTabProps) {
     });
   };
 
-  const grandTotal = useMemo(
-    () => totalStaffCost(staffCounts, config),
-    [staffCounts, config],
-  );
+  // Grand total = staff cost + equipment upgrade cost (if toggled).
+  const grandTotal = useMemo(() => {
+    const staffOnly = totalStaffCost(staffCounts, config);
+    const grade = equipmentGrade ?? 'C';
+    const upgradeCost = pendingDecision.equipmentUpgradePurchased
+      ? (tierUpgradeCost(grade) ?? 0)
+      : 0;
+    return staffOnly + upgradeCost;
+  }, [staffCounts, config, equipmentGrade, pendingDecision.equipmentUpgradePurchased]);
 
   const sousChefTotal = totalSousChefs(staffCounts);
   const overcrowded = sousChefTotal > OVERCROWDING_THRESHOLD;
@@ -235,15 +240,31 @@ export function StaffTab({ readOnly = false }: StaffTabProps) {
         {(() => {
           const grade = equipmentGrade ?? 'C';
           const next = nextEquipmentGrade(grade);
-          const cost = tierUpgradeCost(grade);
+          const upgradeCost = tierUpgradeCost(grade);
           const purchased = !!pendingDecision.equipmentUpgradePurchased;
-          if (!next || cost === null) {
+          if (!next || upgradeCost === null) {
             return (
               <p className="staff-tab__equipment-maxed">
                 Equipment at A — max grade.
               </p>
             );
           }
+
+          // Affordability check: use grandTotal (which includes upgrade cost when
+          // toggled) to determine how much budget remains for the upgrade.
+          // If the upgrade is already toggled, grandTotal already includes its cost.
+          // Back it out to get the base cost without the upgrade for the check.
+          const baseCostWithoutUpgrade = purchased
+            ? grandTotal - upgradeCost
+            : grandTotal;
+          const available = budgetCurrent !== null
+            ? budgetCurrent - baseCostWithoutUpgrade
+            : null;
+          const canAffordUpgrade = available !== null && available >= upgradeCost;
+
+          // Button is disabled when: player can't afford it (and it's not already toggled on)
+          const upgradeButtonDisabled = !canAffordUpgrade && !purchased;
+
           return (
             <div className="staff-tab__equipment-row">
               <div className="staff-tab__station-header">
@@ -264,20 +285,27 @@ export function StaffTab({ readOnly = false }: StaffTabProps) {
               ) : (
                 <button
                   type="button"
-                  className={`staff-tab__equipment-btn${purchased ? ' staff-tab__equipment-btn--active' : ''}`}
-                  onClick={() =>
+                  className={`staff-tab__equipment-btn${purchased ? ' staff-tab__equipment-btn--active' : ''}${upgradeButtonDisabled ? ' staff-tab__equipment-btn--disabled' : ''}`}
+                  onClick={() => {
+                    if (upgradeButtonDisabled) return;
                     dispatch({
                       type: "UPDATE_PENDING_DECISION",
                       payload: { equipmentUpgradePurchased: !purchased },
-                    })
-                  }
+                    });
+                  }}
+                  disabled={upgradeButtonDisabled}
                   aria-pressed={purchased}
+                  title={
+                    upgradeButtonDisabled && available !== null
+                      ? `Need $${upgradeCost.toLocaleString()} but only $${Math.round(available).toLocaleString()} available after other costs`
+                      : undefined
+                  }
                 >
-                  {purchased ? '✓ Upgrade booked' : `Upgrade to ${next} ($${cost})`}
+                  {purchased ? '✓ Upgrade booked' : `Upgrade to ${next} ($${upgradeCost.toLocaleString()})`}
                 </button>
               )}
               <div className="staff-tab__station-cost">
-                Cost: <strong>${cost.toLocaleString()}</strong>
+                Cost: <strong>${upgradeCost.toLocaleString()}</strong>
               </div>
             </div>
           );

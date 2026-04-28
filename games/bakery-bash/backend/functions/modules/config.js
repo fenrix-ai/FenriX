@@ -482,6 +482,14 @@ const DEFAULT_GAME_CONFIG = {
   // Apr 28, 2026 — flat cost (USD) to unlock one OPTIONAL_MENU product.
   // Override per-game via `/games/{gameId}/config/params.productUnlockCost`.
   productUnlockCost: PRODUCT_UNLOCK_COST,
+
+  // Apr 28, 2026 — flat per-round cost per maintenance staffer. Must match
+  // MAINTENANCE_STAFF_COST = 20 (defined below in the equipment section).
+  // Using a literal here because MAINTENANCE_STAFF_COST is declared after
+  // DEFAULT_GAME_CONFIG (const TDZ prevents forward reference).
+  // Exposed so the frontend reads the correct value and professors can
+  // override per-game via Firestore config/params.
+  maintenanceStaffCost: 20,
 };
 
 // ---------------------------------------------------------------------------
@@ -645,6 +653,11 @@ function mergeConfig(rawConfig) {
     // Apr 28, 2026 — flat per-unlock cost. Coerce through numberOrDefault so a
     // malformed Firestore override (string, NaN) doesn't blow away the default.
     productUnlockCost: numberOrDefault(raw.productUnlockCost, d.productUnlockCost),
+
+    // Apr 28, 2026 — flat per-round cost per maintenance staffer. Mirrors
+    // MAINTENANCE_STAFF_COST constant; exposed in config so the frontend
+    // reads the correct value and professors can override per-game.
+    maintenanceStaffCost: numberOrDefault(raw.maintenanceStaffCost, d.maintenanceStaffCost),
   };
 }
 
