@@ -32,7 +32,7 @@
  */
 
 const config = require('./config');
-const { runSimulation } = require('./simulation');
+const { runSimulation, computeReturningCustomersEarned } = require('./simulation');
 const { calculateRoundCosts } = require('./revenue');
 const { calculateLoanShark, updateBudget } = require('./loan-shark');
 const { buildCsvRow } = require('./csv-export');
@@ -122,8 +122,25 @@ function runMonthlySimulation(players, roundPreferences, cfg = config, { gameId 
     const revenueGross = sum('revenueGross');
     const customerCount = sum('customerCount');
     const aggregateSatisfactionPct = avg('aggregateSatisfactionPct');
+    // chefSatisfactionScore is purely decision-derived (sousChefCount via
+    // calculateChefSatisfactionScore in chef-system.js) — it does NOT depend
+    // on demand or customer count, so day-0 ≡ day-29. Picking daily[0] is
+    // equivalent to averaging here.
     const chefSatisfactionScore = daily.length ? daily[0].chefSatisfactionScore : 0;
     const last = daily[daily.length - 1] || {};
+
+    // Aggregate per-product customer counts across days. last.perProductCustomers
+    // is day-29 only; using it as the round's per-product breakdown would
+    // show ~1/30 of the actual monthly customers per product on the Results
+    // screen breakdown table.
+    const monthlyPerProductCustomers = {};
+    for (const d of daily) {
+      const ppc = d.perProductCustomers || {};
+      for (const [product, count] of Object.entries(ppc)) {
+        monthlyPerProductCustomers[product] =
+          (monthlyPerProductCustomers[product] || 0) + (Number(count) || 0);
+      }
+    }
 
     // ---- Aggregate per-product satisfaction + qty sold across the month ----
     // Per-product satisfaction: mean of daily satisfactionPct (skip nulls).
@@ -193,6 +210,17 @@ function runMonthlySimulation(players, roundPreferences, cfg = config, { gameId 
     const loanSharkDeduction = loanResult.loanSharkDeduction;
     const revenueNet = revenueGross - loanSharkDeduction;
     const budgetAfter = Math.round(updateBudget(budgetCurrent, revenueNet, totalSpent));
+
+    // Recompute returningCustomersEarned at the MONTHLY level. The function
+    // is linear in customerCount, so taking last.returningCustomersEarned
+    // (day-29 only) gives ~1/daysPerRound of the right value — and that
+    // gets persisted as next round's returningCustomersPending, breaking
+    // the entire round-to-round carryover loop.
+    const returningCustomersEarned = computeReturningCustomersEarned(
+      aggregateSatisfactionPct,
+      customerCount,
+      cfg,
+    );
 
     // ---- Roll burglary ONCE per month ----
     const burglaryThreshold = (cfg && cfg.curveballs && cfg.curveballs.burglaryThreshold) || 40;
@@ -278,11 +306,11 @@ function runMonthlySimulation(players, roundPreferences, cfg = config, { gameId 
       totalSpent,
       budgetAfter: budgetAfterBurglary,
       customerCount,
-      perProductCustomers: last.perProductCustomers || {},
+      perProductCustomers: monthlyPerProductCustomers,
       aggregateSatisfactionPct,
       chefSatisfactionScore,
       perProductSatisfaction: monthlyPerProductSatisfaction,
-      returningCustomersEarned: last.returningCustomersEarned || 0,
+      returningCustomersEarned,
       selloutAnywhere: daily.some((d) => d.selloutAnywhere),
       adWon: last.adWon,
       adWins: last.adWins,

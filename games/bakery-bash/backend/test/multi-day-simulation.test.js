@@ -150,6 +150,67 @@ describe('runMonthlySimulation', () => {
       'monthly csvRow.customer_count should equal monthly aggregate (sum across days), not day-29 only');
   });
 
+  it('returningCustomersEarned uses MONTHLY customerCount, not day-29 alone (PR #110 re-review A)', () => {
+    // computeReturningCustomersEarned is linear in customerCount. Taking
+    // last.returningCustomersEarned (day-29 only) gives ~1/daysPerRound of
+    // what it should be, breaking the round-to-round carryover loop.
+    // Excellent satisfaction (>= 86) gives a 0.15 bonus rate, so
+    // expected ≈ monthly customerCount * 0.15.
+    const out = runMonthlySimulation([fakePlayer('p_a')], prefs, config, {
+      gameId: 'g1', round: 1,
+    });
+    const agg = out[0];
+    // High satisfaction setup (lots of stock, no competition) → excellent tier.
+    assert.ok(agg.aggregateSatisfactionPct >= 86,
+      `setup expected to hit excellent tier; got ${agg.aggregateSatisfactionPct}`);
+    const expected = Math.round(agg.customerCount * 0.15);
+    // Allow small rounding tolerance.
+    assert.ok(Math.abs(agg.returningCustomersEarned - expected) <= 2,
+      `returningCustomersEarned ${agg.returningCustomersEarned} should ≈ ${expected} (monthly customerCount * 0.15); ` +
+      `if it's ~1/30 of expected, the day-29-only bug regressed`);
+  });
+
+  it('perProductCustomers is aggregated across days, not day-29 only (PR #110 re-review A)', () => {
+    // last.perProductCustomers is day-29 only, ~1/daysPerRound of the
+    // round's per-product totals. Aggregating across days gives the real
+    // monthly per-product breakdown.
+    const out = runMonthlySimulation([fakePlayer('p_a')], prefs, config, {
+      gameId: 'g1', round: 1,
+    });
+    const agg = out[0];
+    const dailySum = {};
+    for (const d of agg.dailyResults) {
+      for (const [k, v] of Object.entries(d.perProductCustomers || {})) {
+        dailySum[k] = (dailySum[k] || 0) + (Number(v) || 0);
+      }
+    }
+    for (const product of Object.keys(dailySum)) {
+      assert.equal(agg.perProductCustomers[product], dailySum[product],
+        `monthly perProductCustomers.${product} should equal sum of daily; ` +
+        `got ${agg.perProductCustomers[product]} vs ${dailySum[product]}`);
+    }
+  });
+
+  it('per-day rows carry apportioned amountBorrowed + interestCharged (PR #110 re-review B)', () => {
+    // The frontend CSV serializeRow falls back to r.amountBorrowed (monthly)
+    // if the daily row doesn't carry it — students summing the column would
+    // get 30x the actual loan. Verify the wrapper exposes apportioned values
+    // on each daily row so the lastRoundResult payload can forward them.
+    const broke = fakePlayer('p_a', { budgetCurrent: 100 });
+    const out = runMonthlySimulation([broke], prefs, config, { gameId: 'g1', round: 1 });
+    const agg = out[0];
+    assert.ok(agg.amountBorrowed > 0, 'setup must trigger a loan');
+    for (const d of agg.dailyResults) {
+      assert.ok(typeof d.amountBorrowed === 'number',
+        `each daily row must expose amountBorrowed; got ${typeof d.amountBorrowed}`);
+      assert.ok(typeof d.interestCharged === 'number',
+        `each daily row must expose interestCharged; got ${typeof d.interestCharged}`);
+      // Each day's apportioned share must be < monthly (otherwise sum > monthly).
+      assert.ok(d.amountBorrowed < agg.amountBorrowed,
+        `daily amountBorrowed (${d.amountBorrowed}) must be < monthly (${agg.amountBorrowed})`);
+    }
+  });
+
   it('monthly customer count stays in pre-P2 round-level magnitude (not 30x)', () => {
     // Pre-P2: a team with 200/200/200 stock, 1 sous, $10k budget would
     // typically see a few hundred customers per round. After the day-scale
