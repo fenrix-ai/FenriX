@@ -256,6 +256,8 @@ export interface ChefListing {
 /** Real skill tier written by the backend in `rounds/{N}.chefPool`. */
 export type ChefSkillTier = "novel" | "intermediate" | "advanced";
 
+export type EquipmentGrade = 'F' | 'E' | 'D' | 'C' | 'B' | 'A';
+
 /**
  * Backend shape of a chef in `rounds/round_{N}.chefPool`. Mirrors
  * `generateChefPool` in `backend/functions/modules/chef-system.js`.
@@ -344,6 +346,8 @@ export interface PendingDecisionDraft {
   staffCounts: StaffCounts;
   /** One task per maintenance guy; length must equal `staffCounts.maintenanceGuys`. */
   maintenanceTasks: MaintenanceTask[];
+  /** When true, simulation will deduct tierUpgradeCost(currentGrade) and bump grade. */
+  equipmentUpgradePurchased?: boolean;
   /** POST-01: Finance-owned per-product prices. */
   productPrices: Record<ProductKey, number>;
   /**
@@ -667,6 +671,12 @@ export interface GameState {
    * Firestore listener. Defaults to 100% for all bars before the first round.
    */
   maintenanceBars: MaintenanceBars;
+  /** Equipment grade A-F. Default C; bumps one tier per round when upgraded. */
+  equipmentGrade: EquipmentGrade;
+  /** Cleanliness internal score 0-100. Drifts each round. */
+  cleanlinessScore: number;
+  /** Cleanliness grade derived from cleanlinessScore — cached for UI. */
+  cleanlinessGrade: EquipmentGrade;
   /**
    * Per-specialty-chef satisfaction 0–100. Written by Cloud Functions during
    * simulation; renders the low-satisfaction warnings on the results screen.
