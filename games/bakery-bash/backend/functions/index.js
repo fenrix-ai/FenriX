@@ -4534,6 +4534,7 @@ exports.onBotPhaseChange = onDocumentWritten(
   {
     document: 'games/{gameId}',
     concurrency: 1,
+    timeoutSeconds: 120,
   },
   async (event) => {
     const { gameId } = event.params;
@@ -4609,6 +4610,9 @@ exports.onBotPhaseChange = onDocumentWritten(
       };
 
       try {
+        // Deterministic seed: at-least-once trigger redelivery must produce
+        // the same bids/decisions instead of re-rolling Math.random.
+        const botSeed = `${gameId}:${round}:${parsed.phase}:${botDoc.id}`;
         const decisions = generateBotDecisions(
           botState,
           parsed.phase,
@@ -4617,6 +4621,7 @@ exports.onBotPhaseChange = onDocumentWritten(
           difficulty,
           personality,
           historicalBids,
+          botSeed,
         );
 
         if (parsed.phase === 'bid_ad') {
