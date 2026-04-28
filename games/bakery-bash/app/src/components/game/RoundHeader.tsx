@@ -48,7 +48,7 @@ const CSV_COLUMNS = [
   "bakery_sous_chef_count",
   "deli_sous_chef_count",
   "barista_sous_chef_count",
-  "maintenance_guy_count",
+  "maintenance_staff_count",
   "ad_won",
   "ad_paid",
   "chef_won",
