@@ -276,17 +276,20 @@ console.log('--- Roster decisions ---');
     ],
   });
 
-  const easyRoster = generateBotDecisions(botState, 'roster', TEST_CONFIG, [], 'easy', 'balanced');
+  // Seed easy bot calls so forget-phase / mistake chance does not flake the
+  // assertion below. Hard tier already has near-zero forget/mistake, so
+  // seeding is just for reproducibility.
+  const easyRoster = generateBotDecisions(botState, 'roster', TEST_CONFIG, [], 'easy', 'balanced', null, 'roster-easy');
   assert(easyRoster.layoffs.length === 1, 'easy bot should lay off 1 chef (4→3)');
   console.log('  ✓ Easy bot roster');
 
-  const hardRoster = generateBotDecisions(botState, 'roster', TEST_CONFIG, [], 'hard', 'balanced');
+  const hardRoster = generateBotDecisions(botState, 'roster', TEST_CONFIG, [], 'hard', 'balanced', null, 'roster-hard');
   assert(hardRoster.layoffs.length === 1, 'hard bot should lay off 1 chef (4→3)');
   assert(hardRoster.layoffs.includes('c3'), 'hard bot should lay off the least valuable chef (novel)');
   console.log('  ✓ Hard bot roster (value-sorted)');
 
   // Chef-focused should try to keep valuable chefs
-  const chefRoster = generateBotDecisions(botState, 'roster', TEST_CONFIG, [], 'hard', 'chef_focused');
+  const chefRoster = generateBotDecisions(botState, 'roster', TEST_CONFIG, [], 'hard', 'chef_focused', null, 'roster-chef');
   assert(chefRoster.layoffs.length === 1, 'chef_focused bot should lay off 1 chef');
   console.log('  ✓ Chef-focused bot roster');
 }
@@ -361,24 +364,31 @@ console.log('--- All combination validity ---');
         ],
       });
 
+      // Seed per combo so the test is deterministic across runs (otherwise
+      // novice's 20% forget-phase chance flips the assertion below randomly).
+      const seed = `combo:${diff}:${person}`;
+      const forgetChance = DIFFICULTIES[diff].forgetPhaseChance || 0;
+
       // bid_ad
-      const ad = generateBotDecisions(botState, 'bid_ad', TEST_CONFIG, [], diff, person);
+      const ad = generateBotDecisions(botState, 'bid_ad', TEST_CONFIG, [], diff, person, null, seed);
       assert(typeof ad.adBids === 'object', `${diff}/${person} adBids should be object`);
-      // Random personality may skip some ads; all others should define all 4
-      if (person !== 'random') {
+      // Random personality may skip some ads, and any difficulty with a
+      // forget-phase chance may legitimately return no bids; all others
+      // should define all 4.
+      if (person !== 'random' && forgetChance === 0) {
         assert(Object.keys(ad.adBids).length === 4, `${diff}/${person} should bid on 4 ad types`);
       }
 
       // bid_chef
-      const chef = generateBotDecisions(botState, 'bid_chef', TEST_CONFIG, [], diff, person);
+      const chef = generateBotDecisions(botState, 'bid_chef', TEST_CONFIG, [], diff, person, null, seed);
       assert(Array.isArray(chef.chefBids), `${diff}/${person} chefBids should be array`);
 
       // roster
-      const roster = generateBotDecisions(botState, 'roster', TEST_CONFIG, [], diff, person);
+      const roster = generateBotDecisions(botState, 'roster', TEST_CONFIG, [], diff, person, null, seed);
       assert(Array.isArray(roster.layoffs), `${diff}/${person} layoffs should be array`);
 
       // decide
-      const dec = generateBotDecisions(botState, 'decide', TEST_CONFIG, [], diff, person);
+      const dec = generateBotDecisions(botState, 'decide', TEST_CONFIG, [], diff, person, null, seed);
       assert(typeof dec.menu === 'object', `${diff}/${person} menu should be object`);
       assert(typeof dec.quantities === 'object', `${diff}/${person} quantities should be object`);
       assert(typeof dec.productPrices === 'object', `${diff}/${person} prices should be object`);
