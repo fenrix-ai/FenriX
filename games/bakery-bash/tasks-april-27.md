@@ -6,14 +6,16 @@
 **Method:** Firebase emulator (auth+firestore+functions) + 17 integration scripts + 3 unit test files + custom mixed-team end-to-end script (1 / 2 / 3-person teams across 2 rounds) + 70-player scale stress test
 **Bottom line:** Both P0 blockers fixed and verified in the working tree. (1) Snapshot/restore csvRows loss — fixed via `dumpCollection.listDocuments()`. (2) Concurrent-join + concurrent-submit contention — fixed by moving shared-doc atomic increments outside the transactions in joinGame / createTeam / submitDecision. Stress test now: **70/70 joins** (was 20/70), **70/70 concurrent submitDecisions in 735 ms** (was 22 s + 60 aborts). Ready to commit and ship.
 
-> **Status of fixes (as of 2026-04-27 22:35):**
-> - ✅ **P0-1 fixed in working tree** — `dumpCollection` now uses `listDocuments()`; `walkDocs` traverses ghost parents; `scripts/test-snapshot-csvrows.js` regression test added and **passing**. Original `test-snapshot-restore.js` still **passing**.
-> - ✅ **P0-2 FIXED in working tree** — split `joinGame` and `createTeam` into per-uid txns + post-txn atomic increments; removed vestigial `gameRef.update({ updatedAt })` from `submitDecision`; moved team-pending mirror outside the txn; skipped team-doc reads for solo/finance roles. **70-player join: 4s (was 19s, no contention errors). 70-player concurrent submitDecision: 700ms (was 22s+ with 50+ aborts).**
-> - ✅ Bonus fix: added `playerCap` pass-through to `mergeConfig` and a `playerCap: 20` default in `DEFAULT_GAME_CONFIG` — the per-game config override was being silently dropped, capping every game at 20 regardless of what the prof set.
-> - ✅ P1-2 partially fixed (one remaining edge: "Late Joiner" rejoin path, see below).
-> - ✅ P1-3 fixed (PROJECT_ID corrected; this is what surfaced P0-2).
-> - ✅ P1-4 fixed (3 of 4 boundary-bid soft-fails resolved; XSS test still fails per P2-3 — benign).
-> - ✅ Bonus fix: corrected `test-70-players.js` decision generator (it disabled the `cookie` base product, which the validator rejects, and used non-existent `latte` / `matchaLatte` keys instead of `coffee` / `matcha`).
+> **Status of fixes (committed to PR #119, as of 2026-04-27 23:00):**
+> - ✅ **P0-1 FIXED** — `dumpCollection` now uses `listDocuments()`; `walkDocs` traverses ghost parents; `scripts/test-snapshot-csvrows.js` regression test added and **passing**. Original `test-snapshot-restore.js` still **passing**.
+> - ✅ **P0-2 FIXED** — split `joinGame` and `createTeam` into per-uid txns + post-txn atomic increments; removed vestigial `gameRef.update({ updatedAt })` from `submitDecision`; moved team-pending mirror outside the txn; skipped team-doc reads for solo/finance roles. **70-player join: 70/70 succeed (was 20/70). 70 concurrent submitDecisions: 735 ms (was 22 s + 60 aborts). Lock-timeout errors gone.**
+> - ✅ **P1-2 FIXED** — added `app4` / `joinGame4` (fresh anonymous uid) for the BE-24 "game not in lobby" check. Test now passes end-to-end.
+> - ✅ **P1-3 FIXED** — PROJECT_ID corrected; this is what surfaced P0-2.
+> - ✅ **P1-4 FIXED** — 3 of 4 boundary-bid soft-fails resolved; XSS test still fails per P2-3 — benign (no `dangerouslySetInnerHTML` in the FE).
+> - ✅ **P2-2 FIXED (incidentally)** — `test-cross-feature.js` now passes. The trigger latency that made it flake earlier is no longer the bottleneck post-P0-2.
+> - ✅ **P2-4 FIXED (incidentally)** — `test-sharded-counter.js`: 25/25 submits in 283 ms (was 1/25 in 70 s). Same root cause as P0-2 (txn-level write contention on shared docs).
+> - ✅ **Bonus fix:** added `playerCap` pass-through to `mergeConfig` and a `playerCap: 20` default in `DEFAULT_GAME_CONFIG` — the per-game config override was being silently dropped, capping every game at 20 regardless of what the prof set.
+> - ✅ **Bonus fix:** corrected `test-70-players.js` decision generator (disabled `cookie` base product violates the validator; non-existent `latte` / `matchaLatte` keys instead of `coffee` / `matcha`).
 
 ---
 
