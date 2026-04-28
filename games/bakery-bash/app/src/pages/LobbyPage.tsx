@@ -11,6 +11,7 @@ import { useGame } from "../contexts/GameContext";
 import type { GamePhaseString } from "../types/game";
 import { db } from "../lib/firebase";
 import { PageShell } from "../components/ui/PageShell";
+import { PixelAvatar } from "../components/ui/PixelAvatar";
 import { PLAYER_ROLE_LABELS } from "../types/game";
 
 /**
@@ -158,6 +159,11 @@ export function LobbyPage() {
           <ul className="lobby-page__player-list">
             {showFallback ? (
               <li className="lobby-page__player lobby-page__player--you">
+                <PixelAvatar
+                  uid={playerId}
+                  displayName={player!.name}
+                  className="lobby-page__player-avatar"
+                />
                 <span className="lobby-page__player-name">
                   {player!.name} (you)
                 </span>
@@ -177,6 +183,11 @@ export function LobbyPage() {
                       isYou ? " lobby-page__player--you" : ""
                     }`}
                   >
+                    <PixelAvatar
+                      uid={entry.uid}
+                      displayName={entry.displayName}
+                      className="lobby-page__player-avatar"
+                    />
                     <span
                       className="lobby-page__player-rank"
                       aria-hidden="true"

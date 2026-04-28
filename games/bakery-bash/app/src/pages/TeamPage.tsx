@@ -12,6 +12,7 @@ import { db, functions } from "../lib/firebase";
 import { humanizeFunctionError } from "../lib/errors";
 import { useGame, useGameDispatch } from "../contexts/GameContext";
 import { PageShell } from "../components/ui/PageShell";
+import { PixelAvatar } from "../components/ui/PixelAvatar";
 import {
   PLAYER_ROLE_LABELS,
   type GamePhaseString,
@@ -428,15 +429,22 @@ export function TeamPage() {
                       m.isYou ? " team-page__member--you" : ""
                     }`}
                   >
-                    <span className="team-page__member-name">
-                      {m.displayName}
-                      {m.isYou && " (you)"}
-                    </span>
-                    {m.role && (
-                      <span className={`role-badge role-badge--${m.role}`}>
-                        {PLAYER_ROLE_LABELS[m.role]}
+                    <PixelAvatar
+                      uid={m.uid}
+                      displayName={m.displayName}
+                      className="team-page__member-avatar"
+                    />
+                    <span className="team-page__member-body">
+                      <span className="team-page__member-name">
+                        {m.displayName}
+                        {m.isYou && " (you)"}
                       </span>
-                    )}
+                      {m.role && (
+                        <span className={`role-badge role-badge--${m.role}`}>
+                          {PLAYER_ROLE_LABELS[m.role]}
+                        </span>
+                      )}
+                    </span>
                   </li>
                 ))}
               </ul>
