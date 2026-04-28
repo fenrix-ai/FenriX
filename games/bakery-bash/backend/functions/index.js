@@ -4972,7 +4972,10 @@ exports.createBotPlayer = onCall(CALLABLE_OPTS, async (request) => {
   let personality;
   let botName;
 
-  if (preset) {
+  if (presetKey) {
+    if (!preset) {
+      throw new HttpsError('invalid-argument', `Unknown preset "${presetKey}". Valid presets: ${Object.keys(PRESETS).join(', ')}`);
+    }
     ({ difficulty, personality, name: botName } = preset);
   } else {
     const validDifficulties = ['novice', 'easy', 'medium', 'hard', 'perfect'];
