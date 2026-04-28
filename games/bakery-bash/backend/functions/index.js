@@ -424,11 +424,11 @@ function getPlayerTeamKey(playerDoc) {
  *   - `chef` mirrors `pendingBids.chef` (validated bid array)
  *   - `decisionDraft` mirrors the team-shared `pendingDecision.*` fields
  *     written by Operations' `submitDecision` (menu, quantities, staffCounts,
- *     maintenanceTasks, sousChef*, submitted, submittedAt, round)
- *
- * `pendingDecision.productPrices` / `pricesSubmitted` are intentionally NOT
- * mirrored here — `submitPrices` is out of scope for T2.2 and continues to
- * cascade those fields onto teammates' player docs.
+ *     maintenanceTasks, sousChef*, submitted, submittedAt, round) and
+ *     Finance's `submitPrices` (productPrices, pricesSubmitted, optional
+ *     menu picks). `submitDecision`'s POST-01 gate also reads
+ *     `decisionDraft.pricesSubmitted` from this doc to decide whether
+ *     Finance has posted prices for the current round.
  */
 function teamPendingDocRef(gameRef, teamId) {
   return gameRef.collection('teams').doc(teamId).collection('state').doc('pending');
@@ -2504,11 +2504,23 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
       // direct callable invocation) can't bypass it. Skipped for solo
       // players and teams with no Finance seat — those paths submit prices
       // implicitly via `submitPrices`'s solo / fallback handling.
+      //
+      // T2.2 follow-up: read `pricesSubmitted` from the per-team pending
+      // doc rather than the caller's own player doc — `submitPrices` no
+      // longer cascades that flag onto teammates' player docs, so
+      // Operations' own doc never sees it.
       let teamRoleAssignmentsForGate = null;
+      let teamPendingDraftForGate = null;
       if (teamId) {
-        const teamSnap = await transaction.get(gameRef.collection('teams').doc(teamId));
+        const [teamSnap, teamPendingSnap] = await Promise.all([
+          transaction.get(gameRef.collection('teams').doc(teamId)),
+          transaction.get(teamPendingDocRef(gameRef, teamId)),
+        ]);
         if (teamSnap.exists) {
           teamRoleAssignmentsForGate = (teamSnap.data() || {}).roleAssignments || null;
+        }
+        if (teamPendingSnap.exists) {
+          teamPendingDraftForGate = (teamPendingSnap.data() || {}).decisionDraft || null;
         }
       }
       const teamHasFinance = teamRoleAssignmentsForGate
@@ -2518,8 +2530,9 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
         && _submitDecision_role !== 'solo'
         && _submitDecision_role !== 'finance'
       ) {
-        const pending = pSnap.get('pendingDecision') || {};
-        if (pending.pricesSubmitted !== true) {
+        const teamPricesSubmitted = teamPendingDraftForGate
+          && teamPendingDraftForGate.pricesSubmitted === true;
+        if (!teamPricesSubmitted) {
           throw new HttpsError(
             'failed-precondition',
             'Waiting for your Finance teammate to submit prices for this round.',
