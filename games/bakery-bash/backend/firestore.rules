@@ -74,10 +74,16 @@ service cloud.firestore {
       match /players/{playerId} {
         allow read: if isOwner(playerId);
         allow create: if false;
+        // SECURITY FIX: restrict client-side updates to displayName only.
+        // pendingDecision / pendingBids are written exclusively by Cloud
+        // Functions (submitDecision, submitPrices, submitBids). Allowing
+        // them here permitted nested-map poisoning (e.g. writing
+        // pendingDecision.budgetCurrent = 999999 through a direct client
+        // update since Firestore rules do not validate nested map shapes).
         allow update: if isOwner(playerId)
           && request.resource.data.diff(resource.data)
                .changedKeys()
-               .hasOnly(["displayName", "pendingDecision", "pendingBids"]);
+               .hasOnly(["displayName"]);
 
         // Immutable decision snapshots are written by Cloud Functions after
         // server-side validation in submitDecision.

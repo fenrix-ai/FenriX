@@ -9,7 +9,11 @@ import type { ProductKey, ProductPriceConfig, PriceZone, ElasticityTier } from '
 
 const PRICE_STEP = 0.25;
 const FLOOR_BONUS = 0.15;
-const MULTIPLIER_FLOOR = 0.1;
+/**
+ * Lower bound on the per-player demand multiplier — keep in sync with backend
+ * config.js (MULTIPLIER_FLOOR). Balance pass 13: reduced from 0.10 to 0.05.
+ */
+const MULTIPLIER_FLOOR = 0.05;
 
 const ELASTICITY_COEFFICIENTS: Record<ElasticityTier, number> = {
   high: 1.5,
@@ -21,24 +25,32 @@ const ELASTICITY_COEFFICIENTS: Record<ElasticityTier, number> = {
  * Catalog base prices — mirror `PRODUCT_CATALOG[*].fixedPrice` on the backend.
  * Used as the Round-1 default for `productPrices`. Rounds 2–5 default to the
  * previous round's submission (carry-over handled server-side too).
+ *
+ * Synced with backend/functions/modules/config.js balance pass 11:
+ *   bagel:  4.50 (was 3.00)
+ *   cookie: 4.00 (was 2.50)
+ *   sandwich: 5.50 (was 8.75)
+ *   matcha: 4.50 (was 6.25)
  */
 export const DEFAULT_PRICES: Record<ProductKey, number> = {
   croissant: 4.75,
-  cookie: 2.50,
-  bagel: 3.00,
-  sandwich: 8.75,
+  cookie: 4.00,
+  bagel: 4.50,
+  sandwich: 5.50,
   coffee: 4.00,
-  matcha: 6.25,
+  matcha: 4.50,
 };
 
-/** Duplicated from backend PRICE_ZONES so UI can render bounds without a round-trip. */
+/** Duplicated from backend PRICE_ZONES so UI can render bounds without a round-trip.
+ *  Synced with backend/functions/modules/config.js balance passes 6 + 11.
+ */
 export const PRICE_ZONES: Record<ProductKey, ProductPriceConfig> = {
   coffee:    { floor: 2.00, competitiveRangeLow: 3.00, competitiveRangeHigh: 4.50, premiumRangeLow: 5.00, premiumRangeHigh: 6.00, ceiling: 6.50,  elasticityTier: 'high'   },
   croissant: { floor: 2.50, competitiveRangeLow: 4.00, competitiveRangeHigh: 5.50, premiumRangeLow: 6.00, premiumRangeHigh: 7.00, ceiling: 8.00,  elasticityTier: 'medium' },
-  bagel:     { floor: 1.50, competitiveRangeLow: 2.50, competitiveRangeHigh: 3.50, premiumRangeLow: 4.00, premiumRangeHigh: 5.00, ceiling: 5.50,  elasticityTier: 'high'   },
-  cookie:    { floor: 1.00, competitiveRangeLow: 2.00, competitiveRangeHigh: 3.00, premiumRangeLow: 3.50, premiumRangeHigh: 4.50, ceiling: 5.00,  elasticityTier: 'high'   },
-  sandwich:  { floor: 5.00, competitiveRangeLow: 7.50, competitiveRangeHigh: 10.00, premiumRangeLow: 10.50, premiumRangeHigh: 12.50, ceiling: 14.00, elasticityTier: 'medium' },
-  matcha:    { floor: 3.50, competitiveRangeLow: 5.50, competitiveRangeHigh: 7.00, premiumRangeLow: 7.50, premiumRangeHigh: 9.00, ceiling: 10.00, elasticityTier: 'low'    },
+  bagel:     { floor: 2.50, competitiveRangeLow: 3.50, competitiveRangeHigh: 5.50, premiumRangeLow: 6.00, premiumRangeHigh: 7.00, ceiling: 7.50,  elasticityTier: 'high'   },
+  cookie:    { floor: 2.00, competitiveRangeLow: 3.00, competitiveRangeHigh: 5.00, premiumRangeLow: 5.50, premiumRangeHigh: 6.50, ceiling: 7.00,  elasticityTier: 'high'   },
+  sandwich:  { floor: 3.00, competitiveRangeLow: 4.50, competitiveRangeHigh: 6.50, premiumRangeLow: 7.00, premiumRangeHigh: 8.00, ceiling: 8.50,  elasticityTier: 'high'   },
+  matcha:    { floor: 2.50, competitiveRangeLow: 3.50, competitiveRangeHigh: 5.50, premiumRangeLow: 6.00, premiumRangeHigh: 6.50, ceiling: 7.00,  elasticityTier: 'high'   },
 };
 
 export function classifyZone(price: number, cfg: ProductPriceConfig): PriceZone {

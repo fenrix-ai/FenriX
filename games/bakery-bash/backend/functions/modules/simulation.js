@@ -63,6 +63,26 @@ const {
 // Helpers
 // ---------------------------------------------------------------------------
 
+// BUG-3 fix: deterministic seeded PRNG (Mulberry32) for burglary so
+// retryStuckSimulation produces identical results.
+function _hashStringToInt(s) {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h >>> 0;
+}
+function _mulberry32(a) {
+  return function () {
+    a |= 0;
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 /**
  * Safely pull a numeric modifier for a product from the round preferences.
  * Defaults to 1.0 (neutral) when missing or invalid.
@@ -536,7 +556,10 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
       const burglaryChance = (config && config.curveballs && config.curveballs.burglaryChance) || 0.25;
       const burglaryAmount = (config && config.curveballs && config.curveballs.burglaryAmount) || 10000;
       const cleanlinessPct = typeof p.cleanliness_pct === 'number' ? p.cleanliness_pct : undefined;
-      if (cleanlinessPct != null && cleanlinessPct < burglaryThreshold && Math.random() < burglaryChance) {
+      // BUG-3 fix: seeded PRNG for deterministic burglary.
+      const burglarySeed = `${gameId || 'game'}:${round}:${p.playerId}:burglary`;
+      const burglaryRng = _mulberry32(_hashStringToInt(burglarySeed));
+      if (cleanlinessPct != null && cleanlinessPct < burglaryThreshold && burglaryRng() < burglaryChance) {
         burglary = true;
         actualBurglaryAmount = burglaryAmount;
         budgetAfterBurglary = Math.max(0, budgetAfter - burglaryAmount);
