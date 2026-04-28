@@ -121,6 +121,10 @@ const {
 } = require('./modules/sharded-counter');
 
 const {
+  generateBotDecisions,
+} = require('./modules/bot-engine');
+
+const {
   captureGameSnapshot,
   restoreGameSnapshot,
   pruneOldSnapshots,
@@ -523,6 +527,13 @@ function buildTeamGroupsFromPlayerDocs(playerDocs) {
 async function resolveAndApplyAdAuction(gameRef, round) {
   const roundId = `round_${round}`;
   const roundRef = gameRef.collection('rounds').doc(roundId);
+  // RECOVERY-1: idempotency guard — if auction already resolved, skip.
+  // This makes advanceGamePhase side effects safe to retry after a crash.
+  const roundSnap = await roundRef.get();
+  if (roundSnap.exists && roundSnap.data().adAuctionResolvedAt) {
+    logger.info('resolveAndApplyAdAuction skipped — already resolved.', { gameId: gameRef.id, round });
+    return;
+  }
   const playersSnap = await gameRef.collection('players').get();
   const playerToTeamKey = new Map(
     playersSnap.docs.map((pd) => [pd.id, getPlayerTeamKey(pd)])
@@ -831,6 +842,13 @@ async function resetPendingTeamStateForRound(gameRef) {
 async function resolveAndApplyChefAuction(gameRef, round, config) {
   const roundId = `round_${round}`;
   const roundRef = gameRef.collection('rounds').doc(roundId);
+
+  // RECOVERY-1: idempotency guard — if auction already resolved, skip.
+  const preRoundSnap = await roundRef.get();
+  if (preRoundSnap.exists && preRoundSnap.data().chefAuctionResolvedAt) {
+    logger.info('resolveAndApplyChefAuction skipped — already resolved.', { gameId: gameRef.id, round });
+    return;
+  }
 
   // Read the round's chefPool and all player bids for this round in parallel.
   const [roundSnap, playersSnap] = await Promise.all([
@@ -1829,6 +1847,37 @@ exports.retryStuckSimulation = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
 
   const roundRef = gameRef.collection('rounds').doc(`round_${round}`);
   const roundSnap = await roundRef.get();
+
+  // RECOVERY-2: recover side effects for bid_ad and bid_chef phases.
+  // If advanceGamePhase crashed after the transaction committed but before
+  // auction resolution / chef pool generation, the game is stuck with
+  // missing side effects. The idempotency guards in resolveAndApplyAdAuction
+  // and resolveAndApplyChefAuction make these safe to re-run.
+  if (phase === 'bid_ad') {
+    if (!roundSnap.exists || !roundSnap.data().adAuctionResolvedAt) {
+      await resolveAndApplyAdAuction(gameRef, round);
+      logger.info('retryStuckSimulation: recovered ad auction.', { gameId, round });
+    }
+    if (!roundSnap.exists || !roundSnap.data().chefPoolGeneratedAt) {
+      const pool = generateChefPool(round, config);
+      await roundRef.set({
+        round,
+        chefPool: pool,
+        chefPoolGeneratedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+      logger.info('retryStuckSimulation: recovered chef pool.', { gameId, round });
+    }
+    return { gameId, round, action: 'recover', reason: 'Recovered ad auction and chef pool.', phase };
+  }
+
+  if (phase === 'bid_chef') {
+    if (!roundSnap.exists || !roundSnap.data().chefAuctionResolvedAt) {
+      await resolveAndApplyChefAuction(gameRef, round, config);
+      logger.info('retryStuckSimulation: recovered chef auction.', { gameId, round });
+    }
+    return { gameId, round, action: 'recover', reason: 'Recovered chef auction.', phase };
+  }
+
   const simulationStatus = roundSnap.exists ? (roundSnap.get('simulationStatus') || null) : null;
   const startedTs = roundSnap.exists ? roundSnap.get('simulationStartedAt') : null;
   const simulationStartedAt =
@@ -1916,6 +1965,13 @@ async function runSimulationAndPersist(gameRef, round, config) {
   const roundId = `round_${round}`;
   const roundRef = gameRef.collection('rounds').doc(roundId);
 
+  // RECOVERY-1: idempotency guard — if simulation already complete, skip.
+  const roundSnap = await roundRef.get();
+  if (roundSnap.exists && roundSnap.data().simulationStatus === 'complete') {
+    logger.info('runSimulationAndPersist skipped — already complete.', { gameId: gameRef.id, round });
+    return;
+  }
+
   // -----------------------------------------------------------------------
   // Read phase
   // -----------------------------------------------------------------------
@@ -1994,7 +2050,10 @@ async function runSimulationAndPersist(gameRef, round, config) {
     const ownerDoc = team.memberDocs.find((pd) => pd.id === ownerUid) || team.memberDocs[0];
     const ownerData = (ownerDoc && ownerDoc.data()) || {};
     const ownerDecisionSnap = decisionSnapByUid.get(ownerUid);
-    const missed = !(ownerDecisionSnap && ownerDecisionSnap.exists);
+    // BUG-2 fix: require `submittedAt` (Operations marker) not just doc existence.
+    // Finance-only `submitPrices` creates the doc with `pricesSubmittedAt` but
+    // no `submittedAt`; those teams should be treated as missed submissions.
+    const missed = !(ownerDecisionSnap && ownerDecisionSnap.exists && ownerDecisionSnap.get('submittedAt'));
     const prevMissed = numberOrDefault(ownerData.consecutiveMissedRounds, 0);
     disconnectionMap.set(team.key, {
       consecutiveMissedRounds: missed ? prevMissed + 1 : 0,
@@ -2021,7 +2080,8 @@ async function runSimulationAndPersist(gameRef, round, config) {
     const decisionSnap = decisionSnapByUid.get(operationsUid);
     const financeDecisionSnap =
       decisionSnapByUid.get(financeUid) || decisionSnapByUid.get(operationsUid);
-    const missed = !(decisionSnap && decisionSnap.exists);
+    // BUG-2 fix: require `submittedAt` (Operations marker) not just doc existence.
+    const missed = !(decisionSnap && decisionSnap.exists && decisionSnap.get('submittedAt'));
     const decision = missed ? {} : (decisionSnap.data() || {});
     const financeDecision =
       financeDecisionSnap && financeDecisionSnap.exists
@@ -3606,7 +3666,7 @@ exports.updateTeamName = onCall(CALLABLE_OPTS, async (request) => {
   const auth = request.auth;
   if (!auth) throw new HttpsError('unauthenticated', 'Must be signed in.');
 
-  const gameId   = cleanString(request.data && request.data.gameId);
+  const gameId   = cleanGameId(request.data && request.data.gameId);
   const teamId   = cleanString(request.data && request.data.teamId);
   const name     = cleanString(request.data && request.data.name);
 
@@ -3653,7 +3713,7 @@ exports.setTeamRole = onCall(CALLABLE_OPTS, async (request) => {
   const auth = request.auth;
   if (!auth) throw new HttpsError('unauthenticated', 'Must be signed in.');
 
-  const gameId = cleanString(request.data && request.data.gameId);
+  const gameId = cleanGameId(request.data && request.data.gameId);
   const teamId = cleanString(request.data && request.data.teamId);
   // BE-I13: accept null / "" / "unassigned" as an explicit clear signal.
   // The FE's "× Clear" button sends `role: null`; `cleanString(null)`
@@ -3724,12 +3784,17 @@ exports.setTeamRole = onCall(CALLABLE_OPTS, async (request) => {
 exports.extendPhase = onCall(CALLABLE_OPTS, async (request) => {
   if (isWarmupRequest(request)) return { ok: true, warm: true };
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
-  const { gameId, extraSeconds } = request.data || {};
+  const data = request.data || {};
+  const gameId = cleanGameId(data.gameId);
+  const extraSeconds = data.extraSeconds;
   if (!gameId || typeof extraSeconds !== "number") {
     throw new HttpsError("invalid-argument", "gameId and extraSeconds are required.");
   }
+  if (!Number.isFinite(extraSeconds) || extraSeconds <= 0) {
+    throw new HttpsError("invalid-argument", "extraSeconds must be a positive number.");
+  }
   const cappedExtra = Math.min(extraSeconds, 300);
-  const gameRef = db.collection("games").doc(gameId);
+  const gameRef = gameDoc(gameId);
   const gameSnap = await gameRef.get();
   if (!gameSnap.exists) throw new HttpsError("not-found", "Game not found.");
   const game = gameSnap.data();
@@ -3754,12 +3819,14 @@ exports.extendPhase = onCall(CALLABLE_OPTS, async (request) => {
 exports.purchaseCompetitorInsight = onCall(CALLABLE_OPTS, async (request) => {
   if (isWarmupRequest(request)) return { ok: true, warm: true };
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
-  const { gameId, round } = request.data || {};
+  const data = request.data || {};
+  const gameId = cleanGameId(data.gameId);
+  const round = data.round;
   if (!gameId || typeof round !== "number") {
     throw new HttpsError("invalid-argument", "gameId and round are required.");
   }
   const uid = request.auth.uid;
-  const gameRef = db.collection("games").doc(gameId);
+  const gameRef = gameDoc(gameId);
   const gameSnap = await gameRef.get();
   if (!gameSnap.exists) throw new HttpsError("not-found", "Game not found.");
   const game = gameSnap.data();
@@ -3833,12 +3900,14 @@ exports.purchaseCompetitorInsight = onCall(CALLABLE_OPTS, async (request) => {
 exports.purchaseChefData = onCall(CALLABLE_OPTS, async (request) => {
   if (isWarmupRequest(request)) return { ok: true, warm: true };
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
-  const { gameId, tier } = request.data || {};
+  const data = request.data || {};
+  const gameId = cleanGameId(data.gameId);
+  const tier = data.tier;
   if (!gameId || (tier !== 1 && tier !== 2)) {
     throw new HttpsError("invalid-argument", "gameId and tier (1 or 2) are required.");
   }
   const uid = request.auth.uid;
-  const gameRef = db.collection("games").doc(gameId);
+  const gameRef = gameDoc(gameId);
   const gameSnap = await gameRef.get();
   if (!gameSnap.exists) throw new HttpsError("not-found", "Game not found.");
   const game = gameSnap.data();
@@ -4026,6 +4095,234 @@ exports.resetGame = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
 
   return { gameId, phase: 'lobby' };
 });
+
+// ===========================================================================
+// createBotPlayer — inject an AI opponent into a game lobby
+// ===========================================================================
+
+exports.createBotPlayer = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
+  const auth = requireAuth(request, 'Sign in before adding a bot.');
+  const data = request.data || {};
+  const gameId = cleanGameId(data.gameId);
+  const difficulty = ['easy', 'medium', 'hard'].includes(data.difficulty)
+    ? data.difficulty
+    : 'medium';
+  if (!gameId) {
+    throw new HttpsError('invalid-argument', 'gameId is required.');
+  }
+
+  const gameRef = gameDoc(gameId);
+  const gameSnap = await gameRef.get();
+  if (!gameSnap.exists) {
+    throw new HttpsError('not-found', 'Game not found.');
+  }
+  if (
+    gameSnap.get('professorUid') !== auth.uid &&
+    gameSnap.get('professorId') !== auth.uid
+  ) {
+    throw new HttpsError('permission-denied', 'Only the professor can add bots.');
+  }
+  if (gameSnap.get('phase') !== 'lobby') {
+    throw new HttpsError('failed-precondition', 'Bots can only be added during the lobby phase.');
+  }
+
+  const cfgSnap = await gameRef.collection('config').doc('params').get();
+  const config = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
+  const startingBudget = numberOrDefault(
+    config.startingBudget,
+    DEFAULT_GAME_CONFIG.startingBudget,
+  );
+
+  // Generate a synthetic UID for the bot
+  const botUid = `bot_${difficulty}_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+  const botName = `Bot ${difficulty.charAt(0).toUpperCase() + difficulty.slice(1)}`;
+
+  await gameRef.collection('players').doc(botUid).set({
+    uid: botUid,
+    displayName: botName,
+    bakeryName: `${botName}'s Bakery`,
+    role: 'solo',
+    budgetCurrent: startingBudget,
+    cumulativeRevenue: 0,
+    specialtyChefs: [],
+    sousChefCount: 0,
+    consecutiveMissedRounds: 0,
+    disconnected: false,
+    isBot: true,
+    botDifficulty: difficulty,
+    createdAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+
+  // Increment totalPlayers
+  await gameRef.update({
+    totalPlayers: FieldValue.increment(1),
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+
+  // Add to roster
+  await gameRef.collection('roster').doc(botUid).set({
+    uid: botUid,
+    displayName: botName,
+    bakeryName: `${botName}'s Bakery`,
+    joinedAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+
+  logger.info('createBotPlayer ok', { gameId, botUid, difficulty });
+  return { gameId, botUid, difficulty, displayName: botName };
+});
+
+// ===========================================================================
+// onBotPhaseChange — Firestore trigger that invokes bot decisions when
+// the game phase changes. Listens to the game doc; when phase transitions
+// to a decision phase (bid_ad, bid_chef, roster, decide), the trigger
+// reads all bots and submits their decisions via the same callable flow.
+// ===========================================================================
+
+exports.onBotPhaseChange = onDocumentWritten(
+  {
+    document: 'games/{gameId}',
+    concurrency: 1,
+  },
+  async (event) => {
+    const { gameId } = event.params;
+    const after = event.data && event.data.after ? event.data.after.data() : null;
+    const before = event.data && event.data.before ? event.data.before.data() : null;
+    if (!after) return;
+
+    const newPhase = after.phase;
+    const oldPhase = before ? before.phase : null;
+    if (newPhase === oldPhase) return; // no phase change
+
+    const botPhases = ['bid_ad', 'bid_chef', 'roster', 'decide'];
+    const parsed = parsePhase(newPhase, after.currentRound || after.round || 0);
+    if (!botPhases.includes(parsed.phase)) return;
+
+    const gameRef = gameDoc(gameId);
+
+    // Find all bots
+    const playersSnap = await gameRef.collection('players').get();
+    const bots = playersSnap.docs.filter((d) => d.get('isBot') === true);
+    if (bots.length === 0) return;
+
+    const cfgSnap = await gameRef.collection('config').doc('params').get();
+    const config = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
+
+    const round = numberOrDefault(after.currentRound || after.round, 0);
+    const roundRef = gameRef.collection('rounds').doc(`round_${round}`);
+    const roundSnap = await roundRef.get();
+    const roundData = roundSnap.exists ? roundSnap.data() : {};
+
+    // Load opponents (human players) for opponent modeling
+    const opponents = playersSnap.docs
+      .filter((d) => !d.get('isBot'))
+      .map((d) => d.data());
+
+    for (const botDoc of bots) {
+      const botData = botDoc.data();
+      const difficulty = botData.botDifficulty || 'medium';
+
+      const botState = {
+        budgetCurrent: botData.budgetCurrent,
+        specialtyChefs: botData.specialtyChefs || [],
+        chefPool: roundData.chefPool || [],
+      };
+
+      try {
+        const decisions = generateBotDecisions(
+          botState,
+          parsed.phase,
+          config,
+          opponents,
+          difficulty,
+        );
+
+        if (parsed.phase === 'bid_ad') {
+          const bidsRef = botDoc.ref.collection('bids').doc(`round_${round}`);
+          await bidsRef.set({
+            round,
+            ad: decisions.adBids || {},
+            adSubmittedAt: FieldValue.serverTimestamp(),
+          }, { merge: true });
+        }
+
+        if (parsed.phase === 'bid_chef') {
+          const bidsRef = botDoc.ref.collection('bids').doc(`round_${round}`);
+          await bidsRef.set({
+            round,
+            chef: decisions.chefBids || [],
+            chefSubmittedAt: FieldValue.serverTimestamp(),
+          }, { merge: true });
+        }
+
+        if (parsed.phase === 'roster' && decisions.layoffs && decisions.layoffs.length > 0) {
+          for (const chefId of decisions.layoffs) {
+            const remaining = (botData.specialtyChefs || []).filter((c) => c.id !== chefId);
+            await botDoc.ref.update({
+              specialtyChefs: remaining,
+              pendingRosterAction: remaining.length > numberOrDefault(config.specialtyChefCap, 3),
+            });
+          }
+          // Auto-continue from roster if now at or under cap
+          const updatedSnap = await botDoc.ref.get();
+          const updatedChefs = updatedSnap.data().specialtyChefs || [];
+          if (updatedChefs.length <= numberOrDefault(config.specialtyChefCap, 3)) {
+            await botDoc.ref.update({ rosterCompleted: true });
+          }
+        }
+
+        if (parsed.phase === 'decide') {
+          const decisionRef = botDoc.ref.collection('decisions').doc(`round_${round}`);
+          await decisionRef.set({
+            round,
+            menu: decisions.menu || {},
+            quantities: decisions.quantities || {},
+            productPrices: decisions.productPrices || {},
+            sousChefCount: decisions.sousChefCount || 0,
+            sousChefAssignments: decisions.sousChefAssignments || {},
+            staffCounts: decisions.staffCounts || {},
+            maintenanceTasks: decisions.maintenanceTasks || [],
+            submittedAt: FieldValue.serverTimestamp(),
+          }, { merge: true });
+
+          // Also update pendingDecision for FE visibility
+          await botDoc.ref.update({
+            pendingDecision: {
+              submitted: true,
+              submittedAt: Timestamp.now(),
+              round,
+              menu: decisions.menu || {},
+              quantities: decisions.quantities || {},
+              sousChefCount: decisions.sousChefCount || 0,
+              sousChefAssignments: decisions.sousChefAssignments || {},
+              productPrices: decisions.productPrices || {},
+            },
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+
+          // Write to submittedCount shard
+          await writeUidToSubmittedCountShard(gameRef, `round_${round}`, botDoc.id);
+        }
+
+        logger.info('onBotPhaseChange: bot decision submitted.', {
+          gameId,
+          botId: botDoc.id,
+          phase: parsed.phase,
+          difficulty,
+        });
+      } catch (err) {
+        logger.error('onBotPhaseChange: bot decision failed.', {
+          gameId,
+          botId: botDoc.id,
+          phase: parsed.phase,
+          error: err && err.message,
+        });
+      }
+    }
+  }
+);
 
 // ---------------------------------------------------------------------------
 // T2.4 — Save / restore from the professor UI

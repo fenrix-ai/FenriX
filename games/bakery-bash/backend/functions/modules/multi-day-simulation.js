@@ -25,8 +25,9 @@
  *
  * Reproducibility: revenue and customer outcomes are reproducible per
  * gameId/round/day via seeded gaussianNoise + the FNV-1a demand multiplier.
- * Curveballs (burglary roll, burgled-day index) still use Math.random()
- * to match the pre-PR behaviour of simulation.js — see runSimulation.
+ * Curveballs (burglary roll, burgled-day index) use a seeded Mulberry32 PRNG
+ * keyed by `${gameId}:${round}:${playerId}:burglary` so retryStuckSimulation
+ * produces bitwise-identical results.
  *
  * Pure: no Firebase deps.
  */
@@ -74,6 +75,29 @@ function dayPreferences(roundPreferences, dayScale) {
 function _num(v) {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Deterministic seeded PRNG (Mulberry32). Used for burglary roll and
+ * burgled-day index so retryStuckSimulation produces bitwise-identical
+ * results. Seed is `${gameId}:${round}:${playerId}:burglary`.
+ */
+function _hashStringToInt(s) {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h >>> 0;
+}
+function _mulberry32(a) {
+  return function () {
+    a |= 0;
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
 function runMonthlySimulation(players, roundPreferences, cfg = config, { gameId = 'game', round = 0 } = {}) {
@@ -222,24 +246,28 @@ function runMonthlySimulation(players, roundPreferences, cfg = config, { gameId 
       cfg,
     );
 
-    // ---- Roll burglary ONCE per month ----
+    // ---- Roll burglary ONCE per month (deterministic via seeded PRNG) ----
     const burglaryThreshold = (cfg && cfg.curveballs && cfg.curveballs.burglaryThreshold) || 40;
     const burglaryChance = (cfg && cfg.curveballs && cfg.curveballs.burglaryChance) || 0.25;
     const burglaryAmount = (cfg && cfg.curveballs && cfg.curveballs.burglaryAmount) || 10000;
     let burglary = false;
     let actualBurglaryAmount = 0;
     let budgetAfterBurglary = budgetAfter;
+    // BUG-3 fix: replace Math.random() with seeded PRNG so
+    // retryStuckSimulation produces bitwise-identical results.
+    const burglarySeed = `${gameId}:${round}:${p.playerId || p.uid || 'unknown'}:burglary`;
+    const burglaryRng = _mulberry32(_hashStringToInt(burglarySeed));
     if (typeof p.cleanliness_pct === 'number'
         && p.cleanliness_pct < burglaryThreshold
-        && Math.random() < burglaryChance) {
+        && burglaryRng() < burglaryChance) {
       burglary = true;
       actualBurglaryAmount = burglaryAmount;
       budgetAfterBurglary = Math.max(0, budgetAfter - burglaryAmount);
     }
     // Pick a random day in the month for the burglary so it doesn't
-    // always hit mid-month. Math.random matches the burglary roll above.
+    // always hit mid-month. Uses the same seeded stream for determinism.
     const burgledDayIndex = (burglary && daily.length > 0)
-      ? Math.floor(Math.random() * daily.length)
+      ? Math.floor(burglaryRng() * daily.length)
       : -1;
     if (burglary && daily[burgledDayIndex]) {
       daily[burgledDayIndex].burglary = true;
