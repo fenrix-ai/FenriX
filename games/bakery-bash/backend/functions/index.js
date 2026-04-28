@@ -2227,6 +2227,32 @@ async function runSimulationAndPersist(gameRef, round, config) {
               (memberData.pendingDecision && memberData.pendingDecision.staffCounts) || {},
               {},
             ),
+          // P1 (2026-04-27): surface decision inputs so the student CSV can
+          // emit them. Without these the frontend CSV is outcome-only and
+          // students can't fit y ~ X for in-game re-training.
+          productPrices:
+            r.csvRow && typeof r.csvRow === 'object'
+              ? {
+                  croissant: numberOrDefault(r.csvRow.price_croissant, null),
+                  cookie: numberOrDefault(r.csvRow.price_cookie, null),
+                  bagel: numberOrDefault(r.csvRow.price_bagel, null),
+                  sandwich: numberOrDefault(r.csvRow.price_sandwich, null),
+                  coffee: numberOrDefault(r.csvRow.price_coffee, null),
+                  matcha: numberOrDefault(r.csvRow.price_matcha, null),
+                }
+              : null,
+          quantitiesStocked:
+            r.csvRow && typeof r.csvRow === 'object'
+              ? {
+                  croissant: numberOrDefault(r.csvRow.croissant_qty_stocked, 0),
+                  cookie: numberOrDefault(r.csvRow.cookie_qty_stocked, 0),
+                  bagel: numberOrDefault(r.csvRow.bagel_qty_stocked, 0),
+                  sandwich: numberOrDefault(r.csvRow.sandwich_qty_stocked, 0),
+                  coffee: numberOrDefault(r.csvRow.coffee_qty_stocked, 0),
+                  matcha: numberOrDefault(r.csvRow.matcha_qty_stocked, 0),
+                }
+              : null,
+          numProducts: numberOrDefault(r.csvRow && r.csvRow.num_products, 0),
         },
         updatedAt: FieldValue.serverTimestamp(),
       };
