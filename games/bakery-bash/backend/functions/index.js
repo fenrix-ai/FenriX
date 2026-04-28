@@ -86,6 +86,7 @@ const {
 const {
   runSimulation,
 } = require('./modules/simulation');
+const { runMonthlySimulation } = require('./modules/multi-day-simulation');
 
 const {
   buildCsvString,
@@ -2136,7 +2137,14 @@ async function runSimulationAndPersist(gameRef, round, config) {
   // -----------------------------------------------------------------------
   // Pure sim
   // -----------------------------------------------------------------------
-  const results = runSimulation(players, prefs, config, { gameId: gameRef.id, round });
+  // P2 (2026-04-27): use the multi-day wrapper instead of a single
+  // monthly sim. Returns the same monthly aggregate shape as runSimulation
+  // plus a `dailyResults` array (30 daily rows by default). Existing
+  // consumers that read results[i].revenueNet / customerCount / etc. keep
+  // working — those are still the monthly aggregates. Keep `runSimulation`
+  // imported for the few code paths that still need a single-day sim.
+  void runSimulation;
+  const results = runMonthlySimulation(players, prefs, config, { gameId: gameRef.id, round });
 
   // Per-team sim-input budget, keyed by playerId (== team.key). Used below to
   // write budgetBefore alongside budgetAfter on each player round doc, which
@@ -2253,6 +2261,21 @@ async function runSimulationAndPersist(gameRef, round, config) {
                 }
               : null,
           numProducts: numberOrDefault(r.csvRow && r.csvRow.num_products, 0),
+          // P2 (2026-04-27): lightweight per-day summary so the frontend
+          // CSV download can emit one row per day per round. Decision
+          // inputs (constant across the round) are read from the
+          // round-level fields above; daily values just fill in the
+          // outcome columns that vary day to day.
+          dailyBreakdown: Array.isArray(r.dailyResults)
+            ? r.dailyResults.map((d) => ({
+                day: d.day,
+                revenueGross: d.revenueGross,
+                revenueNet: d.revenueNet,
+                customerCount: d.customerCount,
+                aggregateSatisfactionPct: d.aggregateSatisfactionPct,
+                burglary: d.burglary || false,
+              }))
+            : [],
         },
         updatedAt: FieldValue.serverTimestamp(),
       };
@@ -2318,6 +2341,42 @@ async function runSimulationAndPersist(gameRef, round, config) {
       });
 
       opsInBatch += OPS_PER_PLAYER;
+
+      // P2 (2026-04-27): per-day CSV rows for re-training. Each round runs
+      // 30 daily sub-simulations; persist one row per day under
+      // games/{id}/csvRows/{uid}/rounds/{roundId}/days/{dayId}. Decision
+      // inputs are constant across all 30 days (X side); outcomes vary
+      // because of the per-day demand multiplier (Y side).
+      const dailyRows = Array.isArray(r.dailyResults) ? r.dailyResults : [];
+      for (const d of dailyRows) {
+        if (opsInBatch + 1 > BATCH_OP_LIMIT) {
+          batches.push(batch);
+          batch = db.batch();
+          opsInBatch = 0;
+        }
+        const dayDocId = `day_${String(d.day).padStart(2, '0')}`;
+        const dayRef = gameRef
+          .collection('csvRows')
+          .doc(memberDoc.id)
+          .collection('rounds')
+          .doc(roundId)
+          .collection('days')
+          .doc(dayDocId);
+        batch.set(dayRef, {
+          round,
+          day: d.day,
+          playerId: memberDoc.id,
+          row: {
+            ...(d.csvRow || r.csvRow || {}),
+            day: d.day,
+            player_id: memberDoc.id,
+            display_name: memberData.displayName || r.displayName,
+            bakery_name: r.bakeryName,
+          },
+          writtenAt: FieldValue.serverTimestamp(),
+        });
+        opsInBatch += 1;
+      }
     }
   }
 
