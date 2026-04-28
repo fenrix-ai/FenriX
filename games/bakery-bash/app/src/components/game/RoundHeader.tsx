@@ -124,7 +124,11 @@ function serializeRow(r: RoundResult, daily?: DailyRow): string {
   // Prefer revenueNet for the headline figure but emit gross alongside so
   // analysts can audit the loan-shark deduction. P2: when emitting a
   // per-day row, use the daily outcome values (which vary across the
-  // round's 30 days because of the demand multiplier).
+  // round's 30 days because of the demand multiplier). Loan-shark figures
+  // (amount_borrowed, interest_charged) are apportioned per day in the
+  // backend wrapper so sum-of-daily === monthly. Falling back to monthly
+  // r.amountBorrowed on every daily row would make column-sums = 30x
+  // the actual loan.
   const revenueNet = daily
     ? daily.revenueNet
     : typeof r.revenueNet === "number"
@@ -133,6 +137,8 @@ function serializeRow(r: RoundResult, daily?: DailyRow): string {
         ? r.revenue
         : undefined;
   const revenueGross = daily ? daily.revenueGross : r.revenueGross;
+  const amountBorrowed = daily ? daily.amountBorrowed ?? 0 : r.amountBorrowed;
+  const interestCharged = daily ? daily.interestCharged ?? 0 : r.interestCharged;
   const customerCount = daily ? daily.customerCount : r.customerCount;
   const customerSatisfaction = daily
     ? daily.aggregateSatisfactionPct
@@ -161,8 +167,8 @@ function serializeRow(r: RoundResult, daily?: DailyRow): string {
     dayValue,
     num(revenueNet),
     num(revenueGross),
-    num(r.amountBorrowed),
-    num(r.interestCharged),
+    num(amountBorrowed),
+    num(interestCharged),
     customerCount,
     customerSatisfaction,
     pct(r.chefSatisfactionScore),

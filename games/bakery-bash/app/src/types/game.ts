@@ -421,6 +421,10 @@ export interface RoundResult {
     day: number;
     revenueGross: number;
     revenueNet: number;
+    /** Apportioned share of the monthly loan-shark borrow (sum across days = monthly). */
+    amountBorrowed?: number;
+    /** Apportioned share of the monthly loan-shark interest (sum across days = monthly). */
+    interestCharged?: number;
     customerCount: number;
     aggregateSatisfactionPct: number;
     burglary: boolean;

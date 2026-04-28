@@ -2265,6 +2265,8 @@ async function runSimulationAndPersist(gameRef, round, config) {
                 day: d.day,
                 revenueGross: d.revenueGross,
                 revenueNet: d.revenueNet,
+                amountBorrowed: d.amountBorrowed || 0,
+                interestCharged: d.interestCharged || 0,
                 customerCount: d.customerCount,
                 aggregateSatisfactionPct: d.aggregateSatisfactionPct,
                 burglary: d.burglary || false,
