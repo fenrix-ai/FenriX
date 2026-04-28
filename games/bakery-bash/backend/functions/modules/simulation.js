@@ -465,6 +465,7 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
     // ONCE per month using monthly aggregates. Otherwise (single-round mode,
     // default) behave as before. Without this flag a 30-day month would charge
     // stock cost 30× and loan-shark interest 30× for any team that overspends.
+    const budgetCurrent = _num(p.budgetCurrent);
     let totalSpent = 0;
     let amountBorrowed = 0;
     let interestCharged = 0;
@@ -481,7 +482,6 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
       const roundCosts = calculateRoundCosts(costDecision, costAuction, config);
       totalSpent = roundCosts.totalSpent;
 
-      const budgetCurrent = _num(p.budgetCurrent);
       const loanResult = calculateLoanShark(totalSpent, budgetCurrent, config);
       amountBorrowed = loanResult.borrowed;
       interestCharged = loanResult.interest;
@@ -493,10 +493,9 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
     // Spec says budgets CAN go negative — do NOT clamp at zero.
     // P2: when skipCostAccounting=true, just pass budgetCurrent through
     // unchanged (the wrapper computes the real budgetAfter once per month).
-    const budgetCurrentForUpdate = _num(p.budgetCurrent);
     const budgetAfter = skipCostAccounting
-      ? budgetCurrentForUpdate
-      : Math.round(updateBudget(budgetCurrentForUpdate, revenueNet, totalSpent));
+      ? budgetCurrent
+      : Math.round(updateBudget(budgetCurrent, revenueNet, totalSpent));
 
     // --- Returning customers earned (for NEXT round) ---
     const returningCustomersEarned = computeReturningCustomersEarned(
