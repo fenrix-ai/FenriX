@@ -4610,9 +4610,8 @@ exports.onBotPhaseChange = onDocumentWritten(
       };
 
       try {
-        // Deterministic seed: at-least-once trigger redelivery must produce
-        // the same bids/decisions instead of re-rolling Math.random.
-        const botSeed = `${gameId}:${round}:${parsed.phase}:${botDoc.id}`;
+        // Deterministic seed for idempotent retries (BUG-3 class fix)
+        const seed = `${gameId}:${round}:${parsed.phase}:${botDoc.id}`;
         const decisions = generateBotDecisions(
           botState,
           parsed.phase,
@@ -4621,7 +4620,7 @@ exports.onBotPhaseChange = onDocumentWritten(
           difficulty,
           personality,
           historicalBids,
-          botSeed,
+          seed,
         );
 
         if (parsed.phase === 'bid_ad') {

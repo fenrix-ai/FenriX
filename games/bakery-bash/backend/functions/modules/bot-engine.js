@@ -451,9 +451,8 @@ function decideAdBids(botState, config, personality, difficulty, rng, opponents,
         }
       }
       if (predictedSecondHighest > 0) {
-        // Bid $1 above predicted second highest, capped at EV. Floor at the
-        // personality target so an aggressive bot does not get pushed below it.
-        bidAmount = Math.min(Math.floor(ev), Math.max(bidAmount, predictedSecondHighest + 1));
+        // Bid $1 above predicted second highest, capped at expected value
+        bidAmount = Math.min(Math.floor(ev), predictedSecondHighest + 1);
       }
     }
 
@@ -506,9 +505,8 @@ function decideChefBids(botState, config, personality, difficulty, rng, opponent
         }
       }
       if (predictedSecondHighest > 0) {
-        // Bid $1 above predicted second highest, capped at EV. Floor at the
-        // personality target so an aggressive bot does not get pushed below it.
-        bidAmount = Math.min(Math.floor(ev), Math.max(bidAmount, predictedSecondHighest + 1));
+        // Bid $1 above predicted second highest, capped at expected value
+        bidAmount = Math.min(Math.floor(ev), predictedSecondHighest + 1);
         bidAmount = Math.max(floor, bidAmount);
       }
     }
@@ -661,13 +659,12 @@ function decideOperations(botState, config, personality, difficulty, rng, oppone
 // Perfect bot shadow simulation (decide phase only)
 // ---------------------------------------------------------------------------
 
-function perfectBotDecide(botState, config, personality, opponents, historicalBids) {
-  const personKey = PERSONALITIES[personality] ? personality : 'balanced';
-  const personCfg = PERSONALITIES[personKey];
+function perfectBotDecide(botState, config, opponents, historicalBids, personality) {
+  const personCfg = PERSONALITIES[personality] || PERSONALITIES.balanced;
   const budget = _num(botState.budgetCurrent);
 
   // Start with personality baseline
-  const baseline = decideOperations(botState, config, personKey, 'perfect', () => 0.5, opponents, historicalBids);
+  const baseline = decideOperations(botState, config, personality, 'perfect', () => 0.5, opponents, historicalBids);
 
   // If no runSimulation available or no opponents, return baseline
   if (typeof runSimulation !== 'function' || !opponents || opponents.length === 0) {
@@ -972,7 +969,7 @@ function generateBotDecisions(
       return decideRoster(botState, config, personKey, diffKey, rng);
     case 'decide': {
       if (diffKey === 'perfect') {
-        return perfectBotDecide(botState, config, personKey, opponents, historicalBids);
+        return perfectBotDecide(botState, config, opponents, historicalBids, personKey);
       }
       return decideOperations(botState, config, personKey, diffKey, rng, opponents, historicalBids);
     }

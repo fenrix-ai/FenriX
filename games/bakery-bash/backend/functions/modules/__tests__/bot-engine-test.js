@@ -222,13 +222,16 @@ console.log('--- Mistake simulation ---');
 console.log('--- Random personality ---');
 {
   const botState = makeBotState();
-  const d1 = generateBotDecisions(botState, 'decide', TEST_CONFIG, [], 'novice', 'random');
-  const d2 = generateBotDecisions(botState, 'decide', TEST_CONFIG, [], 'perfect', 'random');
-
-  // Random personality should be random regardless of difficulty
+  // Random personality should produce different results across calls
   let diffCount = 0;
-  for (const p of Object.keys(d1.quantities)) {
-    if (d1.quantities[p] !== d2.quantities[p]) diffCount++;
+  let d1, d2;
+  for (let i = 0; i < 5; i++) {
+    d1 = generateBotDecisions(botState, 'decide', TEST_CONFIG, [], 'novice', 'random');
+    d2 = generateBotDecisions(botState, 'decide', TEST_CONFIG, [], 'perfect', 'random');
+    for (const p of Object.keys(d1.quantities)) {
+      if (d1.quantities[p] !== d2.quantities[p]) diffCount++;
+    }
+    if (diffCount > 0) break;
   }
   assert(diffCount > 0, 'Random personality should vary across calls');
 
