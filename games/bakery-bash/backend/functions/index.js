@@ -2639,8 +2639,12 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
       const needsPriceGate = teamId
         && _submitDecision_role !== 'solo'
         && _submitDecision_role !== 'finance';
+      // Hoisted so the unlockedProducts read below reuses the snap when the
+      // price-gate block already fetched it (PR #119 contention work).
+      let teamSnap = null;
       if (needsPriceGate) {
-        const [teamSnap, teamPendingSnap] = await Promise.all([
+        let teamPendingSnap;
+        [teamSnap, teamPendingSnap] = await Promise.all([
           transaction.get(gameRef.collection('teams').doc(teamId)),
           transaction.get(teamPendingDocRef(gameRef, teamId)),
         ]);
@@ -2678,7 +2682,9 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
       // default. Missing team doc → starter set, matching joinGame's seed.
       let unlockedProducts = [...DEFAULT_UNLOCKED_PRODUCTS];
       if (teamId) {
-        const teamSnap = await transaction.get(gameRef.collection('teams').doc(teamId));
+        if (!teamSnap) {
+          teamSnap = await transaction.get(gameRef.collection('teams').doc(teamId));
+        }
         if (teamSnap.exists) {
           const raw = teamSnap.get('unlockedProducts');
           if (Array.isArray(raw) && raw.length > 0) {
