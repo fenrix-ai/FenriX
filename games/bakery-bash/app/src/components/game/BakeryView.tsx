@@ -311,9 +311,13 @@ export function BakeryView({ readOnly = false }: BakeryViewProps) {
     try {
       const fn = httpsCallable(functions, "purchaseProduct");
       await fn({ gameId, product });
-      // No local dispatch needed — the team-doc listener picks up the new
-      // unlockedProducts / unlocksPurchased and SET_TEAM_UNLOCKS handles
-      // the state update + any pendingDecision normalization.
+      // The team-doc listener picks up the new unlockedProducts /
+      // unlocksPurchased and SET_TEAM_UNLOCKS handles the menu/quantity
+      // normalization. We additionally tally the spend on the local
+      // receipt so the player sees "Miscellaneous" jump by $unlockCost
+      // — `unlocksPurchased` is game-cumulative, so we can't derive a
+      // round-scoped total from it.
+      dispatch({ type: "ADD_MISC_SPEND", payload: { amount: unlockCost } });
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Could not unlock product.";
@@ -369,7 +373,8 @@ export function BakeryView({ readOnly = false }: BakeryViewProps) {
     config,
   );
   const staffCost = totalStaffCost(pendingDecision.staffCounts, config);
-  const totalCommitted = bakeryCost + staffCost;
+  const miscSpent = pendingDecision.miscSpent;
+  const totalCommitted = bakeryCost + staffCost + miscSpent;
   const unitCost = config?.unitCostPerProduct ?? 1;
   const cannotAfford = budgetCurrent !== null && budgetCurrent < unlockCost;
   const lockedRemaining = STATIONS.flatMap((s) => s.products).filter(
@@ -483,6 +488,10 @@ export function BakeryView({ readOnly = false }: BakeryViewProps) {
         <div className="bakery-view__total-committed-row">
           <span>· Bakery</span>
           <strong>${bakeryCost.toFixed(2)}</strong>
+        </div>
+        <div className="bakery-view__total-committed-row">
+          <span>· Miscellaneous</span>
+          <strong>${miscSpent.toFixed(2)}</strong>
         </div>
       </div>
     </div>

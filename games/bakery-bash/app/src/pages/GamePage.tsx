@@ -636,7 +636,12 @@ export function GamePage() {
       // and the new `staffCounts`/`maintenanceTasks` fields (which the
       // validator ignores until BE-1..BE-10 ship). Shipping both means the
       // backend can cut over with no coordinated frontend release.
-      type SubmitPayload = { gameId: string } & PendingDecisionDraft;
+      // `miscSpent` is a UI-only running tally for the receipt — never sent
+      // to the backend (server-authoritative budget owns the actual ledger).
+      type SubmitPayload = { gameId: string } & Omit<
+        PendingDecisionDraft,
+        "miscSpent"
+      >;
       const submitDecision = httpsCallable<SubmitPayload, SubmitDecisionResponse>(
         functions,
         "submitDecision",
