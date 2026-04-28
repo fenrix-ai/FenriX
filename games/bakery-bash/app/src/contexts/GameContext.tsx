@@ -10,7 +10,6 @@ import {
   PRODUCT_KEYS,
   BASE_MENU,
   AD_TYPES,
-  DEFAULT_MAINTENANCE_BARS,
   DEFAULT_STAFF_COUNTS,
   DEFAULT_UNLOCKED_PRODUCTS,
   totalSousChefs,
@@ -21,8 +20,6 @@ import {
   type GamePhaseString,
   type GameState,
   type LeaderboardRanking,
-  type MaintenanceBars,
-  type MaintenanceTask,
   type PendingAdBidsDraft,
   type PendingChefBidsDraft,
   type PendingDecisionDraft,
@@ -64,7 +61,6 @@ function buildDefaultDecisionDraft(): PendingDecisionDraft {
     sousChefCount: totalSousChefs(DEFAULT_STAFF_COUNTS),
     sousChefAssignments,
     staffCounts: { ...DEFAULT_STAFF_COUNTS },
-    maintenanceTasks: [],
     productPrices,
     miscSpent: 0,
   };
@@ -100,7 +96,6 @@ const initialState: GameState = {
   pricesSubmitted: false,
   adBidsSubmitted: false,
   chefBidsSubmitted: false,
-  maintenanceBars: { ...DEFAULT_MAINTENANCE_BARS },
   budgetCurrent: null,
   // DEC-21 default: solo / all-roles. The real role + team assignment is
   // written by the backend onto the player doc and the team doc; the
@@ -154,7 +149,6 @@ type GameAction =
         quantities?: Partial<Record<ProductKey, number>>;
         sousChefAssignments?: Partial<Record<ProductKey, number>>;
         staffCounts?: Partial<StaffCounts>;
-        maintenanceTasks?: MaintenanceTask[];
         productPrices?: Partial<Record<ProductKey, number>>;
       };
     }
@@ -171,7 +165,6 @@ type GameAction =
   | { type: "SET_PRICES_SUBMITTED"; payload: boolean }
   | { type: "SET_AD_BIDS_SUBMITTED"; payload: boolean }
   | { type: "SET_CHEF_BIDS_SUBMITTED"; payload: boolean }
-  | { type: "SET_MAINTENANCE_BARS"; payload: MaintenanceBars }
   | { type: "SET_BUDGET"; payload: number | null }
   | { type: "SET_LEADERBOARD"; payload: LeaderboardRanking[] }
   | { type: "SET_LEADERBOARD_ERROR"; payload: string | null }
@@ -283,11 +276,6 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       return {
         ...state,
         roundResults: nextResults,
-        // Mirror maintenance bars from the result payload when the backend
-        // includes them. Leave existing state in place if absent.
-        maintenanceBars: result.maintenanceBars
-          ? { ...result.maintenanceBars }
-          : state.maintenanceBars,
       };
     }
 
@@ -331,10 +319,6 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             }
           : state.pendingDecision.sousChefAssignments,
         staffCounts: nextStaffCounts,
-        maintenanceTasks:
-          action.payload.maintenanceTasks !== undefined
-            ? action.payload.maintenanceTasks
-            : state.pendingDecision.maintenanceTasks,
         productPrices: action.payload.productPrices
           ? { ...state.pendingDecision.productPrices, ...action.payload.productPrices }
           : state.pendingDecision.productPrices,
@@ -383,9 +367,6 @@ function gameReducer(state: GameState, action: GameAction): GameState {
 
     case "SET_CHEF_BIDS_SUBMITTED":
       return { ...state, chefBidsSubmitted: action.payload };
-
-    case "SET_MAINTENANCE_BARS":
-      return { ...state, maintenanceBars: { ...action.payload } };
 
     case "SET_BUDGET": {
       if (state.budgetCurrent === action.payload) return state;

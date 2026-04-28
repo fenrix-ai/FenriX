@@ -33,8 +33,6 @@ import {
   roleOwnsPricing,
   totalSousChefs,
   type GameConfigParams,
-  type MaintenanceBars,
-  type MaintenanceTask,
   type PendingDecisionDraft,
   type ProductKey,
   type StaffCounts,
@@ -204,10 +202,9 @@ export function GamePage() {
     return unsubscribe;
   }, [gameId, dispatch]);
 
-  // --- Listener: /games/{gameId}/players/{playerId} — maintenance stats + budget. ---
-  // Cloud Functions write `maintenanceBars` and `budgetCurrent` onto the player
-  // doc as they evolve. We mirror them into GameContext so the sidebar status
-  // bars and budget summary stay live.
+  // --- Listener: /games/{gameId}/players/{playerId} — budget + player state. ---
+  // Cloud Functions write `budgetCurrent` and other player state onto the player
+  // doc as they evolve. We mirror them into GameContext so the budget summary stays live.
   useEffect(() => {
     if (!gameId || !playerId) return;
     const playerRef = doc(db, "games", gameId, "players", playerId);
@@ -216,19 +213,6 @@ export function GamePage() {
       (snap) => {
         if (!snap.exists()) return;
         const data = snap.data() as DocumentData;
-        const bars = data.maintenanceBars as Partial<MaintenanceBars> | undefined;
-        if (
-          bars &&
-          typeof bars.cleanliness === "number" &&
-          typeof bars.ovenHealth === "number" &&
-          typeof bars.slicerHealth === "number" &&
-          typeof bars.espressoHealth === "number"
-        ) {
-          dispatch({
-            type: "SET_MAINTENANCE_BARS",
-            payload: bars as MaintenanceBars,
-          });
-        }
         if (typeof data.budgetCurrent === "number") {
           dispatch({ type: "SET_BUDGET", payload: data.budgetCurrent });
         } else {
@@ -267,7 +251,6 @@ export function GamePage() {
             menu?: Partial<Record<ProductKey, boolean>>;
             quantities?: Partial<Record<ProductKey, number>>;
             staffCounts?: Partial<StaffCounts>;
-            maintenanceTasks?: MaintenanceTask[];
             productPrices?: Partial<Record<ProductKey, number>>;
           } = {};
 
@@ -279,9 +262,6 @@ export function GamePage() {
           }
           if (incomingPending.staffCounts && typeof incomingPending.staffCounts === "object") {
             update.staffCounts = incomingPending.staffCounts as Partial<StaffCounts>;
-          }
-          if (Array.isArray(incomingPending.maintenanceTasks)) {
-            update.maintenanceTasks = incomingPending.maintenanceTasks as MaintenanceTask[];
           }
 
           if (incomingPending.productPrices && typeof incomingPending.productPrices === "object") {
@@ -364,10 +344,6 @@ export function GamePage() {
                     ? lrr.chefWon
                     : lrr.chefWon ?? null,
               },
-              maintenanceBars:
-                lrr.maintenanceBars && typeof lrr.maintenanceBars === "object"
-                  ? lrr.maintenanceBars
-                  : undefined,
               staffCounts:
                 lrr.staffCounts && typeof lrr.staffCounts === "object"
                   ? lrr.staffCounts
@@ -426,7 +402,6 @@ export function GamePage() {
           quantities?: Partial<Record<ProductKey, number>>;
           sousChefAssignments?: Partial<Record<ProductKey, number>>;
           staffCounts?: Partial<StaffCounts>;
-          maintenanceTasks?: MaintenanceTask[];
           productPrices?: Partial<Record<ProductKey, number>>;
         } = {};
         if (incoming.menu && typeof incoming.menu === "object") {
@@ -444,9 +419,6 @@ export function GamePage() {
         }
         if (incoming.staffCounts && typeof incoming.staffCounts === "object") {
           update.staffCounts = incoming.staffCounts as Partial<StaffCounts>;
-        }
-        if (Array.isArray(incoming.maintenanceTasks)) {
-          update.maintenanceTasks = incoming.maintenanceTasks as MaintenanceTask[];
         }
         // T2.2 follow-up: `submitPrices` writes the team-shared price + menu
         // signals here too (productPrices, pricesSubmitted, optional menu
@@ -611,10 +583,6 @@ export function GamePage() {
     setSubmitError(null);
     setSubmitting(true);
     try {
-      // The callable accepts both the legacy `sousChef*` fields (read today)
-      // and the new `staffCounts`/`maintenanceTasks` fields (which the
-      // validator ignores until BE-1..BE-10 ship). Shipping both means the
-      // backend can cut over with no coordinated frontend release.
       // `miscSpent` is a UI-only running tally for the receipt — never sent
       // to the backend (server-authoritative budget owns the actual ledger).
       type SubmitPayload = { gameId: string } & Omit<
@@ -650,15 +618,6 @@ export function GamePage() {
           (sanitizedAssignments.croissant ?? 0) + (sousChefCount - assignedSum);
       }
 
-      // Trim maintenance tasks to the current maintenance-guy count; the
-      // StaffTab keeps them in sync, but a mid-edit state could produce a
-      // mismatch, so clamp defensively.
-      const maintenanceTasks: MaintenanceTask[] =
-        pendingDecision.maintenanceTasks.slice(
-          0,
-          pendingDecision.staffCounts.maintenanceGuys,
-        );
-
       await submitDecision({
         gameId,
         menu: pendingDecision.menu,
@@ -667,7 +626,6 @@ export function GamePage() {
         sousChefAssignments:
           sanitizedAssignments as PendingDecisionDraft["sousChefAssignments"],
         staffCounts: pendingDecision.staffCounts,
-        maintenanceTasks,
         productPrices: pendingDecision.productPrices,
       });
       dispatch({ type: "SET_DECISION_SUBMITTED", payload: true });
