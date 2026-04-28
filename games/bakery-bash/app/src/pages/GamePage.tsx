@@ -414,14 +414,16 @@ export function GamePage() {
   // player doc, so 3+ player teams no longer contend on each other's docs.
   // The submitter's own player doc still gets the same writes (handled by
   // the listener above) — this listener catches what OTHER teammates
-  // submitted. Solo players (no teamId) skip this entirely; their player
-  // doc is the only source of truth.
+  // submitted, gated by `updatedByUid !== playerId` to avoid double-
+  // dispatching the submitter's own write through both listeners. Solo
+  // players (no teamId) skip this entirely; their player doc is the only
+  // source of truth.
   //
   // Only `decisionDraft` needs to flow into context — `pendingBids` is
   // never read by the FE (the AuctionPage tracks bids in local React
   // state and reads the public top-bids aggregate from `rounds/{roundId}`).
   useEffect(() => {
-    if (!gameId || !teamId) return;
+    if (!gameId || !teamId || !playerId) return;
     const teamPendingRef = doc(
       db,
       "games",
@@ -436,6 +438,7 @@ export function GamePage() {
       (snap) => {
         if (!snap.exists()) return;
         const data = snap.data() as DocumentData;
+        if (data.updatedByUid === playerId) return;
         const draft = data.decisionDraft;
         if (!draft || typeof draft !== "object") return;
         const incoming = draft as Record<string, unknown>;
@@ -484,7 +487,7 @@ export function GamePage() {
       },
     );
     return unsubscribe;
-  }, [gameId, teamId, dispatch]);
+  }, [gameId, teamId, playerId, dispatch]);
 
   const parsed = parseGamePhase(phase, currentRound);
   const basePhase = parsed.base;

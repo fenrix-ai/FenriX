@@ -3762,10 +3762,11 @@ exports.resetGame = onCall(CALLABLE_OPTS, async (request) => {
   const gameId = cleanGameId((request.data || {}).gameId);
   const gameRef = gameDoc(gameId);
 
-  const [gameSnap, cfgSnap, playersSnap] = await Promise.all([
+  const [gameSnap, cfgSnap, playersSnap, teamsSnap] = await Promise.all([
     gameRef.get(),
     gameRef.collection('config').doc('params').get(),
     gameRef.collection('players').get(),
+    gameRef.collection('teams').get(),
   ]);
 
   if (!gameSnap.exists) throw new HttpsError('not-found', 'Game not found.');
@@ -3783,12 +3784,16 @@ exports.resetGame = onCall(CALLABLE_OPTS, async (request) => {
   );
 
   const playerDocs = playersSnap.docs;
+  const teamDocs = teamsSnap.docs;
 
   // Wipe game-level + per-player subcollections in parallel. deleteCollectionDocs
   // chunks at BATCH_OP_LIMIT internally. `rounds`, `submissions`, and
   // `submittedCountShards` use recursiveDelete because they own shard
   // subcollections (`topBidsShards`, `shards`) that would otherwise survive
-  // the reset and pollute the next game's aggregate writes.
+  // the reset and pollute the next game's aggregate writes. Each team's
+  // `state` subcollection holds the T2.2 per-team pending draft and must
+  // also be cleared, otherwise stale `decisionDraft.submitted: true` would
+  // surface to teammates' UIs in the next game.
   await Promise.all([
     db.recursiveDelete(gameRef.collection('rounds')),
     db.recursiveDelete(gameRef.collection('submissions')),
@@ -3805,6 +3810,7 @@ exports.resetGame = onCall(CALLABLE_OPTS, async (request) => {
         gameRef.collection('csvRows').doc(pd.id).collection('rounds'),
       ),
     ),
+    ...teamDocs.map((td) => db.recursiveDelete(td.ref.collection('state'))),
   ]);
 
   // Reset the game doc + each player to lobby defaults in chunked batches.
