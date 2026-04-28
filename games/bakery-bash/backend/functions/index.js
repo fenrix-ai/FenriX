@@ -1202,6 +1202,9 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
       cumulativeRevenue: 0,
       specialtyChefs: [],
       sousChefCount: 0,
+      equipmentGrade: 'C',
+      cleanlinessScore: 75,
+      cleanlinessGrade: 'B',
       returningCustomersPending: 0,
       consecutiveMissedRounds: 0,                // BE-19
       disconnected: false,                       // BE-19
@@ -1443,6 +1446,9 @@ exports.createTeam = onCall(CALLABLE_OPTS, async (request) => {
         cumulativeRevenue: 0,
         specialtyChefs: [],
         sousChefCount: 0,
+        equipmentGrade: 'C',
+        cleanlinessScore: 75,
+        cleanlinessGrade: 'B',
         returningCustomersPending: 0,
         consecutiveMissedRounds: 0,
         disconnected: false,
@@ -2318,6 +2324,9 @@ async function runSimulationAndPersist(gameRef, round, config) {
       const playerUpdate = {
         budgetCurrent: r.budgetAfter,
         returningCustomersPending: r.returningCustomersEarned,
+        equipmentGrade: r.equipmentGrade,
+        cleanlinessScore: r.cleanlinessScore,
+        cleanlinessGrade: r.cleanlinessGrade,
         sousChefCount: numberOrDefault(
           (r.csvRow && r.csvRow.sous_chef_count),
           0
@@ -4423,6 +4432,9 @@ exports.createBotPlayer = onCall(CALLABLE_OPTS, async (request) => {
     cumulativeRevenue: 0,
     specialtyChefs: [],
     sousChefCount: 0,
+    equipmentGrade: 'C',
+    cleanlinessScore: 75,
+    cleanlinessGrade: 'B',
     consecutiveMissedRounds: 0,
     disconnected: false,
     isBot: true,
