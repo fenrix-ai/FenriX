@@ -8,15 +8,14 @@
  * Sections:
  *   A. Chef output math (every chef tier × every product, w/ and w/o sous)
  *   B. Sous chef hire cost (escalating curve)
- *   C. Chef satisfaction (cohesion) curve
- *   D. Fill rate → satisfaction tier mapping (boundary + interior values)
- *   E. Foot-traffic modifier (each component independently + summed)
- *   F. Customer allocation (3-team symmetric and asymmetric)
- *   G. Revenue formula (each term traced)
- *   H. Loan shark math (under-budget, exact-budget, over-budget)
- *   I. Ad winner bonus gate (0 stock vs >0 stock)
- *   J. Sellout cap (qtySold == qtyStocked)
- *   K. End-to-end round profit reconciliation
+ *   C. Fill rate → satisfaction tier mapping (boundary + interior values)
+ *   D. Foot-traffic modifier (each component independently + summed)
+ *   E. Customer allocation (3-team symmetric and asymmetric)
+ *   F. Revenue formula (each term traced)
+ *   G. Loan shark math (under-budget, exact-budget, over-budget)
+ *   H. Ad winner bonus gate (0 stock vs >0 stock)
+ *   I. Sellout cap (qtySold == qtyStocked)
+ *   J. End-to-end round profit reconciliation
  *
  * Run:  node scripts/balance/math-verify.js
  * Exit code 0 if all pass, 1 if any fail.
@@ -165,40 +164,10 @@ for (let i = 0; i < expectedMults.length; i++) {
 }
 
 // ---------------------------------------------------------------------------
-// C. Chef satisfaction (cohesion) curve
+// C. Fill rate → satisfaction tier mapping
 // ---------------------------------------------------------------------------
 
-console.log('=== C. Chef satisfaction (cohesion) curve ===');
-
-const threshold = cfg.chefSatisfactionThreshold; // 4
-const decay = cfg.chefSatisfactionDecay;           // 10
-const floor = cfg.chefSatisfactionFloor;           // 35
-
-// At or below threshold: always 100
-for (let n = 0; n <= threshold; n++) {
-  check(`C.${n} cohesion @ ${n} sous`,
-    chefMod.calculateChefSatisfactionScore(n, cfg),
-    100);
-}
-
-// Above threshold: 100 - (n - threshold) × decay
-for (let n = threshold + 1; n <= 9; n++) {
-  const expected = Math.max(floor, 100 - (n - threshold) * decay);
-  check(`C.${n} cohesion @ ${n} sous`,
-    chefMod.calculateChefSatisfactionScore(n, cfg),
-    expected);
-}
-
-// At very high count, floored at 35
-check('C.20 cohesion @ 20 sous (floored)',
-  chefMod.calculateChefSatisfactionScore(20, cfg),
-  floor);
-
-// ---------------------------------------------------------------------------
-// D. Fill rate → satisfaction tier mapping
-// ---------------------------------------------------------------------------
-
-console.log('=== D. Fill rate → satisfaction ===');
+console.log('=== C. Fill rate → satisfaction ===');
 
 // Boundary values
 check('D.1 fillRate 0.0 → 0 (critical)', satMod.fillRateToSatisfactionPct(0.0), 0);
@@ -225,10 +194,10 @@ check('D.8 fillRate 2.0 (saturated excellent) → 100',
   100);
 
 // ---------------------------------------------------------------------------
-// E. Foot-traffic modifier components
+// D. Foot-traffic modifier components
 // ---------------------------------------------------------------------------
 
-console.log('=== E. Foot-traffic modifier ===');
+console.log('=== D. Foot-traffic modifier ===');
 
 // 1. Satisfaction modifier alone (no premium products, 0 products, 0 sous, no ads)
 check('E.1 sat=50 → 0 modifier', satMod.getFootTrafficModifier(50, {}, 0, 0, [], cfg), 0);
@@ -272,10 +241,10 @@ const maxMod = satMod.getFootTrafficModifier(100, allExcellent, 6, 4, ['TV', 'Bi
 check('E.14 max combined modifier', maxMod, 0.40 + 0.36 + 0.15 + 0.17 + 0.25);
 
 // ---------------------------------------------------------------------------
-// F. Customer allocation (3-team symmetric)
+// E. Customer allocation (3-team symmetric)
 // ---------------------------------------------------------------------------
 
-console.log('=== F. Customer allocation ===');
+console.log('=== E. Customer allocation ===');
 
 const playerStates = [
   { playerId: 'p1', perProductSatisfaction: { croissant: { satisfactionPct: 80 } }, returningCustomers: 0,
@@ -319,10 +288,10 @@ check('F.6 low-sat teams get 20% each (a)', a2, 48, 1);
 check('F.7 low-sat teams get 20% each (b)', a3, 48, 1);
 
 // ---------------------------------------------------------------------------
-// G. Revenue formula
+// F. Revenue formula
 // ---------------------------------------------------------------------------
 
-console.log('=== G. Revenue formula ===');
+console.log('=== F. Revenue formula ===');
 
 // All zero inputs
 const r0 = revMod.computeGrossRevenue({
@@ -356,10 +325,10 @@ const rB = revMod.computeGrossRevenue({
 check('G.3 ANTI-EXPLOIT: adSpend has no revenue effect (coeff=0)', rA, rB, 0.001);
 
 // ---------------------------------------------------------------------------
-// H. Loan shark
+// G. Loan shark
 // ---------------------------------------------------------------------------
 
-console.log('=== H. Loan shark ===');
+console.log('=== G. Loan shark ===');
 
 // Under budget: no borrow
 let l = loanMod.calculateLoanShark(50000, 100000, cfg);
@@ -384,10 +353,10 @@ const newBudget = loanMod.updateBudget(100000, 80000, 150000); // budget + reven
 check('H.10 updateBudget', newBudget, 100000 + 80000 - 150000);
 
 // ---------------------------------------------------------------------------
-// I. Ad winner bonus gate (anti-exploit)
+// H. Ad winner bonus gate (anti-exploit)
 // ---------------------------------------------------------------------------
 
-console.log('=== I. Ad winner bonus gate ===');
+console.log('=== H. Ad winner bonus gate ===');
 
 const baseDecision = {
   quantities: { croissant: 0, cookie: 0, bagel: 0, coffee: 0 },
@@ -430,10 +399,10 @@ checkBool('I.3 stock-vs-no-stock delta > TV bonus minus noise',
   Math.abs((stockGross - noStockGross)) >= cfg.adBonuses.TV - 200);
 
 // ---------------------------------------------------------------------------
-// J. Sellout cap
+// I. Sellout cap
 // ---------------------------------------------------------------------------
 
-console.log('=== J. Sellout cap ===');
+console.log('=== I. Sellout cap ===');
 
 // To get sellout cap to actually FIRE (i.e., bring sat down from > 45),
 // pre-cap satisfaction must be > 45. That means fillRate ≥ 0.7 (adequate
@@ -495,10 +464,10 @@ checkEq('J.7 low-sat sellout tier reflects actual sat',
   lr.perProductSatisfaction.croissant.tier, 'critical');
 
 // ---------------------------------------------------------------------------
-// K. End-to-end round profit reconciliation
+// J. End-to-end round profit reconciliation
 // ---------------------------------------------------------------------------
 
-console.log('=== K. End-to-end profit reconciliation ===');
+console.log('=== J. End-to-end profit reconciliation ===');
 
 // Build a known scenario, run simulation, hand-compute every component.
 const reconPlayer = {

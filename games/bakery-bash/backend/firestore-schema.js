@@ -109,12 +109,6 @@ const GameConfigDocument = {
   specialtyChefCap: 3,            // number — max specialty chefs per player
   chefPoolSize: 12,                 // number — exact pool size per round
 
-  // Chef satisfaction decay: satisfaction = max(floor, 100 - max(0, n - threshold) × decay)
-  // where n = consecutive rounds on roster without a win bonus.
-  chefSatisfactionThreshold: 4,   // number — rounds before decay starts
-  chefSatisfactionDecay: 16,      // number — satisfaction lost per round beyond threshold
-  chefSatisfactionFloor: 35,      // number — minimum satisfaction (prevents instant departure)
-
   // ── Loan shark ───────────────────────────────────────────
   // If a player cannot afford total spend, they borrow the shortfall at this rate.
   loanSharkInterestRate: 0.10,    // number — interest charged on borrowed amount (10%)
@@ -268,7 +262,6 @@ const RoundResultDocument = {
 
   // Satisfaction
   aggregateSatisfactionPct: 0,    // number (0–100)
-  chefSatisfactionScore: 0,       // number (0–100)
 
   // Per-product breakdown (keyed by product)
   // Each entry: { fillRate, satisfactionPct, qtySold, sellout: boolean }

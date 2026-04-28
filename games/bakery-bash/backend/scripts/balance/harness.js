@@ -243,7 +243,7 @@ function runOneGame(teams, cfgOverride = {}, seed = null) {
         specialtyChefs: s.specialtyChefs,
         sousChefCount: move.sousChefCount || 0,
         returningCustomersPending: s.returningCustomers,
-        cleanliness_pct: 100, // ignore burglary curveball for balance probes
+        cleanliness_pct: 100, // fixed at full cleanliness for balance probes
         auctionResults: {
           adWins,
           adBidPaid,

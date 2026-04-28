@@ -8,20 +8,19 @@
  *   4. budgetAfter is finite (can be negative)
  *   5. customerCount ∈ ℕ (non-negative integer)
  *   6. aggregateSatisfactionPct ∈ [0, 100]
- *   7. chefSatisfactionScore ∈ [floor, 100] = [35, 100]
- *   8. perProductCustomers values >= 0, sum approximately equals customerCount
- *   9. perProductSatisfaction.satisfactionPct ∈ [0, 100]
- *  10. perProductSatisfaction.tier is one of {critical, poor, adequate, good, excellent}
- *  11. perProductSatisfaction.qtySold <= qtyStocked
- *  12. amountBorrowed = max(0, totalSpent - budgetCurrent), interest = borrowed × rate
- *  13. revenueNet = revenueGross - (borrowed + interest)
- *  14. budgetAfter = budgetCurrent + revenueNet - totalSpent
- *  15. returningCustomersEarned ∈ {0, ⌊customerCount × 0.08⌋, ⌊customerCount × 0.15⌋}
- *  16. adWins is a subset of {TV, Billboard, Radio, Newspaper}
- *  17. chefBidPaid >= 0; chefsWon length <= chef cap (3)
- *  18. selloutAnywhere consistent with per-product sellout flags
- *  19. Total customers across all teams <= sum(demand × max foot-traffic mod) — soft bound
- *  20. No NaN or Infinity in any numeric field
+ *   7. perProductCustomers values >= 0, sum approximately equals customerCount
+ *   8. perProductSatisfaction.satisfactionPct ∈ [0, 100]
+ *   9. perProductSatisfaction.tier is one of {critical, poor, adequate, good, excellent}
+ *  10. perProductSatisfaction.qtySold <= qtyStocked
+ *  11. amountBorrowed = max(0, totalSpent - budgetCurrent), interest = borrowed × rate
+ *  12. revenueNet = revenueGross - (borrowed + interest)
+ *  13. budgetAfter = budgetCurrent + revenueNet - totalSpent
+ *  14. returningCustomersEarned ∈ {0, ⌊customerCount × 0.08⌋, ⌊customerCount × 0.15⌋}
+ *  15. adWins is a subset of {TV, Billboard, Radio, Newspaper}
+ *  16. chefBidPaid >= 0; chefsWon length <= chef cap (3)
+ *  17. selloutAnywhere consistent with per-product sellout flags
+ *  18. Total customers across all teams <= sum(demand × max foot-traffic mod) — soft bound
+ *  19. No NaN or Infinity in any numeric field
  *
  * Run: node scripts/balance/fuzz.js [iterations]
  */
@@ -171,69 +170,65 @@ function checkInvariants(players, results, ctx) {
     // 6. aggregateSatisfactionPct in [0, 100]
     if (!isFiniteNum(r.aggregateSatisfactionPct) || r.aggregateSatisfactionPct < 0 || r.aggregateSatisfactionPct > 100)
       fail('I.06 aggregateSat out of range', { c, val: r.aggregateSatisfactionPct }); else ok();
-    // 7. chefSatisfactionScore in [floor, 100]
-    if (!isFiniteNum(r.chefSatisfactionScore) || r.chefSatisfactionScore < cfg.chefSatisfactionFloor || r.chefSatisfactionScore > 100)
-      fail('I.07 chefSatisfactionScore out of range', { c, val: r.chefSatisfactionScore }); else ok();
-    // 8. perProductCustomers entries are non-negative integers
+    // 7. perProductCustomers entries are non-negative integers
     let perProductTotal = 0;
     for (const [prod, n] of Object.entries(r.perProductCustomers || {})) {
       if (!Number.isInteger(n) || n < 0) {
-        fail('I.08a perProductCustomers invalid', { c, prod, n });
+        fail('I.07a perProductCustomers invalid', { c, prod, n });
       } else {
         ok();
         perProductTotal += n;
       }
     }
-    // 9. perProductSatisfaction.satisfactionPct in [0, 100]
+    // 8. perProductSatisfaction.satisfactionPct in [0, 100]
     for (const [prod, s] of Object.entries(r.perProductSatisfaction || {})) {
       if (!isFiniteNum(s.satisfactionPct) || s.satisfactionPct < 0 || s.satisfactionPct > 100)
-        fail('I.09 perProductSat out of range', { c, prod, val: s.satisfactionPct }); else ok();
-      // 10. tier is valid
+        fail('I.08 perProductSat out of range', { c, prod, val: s.satisfactionPct }); else ok();
+      // 9. tier is valid
       if (!VALID_TIERS.includes(s.tier))
-        fail('I.10 perProductTier invalid', { c, prod, val: s.tier }); else ok();
-      // 11. qtySold <= qtyStocked
+        fail('I.09 perProductTier invalid', { c, prod, val: s.tier }); else ok();
+      // 10. qtySold <= qtyStocked
       if (s.qtySold > s.qtyStocked + 0.001)
-        fail('I.11 qtySold > qtyStocked', { c, prod, qtySold: s.qtySold, qtyStocked: s.qtyStocked }); else ok();
+        fail('I.10 qtySold > qtyStocked', { c, prod, qtySold: s.qtySold, qtyStocked: s.qtyStocked }); else ok();
     }
-    // 12. amountBorrowed = max(0, totalSpent - budgetCurrent)
+    // 11. amountBorrowed = max(0, totalSpent - budgetCurrent)
     const expBorrow = Math.max(0, r.totalSpent - p.budgetCurrent);
     if (Math.abs(r.amountBorrowed - expBorrow) > 0.01)
-      fail('I.12 amountBorrowed wrong', { c, exp: expBorrow, got: r.amountBorrowed }); else ok();
-    // 13. interestCharged = borrowed × rate
+      fail('I.11 amountBorrowed wrong', { c, exp: expBorrow, got: r.amountBorrowed }); else ok();
+    // 12. interestCharged = borrowed × rate
     const expInt = r.amountBorrowed * cfg.loanSharkInterestRate;
     if (Math.abs(r.interestCharged - expInt) > 0.01)
-      fail('I.13 interestCharged wrong', { c, exp: expInt, got: r.interestCharged }); else ok();
-    // 14. revenueNet = revenueGross - (borrowed + interest)
+      fail('I.12 interestCharged wrong', { c, exp: expInt, got: r.interestCharged }); else ok();
+    // 13. revenueNet = revenueGross - (borrowed + interest)
     const expNet = r.revenueGross - (r.amountBorrowed + r.interestCharged);
     if (Math.abs(r.revenueNet - expNet) > 0.01)
-      fail('I.14 revenueNet formula', { c, exp: expNet, got: r.revenueNet }); else ok();
-    // 15. budgetAfter = budgetCurrent + revenueNet - totalSpent (rounded)
-    // (curveball burglary may also subtract — skip if r.burglary)
-    if (!r.burglary) {
+      fail('I.13 revenueNet formula', { c, exp: expNet, got: r.revenueNet }); else ok();
+    // 14. budgetAfter = budgetCurrent + revenueNet - totalSpent (rounded)
+    {
       const expBudget = Math.round(p.budgetCurrent + r.revenueNet - r.totalSpent);
       if (Math.abs(r.budgetAfter - expBudget) > 1)
-        fail('I.15 budgetAfter formula', { c, exp: expBudget, got: r.budgetAfter }); else ok();
+        fail('I.14 budgetAfter formula', { c, exp: expBudget, got: r.budgetAfter }); else ok();
     }
-    // 16. returningCustomersEarned formula
+    // 15. returningCustomersEarned formula
     let expReturn = 0;
     if (r.aggregateSatisfactionPct >= 86) expReturn = Math.round(r.customerCount * 0.15);
     else if (r.aggregateSatisfactionPct >= 66) expReturn = Math.round(r.customerCount * 0.08);
     if (r.returningCustomersEarned !== expReturn)
-      fail('I.16 returning formula', { c, exp: expReturn, got: r.returningCustomersEarned }); else ok();
-    // 17. adWins valid subset
-    if (!Array.isArray(r.adWins)) fail('I.17 adWins not array', { c }); else {
+      fail('I.15 returning formula', { c, exp: expReturn, got: r.returningCustomersEarned }); else ok();
+    // 16. adWins valid subset
+    if (!Array.isArray(r.adWins)) fail('I.16 adWins not array', { c }); else {
       for (const ad of r.adWins) {
-        if (!AD_TYPES.includes(ad)) fail('I.17b adWin invalid type', { c, ad }); else ok();
+        if (!AD_TYPES.includes(ad)) fail('I.16b adWin invalid type', { c, ad }); else ok();
       }
       ok();
     }
-    // 18. chefBidPaid >= 0
+    // 17. chefBidPaid >= 0
     if (!isFiniteNum(r.chefBidPaid) || r.chefBidPaid < 0)
-      fail('I.18 chefBidPaid invalid', { c, val: r.chefBidPaid }); else ok();
-    // 19. NaN/Infinity check on all numeric fields
+      fail('I.17 chefBidPaid invalid', { c, val: r.chefBidPaid }); else ok();
+    // 18. NaN/Infinity check on all numeric fields
     for (const [k, v] of Object.entries(r)) {
       if (typeof v === 'number' && !Number.isFinite(v))
-        fail('I.19 NaN/Infinity field', { c, key: k, val: v });
+        fail('I.18 NaN/Infinity field', { c, key: k, val: v });
     }
     ok();
   }

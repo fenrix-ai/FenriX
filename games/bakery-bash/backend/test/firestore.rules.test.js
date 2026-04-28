@@ -56,7 +56,6 @@ const pendingDecision = {
     baristaSousChefs: 0,
     maintenanceGuys: 0,
   },
-  maintenanceTasks: [],
   productPrices: {
     coffee: 0,
     croissant: 0,

@@ -1,7 +1,12 @@
 /**
- * Equipment tier helpers — mirrors `EQUIPMENT_TIER_COSTS` from backend
- * config.js. Values must stay in sync with the backend; a future task
- * can unify them (G3 note: duplicated here for the Friday timeline).
+ * Frontend mirror of backend equipment ladder constants.
+ *
+ * MUST stay in sync with `backend/functions/modules/config.js`:
+ * - EQUIPMENT_TIER_COSTS  → TIER_COSTS below
+ * - EQUIPMENT_GRADES      → GRADES below
+ *
+ * If you change either, update both. A future task may consolidate these
+ * into a shared `packages/shared/` module so this duplication is unnecessary.
  */
 const TIER_COSTS: Record<string, number> = {
   F: 400, E: 600, D: 800, C: 1000, B: 1200, A: 0,

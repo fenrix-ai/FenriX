@@ -25,7 +25,6 @@ console.log('sousChefBaseCost:  $' + cfg.sousChefBaseCost.toLocaleString());
 console.log('revenueCoeffs:     ', cfg.revenueCoefficients);
 console.log('adBonuses:         ', cfg.adBonuses);
 console.log('adFootTraffic:     ', cfg.adFootTrafficBonuses);
-console.log('chefSatisfaction:  threshold=' + cfg.chefSatisfactionThreshold + ', decay=' + cfg.chefSatisfactionDecay + ', floor=' + cfg.chefSatisfactionFloor);
 
 console.log('\n=== Product catalog ===');
 for (const p of PRODUCT_KEYS) {
@@ -44,11 +43,6 @@ console.log('\n=== Chef bid floors (sousChefBaseCost × multiplier) ===');
 console.log(`  novel:        $${(2 * cfg.sousChefBaseCost).toLocaleString()}`);
 console.log(`  intermediate: $${(3.5 * cfg.sousChefBaseCost).toLocaleString()}`);
 console.log(`  advanced:     $${(5.5 * cfg.sousChefBaseCost).toLocaleString()}`);
-
-console.log('\n=== Chef-satisfaction (cohesion) curve ===');
-for (let n = 0; n <= 10; n++) {
-  console.log(`  ${n} sous chefs → ${chefSystem.calculateChefSatisfactionScore(n, cfg)}%`);
-}
 
 console.log('\n=== Customer pool by round (assuming neutral modifiers) ===');
 for (let r = 1; r <= 5; r++) {
@@ -125,7 +119,6 @@ const r = results[0];
 
 console.log(`  customerCount:                ${r.customerCount}`);
 console.log(`  aggregateSatisfactionPct:     ${r.aggregateSatisfactionPct.toFixed(2)}`);
-console.log(`  chefSatisfactionScore:        ${r.chefSatisfactionScore}`);
 console.log(`  revenueGross:                 $${Math.round(r.revenueGross).toLocaleString()}`);
 console.log(`  revenueNet:                   $${Math.round(r.revenueNet).toLocaleString()}`);
 console.log(`  totalSpent:                   $${Math.round(r.totalSpent).toLocaleString()}`);
