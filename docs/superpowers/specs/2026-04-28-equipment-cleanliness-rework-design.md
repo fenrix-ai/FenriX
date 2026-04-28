@@ -44,31 +44,45 @@ The rework brings the game's revenue formula into alignment with this dataset, m
 - No changes to revenue scale or starting cash ($10,000) — the post-Apr-2026 rescale is the baseline.
 - No backwards-compatibility shim for old `MaintenanceBars` state. Existing in-flight games may need to be reset.
 - No premium/basic product split (considered and dropped — narrow multipliers do the balancing work).
+- **No new bakery-attribute variables added to the game.** The formula in this spec only references state that's already in the game today (or added explicitly by this rework). Dataset columns that have no in-game source are filled with noise — see §4.2.
 
 ---
 
-## 4. Variable Mapping (dataset → game role)
+## 4. Variable Mapping
 
-| Dataset variable | Role | Notes |
+### 4.1 In scope — variables this rework uses
+
+These are either already in the game or added explicitly by this rework.
+
+| Dataset variable | In game? | Role |
 |---|---|---|
-| `bakery_id` | identifier | none |
-| `location_type`, `traffic_zone`, `bakery_size`, `parking_spots` | foot-traffic baseline | meaningful, modest weights |
-| `storefront_color` | **red herring** | random per bakery, unused by formula |
-| `head_chef_tradition` | demand-share booster | matching products get +20% share |
-| `chef_count_total` | capacity | exponent 0.4 in kitchen strength |
-| `chef_skill_level` | capacity | tiered multiplier |
-| `sous_chef_count` | capacity | linear bonus, +10% per chef |
-| `maintenance_staff_count` | drives `cleanliness_grade` drift | $20/round per staff |
-| `owner_years_experience` | **red herring** | unused by formula |
-| `equipment_grade` | capacity AND satisfaction | A–F, narrow multiplier ranges |
-| `cleanliness_grade` | satisfaction multiplier | A–F, drifts per round |
-| `price_*` | demand share + revenue | elasticity curve |
-| `qty_*` | supply ceiling | min() with demand and capacity |
-| `ad_spend_*` | foot traffic | diminishing returns per channel |
-| `primary_ad_channel` | small focus bonus | rewards committing to one channel |
-| `customer_satisfaction` | **output** | feeds next round's foot traffic |
-| `yelp_review_count` | **output, red herring** | generated, never consumed |
-| `total_units_sold` | **output** | for student regression target |
+| `sous_chef_count` | existing | capacity (linear bonus, +10% per chef) |
+| `maintenance_staff_count` | **NEW (this rework)** | drives `cleanliness_grade` drift; $20/round per staff |
+| `equipment_grade` | **NEW (this rework)** | capacity AND satisfaction multipliers; A–F ladder |
+| `cleanliness_grade` | **NEW (this rework)** | satisfaction multiplier; A–F, drifts per round |
+| `price_*` | existing | demand share + revenue |
+| `qty_*` | existing | supply ceiling |
+| `ad_spend_*` | existing (channel rename out of scope) | foot traffic, diminishing returns per channel |
+| `customer_satisfaction` | existing | output; feeds next round's foot traffic via reputation |
+| `total_units_sold` | derivable from existing | output |
+
+### 4.2 Out of scope — dataset columns with no in-game source
+
+These columns appear in the published student dataset but have **no corresponding state in the current game** and are **not added by this rework**. They must be populated when the CSV is generated; choices below.
+
+| Dataset variable | Disposition |
+|---|---|
+| `bakery_id` | already exists as Firestore document ID; no change |
+| `location_type`, `bakery_size`, `traffic_zone`, `parking_spots` | **noise** — filled with random per-bakery values at game creation, persisted on the bakery record, not consumed by any formula |
+| `storefront_color` | **noise** — random per-bakery, never read by formula |
+| `head_chef_tradition` | **noise** — random per-bakery, never read by formula |
+| `chef_count_total` | **noise** — random per-row, never read |
+| `chef_skill_level` | **noise** — random per-row, never read |
+| `owner_years_experience` | **noise** — random per-bakery, never read |
+| `primary_ad_channel` | **noise** — random per-bakery, never read |
+| `yelp_review_count` | **noise** — random per-row, never read by formula (see §10) |
+
+A future rework can promote any of these from noise to signal by adding the corresponding game state and wiring it into the formula. That work is explicitly out of scope here.
 
 ---
 
@@ -76,27 +90,28 @@ The rework brings the game's revenue formula into alignment with this dataset, m
 
 ```
 Step 1 — Customer footfall
-  base = baseline(location_type, traffic_zone, bakery_size, parking_spots)
-  ads  = 1 + Σ ad_lift(channel, spend)  +  primary_channel_focus_bonus
+  base = existing baseline customer pool (unchanged from current game)
+  ads  = 1 + Σ ad_lift(channel, spend)
          // ad_lift: per-channel diminishing-returns curve; e.g.,
          //   lift(spend) = α_channel × log(1 + spend / scale_channel)
-         // primary_channel_focus_bonus: small flat bonus (e.g., +5%) when the
-         //   bakery's spend is concentrated on its primary_ad_channel.
+         // Channels are the existing in-game set (TV, Billboard, Radio,
+         // Newspaper). Channel rename to match the dataset (Instagram /
+         // TikTok) is out of scope.
   rep  = 1 + β × (prior_customer_satisfaction − 50) / 50
          // β around 0.40 — a 50-point swing in prior sat moves traffic ±20%.
+         // Replaces the old getReturningCustomerBonus discrete-tier mechanism.
   customers = base × ads × rep
 
 Step 2 — Per-product demand share
   for each product p:
-    price_factor_p   = price_elasticity(price_p, anchor_price_p)
-    tradition_factor = matches(head_chef_tradition, p) ? 1.20 : 1.00
-    popularity_p     = base_share_p × price_factor_p × tradition_factor
-    demand_p         = customers × normalize(popularity_p across menu)
+    price_factor_p = price_elasticity(price_p, anchor_price_p)
+                     // existing fair-price anchors per product
+    popularity_p   = base_share_p × price_factor_p
+    demand_p       = customers × normalize(popularity_p across menu)
 
 Step 3 — Production capacity
-  kitchen_strength = chef_count_total^0.4
-                   × skill_multiplier(chef_skill_level)
-                   × (1 + 0.10 × sous_chef_count)
+  kitchen_strength = (1 + 0.10 × sous_chef_count)
+                   × specialty_chef_multiplier         // existing tier-based
                    × equipment_factor_capacity(equipment_grade)
 
   capacity_p = base_throughput_p × kitchen_strength
@@ -114,12 +129,14 @@ Step 5 — Customer satisfaction (output)
                         × equipment_factor_satisfaction(equipment_grade)
   // Note: prices already affect satisfaction indirectly via Step 2's
   // price_factor (which shapes demand → fill rate → fill_sat).
-  // No explicit "value" or "fairness" multiplier is layered on top.
 
-Step 6 — Yelp (red herring output)
-  Δyelp = γ × (customer_satisfaction − 50) × log(customers + 1)
-  yelp_review_count_next = max(0, yelp_review_count + Δyelp)
-  // Generated and exposed in the dataset; NOT consumed as input anywhere.
+Step 6 — Yelp (PURE NOISE — not derived from any game variable)
+  yelp_review_count = random_uniform_int(YELP_MIN, YELP_MAX)
+  // Sampled fresh per row at CSV-export time. No relationship to satisfaction,
+  // customers, revenue, or any other variable. Yelp is NOT a game variable —
+  // it's only present as a column in the student dataset to teach
+  // correlation-vs-causation: students should find that yelp does not
+  // predict revenue in regression.
 
 Step 7 — Cleanliness drift
   Δ = (maintenance_staff_count × 20) − (customers × 0.20)
@@ -260,7 +277,7 @@ Sits between the 1st sous chef ($10) and 4th sous chef ($30). 2 staff = $40/roun
 - Delete `maintenanceBars` from `GameState`.
 - Delete `MaintenanceTask` enum and `maintenanceTasks` from `PendingDecisionDraft`.
 - Delete StatusTab and any UI that displays the four bars.
-- Remove burglary's dependency on cleanlinessPct (or rewire it to read `cleanliness_grade` ≤ E if we want to preserve the curveball).
+- **Delete the burglary curveball entirely.** Cleanliness's only consequence is now the satisfaction multiplier in Step 5. Remove `burglaryThreshold`, `burglaryChance`, and `burglaryAmount` from config; remove the burglary code path from `runSimulation`.
 
 ### 8.3 Existing satisfaction code
 
@@ -291,7 +308,8 @@ Sits between the 1st sous chef ($10) and 4th sous chef ($30). 2 staff = $40/roun
 | `equipmentGrade` | letter | snapshot at end of round |
 | `cleanlinessGrade` | letter | snapshot at end of round |
 | `cleanlinessScore` | number | for engine debugging; not necessarily exposed to player |
-| `yelpReviewCount` | number | red herring output |
+
+Yelp is **not** added to round result — it is sampled fresh at CSV-export time and never persisted in the simulation.
 
 ### 9.3 CSV export columns
 
@@ -299,33 +317,38 @@ The CSV columns must match the published student-dataset schema exactly. Confirm
 
 ---
 
-## 10. Yelp Mechanics (red herring detail)
+## 10. Yelp Mechanics (pure noise)
 
-Even though yelp is unused as an input, the formula that generates it should look plausible so students see meaningful correlation in regressions:
+Yelp is **not a game variable.** It is generated as random noise purely for the CSV export so the dataset column is populated. It has zero relationship to any other variable in the game.
 
 ```
-γ = 0.05  // tunable
-
-Δyelp = γ × (customer_satisfaction − 50) × log(customers + 1)
-yelp_review_count_next = max(0, yelp_review_count + Δyelp)
+yelp_review_count = random_uniform_int(YELP_MIN, YELP_MAX)
+// Recommended range: YELP_MIN = 0, YELP_MAX = 500.
 ```
 
-This means yelp grows when satisfaction is high and customer volume is high, and erodes when satisfaction is below 50. The expected pedagogical outcome: students will find that yelp correlates with revenue (because satisfaction does), but a careful analysis will show yelp doesn't *cause* revenue — it's purely downstream of satisfaction. Good lesson in correlation vs. causation.
+The value is sampled fresh per CSV row. There is no persistence round-over-round, no derivation from satisfaction or traffic, and no read of `yelp_review_count` anywhere in `runSimulation`, `customer-allocation`, satisfaction, revenue, or any other simulation code path.
 
-**Important:** the yelp value must be persisted round-over-round so it accumulates, but no read of `yelp_review_count` should appear anywhere in `runSimulation`, `customer-allocation`, `getFootTrafficModifier`, or any successor function.
+**Pedagogical purpose:** students who run regressions on this dataset will find that yelp does not predict revenue (because it is noise). This teaches that not every variable in a dataset is signal — a useful lesson in correlation vs. causation and feature selection.
 
 ---
 
-## 11. Open Implementation Questions
+## 11. Resolved Decisions
 
-These need answers before writing the implementation plan:
+The questions raised during design have been answered:
 
-1. **Bakery starting grade variance.** Should equipment_grade vary across bakeries at game creation (e.g., random in {C, D, B} weighted toward C), or are all bakeries identical at start? Assumption for now: all start at C, with variance only via upgrades.
-2. **Ad channel reconciliation.** The dataset has Instagram/TikTok; the code has TV. The Step 1 `ad_lift` formula assumes the dataset's channels. Whoever implements should confirm whether ad channel rename is in or out of scope.
-3. **Burglary curveball.** Currently triggered by old cleanliness < 40. Either (a) rewire to trigger when `cleanliness_grade` is E or F, or (b) drop the curveball entirely. Recommendation: rewire — the curveball is harmless and gives Maintenance a third consequence.
-4. **Existing in-flight games.** No backwards compat planned. Confirm there are no production games currently running that this would break.
-5. **Specialty chef bidding.** Out of scope per non-goals, but it intersects with capacity. Implementer should keep specialty chef effects as a separate multiplier on `kitchen_strength`.
-6. **Default values for new decisions.** Maintenance staff defaults to ? (recommendation: 2, the comfort-line value, so passive players naturally hold steady). Equipment upgrade defaults to "no upgrade."
+1. **Bakery starting grade variance:** All bakeries start at **C**. No randomization at game creation. Variance comes only from in-game upgrades.
+2. **Burglary curveball:** **Dropped entirely** (see §8.2). Cleanliness's only consequence is the satisfaction multiplier.
+3. **Default maintenance staff count:** **2** (the comfort-line value at typical traffic — passive players naturally hold steady).
+4. **Default equipment upgrade decision:** "no upgrade" (must be explicitly purchased each round).
+5. **Yelp generation:** Pure random noise, no formula derivation (see §10).
+
+## 11.1 Remaining Implementation Notes
+
+These are not blocking but should be kept in mind during implementation:
+
+- **Ad channel reconciliation.** Dataset has Instagram/TikTok; code has TV. Out of scope for this rework but the CSV-export step will need to map game channels to dataset channel names somehow (or the rename happens in a future rework).
+- **Existing in-flight games.** No backwards-compat shim. If production games are running, they'll break and need to be reset. Confirm before deploying.
+- **Specialty chef bidding.** Out of scope, but Step 3 keeps `specialty_chef_multiplier` as a placeholder for the existing tier-based multiplier.
 
 ---
 
@@ -336,10 +359,11 @@ These need answers before writing the implementation plan:
 - `games/bakery-bash/backend/functions/modules/satisfaction.js` — Step 5 rewrite (multipliers).
 - `games/bakery-bash/backend/functions/modules/chef-system.js` — strip out chef-sat math, simplify to `kitchen_strength`.
 - `games/bakery-bash/backend/functions/modules/revenue.js` — top-level pipeline orchestration.
-- `games/bakery-bash/backend/functions/modules/simulation.js` — wire cleanliness drift, equipment upgrade application.
+- `games/bakery-bash/backend/functions/modules/simulation.js` — wire cleanliness drift, equipment upgrade application; remove burglary code path.
 - `games/bakery-bash/app/src/components/game/tabs/StatusTab.tsx` — remove maintenance bars; add equipment grade and cleanliness grade.
 - `games/bakery-bash/app/src/pages/phases/DecidePhase.tsx` (or equivalent) — add maintenance-staff and equipment-upgrade controls.
-- `games/bakery-bash/backend/test/*` — update affected tests; add equipment/cleanliness coverage.
+- CSV export module (location TBD) — add yelp noise sampler at export time, drop any maintenance-bar columns, add equipment/cleanliness grade columns.
+- `games/bakery-bash/backend/test/*` — update affected tests; add equipment/cleanliness coverage; remove burglary tests.
 - `games/bakery-bash/backend/scripts/balance/*` — update strategies and harness to exercise the new mechanics.
 
 ---
@@ -350,6 +374,7 @@ These need answers before writing the implementation plan:
 - The CSV export matches the published student-dataset schema (column order and types).
 - Cleanliness drift produces the predicted per-round behavior (verified by a scripted test at typical traffic levels).
 - Equipment upgrades visibly cost cash and bump the grade, one tier per round, with the multipliers applied next round.
-- Yelp is computed and exported but cannot be found in any input path of any formula.
+- Yelp is randomly sampled at CSV-export time; no read of `yelp_review_count` exists anywhere in `runSimulation`, satisfaction, customer allocation, revenue, or any other simulation code path.
+- Burglary curveball is fully removed from config, simulation code, and tests.
 - Chef satisfaction does not appear anywhere in the type system, simulation, or UI.
 - Multi-round balance harness shows no single strategy with >60% win rate (existing balance bar).
