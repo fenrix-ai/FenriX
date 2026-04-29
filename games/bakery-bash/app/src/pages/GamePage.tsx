@@ -652,6 +652,13 @@ export function GamePage() {
       // a solo player running both sides, do prices before decision so the
       // server's wait-for-finance check passes by the time submitDecision
       // hits the validator.
+      // S-04 (2026-04-29): pass `expectedFromPhase` so a submission that
+      // races an auto-advance gets a precise "stale phase" diagnostic
+      // instead of the generic canSubmitDecision rejection. The backend
+      // gate is unchanged when this field is absent — pre-existing
+      // callers stay compatible.
+      const expectedFromPhase = phase ?? undefined;
+
       if (ownsPricing && !pricesSubmitted) {
         const submitPrices = httpsCallable<
           {
@@ -659,6 +666,7 @@ export function GamePage() {
             productPrices: Record<ProductKey, number>;
             menu: Record<ProductKey, boolean>;
             quantities: Record<ProductKey, number>;
+            expectedFromPhase?: string;
           },
           { submitted: boolean }
         >(functions, "submitPrices");
@@ -667,6 +675,7 @@ export function GamePage() {
           productPrices: pendingDecision.productPrices,
           menu: pendingDecision.menu,
           quantities: pendingDecision.quantities,
+          expectedFromPhase,
         });
         dispatch({ type: "SET_PRICES_SUBMITTED", payload: true });
       }
@@ -675,7 +684,7 @@ export function GamePage() {
         // `miscSpent` is a UI-only running tally for the receipt — never
         // sent to the backend (server-authoritative budget owns the
         // ledger). `quantities` rides on submitPrices now (K-10).
-        type SubmitPayload = { gameId: string } & Omit<
+        type SubmitPayload = { gameId: string; expectedFromPhase?: string } & Omit<
           PendingDecisionDraft,
           "miscSpent" | "quantities"
         >;
@@ -712,6 +721,7 @@ export function GamePage() {
             sanitizedAssignments as PendingDecisionDraft["sousChefAssignments"],
           staffCounts: pendingDecision.staffCounts,
           productPrices: pendingDecision.productPrices,
+          expectedFromPhase,
         });
         dispatch({ type: "SET_DECISION_SUBMITTED", payload: true });
       }
@@ -729,6 +739,7 @@ export function GamePage() {
   }, [
     gameId,
     basePhase,
+    phase,
     role,
     teamRoleAssignments,
     pricesSubmitted,

@@ -2866,6 +2866,20 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
         throw new HttpsError('failed-precondition', 'Decisions can only be submitted during the decide phase.');
       }
 
+      // S-04 (2026-04-29): defense-in-depth phase gate, mirroring submitBids
+      // line ~3293. The FE may pass `expectedFromPhase` so a submission
+      // that landed AFTER an auto-advance (slow client, large network blip)
+      // gets a precise "stale phase" diagnostic instead of the generic
+      // canSubmitDecision rejection. Optional — pre-existing callers that
+      // don't pass it fall back to the canSubmitDecision check above.
+      const expectedFromPhase = cleanString(data.expectedFromPhase);
+      if (expectedFromPhase && game.phase !== expectedFromPhase) {
+        throw new HttpsError(
+          'failed-precondition',
+          `Phase has already advanced. Current: ${game.phase}, expected: ${expectedFromPhase}. Decision rejected as stale.`,
+        );
+      }
+
       const currentRound = numberOrDefault(game.currentRound || game.round, 1);
       const config = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
       const teamId = getPlayerTeamId(pSnap.data());
@@ -3157,6 +3171,17 @@ exports.submitPrices = onCall(CALLABLE_OPTS, async (request) => {
     }
     if (!canSubmitDecision(game.phase)) {
       throw new HttpsError('failed-precondition', 'Prices can only be submitted during the decide phase.');
+    }
+
+    // S-04 (2026-04-29): defense-in-depth phase gate — see matching block
+    // in submitDecision and submitBids. Lets the FE distinguish "stale
+    // phase" from "wrong phase" in error UX.
+    const expectedFromPhase = cleanString(data.expectedFromPhase);
+    if (expectedFromPhase && game.phase !== expectedFromPhase) {
+      throw new HttpsError(
+        'failed-precondition',
+        `Phase has already advanced. Current: ${game.phase}, expected: ${expectedFromPhase}. Prices rejected as stale.`,
+      );
     }
 
     const currentRound = numberOrDefault(game.currentRound || game.round, 1);
