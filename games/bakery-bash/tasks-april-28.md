@@ -705,7 +705,7 @@ Add `max={N}` and a red `--error` class + helper text per the pattern already pr
 
 ---
 
-## [ ] B-07 [P1, S] — "What hurt this round" panel on Results (pairs with M-21)
+## [x] B-07 [P1, S] — "What hurt this round" panel on Results (pairs with M-21) (✅ DONE 2026-04-29 by Claude/Barlava)
 
 **Investigation result.** See M-21 — satisfaction is NOT a literal sum of three components. Satisfaction = fill-rate based; price affects demand separately; cleanliness affects foot traffic separately. The right UX is to surface the three relevant signals as **sibling metrics** rather than as "components of satisfaction."
 

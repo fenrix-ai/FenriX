@@ -3,7 +3,7 @@ import { doc, onSnapshot, type DocumentData } from "firebase/firestore";
 import { useGame } from "../../contexts/GameContext";
 import { LoanSharkCallout } from "../../components/game/LoanSharkCallout";
 import { downloadResultsCsv } from "../../components/game/RoundHeader";
-import type { ProductKey, RoundEvent } from "../../types/game";
+import type { ProductKey, RoundEvent, RoundResult } from "../../types/game";
 import { formatDaysInRound } from "../../lib/dateSystem";
 import { db } from "../../lib/firebase";
 
@@ -103,6 +103,90 @@ function EventCard({
         )}
       </div>
     </article>
+  );
+}
+
+/**
+ * B-07 — sibling-signal panel that answers the player's question
+ * "what hurt my round?". Per the M-21 investigation, the three signals
+ * surfaced here are NOT components of satisfaction — they're separate
+ * model knobs the player controls. We render them as a small list with
+ * red/yellow/green health pills so the worst lever pops out first.
+ */
+type SignalSeverity = "red" | "yellow" | "green";
+
+function severityFromPct(pct: number): SignalSeverity {
+  if (pct < 60) return "red";
+  if (pct < 80) return "yellow";
+  return "green";
+}
+
+function severityFromGrade(grade: string): SignalSeverity {
+  const letter = grade?.[0]?.toUpperCase() ?? "";
+  if (letter === "A" || letter === "B") return "green";
+  if (letter === "C") return "yellow";
+  return "red";
+}
+
+interface WhatHurtPanelProps {
+  signals: NonNullable<RoundResult["roundSignals"]>;
+}
+
+function WhatHurtPanel({ signals }: WhatHurtPanelProps) {
+  // Find the lowest-satisfaction product (the "what to fix first" lever).
+  // `perProductSatisfaction` is a Partial<Record<ProductKey, number>> —
+  // products that weren't on the menu won't appear, so we only sort
+  // entries that actually have a numeric satisfaction value.
+  const perProduct = signals.perProductSatisfaction ?? {};
+  const entries = Object.entries(perProduct).filter(
+    ([, pct]) => typeof pct === "number",
+  ) as Array<[ProductKey, number]>;
+  entries.sort(([, a], [, b]) => a - b);
+  const worst = entries[0] ?? null;
+
+  const fillSeverity: SignalSeverity = worst
+    ? severityFromPct(worst[1])
+    : severityFromPct(signals.satisfactionPct);
+  const priceSeverity = severityFromPct(signals.priceCompetitivenessPct);
+  const cleanSeverity = severityFromGrade(signals.cleanlinessGrade);
+
+  return (
+    <section
+      className="results-phase__signals"
+      aria-label="What hurt this round"
+    >
+      <h3 className="results-phase__section-title">What hurt this round?</h3>
+      <ul className="results-phase__signal-list">
+        <li
+          className={`results-phase__signal-row results-phase__signal-row--${fillSeverity}`}
+        >
+          <span className="results-phase__signal-label">Fill rate</span>
+          <strong className="results-phase__signal-value">
+            {worst
+              ? `${PRODUCT_LABELS[worst[0]]}: ${Math.round(worst[1])}%`
+              : `${Math.round(signals.satisfactionPct)}%`}
+          </strong>
+        </li>
+        <li
+          className={`results-phase__signal-row results-phase__signal-row--${priceSeverity}`}
+        >
+          <span className="results-phase__signal-label">
+            Price competitiveness
+          </span>
+          <strong className="results-phase__signal-value">
+            {Math.round(signals.priceCompetitivenessPct)}%
+          </strong>
+        </li>
+        <li
+          className={`results-phase__signal-row results-phase__signal-row--${cleanSeverity}`}
+        >
+          <span className="results-phase__signal-label">Cleanliness</span>
+          <strong className="results-phase__signal-value">
+            {signals.cleanlinessGrade} ({Math.round(signals.cleanlinessScore)})
+          </strong>
+        </li>
+      </ul>
+    </section>
   );
 }
 
@@ -257,6 +341,19 @@ export function ResultsPhase() {
               <span className="results-phase__metric-label">Satisfaction</span>
             </div>
           </div>
+
+          {/* B-07 (2026-04-29) — "What hurt this round?" panel. Surfaces the
+              three sibling signals from M-21's `roundSignals` so the team
+              can quickly see which lever (fill rate / pricing / cleanliness)
+              cost them. The user's mental model treated these as
+              "components of satisfaction"; the math in `satisfaction.js`
+              keeps them separate (satisfaction = fill-rate only; price
+              affects demand; cleanliness affects foot traffic). The panel
+              renders them as siblings with red/yellow/green health colors
+              so a player can instantly see the worst lever. */}
+          {latest?.roundSignals && (
+            <WhatHurtPanel signals={latest.roundSignals} />
+          )}
 
           {events.length > 0 && (
             <section
