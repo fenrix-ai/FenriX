@@ -86,3 +86,43 @@ describe('runSimulation skipCostAccounting flag', () => {
     assert.equal(skipped.revenueGross, normal.revenueGross, 'gross revenue independent of cost accounting');
   });
 });
+
+describe('runSimulation equipment upgrade affordability (PR #128)', () => {
+  // Stock cost: 200*3 = $600. Sous chef: $10. Round cost ≈ $610.
+  // Upgrade C→B = $1000. Maintenance @ 10 staff @ $20 = $200.
+  // Budget set so the upgrade fits ONLY if maintenance is ignored.
+  const baseDecision = {
+    menu: { croissant: true, cookie: true, bagel: true },
+    quantities: { croissant: 200, cookie: 200, bagel: 200 },
+    sousChefCount: 1,
+    sousChefAssignments: { croissant: 1 },
+    productPrices: { croissant: 4.75, cookie: 4.0, bagel: 4.5 },
+    equipmentUpgradePurchased: true,
+    staffCounts: { maintenanceGuys: 10 }, // $200 in maintenance
+  };
+  const player = {
+    playerId: 'p_a',
+    displayName: 'p_a',
+    bakeryName: 'p_a',
+    decision: baseDecision,
+    specialtyChefs: [],
+    // $1660: covers round ($610) + upgrade ($1000) + $50 surplus, but
+    // does NOT cover round + maintenance ($810) + upgrade ($1000) = $1810.
+    budgetCurrent: 1660,
+    equipmentGrade: 'C',
+    cleanlinessScore: 75,
+    returningCustomersPending: 0,
+    auctionResults: { adWins: [], adBidPaid: 0, chefsWon: [], chefBidPaid: 0 },
+    priorSubmittedPrices: [],
+  };
+  const prefs = { modifiers: { croissant: 1, cookie: 1, bagel: 1 } };
+
+  it('rejects upgrade when remaining budget cannot cover BOTH maintenance and upgrade', () => {
+    const r = runSimulation([player], prefs, config, { gameId: 'g', round: 1 })[0];
+    assert.equal(r.equipmentGrade, 'C',
+      `upgrade should NOT be approved: budget $1660 covers round + upgrade ($1610) ` +
+      `but not round + maintenance + upgrade ($1810). Got equipmentGrade=${r.equipmentGrade}.`);
+    assert.equal(r.equipmentUpgradeApplied, false,
+      'equipmentUpgradeApplied should be false when maintenance + upgrade exceed budget');
+  });
+});

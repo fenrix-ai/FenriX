@@ -2254,6 +2254,13 @@ async function runSimulationAndPersist(gameRef, round, config) {
       specialtyChefs: Array.isArray(canonicalData.specialtyChefs) ? canonicalData.specialtyChefs : [],
       budgetCurrent: simInputBudget,
       returningCustomersPending: numberOrDefault(canonicalData.returningCustomersPending, 0),
+      // Forward equipment + cleanliness state from the canonical player doc
+      // so the simulation sees the round-end values from the prior round.
+      // Without this, every round resets to defaults regardless of upgrades
+      // or cleanliness drift persisted at the end of the previous round.
+      equipmentGrade: canonicalData.equipmentGrade || 'C',
+      cleanlinessScore: numberOrDefault(canonicalData.cleanlinessScore, 75),
+      cleanlinessGrade: canonicalData.cleanlinessGrade || 'B',
       auctionResults: aggregatedAuction,
       priorSubmittedPrices,
     };
@@ -2774,13 +2781,14 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
       }
 
       // Merge so an existing Finance-written `productPrices` survives.
-      // POST-01 follow-up: persist `staffCounts` on the decision doc so the
-      // simulation (and professor CSV export) can read them.
+      // POST-01 follow-up: `staffCounts` (including the maintenanceGuys
+      // default of 2) is included in `validated` and flows through the
+      // spread — do not re-assign it from raw `data.staffCounts`, which
+      // would discard the validator's defaulting.
       const decisionPatch = {
         round: currentRound,
         submittedAt: FieldValue.serverTimestamp(),
         ...validated,
-        staffCounts: objectOrDefault(data.staffCounts, {}),
       };
       transaction.set(decisionRef, decisionPatch, { merge: true });
 
