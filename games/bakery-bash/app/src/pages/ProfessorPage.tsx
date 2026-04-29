@@ -610,7 +610,11 @@ export function ProfessorPage() {
       Object.fromEntries(
         roster.map((entry) => [
           entry.uid,
-          { displayName: entry.displayName, bakeryName: entry.bakeryName },
+          {
+            displayName: entry.displayName,
+            bakeryName: entry.bakeryName,
+            isBot: entry.isBot === true,
+          },
         ]),
       ),
     [roster],
@@ -1204,6 +1208,11 @@ export function ProfessorPage() {
         const disconnected: { uid: string; name: string }[] = [];
         for (const row of monitorRows) {
           for (const uid of row.memberUids) {
+            // Skip bots — they're server-side simulated and never write
+            // to the presence collection, so the staleness check would
+            // permanently flag them as disconnected. Real students always
+            // ping (see usePresenceHeartbeat).
+            if (rosterByUid[uid]?.isBot) continue;
             const lastSeenMs = presenceByUid[uid];
             const isStale = !lastSeenMs || presenceNow - lastSeenMs > STALE_MS;
             if (isStale) {
