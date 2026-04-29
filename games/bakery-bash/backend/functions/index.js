@@ -1184,15 +1184,22 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
   let playerId = auth.uid;
 
   // P0-2 (2026-04-27): split joinGame into a per-uid transaction (validation
-  // + player + roster + team-auto-create) and post-txn atomic increments
-  // (totalPlayers, memberCount on existing teams). With 70 concurrent joiners,
-  // having `transaction.update(gameRef, { totalPlayers: FieldValue.increment(1) })`
+  // + player + roster + team writes) and a post-txn atomic increment of the
+  // game-level `totalPlayers`. With 70 concurrent joiners, having
+  // `transaction.update(gameRef, { totalPlayers: FieldValue.increment(1) })`
   // inside the transaction body caused 70-way pessimistic write-lock contention
   // on the game doc — 50/70 transactions exhausted retries with
   // `10 ABORTED: Transaction lock timeout`. Moving the increment outside the
   // transaction lets Firestore's server-side atomic counter handle the
   // contention; atomic field ops on a `.update()` outside a transaction don't
   // take a transaction lock, they serialize at the doc level naturally.
+  //
+  // S-04 (2026-04-29): the team-level `memberCount` + `roleAssignments` writes
+  // used to live in the same post-txn block, but that defeated the M-05 team-
+  // size cap under concurrent joins (all racers passed the in-txn `< TEAM_CAP`
+  // check, then all bumped post-txn). They're now back inside the transaction
+  // — TEAM_CAP=3 means at most 3 racers per team, well within transaction-
+  // friendly contention. Only `totalPlayers` stays post-txn.
   //
   // Cap-check correctness: the read of `gSnap.get('totalPlayers')` lags by the
   // number of in-flight joins. For a 20-cap with 25 concurrent joiners, up to
@@ -1363,7 +1370,9 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
     // transaction observes `tSnap.exists = false` against a stale snapshot,
     // tries to `set(teamRef, ...)`, and Firestore aborts with a contention
     // error so the SDK retries; the retry sees `tSnap.exists = true` and
-    // takes the post-txn `team.memberCount` increment path below.
+    // takes the in-txn `transaction.update(teamRef, ...)` path above (the
+    // `if (outcomeTeamExistedAtTxnTime)` branch that bumps memberCount and
+    // registers the joiner's role).
     if (!tSnap.exists) {
       transaction.set(teamRef, {
         name: effectiveBakeryName,
