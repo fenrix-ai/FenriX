@@ -197,7 +197,7 @@ if (current >= 3) {
 
 ---
 
-## [ ] M-08 [P0, S] — Refresh wipes the in-progress decision draft
+## [x] M-08 [P0, S] — Refresh wipes the in-progress decision draft
 
 **Problem.** `GamePage.tsx:243-296` re-hydrates `pendingDecision` only after `submitDecision` writes to Firestore. Local edits in `BakeryView` / `StaffTab` go into the in-memory reducer only. Refresh during decide → starts over.
 
