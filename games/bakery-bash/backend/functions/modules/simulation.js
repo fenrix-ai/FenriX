@@ -376,6 +376,12 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
       footTrafficMultiplier: 1 + footTrafficMod,
       sousChefCount,
       numProductsOffered: pp.offeredProducts.length,
+      // M-02 (2026-04-28): pass specialty chef count through so the
+      // per-product allocator can apply the chef-as-bonus weight
+      // (+25% per chef on top of sat × priceMult).
+      specialtyChefCount: Array.isArray(p.specialtyChefs)
+        ? p.specialtyChefs.length
+        : 0,
     };
   });
 
@@ -489,7 +495,17 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
     // confused playtesters seeing "$527 profit / 0 customers" on the
     // results screen. Zero out the formula's floor in that case so an
     // empty bakery shows as $0 (plus any ad-winner bonus they earned).
-    if (customerCount === 0 && totalProductRevenue === 0) {
+    //
+    // M-02 (2026-04-28): tightened — only zero revenueGross when the team
+    // is truly closed (no products on the menu). Previously this fired
+    // for any team with 0 customers + 0 sales, which doubled as a
+    // "no-specialty-chefs" kill-switch (their satisfaction tanked, they
+    // got rounded to 0 in customer allocation, and this branch then
+    // killed the floor revenue). With the BASE_CHEF_CUSTOMERS floor in
+    // customer-allocation.js a "no-specialty-chefs" team now gets a real
+    // customer count, so this kill-switch only needs to handle the
+    // genuinely closed bakery.
+    if (pp.offeredProducts.length === 0) {
       revenueGross = adWinnerBonus;
     }
 
