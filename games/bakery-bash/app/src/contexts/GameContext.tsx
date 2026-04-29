@@ -258,6 +258,17 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       // transition before the player-doc listener re-hydrates them.
       const nextDecisionDraft = buildDefaultDecisionDraft();
       nextDecisionDraft.productPrices = { ...state.pendingDecision.productPrices };
+      // K-05 (2026-04-29): carry the team's unlocked-product menu toggles
+      // forward into the next round so a product unlocked in round N is
+      // still ON at the start of round N+1. Without this the OPTIONAL_MENU
+      // items snap back to `false` and the player has to re-toggle every
+      // station they bought. `state.unlockedProducts` is the canonical set
+      // (mirrored from the team doc by GamePage's listener); we OR it onto
+      // the BASE_MENU defaults rather than replacing them so a freshly
+      // joining teammate still gets the starter menu.
+      for (const product of state.unlockedProducts) {
+        nextDecisionDraft.menu[product] = true;
+      }
       return {
         ...state,
         currentRound: action.payload,
