@@ -86,6 +86,6 @@ export function isStale(
   staleMs: number = PRESENCE_STALE_MS,
 ): boolean {
   const lastSeen = state.presenceByUid[uid];
-  if (!lastSeen) return true; // never connected this session
+  if (lastSeen === undefined) return false;
   return state.nowMs - lastSeen > staleMs;
 }
