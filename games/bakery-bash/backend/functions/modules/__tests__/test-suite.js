@@ -1229,13 +1229,14 @@ describe('decision-validation.js', () => {
 
   it('validateDecision — valid input', () => {
     const result = validation.validateDecision({
-      menu: { croissant: true, cookie: true, bagel: true, sandwich: true, coffee: false, matcha: false },
-      quantities: { croissant: 30, cookie: 20, bagel: 15, sandwich: 10 },
+      menu: { croissant: true, bagel: true, coffee: true },
+      quantities: { croissant: 30, bagel: 15, coffee: 20 },
       sousChefCount: 3,
-      sousChefAssignments: { croissant: 2, sandwich: 1 },
+      sousChefAssignments: { croissant: 2, coffee: 1 },
     }, 2, cfg);
-    eq(result.numProducts, 4);
+    eq(result.numProducts, 3);
     eq(result.sousChefCount, 3);
+    eq(result.staffCounts.maintenanceGuys, 0);
   });
 
   it('validateDecision — base product can\'t be disabled', () => {
@@ -1246,8 +1247,8 @@ describe('decision-validation.js', () => {
 
   it('validateDecision — sous assignment sum must match count', () => {
     throws(() => validation.validateDecision({
-      menu: { croissant: true, cookie: true, bagel: true },
-      quantities: { croissant: 10, cookie: 10, bagel: 10 },
+      menu: { croissant: true, bagel: true, coffee: true },
+      quantities: { croissant: 10, bagel: 10, coffee: 10 },
       sousChefCount: 3,
       sousChefAssignments: { croissant: 1 },
     }, 1, cfg), /sousChefAssignments sum/);
@@ -1255,7 +1256,7 @@ describe('decision-validation.js', () => {
 
   it('validateDecision — can\'t assign sous to off-menu product', () => {
     throws(() => validation.validateDecision({
-      menu: { croissant: true, cookie: true, bagel: true, sandwich: false },
+      menu: { croissant: true, bagel: true, coffee: true, sandwich: false },
       quantities: {},
       sousChefCount: 1,
       sousChefAssignments: { sandwich: 1 },

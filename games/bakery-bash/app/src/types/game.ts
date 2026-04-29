@@ -754,5 +754,5 @@ export const DEFAULT_STAFF_COUNTS: StaffCounts = {
   bakerySousChefs: 0,
   deliSousChefs: 0,
   baristaSousChefs: 0,
-  maintenanceGuys: 2,
+  maintenanceGuys: 0,
 };
