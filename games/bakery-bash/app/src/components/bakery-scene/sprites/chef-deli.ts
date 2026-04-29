@@ -1,14 +1,20 @@
 import type { SpriteData } from '../sprite-data'
 
-/** Deli station chef — blue apron, matching chef-bakery silhouette. */
+/**
+ * Deli station chef — same uniform as chef-bakery / chef-barista
+ * (K-06, 2026-04-29: standardized to white hat + white shirt + navy
+ * apron across all stations so the sprite reads as a "chef"). Per-
+ * station identity now lives in the scene context, not the apron.
+ */
 export const chefDeli: SpriteData = {
   width: 24,
   height: 40,
   palette: [
-    '#1e1410', '#f2c9a3', '#d29872', '#3d281a', '#f4efe2',
-    '#efe0c0',
-    '#4a7fb5', // 6 apron blue (was white)
-    '#365d8a', // 7 apron blue shadow (was apron shadow)
+    '#1e1410', '#f2c9a3', '#d29872', '#3d281a',
+    '#ffffff', // 4 hat white
+    '#ffffff', // 5 shirt white
+    '#1e3a8a', // 6 apron navy
+    '#172554', // 7 apron navy shadow
     '#6b4428', '#2d1810',
   ],
   // Reuse the same frame grids — palette swap changes apron color only.

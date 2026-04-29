@@ -1,16 +1,22 @@
 import type { SpriteData } from '../sprite-data'
 
-/** Barista station chef — forest-green apron. Chosen to contrast the warm-brown
- * oven cabinet and counter wood so the front-counter character pops visually
- * instead of blending into the millwork. */
+/**
+ * Barista station chef — same uniform as chef-bakery / chef-deli
+ * (K-06, 2026-04-29: standardized to white hat + white shirt + navy
+ * apron across all stations so the sprite reads as a "chef" rather
+ * than a colored blob). The barista's distinct silhouette (positioned
+ * behind the espresso machine in the front counter) keeps the
+ * station readable; the uniform doesn't have to.
+ */
 export const chefBarista: SpriteData = {
   width: 24,
   height: 40,
   palette: [
-    '#1e1410', '#f2c9a3', '#d29872', '#3d281a', '#f4efe2',
-    '#efe0c0',
-    '#3a6b48', // 6 apron green
-    '#234a2e', // 7 apron green shadow
+    '#1e1410', '#f2c9a3', '#d29872', '#3d281a',
+    '#ffffff', // 4 hat white
+    '#ffffff', // 5 shirt white
+    '#1e3a8a', // 6 apron navy
+    '#172554', // 7 apron navy shadow
     '#6b4428', '#2d1810',
   ],
   frames: [

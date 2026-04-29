@@ -528,7 +528,7 @@ Pass `disabled={!roleOwnsX(role, teamRoleAssignments)}` on each input. Add a too
 
 ---
 
-## [ ] K-06 [P1, M] — Sous-chef sprites: white hat, navy apron, white t-shirt
+## [x] K-06 [P1, M] — Sous-chef sprites: white hat, navy apron, white t-shirt (✅ DONE 2026-04-29 by Claude/Kavin-Sofia)
 
 **Problem.** User wants the sous-chef sprites visually distinct as chefs. Current: `chef-bakery.ts:20-33` palette uses cream/white. No navy apron.
 
