@@ -709,7 +709,6 @@ export function GameProvider({ children }: { children: ReactNode }) {
     pendingDecision,
     pendingAdBids,
     pendingChefBids,
-    decisionSubmitted,
   } = state;
   useEffect(() => {
     // Clear on game_over so a reopened tab lands on the landing page instead
@@ -728,13 +727,24 @@ export function GameProvider({ children }: { children: ReactNode }) {
     });
   }, [gameId, playerId, gameCode, role, teamId, phase, currentRound]);
 
-  // M-08: persist the in-progress decide draft on every mutation. Scoped
-  // by (gameId, playerId, round) so a refresh restores only when all three
-  // match. Cleared on game_over and once Operations has submitted (the
-  // reducer reset is mirrored to storage so a refresh post-submit lands
-  // on the post-submit UI, not a stale unsubmitted draft).
+  // M-08: persist the in-progress draft on every mutation. Scoped by
+  // (gameId, playerId, round) so a refresh restores only when all three
+  // match — and SET_ROUND resets all three drafts on round advance, so
+  // cross-round bleed is impossible. Cleared on game_over only.
+  //
+  // Why no `decisionSubmitted` guard: in team mode the team-pending
+  // listener flips `decisionSubmitted=true` for every team member the
+  // moment Operations submits (GamePage.tsx). If we cleared storage on
+  // that flag, Advertising/Finance's `pendingAdBids`/`pendingChefBids`
+  // would never get persisted during the auction phases — a refresh
+  // mid-bid would lose the typed amounts (no Firestore hydration path
+  // exists for `pendingBids`; see GamePage.tsx ~L377 comment). On a
+  // post-submit refresh BakeryView re-renders with the persisted draft,
+  // becomes read-only as soon as the listener re-fires
+  // SET_DECISION_SUBMITTED:true (~100ms), and the draft is cleared on
+  // the next round advance.
   useEffect(() => {
-    if (!gameId || !playerId || phase === "game_over" || decisionSubmitted) {
+    if (!gameId || !playerId || phase === "game_over") {
       writePersistedDraft(null);
       return;
     }
@@ -751,7 +761,6 @@ export function GameProvider({ children }: { children: ReactNode }) {
     playerId,
     currentRound,
     phase,
-    decisionSubmitted,
     pendingDecision,
     pendingAdBids,
     pendingChefBids,
