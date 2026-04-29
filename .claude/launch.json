@@ -21,6 +21,13 @@
       "runtimeArgs": ["run", "dev", "--", "--port", "5174", "--strictPort"],
       "cwd": "games/bakery-bash/app",
       "port": 5174
+    },
+    {
+      "name": "bakery-bash-prod-preview",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "preview", "--", "--port", "4173", "--strictPort"],
+      "cwd": "games/bakery-bash/app",
+      "port": 4173
     }
   ]
 }
