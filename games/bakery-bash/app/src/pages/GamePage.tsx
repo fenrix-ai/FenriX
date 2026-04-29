@@ -666,6 +666,9 @@ export function GamePage() {
       setSubmitError("Prices and quantities can only be submitted during the decide phase.");
       return false;
     }
+    if (pricesSubmitted) {
+      return true;
+    }
     setSubmitError(null);
     setSubmittingPrices(true);
     try {
@@ -697,10 +700,18 @@ export function GamePage() {
     } finally {
       setSubmittingPrices(false);
     }
-  }, [gameId, basePhase, pendingDecision.productPrices, pendingDecision.quantities, pendingDecision.menu, dispatch]);
+  }, [
+    gameId,
+    basePhase,
+    pricesSubmitted,
+    pendingDecision.productPrices,
+    pendingDecision.quantities,
+    pendingDecision.menu,
+    dispatch,
+  ]);
 
   const handleSubmit = useCallback(async () => {
-    if (canSubmitFinance) {
+    if (canSubmitFinance && !pricesSubmitted) {
       const financeOk = await handleSubmitFinance();
       if (!financeOk) return;
     }
@@ -710,6 +721,7 @@ export function GamePage() {
   }, [
     canSubmitFinance,
     canSubmitOperations,
+    pricesSubmitted,
     handleSubmitFinance,
     handleSubmitOperations,
   ]);
@@ -792,7 +804,8 @@ export function GamePage() {
     !gameId ||
     !canSubmitAny ||
     waitingForPrices ||
-    (canSubmitOperations && decisionSubmitted);
+    (canSubmitOperations && decisionSubmitted) ||
+    (!canSubmitOperations && canSubmitFinance && pricesSubmitted);
   const submitLabel = !canSubmitAny
     ? "Your teammate submits"
     : waitingForPrices

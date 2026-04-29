@@ -32,7 +32,8 @@ import {
 } from "../types/game";
 import { DEFAULT_PRICES } from "../lib/pricing";
 
-function buildDefaultDecisionDraft(): PendingDecisionDraft {
+// eslint-disable-next-line react-refresh/only-export-components
+export function buildDefaultDecisionDraft(): PendingDecisionDraft {
   const menu = PRODUCT_KEYS.reduce((acc, p) => {
     acc[p] = BASE_MENU.includes(p);
     return acc;
@@ -87,7 +88,8 @@ const DEFAULT_PENDING_DECISION = buildDefaultDecisionDraft();
 const DEFAULT_PENDING_AD_BIDS = buildDefaultAdBidsDraft();
 const DEFAULT_PENDING_CHEF_BIDS: PendingChefBidsDraft = {};
 
-const initialState: GameState = {
+// eslint-disable-next-line react-refresh/only-export-components
+export const initialState: GameState = {
   gameId: null,
   playerId: null,
   gameCode: null,
@@ -198,7 +200,8 @@ type GameAction =
     }
   | { type: "RESET" };
 
-function gameReducer(state: GameState, action: GameAction): GameState {
+// eslint-disable-next-line react-refresh/only-export-components
+export function gameReducer(state: GameState, action: GameAction): GameState {
   switch (action.type) {
     case "JOIN_GAME":
       // Start from initialState so all round/phase/draft state is clean.

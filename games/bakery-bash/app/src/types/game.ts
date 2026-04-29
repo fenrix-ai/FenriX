@@ -539,12 +539,11 @@ function teamRoleIsVacant(
 }
 
 /**
- * Phase-owning role mapping per DEC-21. `solo` always passes. The
- * optional `teamRoleAssignments` argument (FE-I15) additionally lets
- * any teammate submit when no one on the team holds the specialist
- * role — covers 2-player teams, cleared roles, and mid-game
- * disconnects. Call sites that don't yet plumb team state through fall
- * back to the strict role-only check.
+ * Back-compat alias for the Operations-owned portion of Decide. The
+ * Apr 28 role split moved pricing + quantities to Finance, but older
+ * callsites still ask "who owns decide?" when they really mean staff /
+ * equipment / menu. Keep this delegating to `roleOwnsStaff` until the
+ * remaining naming cleanup lands.
  */
 export function roleOwnsDecide(
   role: PlayerRole,
@@ -552,6 +551,11 @@ export function roleOwnsDecide(
 ): boolean {
   return roleOwnsStaff(role, teamRoleAssignments);
 }
+/**
+ * Operations-owned inputs inside Decide: staff, equipment, and the
+ * remaining non-Finance controls. Mirrors the backend's Operations gate
+ * while preserving the FE-I15 vacancy fallback for missing teammates.
+ */
 export function roleOwnsStaff(
   role: PlayerRole,
   teamRoleAssignments?: Record<string, PlayerRole | null> | null,
