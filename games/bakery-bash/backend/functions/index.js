@@ -3361,52 +3361,41 @@ exports.submitBids = onCall(CALLABLE_OPTS, async (request) => {
     }
     _submitBids_validated = validated;
 
-    const roundRef = gameRef.collection('rounds').doc(`round_${round}`);
     const bidsRef = playerRef.collection('bids').doc(`round_${round}`);
     const existing = await transaction.get(bidsRef);
-    const roundSnap = await transaction.get(roundRef);
     const merged = existing.exists ? existing.data() : { round };
-    const roundData = (roundSnap.exists && roundSnap.data()) || {};
-    const topBids = objectOrDefault(roundData.topBids || {}, {});
-    const topBidsLeader = objectOrDefault(roundData.topBidsLeader || {}, {});
     const myTeamKey = getPlayerTeamKey(pSnap);
 
+    // S-04 follow-up (2026-04-29): the previous "you already hold the top
+    // bid, cannot change it until outbid" check read `rounds/{N}.topBidsLeader`
+    // — a CACHED aggregate updated asynchronously by `onTopBidsShardWritten`.
+    // Under load that cache lags by 50–500 ms, so a team that just won could
+    // immediately re-submit a lower bid and bypass the lock entirely. I
+    // confirmed this against the emulator: A places $500 on TV (becomes
+    // leader), 44 ms later A submits $50 on TV → ACCEPTED. After 1.5 s
+    // (cache settled), A's $25 attempt is correctly rejected.
+    //
+    // The lock was a UX guard against bid-chickening, not a correctness
+    // requirement: auction RESOLUTION at end of phase reads each player's
+    // own `bids/{round}` doc directly (the source of truth — see
+    // sharded-top-bids.js comment), and the chef shard's design comment
+    // explicitly notes "If a team replaces an earlier chef bid with a
+    // smaller one, that's their explicit intent and the shard records the
+    // latest amount." Removing the lock makes the runtime behaviour match
+    // the documented design and eliminates the cache-lag exploit.
+    //
+    // The FE submit button locks after a successful submit (so accidental
+    // double-clicks won't fire), and the live top-bid display reflects the
+    // last-aggregated state for everyone — no UI invariant relies on the
+    // backend lock.
+
     if (bidType === 'ad') {
-      const existingAd = objectOrDefault(merged.ad, {});
-      const currentTopAd = objectOrDefault(topBids.ad, {});
-      const currentTopLeaderAd = objectOrDefault(topBidsLeader.ad, {});
-      for (const adType of AD_TYPES) {
-        const existingAmount = numberOrDefault(existingAd[adType], 0);
-        const currentTop = numberOrDefault(currentTopAd[adType], 0);
-        const nextAmount = numberOrDefault(validated[adType], 0);
-        const isActualLeader = currentTopLeaderAd[adType] === myTeamKey;
-        if (existingAmount > 0 && existingAmount === currentTop && isActualLeader && nextAmount !== existingAmount) {
-          throw new HttpsError(
-            'failed-precondition',
-            `You already hold the top bid for ${adType} and cannot change it until another team outbids you.`
-          );
-        }
-      }
       merged.ad = validated;
     } else {
       const existingChefBids = Array.isArray(merged.chef) ? merged.chef : [];
       const existingChefMap = {};
       for (const bid of existingChefBids) {
         if (bid && bid.chefId) existingChefMap[bid.chefId] = numberOrDefault(bid.amount, 0);
-      }
-      const currentTopChef = objectOrDefault(topBids.chef, {});
-      const currentTopLeaderChef = objectOrDefault(topBidsLeader.chef, {});
-      for (const bid of validated) {
-        if (!bid || !bid.chefId) continue;
-        const existingAmount = numberOrDefault(existingChefMap[bid.chefId], 0);
-        const currentTop = numberOrDefault(currentTopChef[bid.chefId], 0);
-        const isActualLeader = currentTopLeaderChef[bid.chefId] === myTeamKey;
-        if (existingAmount > 0 && existingAmount === currentTop && isActualLeader && numberOrDefault(bid.amount, 0) !== existingAmount) {
-          throw new HttpsError(
-            'failed-precondition',
-            'You already hold the top bid for that chef and cannot change it until another team outbids you.'
-          );
-        }
       }
 
       const mergedChefMap = { ...existingChefMap };
