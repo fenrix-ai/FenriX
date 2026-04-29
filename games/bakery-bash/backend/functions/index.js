@@ -1128,29 +1128,42 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
   const rosterRef = gameRef.collection('roster').doc(auth.uid);
 
   // M-06: auto-route when the caller didn't pick a team. Find an existing
-  // team with room (memberCount < TEAM_CAP); if none has room, claim the
-  // lowest unused team-{N} slot. The query is best-effort — the M-05 cap
-  // check inside the transaction is what actually gates the slot, so a
-  // TOCTOU race here just produces a 'team full' error the FE can retry.
+  // team with room (memberCount < TEAM_CAP); if none has room, claim a
+  // free team-{N} slot. The query is best-effort — the M-05 cap check
+  // inside the transaction is what actually gates the slot, so a TOCTOU
+  // race here just produces a 'team full' error the FE can retry.
   //
-  // S-04 follow-up (2026-04-29): the unused-slot search used to cap at
-  // [1..8], which made 70-student sessions impossible via auto-route
-  // (24+ teams of 3 needed). Now scales with playerCap: ceil(playerCap/
-  // TEAM_CAP) covers the worst case where every team is full and the
-  // next joiner needs a fresh slot. The +5 buffer leaves headroom for
-  // teams that happened to finish early and got recycled.
+  // S-04 follow-up #1 (2026-04-29): the unused-slot search used to cap
+  // at [1..8], which made 70-student sessions impossible via auto-route
+  // (24+ teams of 3 needed). Scales with playerCap now: ceil(playerCap/
+  // TEAM_CAP) + 5 buffer for recycled slots.
+  //
+  // S-04 follow-up #2 (2026-04-29): both the "team with room" lookup
+  // and the "fresh slot" allocator pick *randomly* now instead of
+  // deterministically returning the lowest. Under concurrent
+  // auto-route load (e.g. 70 students all clicking through a hypothetical
+  // future no-team-pick UI), the deterministic lowest-N strategy
+  // dogpiled every contender on team-1 — every transaction read the
+  // same team, all but TEAM_CAP retried, and Firestore's optimistic-
+  // concurrency loop blew the lock window. Random selection fans the
+  // contention out across all available targets, so the expected
+  // collisions per slot drop from ~70 (no fan-out) to ~70/N (one
+  // collision per N teams).
   let autoRoutedTeamId = null;
   if (!explicitTeamId && !teamNumber) {
     const teamsCol = gameRef.collection('teams');
+    // Pull up to 30 teams with room — enough to fan out 70 concurrent
+    // joiners without scanning the full collection. We pick one at random
+    // so concurrent callers don't all land on the same team-with-room.
     const candidatesSnap = await teamsCol
       .where('memberCount', '<', TEAM_CAP)
-      .orderBy('memberCount')
-      .limit(1)
+      .limit(30)
       .get();
     if (!candidatesSnap.empty) {
-      autoRoutedTeamId = candidatesSnap.docs[0].id;
+      const idx = Math.floor(Math.random() * candidatesSnap.docs.length);
+      autoRoutedTeamId = candidatesSnap.docs[idx].id;
     } else {
-      // No team has room: claim the lowest unused team-{N} slot. .select()
+      // No team has room: claim a free team-{N} slot at random. .select()
       // with no args returns doc refs only — we just need ids, not bodies.
       const cfgSnap = await gameRef.collection('config').doc('params').get();
       const cfg = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
@@ -1163,12 +1176,15 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
         const m = /^team-(\d+)$/.exec(d.id);
         if (m) used.add(Number(m[1]));
       });
-      let next = 1;
-      while (used.has(next) && next <= maxSlots) next += 1;
-      if (next > maxSlots) {
+      const free = [];
+      for (let n = 1; n <= maxSlots; n++) {
+        if (!used.has(n)) free.push(n);
+      }
+      if (free.length === 0) {
         throw new HttpsError('resource-exhausted',
           'No team has space and no available team slot remains.');
       }
+      const next = free[Math.floor(Math.random() * free.length)];
       autoRoutedTeamId = `team-${next}`;
     }
   }
