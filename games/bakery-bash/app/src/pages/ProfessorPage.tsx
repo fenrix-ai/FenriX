@@ -19,7 +19,6 @@ import { humanizeFunctionError } from "../lib/errors";
 import { parseGamePhase, type BasePhase } from "../types/game";
 import { isDevModeEnabled, setDevMode } from "../lib/devMode";
 import { usePhaseCountdownSeconds } from "../hooks/usePhaseCountdownSeconds";
-import { useStalePresenceTicker } from "../hooks/useStalePresenceTicker";
 
 /**
  * FE-15 — Professor control panel.
@@ -211,15 +210,6 @@ export function ProfessorPage() {
   // (lobby / paused) so we can hide the chip entirely instead of rendering
   // "0:00".
   const phaseCountdownSeconds = usePhaseCountdownSeconds();
-
-  // M-22 → S-04 follow-up (2026-04-29): the staleness ticker used to fan
-  // out from every student tab in `GamePhaseListener`. With 70 student
-  // tabs that was 70 callable invocations per minute, each scanning the
-  // presence collection — wasted reads when only one of them actually
-  // needs to win the idempotent write. Now the prof page is the only
-  // ticker; visibility-aware throttling inside the hook still pauses
-  // ticks when the prof tabs away.
-  useStalePresenceTicker(gameId);
   const formatCountdown = (seconds: number) => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;

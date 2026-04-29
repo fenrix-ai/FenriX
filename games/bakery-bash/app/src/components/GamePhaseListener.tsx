@@ -5,6 +5,7 @@ import { httpsCallable } from "firebase/functions";
 import { useGame, useGameDispatch } from "../contexts/GameContext";
 import { useGameListener } from "../hooks/useGameListener";
 import { usePresenceHeartbeat } from "../hooks/usePresenceHeartbeat";
+import { useStalePresenceTicker } from "../hooks/useStalePresenceTicker";
 import { auth, db, functions } from "../lib/firebase";
 import { parseGamePhase } from "../types/game";
 
@@ -76,10 +77,18 @@ export function GamePhaseListener() {
   // tabs × 1 ping/min = 70 callable invocations per minute, each scanning
   // the presence collection — wasted reads when only one of them
   // accomplishes anything (the callable is idempotent).
-  // Now: only the prof page fires the ticker (see ProfessorPage.tsx).
-  // The prof keeps that tab open during the session per the runbook;
-  // visibility-aware throttling inside the hook still pauses ticks
-  // when the prof briefly tabs away.
+  //
+  // Now: fire only on professor routes (`/professor`, `/professor/leaderboard`,
+  // …). The prof typically keeps that tab focused during a session, so this
+  // covers the staleness-detection window without student-tab fan-out. The
+  // route check (rather than mounting on `ProfessorPage` directly) survives
+  // the prof navigating to the leaderboard subroute mid-session — that
+  // unmounts `ProfessorPage` but `GamePhaseListener` stays mounted.
+  // Visibility-aware throttling inside the hook still pauses ticks when
+  // the prof briefly backgrounds the tab. Passing `null` for non-prof
+  // routes makes the hook a no-op (early-return on null gameId).
+  const isProfessorRoute = location.pathname.startsWith("/professor");
+  useStalePresenceTicker(isProfessorRoute ? gameId : null);
 
   const navigateRef = useRef(navigate);
   const pathnameRef = useRef(location.pathname);
