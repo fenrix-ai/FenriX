@@ -31,6 +31,7 @@ import {
   ownerOfDecide,
   roleOwnsDecide,
   roleOwnsPricing,
+  roleOwnsQuantities,
   totalSousChefs,
   type GameConfigParams,
   type PendingDecisionDraft,
@@ -571,16 +572,22 @@ export function GamePage() {
     } else if (basePhase === "game_over") {
       navigate("/game/conclusion");
     }
-  }, [basePhase, navigate]);
+  }, [gameId, basePhase, navigate]);
 
-  const handleSubmit = useCallback(async () => {
+  const canSubmitOperations = roleOwnsDecide(role, teamRoleAssignments);
+  const canSubmitFinance =
+    roleOwnsPricing(role, teamRoleAssignments) ||
+    roleOwnsQuantities(role, teamRoleAssignments);
+  const ownerLabel = ownerOfDecide();
+
+  const handleSubmitOperations = useCallback(async (): Promise<boolean> => {
     if (!gameId) {
       setSubmitError("Not connected to a game yet.");
-      return;
+      return false;
     }
     if (basePhase !== "decide") {
       setSubmitError("Decisions can only be submitted during the decide phase.");
-      return;
+      return false;
     }
 
     setSubmitError(null);
@@ -588,10 +595,14 @@ export function GamePage() {
     try {
       // `miscSpent` is a UI-only running tally for the receipt — never sent
       // to the backend (server-authoritative budget owns the actual ledger).
-      type SubmitPayload = { gameId: string } & Omit<
-        PendingDecisionDraft,
-        "miscSpent"
-      >;
+      type SubmitPayload = {
+        gameId: string;
+        menu: PendingDecisionDraft["menu"];
+        sousChefCount: number;
+        sousChefAssignments: PendingDecisionDraft["sousChefAssignments"];
+        staffCounts: StaffCounts;
+        equipmentUpgradePurchased?: boolean;
+      };
       const submitDecision = httpsCallable<SubmitPayload, SubmitDecisionResponse>(
         functions,
         "submitDecision",
@@ -624,15 +635,15 @@ export function GamePage() {
       await submitDecision({
         gameId,
         menu: pendingDecision.menu,
-        quantities: pendingDecision.quantities,
         sousChefCount,
         sousChefAssignments:
           sanitizedAssignments as PendingDecisionDraft["sousChefAssignments"],
         staffCounts: pendingDecision.staffCounts,
-        productPrices: pendingDecision.productPrices,
+        equipmentUpgradePurchased: !!pendingDecision.equipmentUpgradePurchased,
       });
       dispatch({ type: "SET_DECISION_SUBMITTED", payload: true });
       // Do NOT dispatch SET_PHASE — the backend phase listener owns transitions.
+      return true;
     } catch (err) {
       setSubmitError(
         humanizeFunctionError(
@@ -640,37 +651,68 @@ export function GamePage() {
           "Could not submit decisions. Please try again.",
         ),
       );
+      return false;
     } finally {
       setSubmitting(false);
     }
   }, [gameId, basePhase, pendingDecision, dispatch]);
 
-  const handleSubmitPrices = useCallback(async () => {
+  const handleSubmitFinance = useCallback(async (): Promise<boolean> => {
     if (!gameId) {
       setSubmitError("Not connected to a game yet.");
-      return;
+      return false;
     }
     if (basePhase !== "decide") {
-      setSubmitError("Prices can only be submitted during the decide phase.");
-      return;
+      setSubmitError("Prices and quantities can only be submitted during the decide phase.");
+      return false;
     }
     setSubmitError(null);
     setSubmittingPrices(true);
     try {
       const callable = httpsCallable<
-        { gameId: string; productPrices: Record<ProductKey, number>; menu: Record<ProductKey, boolean> },
+        {
+          gameId: string;
+          productPrices: Record<ProductKey, number>;
+          quantities: Record<ProductKey, number>;
+          menu: Record<ProductKey, boolean>;
+        },
         { submitted: boolean }
       >(functions, "submitPrices");
-      await callable({ gameId, productPrices: pendingDecision.productPrices, menu: pendingDecision.menu });
+      await callable({
+        gameId,
+        productPrices: pendingDecision.productPrices,
+        quantities: pendingDecision.quantities,
+        menu: pendingDecision.menu,
+      });
       dispatch({ type: "SET_PRICES_SUBMITTED", payload: true });
+      return true;
     } catch (err) {
       setSubmitError(
-        humanizeFunctionError(err, "Could not submit prices. Please try again."),
+        humanizeFunctionError(
+          err,
+          "Could not submit prices and quantities. Please try again.",
+        ),
       );
+      return false;
     } finally {
       setSubmittingPrices(false);
     }
-  }, [gameId, basePhase, pendingDecision.productPrices, dispatch]);
+  }, [gameId, basePhase, pendingDecision.productPrices, pendingDecision.quantities, pendingDecision.menu, dispatch]);
+
+  const handleSubmit = useCallback(async () => {
+    if (canSubmitFinance) {
+      const financeOk = await handleSubmitFinance();
+      if (!financeOk) return;
+    }
+    if (canSubmitOperations) {
+      await handleSubmitOperations();
+    }
+  }, [
+    canSubmitFinance,
+    canSubmitOperations,
+    handleSubmitFinance,
+    handleSubmitOperations,
+  ]);
 
   const isDecisionPhase = basePhase === "decide";
   const isSimulating = basePhase === "simulating";
@@ -683,11 +725,9 @@ export function GamePage() {
   // latch — once we commit to showing the screen, we wait out the timer.
   //
   // Apr 25 V4: tightened from 20_000 → 4_000ms.
-  // V9 (Apr 26): bumped to 10_000ms — playtesters reported the simulate
-  // screen flashing by too quickly to read the bakery animation; 10s
-  // gives the chefs/customers a few clear cycles before we cut to the
-  // results screen, while still being well under the old 20s latch.
-  const SIMULATE_MIN_DISPLAY_MS = 10_000;
+  // Apr 28: backend simulating phase is 25s; hold the frontend animation
+  // close to that window so it no longer snaps straight to results.
+  const SIMULATE_MIN_DISPLAY_MS = 20_000;
   const [simHoldUntilMs, setSimHoldUntilMs] = useState<number | null>(null);
   const [simHoldExpired, setSimHoldExpired] = useState(false);
 
@@ -733,26 +773,39 @@ export function GamePage() {
     );
   }
 
-  // DEC-21 / FE-I15: only the Operations role (or solo) may submit
-  // Decide — unless the team has nobody on operations, in which case
-  // any teammate can submit.
-  const canSubmit = roleOwnsDecide(role, teamRoleAssignments);
-  const ownerLabel = ownerOfDecide();
   // Gate operations on finance price submission. Only applies when someone
   // on the team actually holds the finance role (solo players self-submit).
   const teamHasFinance = Object.values(teamRoleAssignments).includes("finance");
-  const waitingForPrices = canSubmit && role !== "solo" && teamHasFinance && !pricesSubmitted;
+  const waitingForPrices =
+    canSubmitOperations &&
+    !canSubmitFinance &&
+    role !== "solo" &&
+    teamHasFinance &&
+    !pricesSubmitted;
+  const canSubmitAny = canSubmitOperations || canSubmitFinance;
+  const submittedForCurrentRole = canSubmitOperations
+    ? decisionSubmitted
+    : canSubmitFinance && pricesSubmitted;
   const submitDisabled =
-    submitting || decisionSubmitted || !gameId || !canSubmit || waitingForPrices;
-  const submitLabel = !canSubmit
-    ? `Your ${ownerLabel} teammate submits`
+    submitting ||
+    submittingPrices ||
+    !gameId ||
+    !canSubmitAny ||
+    waitingForPrices ||
+    (canSubmitOperations && decisionSubmitted);
+  const submitLabel = !canSubmitAny
+    ? "Your teammate submits"
     : waitingForPrices
-      ? "Waiting for Finance prices…"
-      : submitting
+      ? "Waiting for Finance…"
+      : submitting || submittingPrices
         ? "Submitting…"
-        : decisionSubmitted
+        : canSubmitOperations && decisionSubmitted
           ? "✓ Submitted"
-          : "Submit Decisions";
+          : canSubmitFinance && !canSubmitOperations
+            ? pricesSubmitted
+              ? "✓ Submitted Prices & Quantities"
+              : "Submit Prices & Quantities"
+            : "Submit Decisions";
 
   return (
     <PageShell className="game-page game-page--wide">
@@ -817,43 +870,27 @@ export function GamePage() {
       {/* FE-17 — timer + live submission counter + role-gated submit. */}
       <SubmissionLock
         phase="decide"
-        submitted={decisionSubmitted}
+        submitted={submittedForCurrentRole}
         hint={
-          !canSubmit
-            ? `Your ${ownerLabel} teammate submits this decision.`
+          !canSubmitAny
+            ? `Your ${ownerLabel} or Finance teammate submits this decision.`
             : waitingForPrices
-              ? "Waiting for your Finance teammate to submit prices first."
+              ? "Waiting for your Finance teammate to submit prices and quantities first."
               : undefined
         }
         action={
-          <>
-            {roleOwnsPricing(role, teamRoleAssignments) && (
-              <button
-                className="btn btn--secondary game-page__submit"
-                type="button"
-                onClick={handleSubmitPrices}
-                disabled={submittingPrices || !gameId}
-              >
-                {submittingPrices
-                  ? "Submitting…"
-                  : pricesSubmitted
-                    ? "✓ Update Prices"
-                    : "Submit Prices"}
-              </button>
-            )}
-            <button
-              className="btn btn--primary game-page__submit"
-              onClick={handleSubmit}
-              disabled={submitDisabled}
-              title={
-                !canSubmit
-                  ? `Your ${ownerLabel} teammate submits this decision.`
-                  : undefined
-              }
-            >
-              {submitLabel}
-            </button>
-          </>
+          <button
+            className="btn btn--primary game-page__submit"
+            onClick={handleSubmit}
+            disabled={submitDisabled}
+            title={
+              !canSubmitAny
+                ? `Your ${ownerLabel} or Finance teammate submits this decision.`
+                : undefined
+            }
+          >
+            {submitLabel}
+          </button>
         }
       />
     </PageShell>

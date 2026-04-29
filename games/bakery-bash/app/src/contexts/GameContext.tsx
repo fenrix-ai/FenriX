@@ -67,6 +67,15 @@ function buildDefaultDecisionDraft(): PendingDecisionDraft {
   };
 }
 
+function buildMenuForUnlockedProducts(
+  unlockedProducts: ProductKey[],
+): Record<ProductKey, boolean> {
+  return PRODUCT_KEYS.reduce((acc, p) => {
+    acc[p] = BASE_MENU.includes(p) || unlockedProducts.includes(p);
+    return acc;
+  }, {} as Record<ProductKey, boolean>);
+}
+
 function buildDefaultAdBidsDraft(): PendingAdBidsDraft {
   return AD_TYPES.reduce((acc, ad) => {
     acc[ad] = 0;
@@ -258,6 +267,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       // transition before the player-doc listener re-hydrates them.
       const nextDecisionDraft = buildDefaultDecisionDraft();
       nextDecisionDraft.productPrices = { ...state.pendingDecision.productPrices };
+      nextDecisionDraft.menu = buildMenuForUnlockedProducts(state.unlockedProducts);
       return {
         ...state,
         currentRound: action.payload,
@@ -454,12 +464,12 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       if (sameMembers && state.unlocksPurchased === unlocksPurchased) {
         return state;
       }
-      // Apr 28 2026 — when a product gets unlocked, the player has not yet
-      // toggled it onto their menu. Don't auto-add it; just make the
-      // BakeryView UI render an "Add" affordance instead of "Unlock for $X".
-      // Conversely, if a product slips out of the unlocked set (shouldn't
-      // happen post-purchase, but defensive against admin/reset paths),
-      // remove it from the pending menu and zero its quantity.
+      // Apr 28 2026 — unlocked products are immediately active. This removes
+      // the old "+ Add" step after purchase while still defensively removing
+      // products that somehow slip out of the unlocked set.
+      const newlyUnlocked = unlockedProducts.filter(
+        (p) => !state.unlockedProducts.includes(p),
+      );
       const newlyLocked = (Object.keys(state.pendingDecision.menu) as ProductKey[])
         .filter(
           (p) =>
@@ -467,13 +477,16 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             !BASE_MENU.includes(p) &&
             !unlockedProducts.includes(p),
         );
-      const nextDecision = newlyLocked.length
+      const nextDecision = newlyUnlocked.length || newlyLocked.length
         ? {
             ...state.pendingDecision,
             menu: { ...state.pendingDecision.menu },
             quantities: { ...state.pendingDecision.quantities },
           }
         : state.pendingDecision;
+      for (const p of newlyUnlocked) {
+        nextDecision.menu[p] = true;
+      }
       for (const p of newlyLocked) {
         nextDecision.menu[p] = false;
         nextDecision.quantities[p] = 0;

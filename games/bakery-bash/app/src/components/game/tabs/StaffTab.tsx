@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useGame, useGameDispatch } from "../../../contexts/GameContext";
 import {
+  roleOwnsStaff,
   type StaffCounts,
 } from "../../../types/game";
 import {
@@ -22,6 +23,8 @@ interface StepperProps {
   onDecrement: () => void;
   onIncrement: () => void;
   incrementDisabled?: boolean;
+  controlsDisabled?: boolean;
+  disabledReason?: string;
   /** When true, render the count as a static label instead of a stepper. */
   readOnly?: boolean;
 }
@@ -34,6 +37,8 @@ function RoleStepper({
   onDecrement,
   onIncrement,
   incrementDisabled,
+  controlsDisabled,
+  disabledReason,
   readOnly,
 }: StepperProps) {
   return (
@@ -57,8 +62,9 @@ function RoleStepper({
             type="button"
             className="staff-tab__stepper-btn"
             onClick={onDecrement}
-            disabled={count <= 0}
+            disabled={controlsDisabled || count <= 0}
             aria-label={`Remove one from ${title}`}
+            title={controlsDisabled ? disabledReason : undefined}
           >
             −
           </button>
@@ -67,8 +73,9 @@ function RoleStepper({
             type="button"
             className="staff-tab__stepper-btn"
             onClick={onIncrement}
-            disabled={incrementDisabled}
+            disabled={controlsDisabled || incrementDisabled}
             aria-label={`Add one to ${title}`}
+            title={controlsDisabled ? disabledReason : undefined}
           >
             +
           </button>
@@ -103,15 +110,25 @@ export interface StaffTabProps {
 }
 
 export function StaffTab({ readOnly = false }: StaffTabProps) {
-  const { config, pendingDecision, equipmentGrade, budgetCurrent } = useGame();
+  const {
+    config,
+    pendingDecision,
+    equipmentGrade,
+    budgetCurrent,
+    role,
+    teamRoleAssignments,
+  } = useGame();
   const dispatch = useGameDispatch();
+  const canEditStaff = roleOwnsStaff(role, teamRoleAssignments);
+  const controlsDisabled = readOnly || !canEditStaff;
+  const staffDisabledReason = "Your Operations teammate submits staff and equipment.";
 
   const { sousBase, maintBase } = resolveBaseCosts(config);
 
   const staffCounts = pendingDecision.staffCounts;
 
   const setCount = (role: keyof StaffCounts, next: number) => {
-    if (readOnly) return;
+    if (controlsDisabled) return;
     const clamped = Math.max(0, Math.min(MAX_PER_ROLE, Math.floor(next) || 0));
     const prev = staffCounts[role];
     if (clamped === prev) return;
@@ -135,7 +152,7 @@ export function StaffTab({ readOnly = false }: StaffTabProps) {
   }, [staffCounts, config, equipmentGrade, pendingDecision.equipmentUpgradePurchased]);
 
   return (
-    <div className={`staff-tab${readOnly ? " staff-tab--readonly" : ""}`}>
+    <div className={`staff-tab${readOnly ? " staff-tab--readonly" : ""}${!readOnly && !canEditStaff ? " staff-tab--role-locked" : ""}`}>
       <div className="staff-tab__header">
         <h3 className="sidebar-tab__title">Hire Staff</h3>
         {readOnly && (
@@ -171,6 +188,8 @@ export function StaffTab({ readOnly = false }: StaffTabProps) {
           onIncrement={() =>
             setCount("bakerySousChefs", staffCounts.bakerySousChefs + 1)
           }
+          controlsDisabled={controlsDisabled}
+          disabledReason={staffDisabledReason}
           readOnly={readOnly}
         />
         <RoleStepper
@@ -185,6 +204,8 @@ export function StaffTab({ readOnly = false }: StaffTabProps) {
           onIncrement={() =>
             setCount("deliSousChefs", staffCounts.deliSousChefs + 1)
           }
+          controlsDisabled={controlsDisabled}
+          disabledReason={staffDisabledReason}
           readOnly={readOnly}
         />
         <RoleStepper
@@ -199,6 +220,8 @@ export function StaffTab({ readOnly = false }: StaffTabProps) {
           onIncrement={() =>
             setCount("baristaSousChefs", staffCounts.baristaSousChefs + 1)
           }
+          controlsDisabled={controlsDisabled}
+          disabledReason={staffDisabledReason}
           readOnly={readOnly}
         />
       </div>
@@ -218,6 +241,8 @@ export function StaffTab({ readOnly = false }: StaffTabProps) {
           onIncrement={() =>
             setCount("maintenanceGuys", staffCounts.maintenanceGuys + 1)
           }
+          controlsDisabled={controlsDisabled}
+          disabledReason={staffDisabledReason}
           readOnly={readOnly}
         />
       </div>
@@ -252,7 +277,8 @@ export function StaffTab({ readOnly = false }: StaffTabProps) {
           const canAffordUpgrade = available !== null && available >= upgradeCost;
 
           // Button is disabled when: player can't afford it (and it's not already toggled on)
-          const upgradeButtonDisabled = !canAffordUpgrade && !purchased;
+          const upgradeButtonDisabled =
+            controlsDisabled || (!canAffordUpgrade && !purchased);
 
           return (
             <div className="staff-tab__equipment-row">
@@ -285,7 +311,9 @@ export function StaffTab({ readOnly = false }: StaffTabProps) {
                   disabled={upgradeButtonDisabled}
                   aria-pressed={purchased}
                   title={
-                    upgradeButtonDisabled && available !== null
+                    controlsDisabled
+                      ? staffDisabledReason
+                      : upgradeButtonDisabled && available !== null
                       ? `Need $${upgradeCost.toLocaleString()} but only $${Math.round(available).toLocaleString()} available after other costs`
                       : undefined
                   }

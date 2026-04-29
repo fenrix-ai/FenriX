@@ -5,6 +5,7 @@ import {
   BASE_MENU,
   DEFAULT_PRODUCT_UNLOCK_COST,
   roleOwnsPricing,
+  roleOwnsQuantities,
   type ProductKey,
   type StationId,
 } from "../../types/game";
@@ -126,11 +127,13 @@ interface ProductTileProps {
   unitCost: number;
   onQtyChange: (next: number) => void;
   onPriceChange: (next: number) => void;
-  onToggle: (next: boolean) => void;
   /** FE-9 — lock quantity + menu toggle once the round is submitted. */
   readOnly?: boolean;
   /** POST-01 — disable the price stepper when the viewer is not Finance. */
   priceDisabled: boolean;
+  quantityDisabled: boolean;
+  menuDisabled: boolean;
+  disabledReason?: string;
 }
 function ProductTile({
   product,
@@ -146,9 +149,11 @@ function ProductTile({
   unitCost,
   onQtyChange,
   onPriceChange,
-  onToggle,
   readOnly = false,
   priceDisabled,
+  quantityDisabled,
+  menuDisabled,
+  disabledReason,
 }: ProductTileProps) {
   const d = PRODUCT_DISPLAY[product];
   // Apr 28 2026 — three states for a non-base tile:
@@ -192,8 +197,9 @@ function ProductTile({
                 type="button"
                 className="product-tile__step-btn"
                 onClick={() => onQtyChange(Math.max(0, qty - 1))}
-                disabled={qty <= 0}
+                disabled={quantityDisabled || qty <= 0}
                 aria-label={`Decrease ${d.name}`}
+                title={quantityDisabled ? disabledReason : undefined}
               >
                 −
               </button>
@@ -207,12 +213,16 @@ function ProductTile({
                   onQtyChange(parseInt(e.target.value, 10) || 0)
                 }
                 aria-label={`${d.name} quantity`}
+                disabled={quantityDisabled}
+                title={quantityDisabled ? disabledReason : undefined}
               />
               <button
                 type="button"
                 className="product-tile__step-btn"
                 onClick={() => onQtyChange(qty + 1)}
                 aria-label={`Increase ${d.name}`}
+                disabled={quantityDisabled}
+                title={quantityDisabled ? disabledReason : undefined}
               >
                 +
               </button>
@@ -225,17 +235,6 @@ function ProductTile({
             cfg={PRICE_ZONES[product]}
             disabled={readOnly || priceDisabled}
           />
-          {!isBase && !readOnly && (
-            <button
-              type="button"
-              className="product-tile__remove"
-              onClick={() => onToggle(false)}
-              aria-label={`Remove ${d.name} from menu`}
-              title={`Remove ${d.name} from menu`}
-            >
-              ✕
-            </button>
-          )}
         </div>
       ) : readOnly ? (
         <span className="product-tile__muted">
@@ -246,25 +245,20 @@ function ProductTile({
           type="button"
           className="product-tile__unlock"
           onClick={onUnlock}
-          disabled={unlockPending || cannotAfford}
+          disabled={unlockPending || cannotAfford || menuDisabled}
           title={
-            cannotAfford
-              ? `Need $${unlockCost.toLocaleString()} to unlock ${d.name}.`
-              : `Unlock ${d.name} for your team for $${unlockCost.toLocaleString()}.`
+            menuDisabled
+              ? disabledReason
+              : cannotAfford
+                ? `Need $${unlockCost.toLocaleString()} to unlock ${d.name}.`
+                : `Unlock ${d.name} for your team for $${unlockCost.toLocaleString()}.`
           }
           aria-label={`Unlock ${d.name} for $${unlockCost}`}
         >
           🔒 Unlock — ${unlockCost.toLocaleString()}
         </button>
       ) : (
-        <button
-          type="button"
-          className="product-tile__add"
-          onClick={() => onToggle(true)}
-          disabled={isBase}
-        >
-          + Add
-        </button>
+        <span className="product-tile__muted">Off menu</span>
       )}
     </div>
   );
@@ -298,6 +292,8 @@ export function BakeryView({ readOnly = false }: BakeryViewProps) {
   // FE-I15: let any teammate edit prices when no one on the team
   // holds finance.
   const canEditPrices = roleOwnsPricing(role, teamRoleAssignments);
+  const canEditQuantities = roleOwnsQuantities(role, teamRoleAssignments);
+  const financeDisabledReason = "Your Finance teammate submits quantities and prices.";
 
   // Apr 28 2026 — station-unlock state. Flat cost per unlock, sourced from
   // `/games/{gameId}/config/params.productUnlockCost` with a static fallback
@@ -307,7 +303,7 @@ export function BakeryView({ readOnly = false }: BakeryViewProps) {
   const [unlockError, setUnlockError] = useState<string | null>(null);
 
   const purchaseUnlock = async (product: ProductKey) => {
-    if (!gameId || readOnly || unlockPending) return;
+    if (!gameId || readOnly || unlockPending || !canEditQuantities) return;
     setUnlockPending(product);
     setUnlockError(null);
     try {
@@ -337,7 +333,7 @@ export function BakeryView({ readOnly = false }: BakeryViewProps) {
   };
 
   const setQty = (product: ProductKey, value: number) => {
-    if (readOnly) return;
+    if (readOnly || !canEditQuantities) return;
     const clamped = Math.max(0, Math.floor(value) || 0);
     dispatch({
       type: "UPDATE_PENDING_DECISION",
@@ -349,23 +345,6 @@ export function BakeryView({ readOnly = false }: BakeryViewProps) {
     dispatch({
       type: "UPDATE_PENDING_DECISION",
       payload: { productPrices: { [product]: value } },
-    });
-  };
-
-  const toggleMenu = (product: ProductKey, checked: boolean) => {
-    if (readOnly) return;
-    if (BASE_MENU.includes(product)) return;
-    // Apr 28 2026 — guard against putting a still-locked product on the
-    // menu. The UI should never let this happen (unlocked products show
-    // "+ Add"; locked ones show "🔒 Unlock") but the toggle handler is
-    // shared so we re-check here.
-    if (checked && !unlockedProducts.includes(product)) return;
-    dispatch({
-      type: "UPDATE_PENDING_DECISION",
-      payload: {
-        menu: { [product]: checked },
-        ...(checked ? {} : { quantities: { [product]: 0 } }),
-      },
     });
   };
 
@@ -452,9 +431,11 @@ export function BakeryView({ readOnly = false }: BakeryViewProps) {
                       unitCost={unitCost}
                       onQtyChange={(n) => setQty(product, n)}
                       onPriceChange={(n) => setPrice(product, n)}
-                      onToggle={(next) => toggleMenu(product, next)}
                       readOnly={readOnly}
                       priceDisabled={!canEditPrices}
+                      quantityDisabled={!canEditQuantities}
+                      menuDisabled={!canEditQuantities}
+                      disabledReason={financeDisabledReason}
                     />
                   );
                 })}

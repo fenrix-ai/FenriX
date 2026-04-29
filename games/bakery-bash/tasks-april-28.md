@@ -459,7 +459,7 @@ The first four are already computed — pure passthrough. `priceCompetitivenessP
 
 > Pair work — split as you like. Total ~1.5 days for two people. Touching `BakeryView`, `GameContext`, `StaffTab`, sprites.
 
-## [ ] K-01 [P0, M] — Grey out non-role inputs across Decide (split per new role mapping)
+## [x] K-01 [P0, M] — Grey out non-role inputs across Decide (split per new role mapping)
 
 **Problem.** Non-role-owners can edit decide inputs (only the submit button is gated). Confirmed at `GamePage.tsx:736-743` (only `canSubmit` gated) and `BakeryView.tsx:300, 226, 457` (only price gated). Plus the new role split (per Q6 + M-17) means **different inputs need different gates** within the same screen.
 
@@ -508,7 +508,7 @@ Pass `disabled={!roleOwnsX(role, teamRoleAssignments)}` on each input. Add a too
 
 ---
 
-## [ ] K-04 [P0, S] — Auto-enable all unlocked products (kill the "+ Add" button)
+## [x] K-04 [P0, S] — Auto-enable all unlocked products (kill the "+ Add" button)
 
 **Problem.** `BakeryView.tsx:259-268` renders "+ Add" buttons for unlocked-but-disabled products. User wants them auto-enabled.
 
@@ -518,7 +518,7 @@ Pass `disabled={!roleOwnsX(role, teamRoleAssignments)}` on each input. Add a too
 
 ---
 
-## [ ] K-05 [P0, S] — Carry the menu/products forward into the next round
+## [x] K-05 [P0, S] — Carry the menu/products forward into the next round
 
 **Problem.** User report: "If they buy a new product, it should stay the same the next round." `decision-validation.js:421` resets `menu` to `BASE_MENU` each round; bought-but-unstocked products don't survive.
 
@@ -564,7 +564,7 @@ Pass `disabled={!roleOwnsX(role, teamRoleAssignments)}` on each input. Add a too
 
 ---
 
-## [ ] K-09 [P2, XS] — Bump simulation min display to match Massaro's backend bump
+## [x] K-09 [P2, XS] — Bump simulation min display to match Massaro's backend bump
 
 **Problem.** Pairs with M-15. Frontend min display needs to match the new backend duration.
 
@@ -572,7 +572,7 @@ Pass `disabled={!roleOwnsX(role, teamRoleAssignments)}` on each input. Add a too
 
 ---
 
-## [ ] K-10 [P0, S] — FE: Finance submits quantities (pairs with M-17)
+## [x] K-10 [P0, S] — FE: Finance submits quantities (pairs with M-17)
 
 **Problem.** Today the quantity steppers in `BakeryView.tsx` write to `pendingDecision.quantities`, which is sent up by Operations' `submitDecision`. After M-17 lands, the backend `submitPrices` callable will accept quantities — the FE needs to send them in that call.
 
@@ -589,7 +589,7 @@ Pass `disabled={!roleOwnsX(role, teamRoleAssignments)}` on each input. Add a too
 
 ---
 
-## [ ] K-11 [P0, S] — Remove the "Update Prices" friction button (Q12 + Q14)
+## [x] K-11 [P0, S] — Remove the "Update Prices" friction button (Q12 + Q14)
 
 **Investigation result (2026-04-28).** Located at **`app/src/pages/GamePage.tsx:825-840`**. The offending UI is the secondary submit button rendered alongside the primary one in `<SubmissionLock>`'s action slot:
 ```tsx

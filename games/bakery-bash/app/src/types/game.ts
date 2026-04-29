@@ -550,6 +550,12 @@ export function roleOwnsDecide(
   role: PlayerRole,
   teamRoleAssignments?: Record<string, PlayerRole | null> | null,
 ): boolean {
+  return roleOwnsStaff(role, teamRoleAssignments);
+}
+export function roleOwnsStaff(
+  role: PlayerRole,
+  teamRoleAssignments?: Record<string, PlayerRole | null> | null,
+): boolean {
   if (role === "operations" || role === "solo") return true;
   return teamRoleIsVacant(teamRoleAssignments ?? null, ["operations"]);
 }
