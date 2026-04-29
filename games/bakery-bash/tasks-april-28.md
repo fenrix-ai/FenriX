@@ -239,7 +239,7 @@ Massaro does the backend. Scott wires the "Take over" button into RoundHeader (s
 
 ---
 
-## [ ] M-11 [P1, M] — Sealed bid: no more live "Top Bid" reveal during the auction
+## [x] M-11 [P1, M] — Sealed bid: no more live "Top Bid" reveal during the auction (Massaro verified — no backend/non-AuctionPage leak; awaits B-01 FE change)
 
 **Problem.** Currently `AuctionPage.tsx:854-861` (ads) and `:962-968` (chefs) render `topBidsAd[ad.id]` / `topBidsChef[chef.id]` live. User wants this hidden until the phase ends — true sealed-bid mechanic.
 
