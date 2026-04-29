@@ -2756,11 +2756,16 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
       }
 
       // Validate using the decision-validation module (pure).
-      // ValidationError is a plain JS error — convert to HttpsError so the
-      // Firebase Functions runtime surfaces the right code to the client.
+      // M-17 (2026-04-28): Operations no longer owns quantities — Finance
+      // does, via submitPrices. Strip data.quantities BEFORE validation so
+      // a stale Operations FE that still includes quantities (during the
+      // K-10 transition window) can't trip the menu-vs-quantities cross
+      // check. We then delete validated.quantities after validation so
+      // it never overwrites Finance's quantity write on the decision doc.
+      const opsInput = { ...data, quantities: {} };
       let validated;
       try {
-        validated = decisionValidation.validateDecision(data, currentRound, config, {
+        validated = decisionValidation.validateDecision(opsInput, currentRound, config, {
           unlockedProducts,
         });
       } catch (vErr) {
@@ -2769,6 +2774,11 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
         }
         throw vErr;
       }
+      // M-17: drop quantities from Operations' validated output entirely.
+      // The decisionRef set-merge below uses ...validated, so removing the
+      // field here means Finance's quantities (written by submitPrices)
+      // survive untouched.
+      delete validated.quantities;
 
       roundId = `round_${currentRound}`;
       const decisionRef = playerRef.collection('decisions').doc(roundId);
@@ -2780,11 +2790,11 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
         throw new HttpsError('already-exists', 'Decision already submitted for this round.');
       }
 
-      // Merge so an existing Finance-written `productPrices` survives.
-      // POST-01 follow-up: `staffCounts` (including the maintenanceGuys
-      // default of 2) is included in `validated` and flows through the
-      // spread — do not re-assign it from raw `data.staffCounts`, which
-      // would discard the validator's defaulting.
+      // Merge so an existing Finance-written `productPrices` + `quantities`
+      // survive. POST-01 follow-up: `staffCounts` (including the
+      // maintenanceGuys default of 2) is included in `validated` and flows
+      // through the spread — do not re-assign it from raw `data.staffCounts`,
+      // which would discard the validator's defaulting.
       const decisionPatch = {
         round: currentRound,
         submittedAt: FieldValue.serverTimestamp(),
@@ -2797,15 +2807,17 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
       // Timestamp.now() for the nested submittedAt.
       //
       // POST-01: use dot-paths rather than replacing the whole `pendingDecision`
-      // so Finance's `pendingDecision.productPrices` (written by submitPrices)
-      // isn't clobbered when Operations submits after Finance.
+      // so Finance's `pendingDecision.productPrices` + `pendingDecision.quantities`
+      // (written by submitPrices) aren't clobbered when Operations submits
+      // after Finance.
+      // M-17 (2026-04-28): pendingDecision.quantities is intentionally NOT
+      // written here — Finance owns that field via submitPrices.
       const submittedAtTs = Timestamp.now();
       const draftFields = {
         submitted: true,
         submittedAt: submittedAtTs,
         round: currentRound,
         menu: validated.menu || {},
-        quantities: validated.quantities || {},
         sousChefCount: validated.sousChefCount || 0,
         sousChefAssignments: validated.sousChefAssignments || {},
         staffCounts: objectOrDefault(data.staffCounts, {}),
@@ -2815,7 +2827,6 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
         'pendingDecision.submittedAt': draftFields.submittedAt,
         'pendingDecision.round': draftFields.round,
         'pendingDecision.menu': draftFields.menu,
-        'pendingDecision.quantities': draftFields.quantities,
         'pendingDecision.sousChefCount': draftFields.sousChefCount,
         'pendingDecision.sousChefAssignments': draftFields.sousChefAssignments,
         'pendingDecision.staffCounts': draftFields.staffCounts,
@@ -2969,12 +2980,17 @@ exports.submitPrices = onCall(CALLABLE_OPTS, async (request) => {
     // zone overrides from config.
     void mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
 
-    // Validate + snap + clamp
+    // Validate + snap + clamp.
+    // M-17 (2026-04-28): submitPrices also accepts `quantities` now —
+    // Finance owns prices AND quantities per the Q6 role split. Operations'
+    // submitDecision strips quantities so the two writes don't race.
     // ValidationError is a plain JS error — convert to HttpsError so the
     // Firebase Functions runtime surfaces the right code to the client.
     let validated;
+    let validatedQuantities;
     try {
       validated = decisionValidation.validateProductPrices(data.productPrices);
+      validatedQuantities = decisionValidation.validateQuantitiesPayload(data.quantities);
     } catch (vErr) {
       if (ValidationError && vErr instanceof ValidationError) {
         throw new HttpsError(vErr.code || 'invalid-argument', vErr.message);
@@ -2990,6 +3006,7 @@ exports.submitPrices = onCall(CALLABLE_OPTS, async (request) => {
     transaction.set(decisionRef, {
       round: currentRound,
       productPrices: validated,
+      quantities: validatedQuantities,
       pricesSubmittedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
 
@@ -3009,6 +3026,7 @@ exports.submitPrices = onCall(CALLABLE_OPTS, async (request) => {
 
     transaction.update(playerRef, {
       'pendingDecision.productPrices': validated,
+      'pendingDecision.quantities': validatedQuantities,
       'pendingDecision.pricesSubmitted': true,
       ...playerMenuUpdate,
       updatedAt: FieldValue.serverTimestamp(),
@@ -3025,6 +3043,7 @@ exports.submitPrices = onCall(CALLABLE_OPTS, async (request) => {
     if (teamId) {
       const teamDraftPatch = {
         productPrices: validated,
+        quantities: validatedQuantities,
         pricesSubmitted: true,
         menu: optionalMenuPatch,
       };
