@@ -1190,6 +1190,21 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
     outcomeNewJoin = true;
     outcomeTeamExistedAtTxnTime = tSnap.exists;
 
+    // M-05 (2026-04-28): cap team size at 3. Only checked when the team
+    // doc already exists at txn-time — a brand-new team has memberCount
+    // baked at 1 in the auto-create branch below. memberCount falls back
+    // to the role-assignments count for legacy team docs that pre-date
+    // the field. The check sits inside the transaction so concurrent
+    // joiners contending for the 3rd slot serialize correctly: the loser
+    // sees memberCount=3 on its retry and throws.
+    if (outcomeTeamExistedAtTxnTime) {
+      const teamMemberCount = numberOrDefault(tSnap.get('memberCount'), 0)
+        || Object.keys(tSnap.get('roleAssignments') || {}).length;
+      if (teamMemberCount >= 3) {
+        throw new HttpsError('resource-exhausted', 'That team is full (3 max).');
+      }
+    }
+
     transaction.set(playerRef, {
       uid: auth.uid,
       playerId: auth.uid,
