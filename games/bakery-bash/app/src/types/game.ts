@@ -578,7 +578,7 @@ export function ownerOfAdBids(): string {
   return PLAYER_ROLE_LABELS.advertising;
 }
 export function ownerOfChefBids(): string {
-  return PLAYER_ROLE_LABELS.finance;
+  return PLAYER_ROLE_LABELS.advertising;
 }
 export function ownerOfRoster(): string {
   return PLAYER_ROLE_LABELS.operations;
