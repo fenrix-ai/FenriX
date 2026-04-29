@@ -215,6 +215,11 @@ try {
  */
 const BATCH_OP_LIMIT = 487;
 
+// M-05 (2026-04-28): max members per team. Used by the joinGame auto-route
+// query and the in-transaction cap check. Keep these in sync — see the
+// joinGame body for both call sites.
+const TEAM_CAP = 3;
+
 /**
  * Batch-delete every document in a collection. Used by `resetGame` to wipe
  * round/sim subcollections without leaving orphans. Chunks at BATCH_OP_LIMIT
@@ -1077,23 +1082,24 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
   const rosterRef = gameRef.collection('roster').doc(auth.uid);
 
   // M-06: auto-route when the caller didn't pick a team. Find an existing
-  // team with room (memberCount < 3); if none has room, claim the lowest
-  // unused team-{N} slot in [1..8]. The query is best-effort — the M-05
-  // cap check inside the transaction is what actually gates the slot, so
-  // a TOCTOU race here just produces a 'team full' error the FE can retry.
+  // team with room (memberCount < TEAM_CAP); if none has room, claim the
+  // lowest unused team-{N} slot in [1..8]. The query is best-effort — the
+  // M-05 cap check inside the transaction is what actually gates the slot,
+  // so a TOCTOU race here just produces a 'team full' error the FE can retry.
   let autoRoutedTeamId = null;
   if (!explicitTeamId && !teamNumber) {
     const teamsCol = gameRef.collection('teams');
     const candidatesSnap = await teamsCol
-      .where('memberCount', '<', 3)
+      .where('memberCount', '<', TEAM_CAP)
       .orderBy('memberCount')
       .limit(1)
       .get();
     if (!candidatesSnap.empty) {
       autoRoutedTeamId = candidatesSnap.docs[0].id;
     } else {
-      // No team has room: claim the lowest unused team-{N} slot.
-      const allSnap = await teamsCol.get();
+      // No team has room: claim the lowest unused team-{N} slot. .select()
+      // with no args returns doc refs only — we just need ids, not bodies.
+      const allSnap = await teamsCol.select().get();
       const used = new Set();
       allSnap.docs.forEach((d) => {
         const m = /^team-(\d+)$/.exec(d.id);
@@ -1225,18 +1231,20 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
     outcomeNewJoin = true;
     outcomeTeamExistedAtTxnTime = tSnap.exists;
 
-    // M-05 (2026-04-28): cap team size at 3. Only checked when the team
-    // doc already exists at txn-time — a brand-new team has memberCount
-    // baked at 1 in the auto-create branch below. memberCount falls back
-    // to the role-assignments count for legacy team docs that pre-date
-    // the field. The check sits inside the transaction so concurrent
-    // joiners contending for the 3rd slot serialize correctly: the loser
-    // sees memberCount=3 on its retry and throws.
+    // M-05 (2026-04-28): cap team size at TEAM_CAP. Only checked when the
+    // team doc already exists at txn-time — a brand-new team has
+    // memberCount baked at 1 in the auto-create branch below. For legacy
+    // team docs that pre-date the memberCount field, fall back to counting
+    // roleAssignments. The check sits inside the transaction so concurrent
+    // joiners contending for the last slot serialize correctly: the loser
+    // sees memberCount=TEAM_CAP on its retry and throws.
     if (outcomeTeamExistedAtTxnTime) {
-      const teamMemberCount = numberOrDefault(tSnap.get('memberCount'), 0)
-        || Object.keys(tSnap.get('roleAssignments') || {}).length;
-      if (teamMemberCount >= 3) {
-        throw new HttpsError('resource-exhausted', 'That team is full (3 max).');
+      const rawMemberCount = tSnap.get('memberCount');
+      const teamMemberCount = (typeof rawMemberCount === 'number' && Number.isFinite(rawMemberCount))
+        ? rawMemberCount
+        : Object.keys(tSnap.get('roleAssignments') || {}).length;
+      if (teamMemberCount >= TEAM_CAP) {
+        throw new HttpsError('resource-exhausted', `That team is full (${TEAM_CAP} max).`);
       }
     }
 
