@@ -469,8 +469,10 @@ export interface RoundEvent {
  *
  * - `operations` owns the Decide-phase submit (quantities, sous chefs,
  *   maintenance guys).
- * - `advertising` owns the ad-auction submit.
- * - `finance` owns the chef-auction submit + roster (layoff / continue).
+ * - `advertising` owns the ad-auction submit AND the chef-auction submit
+ *   (M-18, 2026-04-28: chef bids moved here under the Q6 role split; the
+ *   FE label is "Analyst" — see S-03).
+ * - `finance` owns the roster (layoff / continue).
  * - `solo` is the fallback when a player joins without teammates: all three
  *   buttons are enabled on their device. Also the default during the
  *   transition window before BE-20 / BE-21 ship per-team schema + role

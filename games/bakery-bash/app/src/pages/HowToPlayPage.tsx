@@ -58,7 +58,7 @@ const HOW_TO_PLAY_STAGES = [
   {
     label: "Chef Auction",
     tagline: "Great chefs don't come cheap.",
-    body: "Your Finance teammate submits chef bids. A fresh pool of specialty chefs goes up for auction each round. Specialty chefs don't have station assignments — they boost the whole bakery's output. Sous chefs still live on stations. Nationality + tier hints at who's great at what.",
+    body: "Your Advertising teammate submits chef bids. A fresh pool of specialty chefs goes up for auction each round. Specialty chefs don't have station assignments — they boost the whole bakery's output. Sous chefs still live on stations. Nationality + tier hints at who's great at what.",
   },
   {
     label: "Kitchen Roster",
