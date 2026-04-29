@@ -85,7 +85,7 @@ describe('runMonthlySimulation', () => {
 
   it('produces different daily customer counts (variability fires)', () => {
     // M-02 (2026-04-28): the customer floor in customer-allocation.js
-    // (BASE_CHEF_CUSTOMERS = 12 per product per day) clamps solo-player
+    // (BASE_CHEF_CUSTOMERS = 4 per team per day) clamps solo-player
     // sims to a constant when product demand is low — the floor wins
     // every day and variance disappears. Use a high round modifier so
     // the demand pool sits well above the floor, letting per-day
