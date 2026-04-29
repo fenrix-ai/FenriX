@@ -1,7 +1,9 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
+  useMemo,
   useReducer,
   useRef,
   type ReactNode,
@@ -524,6 +526,20 @@ function gameReducer(state: GameState, action: GameAction): GameState {
 const GameContext = createContext<GameState>(initialState);
 const GameDispatchContext = createContext<Dispatch<GameAction>>(() => {});
 
+// K-02 / K-03 follow-up — coordination signal between the team-pending
+// Firestore listener (in `GamePage`) and the debounced auto-save effect
+// (below). When the listener applies a teammate's draft to local state,
+// it calls `markDraftAppliedFromRemote()` so the auto-save effect skips
+// the next firing instead of echoing the just-received state back to
+// the team doc. Without this, two teammates can ping-pong stale values:
+// A's older miscSpent gets mirrored to B, B's auto-save echoes it back
+// as a fresh write, and A's listener applies it on top of A's local
+// increment — clobbering A's in-progress edit. See PR #166 review.
+type GameDraftSyncValue = { markDraftAppliedFromRemote: () => void };
+const GameDraftSyncContext = createContext<GameDraftSyncValue>({
+  markDraftAppliedFromRemote: () => {},
+});
+
 // Survives tab refresh during a live game. AuthProvider restores the Firebase
 // UID via Firebase's own persistence layer (IndexedDB in prod, sessionStorage
 // in dev — see `lib/firebase.ts`); the only thing we need to carry across
@@ -767,6 +783,22 @@ export function GameProvider({ children }: { children: ReactNode }) {
   // a fresh JOIN_GAME shouldn't write a default-shaped draft over a
   // teammate's already-saved progress.
   const lastSentDraftRef = useRef<string | null>(null);
+  // Set true by `markDraftAppliedFromRemote` (called from the team-pending
+  // listener) so the next auto-save firing recognizes the change came from
+  // a teammate's write — and skips re-emitting the same data back to the
+  // team doc. Without this skip, B's listener applies A's write, B's
+  // pendingDecision changes, B's auto-save fires, and B re-writes the
+  // same payload tagged with B's uid — which then arrives on A's listener
+  // (different uid → not filtered) and can clobber A's in-flight local
+  // edits. See PR #166 review.
+  const skipNextDraftAutoSaveRef = useRef(false);
+  const markDraftAppliedFromRemote = useCallback(() => {
+    skipNextDraftAutoSaveRef.current = true;
+  }, []);
+  const draftSyncValue = useMemo(
+    () => ({ markDraftAppliedFromRemote }),
+    [markDraftAppliedFromRemote],
+  );
   useEffect(() => {
     if (!gameId || !playerId || !teamId) return;
     const parsed = parseGamePhase(phase ?? "lobby", currentRound ?? 1);
@@ -781,6 +813,15 @@ export function GameProvider({ children }: { children: ReactNode }) {
       equipmentUpgradePurchased: pendingDecision.equipmentUpgradePurchased,
     };
     const serialized = JSON.stringify(draftPatch);
+    // Listener-driven update — local state now mirrors what the team doc
+    // already holds, so re-writing would be both redundant and racy.
+    // Park `serialized` on `lastSentDraftRef` too: a subsequent local edit
+    // will produce a different fingerprint and fall through to the write.
+    if (skipNextDraftAutoSaveRef.current) {
+      skipNextDraftAutoSaveRef.current = false;
+      lastSentDraftRef.current = serialized;
+      return;
+    }
     if (serialized === lastSentDraftRef.current) return;
     const timer = window.setTimeout(() => {
       lastSentDraftRef.current = serialized;
@@ -842,7 +883,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
   return (
     <GameContext.Provider value={state}>
       <GameDispatchContext.Provider value={dispatch}>
-        {children}
+        <GameDraftSyncContext.Provider value={draftSyncValue}>
+          {children}
+        </GameDraftSyncContext.Provider>
       </GameDispatchContext.Provider>
     </GameContext.Provider>
   );
@@ -860,4 +903,9 @@ export function useGame() {
 // eslint-disable-next-line react-refresh/only-export-components
 export function useGameDispatch() {
   return useContext(GameDispatchContext);
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function useGameDraftSync() {
+  return useContext(GameDraftSyncContext);
 }

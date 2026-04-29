@@ -7,7 +7,11 @@ import {
   type DocumentData,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
-import { useGame, useGameDispatch } from "../contexts/GameContext";
+import {
+  useGame,
+  useGameDispatch,
+  useGameDraftSync,
+} from "../contexts/GameContext";
 import { PixelBakeryScene } from "../components/bakery-scene/PixelBakeryScene";
 import { SceneErrorBoundary } from "../components/bakery-scene/SceneErrorBoundary";
 import "../styles/pixel-scene.css";
@@ -120,6 +124,7 @@ export function GamePage() {
     teamRoleAssignments,
   } = useGame();
   const dispatch = useGameDispatch();
+  const { markDraftAppliedFromRemote } = useGameDraftSync();
   const navigate = useNavigate();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -459,6 +464,12 @@ export function GamePage() {
           update.miscSpent = Math.max(0, incoming.miscSpent);
         }
         if (Object.keys(update).length > 0) {
+          // Tell the auto-save effect (in GameContext) to skip its next
+          // firing — local state is about to mirror the team doc, so a
+          // re-emission would be a redundant write that can also clobber
+          // a teammate's in-flight edits when their listener applies it.
+          // See PR #166 review.
+          markDraftAppliedFromRemote();
           dispatch({ type: "UPDATE_PENDING_DECISION", payload: update });
         }
         if (typeof incoming.submitted === "boolean") {
@@ -483,7 +494,7 @@ export function GamePage() {
       },
     );
     return unsubscribe;
-  }, [gameId, teamId, playerId, dispatch]);
+  }, [gameId, teamId, playerId, dispatch, markDraftAppliedFromRemote]);
 
   const parsed = parseGamePhase(phase, currentRound);
   const basePhase = parsed.base;
