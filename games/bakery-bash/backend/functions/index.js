@@ -2427,7 +2427,16 @@ async function runSimulationAndPersist(gameRef, round, config) {
           // rather than "components of satisfaction".
           roundSignals: {
             satisfactionPct: r.aggregateSatisfactionPct,
-            perProductSatisfaction: r.perProductSatisfaction || {},
+            // Map to { [product]: number } to match the FE type
+            // (Partial<Record<ProductKey, number>>) — r.perProductSatisfaction
+            // values are objects { satisfactionPct, qtySold, qtyStocked, ... }.
+            perProductSatisfaction: Object.fromEntries(
+              Object.entries(r.perProductSatisfaction || {})
+                .map(([product, pps]) => [
+                  product,
+                  numberOrDefault(pps && pps.satisfactionPct, 0),
+                ]),
+            ),
             cleanlinessGrade: r.cleanlinessGrade,
             cleanlinessScore: r.cleanlinessScore,
             priceCompetitivenessPct: numberOrDefault(r.priceCompetitivenessPct, 100),
