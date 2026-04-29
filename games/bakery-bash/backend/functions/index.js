@@ -215,6 +215,11 @@ try {
  */
 const BATCH_OP_LIMIT = 487;
 
+// M-05 (2026-04-28): max members per team. Used by the joinGame auto-route
+// query and the in-transaction cap check. Keep these in sync — see the
+// joinGame body for both call sites.
+const TEAM_CAP = 3;
+
 /**
  * Batch-delete every document in a collection. Used by `resetGame` to wipe
  * round/sim subcollections without leaving orphans. Chunks at BATCH_OP_LIMIT
@@ -1056,9 +1061,10 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
   if (displayName.length < 2 || displayName.length > 40) {
     throw new HttpsError('invalid-argument', 'displayName must be 2–40 characters.');
   }
-  if (!teamNumber && !explicitTeamId) {
-    throw new HttpsError('invalid-argument', 'Provide either teamNumber (1–8) or teamId.');
-  }
+  // M-06 (2026-04-28): teamNumber/teamId is no longer required up-front. If
+  // the caller doesn't pass one, we auto-route below to a non-full team —
+  // or auto-create one — so a late-arriving student can join with no
+  // server-trip back to the FE for team selection.
   if (bakeryName.length > 60) {
     throw new HttpsError('invalid-argument', 'bakeryName must be 60 characters or fewer.');
   }
@@ -1075,11 +1081,46 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
   const playerRef = gameRef.collection('players').doc(auth.uid);
   const rosterRef = gameRef.collection('roster').doc(auth.uid);
 
-  // teamId: explicit wins, else derived from teamNumber. The team doc
-  // for explicit ids must already exist (the createTeam callable writes
-  // it); we fail fast if it's missing rather than silently creating an
-  // orphan team.
-  const teamId = explicitTeamId || `team-${teamNumber}`;
+  // M-06: auto-route when the caller didn't pick a team. Find an existing
+  // team with room (memberCount < TEAM_CAP); if none has room, claim the
+  // lowest unused team-{N} slot in [1..8]. The query is best-effort — the
+  // M-05 cap check inside the transaction is what actually gates the slot,
+  // so a TOCTOU race here just produces a 'team full' error the FE can retry.
+  let autoRoutedTeamId = null;
+  if (!explicitTeamId && !teamNumber) {
+    const teamsCol = gameRef.collection('teams');
+    const candidatesSnap = await teamsCol
+      .where('memberCount', '<', TEAM_CAP)
+      .orderBy('memberCount')
+      .limit(1)
+      .get();
+    if (!candidatesSnap.empty) {
+      autoRoutedTeamId = candidatesSnap.docs[0].id;
+    } else {
+      // No team has room: claim the lowest unused team-{N} slot. .select()
+      // with no args returns doc refs only — we just need ids, not bodies.
+      const allSnap = await teamsCol.select().get();
+      const used = new Set();
+      allSnap.docs.forEach((d) => {
+        const m = /^team-(\d+)$/.exec(d.id);
+        if (m) used.add(Number(m[1]));
+      });
+      let next = 1;
+      while (used.has(next) && next <= 8) next += 1;
+      if (next > 8) {
+        throw new HttpsError('resource-exhausted',
+          'No team has space and no available team slot remains.');
+      }
+      autoRoutedTeamId = `team-${next}`;
+    }
+  }
+
+  // teamId: explicit wins, else auto-routed (M-06), else derived from
+  // teamNumber. The team doc for explicit ids must already exist (the
+  // createTeam callable writes it); we fail fast if it's missing rather
+  // than silently creating an orphan team. Auto-routed ids may or may
+  // not exist — the txn-body auto-create path handles either case.
+  const teamId = explicitTeamId || autoRoutedTeamId || `team-${teamNumber}`;
   const teamRef = gameRef.collection('teams').doc(teamId);
 
   let playerId = auth.uid;
@@ -1124,14 +1165,14 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
 
     const config = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
 
-    // BE-24: new joins are only accepted during lobby and are subject to the
-    // player cap. Rejoins (same uid, existing player doc) are allowed at any
-    // phase so a student who refreshes their browser mid-game can recover
-    // without being locked out.
+    // M-06 (2026-04-28): late joiners are now allowed — a fresh student who
+    // arrives after the prof presses Start should slot into a team with
+    // room (auto-routed above when no team was specified). The previous
+    // BE-24 lobby gate that rejected non-lobby new joiners is removed.
+    // The playerCap check stays in place to prevent unbounded growth.
+    // Rejoins (same uid, existing player doc) continue to be allowed at
+    // any phase so a student who refreshes mid-game recovers cleanly.
     if (!pSnap.exists) {
-      if (gSnap.get('phase') !== 'lobby') {
-        throw new HttpsError('failed-precondition', 'This game is no longer accepting new players.');
-      }
       const playerCap = numberOrDefault(config.playerCap, 20);
       const currentTotal = numberOrDefault(gSnap.get('totalPlayers'), 0);
       if (currentTotal >= playerCap) {
@@ -1189,6 +1230,23 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
     // increments (game.totalPlayers, team.memberCount) move below the txn.
     outcomeNewJoin = true;
     outcomeTeamExistedAtTxnTime = tSnap.exists;
+
+    // M-05 (2026-04-28): cap team size at TEAM_CAP. Only checked when the
+    // team doc already exists at txn-time — a brand-new team has
+    // memberCount baked at 1 in the auto-create branch below. For legacy
+    // team docs that pre-date the memberCount field, fall back to counting
+    // roleAssignments. The check sits inside the transaction so concurrent
+    // joiners contending for the last slot serialize correctly: the loser
+    // sees memberCount=TEAM_CAP on its retry and throws.
+    if (outcomeTeamExistedAtTxnTime) {
+      const rawMemberCount = tSnap.get('memberCount');
+      const teamMemberCount = (typeof rawMemberCount === 'number' && Number.isFinite(rawMemberCount))
+        ? rawMemberCount
+        : Object.keys(tSnap.get('roleAssignments') || {}).length;
+      if (teamMemberCount >= TEAM_CAP) {
+        throw new HttpsError('resource-exhausted', `That team is full (${TEAM_CAP} max).`);
+      }
+    }
 
     transaction.set(playerRef, {
       uid: auth.uid,

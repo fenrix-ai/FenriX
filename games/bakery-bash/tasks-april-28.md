@@ -157,7 +157,7 @@ Sort by `cumulativeRevenue` instead of `revenueNet` (one-line sort change).
 
 ---
 
-## [ ] M-05 [P0, S] — Cap team size at 3 (currently lets a 4th in)
+## [x] M-05 [P0, S] — Cap team size at 3 (currently lets a 4th in)
 
 **Problem.** `joinGame` (`backend/functions/index.js:1106-1257`) checks the game-wide `playerCap` (default 20) but **never compares team `memberCount` against a max**. The FE shows the count but never disables the join button.
 
@@ -175,7 +175,7 @@ if (current >= 3) {
 
 ---
 
-## [ ] M-06 [P0, M] — Late joiners can't enter once the prof presses Start
+## [x] M-06 [P0, M] — Late joiners can't enter once the prof presses Start
 
 **Problem.** `index.js:1131-1134` rejects new uids with `failed-precondition` when `phase !== 'lobby'`. Rejoiners (existing uid) get through, but a fresh student who's late is locked out. User wants late joiners to slot into a team with room.
 
