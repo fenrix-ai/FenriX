@@ -473,6 +473,21 @@ export interface RoundResult {
      */
     priceCompetitivenessPct: number;
   };
+  /**
+   * Round-level kitchen + financial state surfaced for the student CSV
+   * download (RoundHeader.tsx serializeRow). Top-level so the CSV writer
+   * doesn't need to dig into roundSignals for each column.
+   */
+  /** Total round costs (sous chefs + maintenance + equipment + bids). */
+  totalSpent?: number;
+  /** Equipment letter grade (A–F) at end-of-round. */
+  equipmentGrade?: string;
+  /** Cleanliness letter grade (A–F) at end-of-round. Mirrors roundSignals.cleanlinessGrade. */
+  cleanlinessGrade?: string;
+  /** Number of specialty chefs on the team's roster at end-of-round. */
+  specialtyChefCount?: number;
+  /** Cumulative net profit through end-of-this-round (priorCumulative + revenueNet). */
+  cumulativeRevenueAfter?: number;
 }
 
 /** One row of the curveball-events feed shown on the Results screen. */
