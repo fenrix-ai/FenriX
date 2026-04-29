@@ -5205,6 +5205,8 @@ exports.resetGame = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
     deleteCollectionDocs(gameRef.collection('conclusion')),
     ...playerDocs.map((pd) => deleteCollectionDocs(pd.ref.collection('decisions'))),
     ...playerDocs.map((pd) => deleteCollectionDocs(pd.ref.collection('rounds'))),
+    ...playerDocs.map((pd) => deleteCollectionDocs(pd.ref.collection('bids'))),
+    ...playerDocs.map((pd) => deleteCollectionDocs(pd.ref.collection('purchases'))),
     // S-04 (2026-04-29): the per-player `emails` subcollection (CSV-attachment
     // queue from the original mail-merge flow) was retired when in-app
     // market insights replaced it. Nothing writes it any more, so the reset
