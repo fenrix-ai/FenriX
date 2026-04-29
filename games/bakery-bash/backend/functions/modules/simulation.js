@@ -489,23 +489,24 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
     }, config);
     revenueGross += adWinnerBonus;
 
-    // V9 (Apr 26): if no customers actually walked in AND nothing was sold,
-    // the player wasn't really "open" — `computeGrossRevenue` would still
-    // hand them the $500 base + noise floor (foot-traffic baseline), which
-    // confused playtesters seeing "$527 profit / 0 customers" on the
-    // results screen. Zero out the formula's floor in that case so an
-    // empty bakery shows as $0 (plus any ad-winner bonus they earned).
+    // V9 (Apr 26): if the player wasn't really "open", `computeGrossRevenue`
+    // would still hand them the $500 base + noise floor (foot-traffic
+    // baseline), which confused playtesters seeing "$527 profit / 0
+    // customers" on the results screen. Zero out the formula's floor in
+    // that case so an empty bakery shows as $0 (plus any ad-winner bonus
+    // they earned).
     //
-    // M-02 (2026-04-28): tightened — only zero revenueGross when the team
-    // is truly closed (no products on the menu). Previously this fired
-    // for any team with 0 customers + 0 sales, which doubled as a
-    // "no-specialty-chefs" kill-switch (their satisfaction tanked, they
-    // got rounded to 0 in customer allocation, and this branch then
-    // killed the floor revenue). With the BASE_CHEF_CUSTOMERS floor in
-    // customer-allocation.js a "no-specialty-chefs" team now gets a real
-    // customer count, so this kill-switch only needs to handle the
-    // genuinely closed bakery.
-    if (pp.offeredProducts.length === 0) {
+    // M-02 (2026-04-28): the original V9 condition was "0 customers AND 0
+    // sales", which doubled as a kill-switch for no-specialty-chef teams
+    // (their satisfaction tanked, they got rounded to 0 in allocation, and
+    // this branch then killed the floor revenue). The BASE_CHEF_CUSTOMERS
+    // floor in customer-allocation.js now protects no-chef teams that are
+    // actually open for business — but it only fires when at least one
+    // product has positive satisfaction (i.e. stock somewhere). So we
+    // tighten the kill-switch to "no menu OR no stock anywhere" — both
+    // signals of a genuinely-not-open bakery — which keeps the V9 fix for
+    // the menu-open-but-no-stock case without re-killing no-chef teams.
+    if (pp.offeredProducts.length === 0 || !stockedAnything) {
       revenueGross = adWinnerBonus;
     }
 

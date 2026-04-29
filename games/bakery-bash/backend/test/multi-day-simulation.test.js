@@ -339,9 +339,9 @@ describe('runMonthlySimulation', () => {
       `chef=$${withChef.revenueNet}, no-chef=$${noChef.revenueNet}`);
   });
 
-  it('a closed bakery still earns $0 (kill-switch retained for offeredProducts.length === 0)', () => {
+  it('a closed bakery still earns $0 (kill-switch fires when no menu)', () => {
     // M-02 part 2: the V9 kill-switch was tightened from "0 customers
-    // AND 0 product revenue" to "no products on the menu". A truly
+    // AND 0 product revenue" to "no menu OR no stock anywhere". A truly
     // closed bakery should still produce $0 — the kill-switch is the
     // only thing preventing the revenue formula's base/sat bonuses from
     // landing on a team that didn't open the doors.
@@ -360,6 +360,30 @@ describe('runMonthlySimulation', () => {
     const agg = out[0];
     assert.equal(agg.revenueGross, 0,
       `closed bakery (no menu) should earn $0 gross, got $${agg.revenueGross}`);
+  });
+
+  it('a menu-open-but-no-stock bakery still earns $0 (kill-switch fires when no stock)', () => {
+    // M-02 regression guard: the original V9 kill-switch fired on "0
+    // customers AND 0 sales", which caught both empty-menu AND
+    // menu-open-but-no-stock teams. Tightening to just "no menu" would
+    // re-open the V9 "$527 profit / 0 customers" bug for teams that
+    // check menu items but stock zero. The kill-switch must also fire
+    // when nothing is stocked anywhere.
+    const noStock = fakePlayer('no_stock', {
+      decision: {
+        menu: { croissant: true, cookie: true, bagel: true },
+        quantities: { croissant: 0, cookie: 0, bagel: 0 },
+        sousChefCount: 0,
+        sousChefAssignments: {},
+        productPrices: { croissant: 4.75, cookie: 4.0, bagel: 4.5 },
+      },
+    });
+    const out = runMonthlySimulation([noStock], prefs, config, {
+      gameId: 'm02-no-stock', round: 1,
+    });
+    const agg = out[0];
+    assert.equal(agg.revenueGross, 0,
+      `menu-open-no-stock bakery should earn $0 gross, got $${agg.revenueGross}`);
   });
 
 });
