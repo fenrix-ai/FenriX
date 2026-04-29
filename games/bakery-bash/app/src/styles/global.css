@@ -1709,11 +1709,49 @@ h3 { font-size: 0.7rem; }
 .auction-chef__info {
   display: flex;
   flex-direction: column;
+  gap: 0.25rem;
+  align-items: center;
 }
 
 .auction-chef__name {
   font-weight: 700;
   font-size: 0.75rem;
+}
+
+/* B-04 — nationality badge. Mirrors the skill-tag pattern; per-nation
+   accent so a player can scan the card grid by flag rather than by
+   reading every name. Cream/honey base; per-nation colors are subtle
+   tints over the same chip shape. */
+.auction-chef__nationality {
+  font-size: 0.55rem;
+  font-family: var(--font-pixel);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--honey, #f59e0b);
+  background: var(--cream, #fff7e6);
+  color: var(--espresso);
+}
+
+.auction-chef__nationality--american {
+  background: #e0f2fe;
+  border-color: #38bdf8;
+}
+
+.auction-chef__nationality--french {
+  background: #fee2e2;
+  border-color: #ef4444;
+}
+
+.auction-chef__nationality--italian {
+  background: #dcfce7;
+  border-color: #22c55e;
+}
+
+.auction-chef__nationality--japanese {
+  background: #fef3c7;
+  border-color: #f59e0b;
 }
 
 /*

@@ -664,7 +664,7 @@ Add `max={N}` and a red `--error` class + helper text per the pattern already pr
 
 ---
 
-## [ ] B-04 [P0, XS] — Show chef nationality on the bid card
+## [x] B-04 [P0, XS] — Show chef nationality on the bid card (✅ DONE 2026-04-29 by Claude/Barlava)
 
 **Problem.** `AuctionPage.tsx:947-961` shows the chef portrait (filename derived from nationality) and `chef.name` ("French Chef") but no explicit nationality text badge separate from the name.
 
