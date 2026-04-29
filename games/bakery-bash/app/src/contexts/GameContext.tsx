@@ -630,7 +630,17 @@ function readPersistedDraft(scope: {
     ) {
       return null;
     }
-    return parsed as PersistedDraft;
+    // PR #126 contract: `miscSpent` is a UI-only running tally that resets
+    // on refresh — the server owns the budget, and the field is `Omit`'d
+    // from SubmitPayload. Strip it from the rehydrated draft so refresh
+    // restores menu/quantities/prices/bids without resurrecting the local
+    // tally. Also defends `BakeryView`'s unguarded `miscSpent.toFixed(2)`
+    // against a draft persisted before `miscSpent` (or any future field)
+    // existed — the spread guarantees the field is always a number.
+    return {
+      ...parsed,
+      pendingDecision: { ...parsed.pendingDecision, miscSpent: 0 },
+    } as PersistedDraft;
   } catch {
     return null;
   }
