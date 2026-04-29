@@ -5739,6 +5739,18 @@ exports.restoreSnapshot = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
 
   const startedAt = Date.now();
   const result = await restoreGameSnapshot(db, gameRef, snapshotId);
+
+  // S-05: team `state/` subcollections are excluded from snapshot capture
+  // (NON_SNAPSHOTTED_SUBCOLLECTIONS) so they survive the restore's orphan
+  // cleanup. Delete them explicitly so stale `decisionDraft.submitted`
+  // flags from a later round don't resurface on teammates' UIs.
+  const teamsSnap = await gameRef.collection('teams').get();
+  if (!teamsSnap.empty) {
+    await Promise.all(
+      teamsSnap.docs.map((td) => db.recursiveDelete(td.ref.collection('state'))),
+    );
+  }
+
   const elapsedMs = Date.now() - startedAt;
 
   // Audit trail — every restore is logged with the calling uid, the
