@@ -82,6 +82,14 @@ const CSV_COLUMNS = [
   "sandwiches_sold",
   "coffees_sold",
   "matchas_sold",
+  // -- Round-level kitchen + financial state (added 2026-04-29). --
+  // Appended at the end so existing analyst notebooks that hard-code
+  // column indices keep working.
+  "equipment_grade",
+  "cleanliness_grade",
+  "total_spent",
+  "specialty_chef_count",
+  "cumulative_revenue",
 ] as const;
 
 function num(n: number | undefined | null): string {
@@ -192,6 +200,14 @@ function serializeRow(r: RoundResult, daily?: DailyRow): string {
     num(breakdown.sandwich),
     num(breakdown.coffee),
     num(breakdown.matcha),
+    // -- Round-level kitchen + financial state. Constant across the round
+    //    (same value on every per-day row) since these are end-of-round
+    //    snapshots. --
+    csvCell(r.equipmentGrade),
+    csvCell(r.cleanlinessGrade),
+    num(r.totalSpent),
+    num(r.specialtyChefCount),
+    num(r.cumulativeRevenueAfter),
   ].join(",");
 }
 

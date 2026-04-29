@@ -361,6 +361,27 @@ export function GamePage() {
               dailyBreakdown: Array.isArray(lrr.dailyBreakdown)
                 ? lrr.dailyBreakdown
                 : undefined,
+              // Round-level kitchen + financial state — surfaced for the
+              // student CSV download. Backend writes these alongside the
+              // existing fields on lastRoundResult.
+              totalSpent:
+                typeof lrr.totalSpent === "number" ? lrr.totalSpent : undefined,
+              equipmentGrade:
+                typeof lrr.equipmentGrade === "string"
+                  ? lrr.equipmentGrade
+                  : undefined,
+              cleanlinessGrade:
+                typeof lrr.cleanlinessGrade === "string"
+                  ? lrr.cleanlinessGrade
+                  : undefined,
+              specialtyChefCount:
+                typeof lrr.specialtyChefCount === "number"
+                  ? lrr.specialtyChefCount
+                  : undefined,
+              cumulativeRevenueAfter:
+                typeof lrr.cumulativeRevenueAfter === "number"
+                  ? lrr.cumulativeRevenueAfter
+                  : undefined,
             },
           });
         }

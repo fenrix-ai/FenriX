@@ -2546,6 +2546,27 @@ async function runSimulationAndPersist(gameRef, round, config) {
             cleanlinessScore: r.cleanlinessScore,
             priceCompetitivenessPct: numberOrDefault(r.priceCompetitivenessPct, 100),
           },
+          // Round-level kitchen + financial state surfaced for the student
+          // CSV download. equipmentGrade / cleanlinessGrade reproduce the
+          // same A–F grades shown in the StatusTab. totalSpent is round
+          // costs (sous chefs + maintenance + equipment + bids — already
+          // aggregated by the simulation wrapper at multi-day-simulation.js).
+          // specialtyChefCount is length of the team's specialty roster at
+          // end-of-round. cumulativeRevenueAfter is the running total
+          // post-revenueNet: when the increment is being applied this round
+          // we add it ourselves; when alreadyPersisted (rerun),
+          // memberData.cumulativeRevenue already holds the post-round value
+          // from the first run.
+          totalSpent: numberOrDefault(r.totalSpent, 0),
+          equipmentGrade: r.equipmentGrade || 'C',
+          cleanlinessGrade: r.cleanlinessGrade || 'B',
+          specialtyChefCount: Array.isArray(memberData.specialtyChefs)
+            ? memberData.specialtyChefs.length
+            : 0,
+          cumulativeRevenueAfter: alreadyPersisted
+            ? numberOrDefault(memberData.cumulativeRevenue, 0)
+            : numberOrDefault(memberData.cumulativeRevenue, 0)
+              + numberOrDefault(r.revenueNet, 0),
         },
         updatedAt: FieldValue.serverTimestamp(),
       };
