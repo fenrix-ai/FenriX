@@ -3,15 +3,18 @@ import {
   useContext,
   useEffect,
   useReducer,
+  useRef,
   type ReactNode,
   type Dispatch,
 } from "react";
+import { httpsCallable } from "firebase/functions";
 import {
   PRODUCT_KEYS,
   BASE_MENU,
   AD_TYPES,
   DEFAULT_STAFF_COUNTS,
   DEFAULT_UNLOCKED_PRODUCTS,
+  parseGamePhase,
   totalSousChefs,
   type AcquiredCsv,
   type AdType,
@@ -31,6 +34,7 @@ import {
   type StaffCounts,
 } from "../types/game";
 import { DEFAULT_PRICES } from "../lib/pricing";
+import { functions } from "../lib/firebase";
 
 function buildDefaultDecisionDraft(): PendingDecisionDraft {
   const menu = PRODUCT_KEYS.reduce((acc, p) => {
@@ -155,6 +159,12 @@ type GameAction =
         staffCounts?: Partial<StaffCounts>;
         productPrices?: Partial<Record<ProductKey, number>>;
         equipmentUpgradePurchased?: boolean;
+        // K-03 (2026-04-29): teammates' miscSpent is mirrored via the
+        // team-pending listener. Setting an absolute value (not delta)
+        // is correct here — the team doc holds the canonical running
+        // total, and `ADD_MISC_SPEND` (incremental) is reserved for the
+        // local tab that actually fired the purchase.
+        miscSpent?: number;
       };
     }
   | {
@@ -350,6 +360,12 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           action.payload.equipmentUpgradePurchased !== undefined
             ? action.payload.equipmentUpgradePurchased
             : state.pendingDecision.equipmentUpgradePurchased,
+        // K-03: absolute set, not delta — see action type comment.
+        miscSpent:
+          typeof action.payload.miscSpent === "number" &&
+          Number.isFinite(action.payload.miscSpent)
+            ? Math.max(0, action.payload.miscSpent)
+            : state.pendingDecision.miscSpent,
       };
       return { ...state, pendingDecision: next };
     }
@@ -737,6 +753,52 @@ export function GameProvider({ children }: { children: ReactNode }) {
       currentRound,
     });
   }, [gameId, playerId, gameCode, role, teamId, phase, currentRound]);
+
+  // K-02 / K-03 (2026-04-29) — debounced team-shared draft sync. Whenever
+  // `pendingDecision` changes (Operations adjusting staffCounts, Finance
+  // changing prices/quantities, Analyst running up miscSpent), we fire
+  // `saveDecisionDraft` after a 500ms quiet period so other teammates'
+  // tabs see the live mutation without us paying a write per keystroke.
+  //
+  // Skipped for: solo players (server returns `skipped: true` anyway,
+  // but bail before the call to save the round-trip), non-decide phases
+  // (the draft only makes sense during decide), and the very first mount
+  // before `pendingDecision` differs from `DEFAULT_PENDING_DECISION` —
+  // a fresh JOIN_GAME shouldn't write a default-shaped draft over a
+  // teammate's already-saved progress.
+  const lastSentDraftRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!gameId || !playerId || !teamId) return;
+    const parsed = parseGamePhase(phase ?? "lobby", currentRound ?? 1);
+    if (parsed.base !== "decide") return;
+    const draftPatch = {
+      menu: pendingDecision.menu,
+      quantities: pendingDecision.quantities,
+      sousChefAssignments: pendingDecision.sousChefAssignments,
+      staffCounts: pendingDecision.staffCounts,
+      productPrices: pendingDecision.productPrices,
+      miscSpent: pendingDecision.miscSpent,
+      equipmentUpgradePurchased: pendingDecision.equipmentUpgradePurchased,
+    };
+    const serialized = JSON.stringify(draftPatch);
+    if (serialized === lastSentDraftRef.current) return;
+    const timer = window.setTimeout(() => {
+      lastSentDraftRef.current = serialized;
+      const save = httpsCallable<
+        { gameId: string; draft: typeof draftPatch },
+        { ok?: boolean; skipped?: boolean }
+      >(functions, "saveDecisionDraft");
+      save({ gameId, draft: draftPatch }).catch((err) => {
+        // Swallow — auto-save is best-effort. Surface to console.debug
+        // so a flaky network doesn't paint a red error bar mid-decide.
+        console.debug("saveDecisionDraft failed", err);
+        // Reset the dedup ref so the next change retries the write
+        // rather than skipping it as "already sent".
+        lastSentDraftRef.current = null;
+      });
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [gameId, playerId, teamId, phase, currentRound, pendingDecision]);
 
   // M-08: persist the in-progress draft on every mutation. Scoped by
   // (gameId, playerId, round) so a refresh restores only when all three

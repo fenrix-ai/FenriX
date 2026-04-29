@@ -406,6 +406,7 @@ export function GamePage() {
           sousChefAssignments?: Partial<Record<ProductKey, number>>;
           staffCounts?: Partial<StaffCounts>;
           productPrices?: Partial<Record<ProductKey, number>>;
+          miscSpent?: number;
         } = {};
         if (incoming.menu && typeof incoming.menu === "object") {
           update.menu = incoming.menu as Partial<Record<ProductKey, boolean>>;
@@ -446,6 +447,16 @@ export function GamePage() {
           if (Object.keys(hydratedPrices).length > 0) {
             update.productPrices = hydratedPrices;
           }
+        }
+        // K-03 (2026-04-29): mirror miscSpent from the team-shared draft
+        // so a teammate's purchase tally appears on every other tab.
+        // The reducer treats `miscSpent` as an absolute set (not delta) —
+        // see UPDATE_PENDING_DECISION action type comment.
+        if (
+          typeof incoming.miscSpent === "number" &&
+          Number.isFinite(incoming.miscSpent)
+        ) {
+          update.miscSpent = Math.max(0, incoming.miscSpent);
         }
         if (Object.keys(update).length > 0) {
           dispatch({ type: "UPDATE_PENDING_DECISION", payload: update });
