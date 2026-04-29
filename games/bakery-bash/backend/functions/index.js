@@ -1056,9 +1056,10 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
   if (displayName.length < 2 || displayName.length > 40) {
     throw new HttpsError('invalid-argument', 'displayName must be 2–40 characters.');
   }
-  if (!teamNumber && !explicitTeamId) {
-    throw new HttpsError('invalid-argument', 'Provide either teamNumber (1–8) or teamId.');
-  }
+  // M-06 (2026-04-28): teamNumber/teamId is no longer required up-front. If
+  // the caller doesn't pass one, we auto-route below to a non-full team —
+  // or auto-create one — so a late-arriving student can join with no
+  // server-trip back to the FE for team selection.
   if (bakeryName.length > 60) {
     throw new HttpsError('invalid-argument', 'bakeryName must be 60 characters or fewer.');
   }
@@ -1075,11 +1076,45 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
   const playerRef = gameRef.collection('players').doc(auth.uid);
   const rosterRef = gameRef.collection('roster').doc(auth.uid);
 
-  // teamId: explicit wins, else derived from teamNumber. The team doc
-  // for explicit ids must already exist (the createTeam callable writes
-  // it); we fail fast if it's missing rather than silently creating an
-  // orphan team.
-  const teamId = explicitTeamId || `team-${teamNumber}`;
+  // M-06: auto-route when the caller didn't pick a team. Find an existing
+  // team with room (memberCount < 3); if none has room, claim the lowest
+  // unused team-{N} slot in [1..8]. The query is best-effort — the M-05
+  // cap check inside the transaction is what actually gates the slot, so
+  // a TOCTOU race here just produces a 'team full' error the FE can retry.
+  let autoRoutedTeamId = null;
+  if (!explicitTeamId && !teamNumber) {
+    const teamsCol = gameRef.collection('teams');
+    const candidatesSnap = await teamsCol
+      .where('memberCount', '<', 3)
+      .orderBy('memberCount')
+      .limit(1)
+      .get();
+    if (!candidatesSnap.empty) {
+      autoRoutedTeamId = candidatesSnap.docs[0].id;
+    } else {
+      // No team has room: claim the lowest unused team-{N} slot.
+      const allSnap = await teamsCol.get();
+      const used = new Set();
+      allSnap.docs.forEach((d) => {
+        const m = /^team-(\d+)$/.exec(d.id);
+        if (m) used.add(Number(m[1]));
+      });
+      let next = 1;
+      while (used.has(next) && next <= 8) next += 1;
+      if (next > 8) {
+        throw new HttpsError('resource-exhausted',
+          'No team has space and no available team slot remains.');
+      }
+      autoRoutedTeamId = `team-${next}`;
+    }
+  }
+
+  // teamId: explicit wins, else auto-routed (M-06), else derived from
+  // teamNumber. The team doc for explicit ids must already exist (the
+  // createTeam callable writes it); we fail fast if it's missing rather
+  // than silently creating an orphan team. Auto-routed ids may or may
+  // not exist — the txn-body auto-create path handles either case.
+  const teamId = explicitTeamId || autoRoutedTeamId || `team-${teamNumber}`;
   const teamRef = gameRef.collection('teams').doc(teamId);
 
   let playerId = auth.uid;
@@ -1124,14 +1159,14 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
 
     const config = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
 
-    // BE-24: new joins are only accepted during lobby and are subject to the
-    // player cap. Rejoins (same uid, existing player doc) are allowed at any
-    // phase so a student who refreshes their browser mid-game can recover
-    // without being locked out.
+    // M-06 (2026-04-28): late joiners are now allowed — a fresh student who
+    // arrives after the prof presses Start should slot into a team with
+    // room (auto-routed above when no team was specified). The previous
+    // BE-24 lobby gate that rejected non-lobby new joiners is removed.
+    // The playerCap check stays in place to prevent unbounded growth.
+    // Rejoins (same uid, existing player doc) continue to be allowed at
+    // any phase so a student who refreshes mid-game recovers cleanly.
     if (!pSnap.exists) {
-      if (gSnap.get('phase') !== 'lobby') {
-        throw new HttpsError('failed-precondition', 'This game is no longer accepting new players.');
-      }
       const playerCap = numberOrDefault(config.playerCap, 20);
       const currentTotal = numberOrDefault(gSnap.get('totalPlayers'), 0);
       if (currentTotal >= playerCap) {
