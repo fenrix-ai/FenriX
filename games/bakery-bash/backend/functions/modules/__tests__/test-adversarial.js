@@ -561,7 +561,7 @@ test('validateDecision: string quantity → throws ValidationError', () => {
       quantities: { croissant: 'lots', bagel: 50, cookie: 50 },
       sousChefCount: 0,
       sousChefAssignments: {}
-    }, 1, defaultCfg),
+    }, 1, defaultCfg, { unlockedProducts: ['cookie'] }),
     'string quantity should throw'
   );
 }, 'HIGH');
@@ -573,7 +573,7 @@ test('validateDecision: negative quantity → throws ValidationError', () => {
       quantities: { croissant: -10, bagel: 50, cookie: 50 },
       sousChefCount: 0,
       sousChefAssignments: {}
-    }, 1, defaultCfg),
+    }, 1, defaultCfg, { unlockedProducts: ['cookie'] }),
     'negative quantity should throw'
   );
 }, 'HIGH');
@@ -585,7 +585,7 @@ test('validateDecision: float quantity → throws (non-integer)', () => {
       quantities: { croissant: 50.5, bagel: 50, cookie: 50 },
       sousChefCount: 0,
       sousChefAssignments: {}
-    }, 1, defaultCfg),
+    }, 1, defaultCfg, { unlockedProducts: ['cookie'] }),
     'float quantity should throw'
   );
 }, 'MEDIUM');
@@ -597,7 +597,7 @@ test('validateDecision: SQL injection in product name via sousChefAssignments', 
       quantities: {},
       sousChefCount: 1,
       sousChefAssignments: { "'; DROP TABLE players;--": 1 }
-    }, 1, defaultCfg),
+    }, 1, defaultCfg, { unlockedProducts: ['cookie'] }),
     'SQL injection in assignment key should throw (unknown product)'
   );
 }, 'CRITICAL');
@@ -609,7 +609,7 @@ test('validateDecision: sousChefAssignments sum mismatch → throws', () => {
       quantities: { croissant: 100, bagel: 100, cookie: 100 },
       sousChefCount: 3,
       sousChefAssignments: { croissant: 1 }  // sum=1, count=3
-    }, 1, defaultCfg),
+    }, 1, defaultCfg, { unlockedProducts: ['cookie'] }),
     'assignment sum mismatch should throw'
   );
 }, 'HIGH');

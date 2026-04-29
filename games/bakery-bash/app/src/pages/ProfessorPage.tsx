@@ -45,6 +45,9 @@ interface ProfessorRosterEntry {
   displayName: string;
   bakeryName?: string;
   joinedAt?: Timestamp | null;
+  isBot?: boolean;
+  difficulty?: string | null;
+  personality?: string | null;
 }
 
 interface ProfessorTeamEntry {
@@ -188,7 +191,18 @@ export function ProfessorPage() {
   const [selectedPreset, setSelectedPreset] = useState<string>("");
   const [manualDifficulty, setManualDifficulty] = useState<string>("medium");
   const [manualPersonality, setManualPersonality] = useState<string>("balanced");
-  const [botsInGame, setBotsInGame] = useState<Array<{ uid: string; name: string; difficulty: string; personality: string }>>([]);
+  const botsInGame = useMemo(
+    () =>
+      roster
+        .filter((r) => r.isBot)
+        .map((r) => ({
+          uid: r.uid,
+          name: r.displayName,
+          difficulty: r.difficulty ?? "unknown",
+          personality: r.personality ?? "unknown",
+        })),
+    [roster],
+  );
 
   // Create-game form.
   const [totalRounds, setTotalRounds] = useState<number>(5);
@@ -323,6 +337,9 @@ export function ProfessorPage() {
             bakeryName:
               typeof data.bakeryName === "string" ? data.bakeryName : undefined,
             joinedAt: (data.joinedAt as Timestamp | null) ?? null,
+            isBot: data.isBot === true,
+            difficulty: typeof data.difficulty === "string" ? data.difficulty : null,
+            personality: typeof data.personality === "string" ? data.personality : null,
           };
         });
         entries.sort((a, b) => {
@@ -1114,7 +1131,6 @@ export function ProfessorPage() {
                     : { gameId, difficulty: manualDifficulty, personality: manualPersonality };
                   const res = await httpsCallable(functions, "createBotPlayer")(payload);
                   const bot = res.data as { botUid: string; displayName: string; difficulty: string; personality: string };
-                  setBotsInGame((prev) => [...prev, { uid: bot.botUid, name: bot.displayName, difficulty: bot.difficulty, personality: bot.personality }]);
                   setInfo(`Added ${bot.displayName}`);
                 } catch (err) {
                   setError(humanizeFunctionError(err));

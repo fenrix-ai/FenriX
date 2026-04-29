@@ -5028,6 +5028,9 @@ exports.createBotPlayer = onCall(CALLABLE_OPTS, async (request) => {
     uid: botUid,
     displayName: botName,
     bakeryName: `${botName}'s Bakery`,
+    isBot: true,
+    difficulty: difficulty || null,
+    personality: personality || null,
     joinedAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
