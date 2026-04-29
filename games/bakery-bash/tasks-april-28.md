@@ -877,7 +877,7 @@ The lay-off → re-hire is a **transient** state during the roster phase; once t
 
 ---
 
-## [ ] S-08 [P1, XS] — Fix "Basic Chef" copy on RosterPhasePage
+## [x] S-08 [P1, XS] — Fix "Basic Chef" copy on RosterPhasePage (✅ DONE 2026-04-29 by Claude/Scott)
 
 **Problem.** `RosterPhasePage.tsx:336-344` shows "Basic Chef" header but the body text reads "Always in your kitchen." which the user found confusing.
 
