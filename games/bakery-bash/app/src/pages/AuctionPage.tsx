@@ -984,6 +984,17 @@ export function AuctionPage() {
                     </span>
                     <div className="auction-chef__info">
                       <span className="auction-chef__name">{chef.name}</span>
+                      {/* B-04 (2026-04-29): nationality badge so the chef
+                          card explicitly states the nationality alongside
+                          the name (which already encodes it, but as a flat
+                          string, e.g. "French Chef"). Mirrors the existing
+                          skill-tag pattern. */}
+                      <span
+                        className={`auction-chef__nationality auction-chef__nationality--${chef.nationality}`}
+                        aria-label={`${NATIONALITY_LABELS[chef.nationality]} chef`}
+                      >
+                        {NATIONALITY_LABELS[chef.nationality]}
+                      </span>
                     </div>
                     <div className="auction-chef__top-bid">
                       <span className="auction-chef__top-bid-label">Top Bid</span>
