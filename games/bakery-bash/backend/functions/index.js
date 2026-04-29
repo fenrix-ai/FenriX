@@ -5475,8 +5475,37 @@ exports.onBotPhaseChange = onDocumentWritten(
 
     const round = numberOrDefault(after.currentRound || after.round, 0);
     const roundRef = gameRef.collection('rounds').doc(`round_${round}`);
-    const roundSnap = await roundRef.get();
-    const roundData = roundSnap.exists ? roundSnap.data() : {};
+
+    // RACE FIX: advanceGamePhase commits the phase change inside its
+    // transaction but writes the post-phase side effects (chef pool for
+    // bid_chef, chef auction results for roster) AFTER the commit. This
+    // trigger fires on the same game-doc write, so without polling it can
+    // read the round doc before those side effects land — bots then bid
+    // on an empty chef pool or skip layoffs because chefAuctionResults is
+    // missing. Wait up to 5s for the relevant timestamp before proceeding.
+    let roundSnap = await roundRef.get();
+    let roundData = roundSnap.exists ? roundSnap.data() : {};
+
+    const requiredField =
+      parsed.phase === 'bid_chef' ? 'chefPoolGeneratedAt'
+        : parsed.phase === 'roster' ? 'chefAuctionResolvedAt'
+        : null;
+    if (requiredField && !roundData[requiredField]) {
+      const deadline = Date.now() + 5000;
+      let backoffMs = 100;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
+        roundSnap = await roundRef.get();
+        roundData = roundSnap.exists ? roundSnap.data() : {};
+        if (roundData[requiredField]) break;
+        backoffMs = Math.min(backoffMs * 2, 1000);
+      }
+      if (!roundData[requiredField]) {
+        logger.warn('onBotPhaseChange: post-transaction side effect missing — bots may skip this phase.', {
+          gameId, round, phase: parsed.phase, missing: requiredField,
+        });
+      }
+    }
 
     // Load opponents (human players) for opponent modeling
     const opponents = playersSnap.docs
