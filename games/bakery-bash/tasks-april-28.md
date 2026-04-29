@@ -371,7 +371,7 @@ if (phaseAlreadyPassed) {
 
 ---
 
-## [ ] M-20 [P1, S] — Budget doesn't grow with revenue (Q13) — likely a downstream symptom of M-02
+## [x] M-20 [P1, S] — Budget doesn't grow with revenue (Q13) — likely a downstream symptom of M-02 (verified — no code change needed per investigation; transitively fixed by M-02 PR #137; final 2-round playtest confirmation Wed 4 PM)
 
 **Investigation result (2026-04-28).** The math IS correct in the code:
 - `loan-shark.js:77-79` `updateBudget(budgetCurrent, revenueNet, totalSpent) → budgetCurrent + revenueNet - totalSpent`. Correct formula.
