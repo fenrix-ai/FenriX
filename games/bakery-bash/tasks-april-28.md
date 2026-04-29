@@ -745,7 +745,7 @@ For fill rate, surface the WORST per-product satisfaction (e.g. "Bagel: 22%") si
 
 > Solo work, ~1 day. Smaller, mostly UX polish.
 
-## [ ] S-01 [P0, S] — Top-bar bold role display + teammate role roster
+## [x] S-01 [P0, S] — Top-bar bold role display + teammate role roster (✅ DONE 2026-04-29 by Claude/Scott)
 
 **Problem.** `RoundHeader.tsx:286-298` shows the team label + a single role badge ("Active: X" or "Your turn: X"). User wants:
 - Boldly specify who the current player is
@@ -771,7 +771,7 @@ Pull names from `rosterByUid` (the existing roster listener), iterate `teamRoleA
 
 ---
 
-## [ ] S-02 [P0, XS] — Visible countdown timer on the Professor panel
+## [x] S-02 [P0, XS] — Visible countdown timer on the Professor panel (✅ DONE 2026-04-29 by Claude/Scott — PR #151)
 
 **Problem.** `ProfessorPage.tsx` reads `phaseEndsAtMs` only to wire auto-advance. There's no rendered timer. The professor literally cannot see when the phase ends.
 
@@ -787,7 +787,7 @@ Color red when <30s (RoundHeader already has the CSS; reuse).
 
 ---
 
-## [ ] S-03 [P0, S] — Rename "Bidder" → "Analyst" + update role helper labels and copy
+## [x] S-03 [P0, S] — Rename "Bidder" → "Analyst" + update role helper labels and copy (✅ DONE 2026-04-29 by Claude/Scott)
 
 **Problem.** Per Q6, Analyst (renamed from Advertising / "Bidder") owns ad bids + chef bids + data purchases + CSV download. Backend role string stays `advertising` for compatibility — only the labels and gating change.
 
@@ -807,7 +807,7 @@ Color red when <30s (RoundHeader already has the CSS; reuse).
 
 ---
 
-## [ ] S-04 [P0, XS] — FE side of the team-size cap (mirror M-05)
+## [x] S-04 [P0, XS] — FE side of the team-size cap (mirror M-05) (✅ DONE 2026-04-29 by Claude/Scott)
 
 **Problem.** Even after Massaro lands the backend cap, the FE still lets students click into a 3-member team card.
 
@@ -877,7 +877,7 @@ The lay-off → re-hire is a **transient** state during the roster phase; once t
 
 ---
 
-## [ ] S-08 [P1, XS] — Fix "Basic Chef" copy on RosterPhasePage
+## [x] S-08 [P1, XS] — Fix "Basic Chef" copy on RosterPhasePage (✅ DONE 2026-04-29 by Claude/Scott)
 
 **Problem.** `RosterPhasePage.tsx:336-344` shows "Basic Chef" header but the body text reads "Always in your kitchen." which the user found confusing.
 
@@ -889,7 +889,7 @@ The lay-off → re-hire is a **transient** state during the roster phase; once t
 
 ---
 
-## [ ] S-09 [P1, XS] — Sticky/freeze the top bar on Decide so the timer is always visible (Q18 confirmed)
+## [x] S-09 [P1, XS] — Sticky/freeze the top bar on Decide so the timer is always visible (Q18 confirmed) (✅ DONE 2026-04-29 by Claude/Scott)
 
 **Problem (confirmed Q18).** During Decide the page scrolls, taking the timer out of view. User wants the `RoundHeader` pinned to the top so the countdown is always visible.
 

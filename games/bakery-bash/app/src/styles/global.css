@@ -322,6 +322,21 @@ h3 { font-size: 0.7rem; }
   cursor: not-allowed;
 }
 
+/* S-04 — full-team card. Backend (M-05) caps team size at 3; the FE
+   greys out cards that have hit the cap so students don't try to join
+   them. The `Full` label replaces the member count via the JSX. */
+.team-select__card--full {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.team-select__card--full .team-select__count {
+  color: var(--berry, #ef4444);
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
 .team-select__logo {
   width: 60px;
   height: 60px;
@@ -517,6 +532,14 @@ h3 { font-size: 0.7rem; }
   border: var(--border);
   box-shadow: var(--shadow-pixel-sm);
   margin-bottom: 1.5rem;
+  /* S-09 — pin the header to the top while the page scrolls so the timer
+     is always visible during long Decide / Auction / Results pages. The
+     PageShell (flex column on body's scroll) doesn't constrain sticky, so
+     `top: 0` pins to the viewport. Background is already opaque so content
+     scrolling under it stays hidden. */
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
 .round-header__round {
@@ -2108,7 +2131,27 @@ h3 { font-size: 0.7rem; }
   gap: 0.75rem;
   flex-wrap: wrap;
   justify-content: center;
+  align-items: center;
   margin-bottom: 1.5rem;
+}
+
+/* S-02 — phase countdown chip, mirrors the round-header timer styling so
+   the professor sees the same numbers as the students. Goes red under 30s. */
+.professor-page__timer {
+  font-family: var(--font-pixel);
+  font-size: 0.9rem;
+  color: var(--sage);
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--sage);
+  border-radius: 6px;
+  min-width: 4ch;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.professor-page__timer--urgent {
+  color: var(--berry);
+  border-color: var(--berry);
 }
 
 .professor-page__note {
@@ -2336,6 +2379,55 @@ h3 { font-size: 0.7rem; }
 
 .round-header__team-label {
   font-weight: 700;
+}
+
+/* S-01 — per-teammate role pill cluster. Sits inline with the team label
+   and the existing "Active: <role>" badge. The signed-in player is
+   highlighted (bold "You" + caramel border); the teammate whose role
+   owns the current phase gets a filled pip so the team can quickly tell
+   whose move it is right now. */
+.round-header__roster-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.round-header__roster-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  background: var(--cream, #fff7e6);
+  border: 1px solid var(--honey, #f59e0b);
+  color: var(--espresso);
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  white-space: nowrap;
+}
+
+.round-header__roster-pill--mine {
+  border-color: var(--caramel, #d97706);
+  border-width: 2px;
+}
+
+.round-header__roster-pill--active {
+  background: var(--caramel, #d97706);
+  border-color: var(--caramel, #d97706);
+  color: #fff;
+}
+
+.round-header__roster-pill-sep {
+  opacity: 0.6;
+}
+
+.round-header__roster-pill-role {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 /* ─── Professor monitor (April 19) ───────────────────────── */
