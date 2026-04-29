@@ -254,4 +254,26 @@ describe('runMonthlySimulation', () => {
     assert.ok(agg.customerCount > 100,
       `monthly customer count should be meaningful, got ${agg.customerCount}`);
   });
+
+  it('cleanliness drift uses the FULL monthly customer count, not 1/daysPerRound (PR #128)', () => {
+    // Bug: per-day cleanliness drift was computed each day from a fixed
+    // p.cleanlinessScore + that day's customer count (~monthlyCustomers/30),
+    // and the wrapper kept day-29's value — only ~1/30 of the spec drain
+    // applied per round.
+    // Per spec: cleanlinessDriftDelta(staff, customers) is applied ONCE per
+    // round using the FULL monthly customer count.
+    const out = runMonthlySimulation(
+      [fakePlayer('p_a', { cleanlinessScore: 100 })],
+      prefs, config, { gameId: 'g1', round: 1 },
+    );
+    const agg = out[0];
+    // 0 maintenance staff, hundreds of monthly customers → drain dominates.
+    // Buggy: 100 + (-0.20 * monthly/30) ≈ 100 - 6 = ~94
+    // Fixed: 100 + (-0.20 * monthly) ≈ 100 - 140 = clamped to 0
+    assert.ok(agg.cleanlinessScore < 50,
+      `cleanlinessScore ${agg.cleanlinessScore} should reflect the FULL monthly drain ` +
+      `(< 50). monthlyCustomers=${agg.customerCount}; expected drain ≈ ${(0.20 * agg.customerCount).toFixed(0)}. ` +
+      `If it's ~90+, only one day's drift accumulated — the bug regressed.`);
+  });
+
 });

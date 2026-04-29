@@ -516,6 +516,15 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
       const roundCosts = calculateRoundCosts(costDecision, costAuction, config);
       totalSpent = roundCosts.totalSpent;
 
+      // Maintenance staff cost — flat per-head, deducted alongside other staff.
+      // Must be added BEFORE the upgrade affordability check so a player whose
+      // remaining budget exactly spans both costs is not approved for an
+      // upgrade they cannot actually afford.
+      const maintenanceStaffCount = (decision.staffCounts && Number(decision.staffCounts.maintenanceGuys)) || 0;
+      const maintenanceCost = Math.max(0, maintenanceStaffCount) *
+        ((config && config.MAINTENANCE_STAFF_COST) || 20);
+      totalSpent += maintenanceCost;
+
       // Equipment upgrade — deduct cost if requested and the player has cash + room to upgrade.
       // Returns the new grade for the result; original `equipmentGrade` (pp.equipmentGrade)
       // is unchanged for the rest of THIS round's compute. The bump applies to NEXT round.
@@ -528,12 +537,6 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
         nextRoundEquipmentGrade = _nextGrade;
         equipmentUpgradeApplied = true;
       }
-
-      // Maintenance staff cost — flat per-head, deducted alongside other staff.
-      const maintenanceStaffCount = (decision.staffCounts && Number(decision.staffCounts.maintenanceGuys)) || 0;
-      const maintenanceCost = Math.max(0, maintenanceStaffCount) *
-        ((config && config.MAINTENANCE_STAFF_COST) || 20);
-      totalSpent += maintenanceCost;
 
       const loanResult = calculateLoanShark(totalSpent, budgetCurrent, config);
       amountBorrowed = loanResult.borrowed;

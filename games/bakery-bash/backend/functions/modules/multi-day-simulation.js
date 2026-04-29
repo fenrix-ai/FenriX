@@ -260,14 +260,19 @@ function runMonthlySimulation(players, roundPreferences, cfg = config, { gameId 
       equipmentUpgradeApplied = true;
     }
 
-    // ---- Cleanliness drift (carry-forward from daily sims) ----
-    // The daily simulations compute cleanliness drift each day independently.
-    // Surface the day-29 result's cleanlinessScore/cleanlinessGrade which
-    // represents the end-of-month state for carry-forward to the next round.
-    const cleanlinessScore = typeof last.cleanlinessScore === 'number'
-      ? last.cleanlinessScore
-      : (_num(p.cleanlinessScore) || 75);
-    const cleanlinessGrade = last.cleanlinessGrade || gradeFromScore(cleanlinessScore);
+    // ---- Cleanliness drift (computed ONCE per round at the monthly level) ----
+    // Each inner daily sim sees only ~monthlyCustomers/daysPerRound customers,
+    // so day-29's cleanlinessScoreNext reflects only ~1/daysPerRound of the
+    // spec drain. Apply the spec drift delta directly to the round-start score
+    // using the FULL monthly customerCount — that is the round-end state.
+    const _cleanlinessStart = Number.isFinite(Number(p.cleanlinessScore))
+      ? Number(p.cleanlinessScore)
+      : 75;
+    const _cleanlinessDelta = cleanlinessDriftDelta(maintenanceStaffCount, customerCount);
+    const cleanlinessScore = Math.round(
+      Math.max(0, Math.min(100, _cleanlinessStart + _cleanlinessDelta))
+    );
+    const cleanlinessGrade = gradeFromScore(cleanlinessScore);
 
     const loanResult = calculateLoanShark(totalSpent, budgetCurrent, cfg);
     const amountBorrowed = loanResult.borrowed;
