@@ -1129,9 +1129,16 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
 
   // M-06: auto-route when the caller didn't pick a team. Find an existing
   // team with room (memberCount < TEAM_CAP); if none has room, claim the
-  // lowest unused team-{N} slot in [1..8]. The query is best-effort — the
-  // M-05 cap check inside the transaction is what actually gates the slot,
-  // so a TOCTOU race here just produces a 'team full' error the FE can retry.
+  // lowest unused team-{N} slot. The query is best-effort — the M-05 cap
+  // check inside the transaction is what actually gates the slot, so a
+  // TOCTOU race here just produces a 'team full' error the FE can retry.
+  //
+  // S-04 follow-up (2026-04-29): the unused-slot search used to cap at
+  // [1..8], which made 70-student sessions impossible via auto-route
+  // (24+ teams of 3 needed). Now scales with playerCap: ceil(playerCap/
+  // TEAM_CAP) covers the worst case where every team is full and the
+  // next joiner needs a fresh slot. The +5 buffer leaves headroom for
+  // teams that happened to finish early and got recycled.
   let autoRoutedTeamId = null;
   if (!explicitTeamId && !teamNumber) {
     const teamsCol = gameRef.collection('teams');
@@ -1145,6 +1152,11 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
     } else {
       // No team has room: claim the lowest unused team-{N} slot. .select()
       // with no args returns doc refs only — we just need ids, not bodies.
+      const cfgSnap = await gameRef.collection('config').doc('params').get();
+      const cfg = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
+      const cap = numberOrDefault(cfg.playerCap, 20);
+      const maxSlots = Math.max(8, Math.ceil(cap / TEAM_CAP) + 5);
+
       const allSnap = await teamsCol.select().get();
       const used = new Set();
       allSnap.docs.forEach((d) => {
@@ -1152,8 +1164,8 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
         if (m) used.add(Number(m[1]));
       });
       let next = 1;
-      while (used.has(next) && next <= 8) next += 1;
-      if (next > 8) {
+      while (used.has(next) && next <= maxSlots) next += 1;
+      if (next > maxSlots) {
         throw new HttpsError('resource-exhausted',
           'No team has space and no available team slot remains.');
       }
@@ -1292,6 +1304,20 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
       if (teamMemberCount >= TEAM_CAP) {
         throw new HttpsError('resource-exhausted', `That team is full (${TEAM_CAP} max).`);
       }
+      // S-04 follow-up (2026-04-29): bump memberCount + register the
+      // joiner's role INSIDE the transaction. The previous post-txn
+      // increment let concurrent joiners all read memberCount=N at txn
+      // time, all pass the < TEAM_CAP check, and then all bump the
+      // counter — so a popular team observed on a stress test ended up
+      // with 30+ members despite the M-05 cap. Doing the write inside
+      // the txn means Firestore's optimistic-concurrency check rejects
+      // the loser; their txn retries, the retry sees the updated
+      // memberCount, and the cap check fires correctly.
+      transaction.update(teamRef, {
+        [`roleAssignments.${auth.uid}`]: autoRole,
+        memberCount: FieldValue.increment(1),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
     }
 
     transaction.set(playerRef, {
@@ -1360,28 +1386,18 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
     }
   });
 
-  // P0-2: post-transaction hot-doc updates. Atomic FieldValue ops on a plain
-  // .update() outside a transaction don't acquire a pessimistic write lock —
-  // they serialize at the doc level via Firestore's atomic-counter machinery,
-  // which scales to many more concurrent writers. See the comment above the
-  // transaction body for why this matters at 70 concurrent joiners.
+  // P0-2: post-transaction game-doc atomic increment. The team-level
+  // memberCount + roleAssignments writes used to live here too; S-04 moved
+  // them back inside the transaction so the M-05 cap check actually holds
+  // under concurrent joins (see the comment in the txn body). The game
+  // doc's totalPlayers stays out — its contention surface is N writers
+  // contending on one doc, which is what FieldValue.increment is built
+  // for, and the cap-check there is approximate by design.
   if (outcomeNewJoin) {
-    const writes = [
-      gameRef.update({
-        totalPlayers: FieldValue.increment(1),
-        updatedAt: FieldValue.serverTimestamp(),
-      }),
-    ];
-    // If the team doc already existed at txn-time, we still owe it a
-    // memberCount bump and the per-uid roleAssignments key.
-    if (outcomeTeamExistedAtTxnTime) {
-      writes.push(teamRef.update({
-        [`roleAssignments.${auth.uid}`]: 'solo',
-        memberCount: FieldValue.increment(1),
-        updatedAt: FieldValue.serverTimestamp(),
-      }));
-    }
-    await Promise.all(writes);
+    await gameRef.update({
+      totalPlayers: FieldValue.increment(1),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
   }
 
   return { gameId: gameRef.id, playerId };
