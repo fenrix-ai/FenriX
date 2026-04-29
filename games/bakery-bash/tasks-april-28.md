@@ -96,7 +96,7 @@ equipmentUpgradePurchased: !!decision.equipmentUpgradePurchased,
 
 ---
 
-## [ ] M-02 [P0, M] — Specialty chefs should be a BONUS, not a gate. Today no-chef teams earn $0.
+## [x] M-02 [P0, M] — Specialty chefs should be a BONUS, not a gate. Today no-chef teams earn $0.
 
 **User intent (confirmed Q2):** chefs are a multiplier on top of base, not a prerequisite. A team that takes no specialty chef in round 1 should still run a viable bakery and earn real money — just less than a team that won a chef.
 

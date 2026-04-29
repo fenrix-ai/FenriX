@@ -19,6 +19,25 @@ const config = require('./config');
 const satisfaction = require('./satisfaction');
 const { calculatePriceDemandMultiplier } = require('./pricing');
 
+// M-02 (2026-04-28): chef-as-bonus economy.
+//
+// BASE_CHEF_CUSTOMERS — per-day per-player customer floor for any team
+// with menu open AND stocked product. Without this floor, the
+// satisfaction-weighted competitive split can round a team's allocation
+// share to 0 → 0 customers → 0 revenue, which reads as "chefs are a
+// gate, not a bonus" — the opposite of what the game intends. The floor
+// must stay LOW enough that natural allocation differences (driven by
+// the chef multiplier) remain visible above it; tuning runs in 4-team
+// competition with mid-stock decks settled on 4. See M-02 in
+// tasks-april-28.md.
+const BASE_CHEF_CUSTOMERS = 4;
+
+// M-02 part 3: per specialty chef, +25% to the per-product allocation
+// weight. A team with 2 specialty chefs draws ~50% more customers than
+// a same-stock-same-price team with 0 specialty chefs — chefs feel like
+// a bonus, not a make-or-break gate.
+const SPECIALTY_CHEF_BONUS_PER_CHEF = 0.25;
+
 /**
  * Calculate the total customer (demand) pool for each product in a round.
  *
@@ -102,7 +121,7 @@ function allocateCustomersPerProduct(product, demandPool, allPlayersSatisfaction
     return 0;
   };
 
-  // Weight = satisfaction × priceDemandMultiplier (POST-01)
+  // Weight = satisfaction × priceDemandMultiplier (POST-01) × chef multiplier (M-02)
   const priceCfg = config.PRICE_ZONES && config.PRICE_ZONES[product];
 
   const getWeight = (p) => {
@@ -111,8 +130,17 @@ function allocateCustomersPerProduct(product, demandPool, allPlayersSatisfaction
     const price = perPlayerPrices
       && perPlayerPrices[p.playerId]
       && perPlayerPrices[p.playerId][product];
-    if (typeof price !== 'number' || !Number.isFinite(price) || !priceCfg) return sat;
-    return sat * calculatePriceDemandMultiplier(price, priceCfg);
+    const priceMult = (typeof price === 'number' && Number.isFinite(price) && priceCfg)
+      ? calculatePriceDemandMultiplier(price, priceCfg)
+      : 1;
+    // M-02 part 3: chef-as-bonus weighting. +25% per specialty chef on
+    // top of satisfaction × price multiplier. The bonus compounds with
+    // the underlying weight rather than replacing it, so a team that
+    // wins chef bids doesn't lose its priced/served edge — the chef
+    // amplifies it.
+    const chefCount = Math.max(0, Number(p.specialtyChefCount) || 0);
+    const chefMult = 1 + SPECIALTY_CHEF_BONUS_PER_CHEF * chefCount;
+    return sat * priceMult * chefMult;
   };
 
   const totalWeight = eligible.reduce((acc, p) => acc + getWeight(p), 0);
@@ -211,11 +239,29 @@ function allocateAllCustomers(allPlayersState, roundPreferences, cfg = config, p
     );
   }
 
-  // Step D: aggregate per-player, then apply foot-traffic modifier to totals.
+  // Step D: aggregate per-player, apply M-02 customer floor, then foot-traffic.
+  //
+  // M-02 part 1: per-day per-player customer floor. Any team with menu open
+  // AND positive stock somewhere gets at least BASE_CHEF_CUSTOMERS per day
+  // (~⅓ of a base-chef's daily output). Without this, the satisfaction-
+  // weighted competitive split can round a team's allocation to 0 → 0
+  // customers → 0 revenue, which reads as "chefs are a gate, not a bonus."
+  // The floor is applied to the per-player total (sum across products)
+  // BEFORE the foot-traffic modifier so the foot-traffic still compounds
+  // — a team with great satisfaction still benefits from foot traffic on
+  // top of their floored allocation.
+  //
+  // The floor adds to the per-product allocation proportionally across
+  // products the team actually offers + has stock for, so downstream
+  // sellout / fill-rate accounting stays consistent.
   const out = new Map();
   for (const p of allPlayersState) {
     const perProductCustomers = {};
     let total = 0;
+    // Track which products are "stocked" for the team (have a positive
+    // allocation share OR positive satisfaction → some output). We
+    // distribute the floor onto these products.
+    const stockedProducts = [];
     for (const product of Object.keys(pools)) {
       const alloc = perProductAllocations[product] || new Map();
       const n = alloc.get(p.playerId) || 0;
@@ -223,7 +269,31 @@ function allocateAllCustomers(allPlayersState, roundPreferences, cfg = config, p
         perProductCustomers[product] = n;
         total += n;
       }
+      const sat = (p.perProductSatisfaction || {})[product];
+      const satNum = (typeof sat === 'number')
+        ? sat
+        : (sat && typeof sat === 'object' && Number.isFinite(sat.satisfactionPct))
+          ? sat.satisfactionPct
+          : 0;
+      if (satNum > 0) stockedProducts.push(product);
     }
+
+    // M-02 floor — apply only when the team is open (some product stocked)
+    // and the natural allocation came in below BASE_CHEF_CUSTOMERS.
+    if (stockedProducts.length > 0 && total < BASE_CHEF_CUSTOMERS) {
+      const deficit = BASE_CHEF_CUSTOMERS - total;
+      const perProductBoost = deficit / stockedProducts.length;
+      for (const product of stockedProducts) {
+        perProductCustomers[product] =
+          (perProductCustomers[product] || 0) + perProductBoost;
+        total += perProductBoost;
+      }
+      // Round per-product back to integers after the boost.
+      for (const product of stockedProducts) {
+        perProductCustomers[product] = Math.round(perProductCustomers[product]);
+      }
+    }
+
     const mod = footTrafficByPlayer.get(p.playerId) || 1.0;
     const totalCustomers = Math.round(total * mod);
 

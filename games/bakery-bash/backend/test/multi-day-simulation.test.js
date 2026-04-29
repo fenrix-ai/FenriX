@@ -84,7 +84,14 @@ describe('runMonthlySimulation', () => {
   });
 
   it('produces different daily customer counts (variability fires)', () => {
-    const out = runMonthlySimulation([fakePlayer('p_a')], prefs, config, {
+    // M-02 (2026-04-28): the customer floor in customer-allocation.js
+    // (BASE_CHEF_CUSTOMERS = 4 per team per day) clamps solo-player
+    // sims to a constant when product demand is low — the floor wins
+    // every day and variance disappears. Use a high round modifier so
+    // the demand pool sits well above the floor, letting per-day
+    // demand-multiplier variance show through.
+    const trendingPrefs = { modifiers: { croissant: 4.0, cookie: 4.0, bagel: 4.0 } };
+    const out = runMonthlySimulation([fakePlayer('p_a')], trendingPrefs, config, {
       gameId: 'g1', round: 1,
     });
     const counts = out[0].dailyResults.map((d) => d.customerCount);
@@ -277,6 +284,106 @@ describe('runMonthlySimulation', () => {
       `applied per-day (>= 80). monthlyCustomers=${agg.customerCount}; expected ` +
       `drain ≈ ${(0.20 * agg.customerCount / 30).toFixed(1)}. ` +
       `If it's < 50, M-03 regressed and the monthly aggregate is back at the apply site.`);
+  });
+
+  // ---- M-02 (2026-04-28) — chef-as-bonus economy ----
+
+  it('no-chef teams earn meaningful revenue (was $0 pre-M-02)', () => {
+    // Pre-M-02: a 4-team round with no specialty chefs on most teams
+    // could allocate 0 customers to the no-chef teams (sat-weighted
+    // split rounded down) AND zero revenueGross via the kill-switch.
+    // Post-M-02: BASE_CHEF_CUSTOMERS floor protects against the 0-customer
+    // outcome; the kill-switch only fires when the team is truly closed.
+    const noChef = fakePlayer('no_chef');
+    const out = runMonthlySimulation([noChef], prefs, config, {
+      gameId: 'm02', round: 1,
+    });
+    const agg = out[0];
+    assert.ok(agg.revenueNet > 0,
+      `no-chef team must earn > $0 net (M-02 acceptance), got $${agg.revenueNet}`);
+    assert.ok(agg.customerCount > 0,
+      `no-chef team must draw > 0 customers (M-02 floor), got ${agg.customerCount}`);
+  });
+
+  it('teams with specialty chefs out-earn no-chef teams (chef-as-bonus weight)', () => {
+    // 4-team competition: 2 no-chef + 2 with-chef. Chef teams should
+    // draw more customers via the +25%/chef weight in the per-product
+    // allocator. Same stock + price + sous chef so the only differentiator
+    // is the specialty chef multiplier.
+    const teams = [
+      fakePlayer('a_no_chef'),
+      fakePlayer('b_no_chef'),
+      fakePlayer('c_2_chefs', {
+        specialtyChefs: [
+          { id: 'c1', nationality: 'french', skillTier: 'intermediate', multiplier: 1.0 },
+          { id: 'c2', nationality: 'french', skillTier: 'intermediate', multiplier: 1.0 },
+        ],
+      }),
+      fakePlayer('d_2_chefs', {
+        specialtyChefs: [
+          { id: 'd1', nationality: 'italian', skillTier: 'intermediate', multiplier: 1.0 },
+          { id: 'd2', nationality: 'italian', skillTier: 'intermediate', multiplier: 1.0 },
+        ],
+      }),
+    ];
+    const out = runMonthlySimulation(teams, prefs, config, {
+      gameId: 'm02-4t', round: 1,
+    });
+    const noChef = out.find((r) => r.playerId === 'a_no_chef');
+    const withChef = out.find((r) => r.playerId === 'c_2_chefs');
+    assert.ok(withChef.customerCount > noChef.customerCount,
+      `chef team must draw more customers than no-chef. ` +
+      `chef=${withChef.customerCount}, no-chef=${noChef.customerCount}`);
+    assert.ok(withChef.revenueNet > noChef.revenueNet,
+      `chef team must out-earn no-chef. ` +
+      `chef=$${withChef.revenueNet}, no-chef=$${noChef.revenueNet}`);
+  });
+
+  it('a closed bakery still earns $0 (kill-switch fires when no menu)', () => {
+    // M-02 part 2: the V9 kill-switch was tightened from "0 customers
+    // AND 0 product revenue" to "no menu OR no stock anywhere". A truly
+    // closed bakery should still produce $0 — the kill-switch is the
+    // only thing preventing the revenue formula's base/sat bonuses from
+    // landing on a team that didn't open the doors.
+    const closed = fakePlayer('closed', {
+      decision: {
+        menu: { croissant: false, bagel: false, coffee: false },
+        quantities: {},
+        sousChefCount: 0,
+        sousChefAssignments: {},
+        productPrices: {},
+      },
+    });
+    const out = runMonthlySimulation([closed], prefs, config, {
+      gameId: 'm02-closed', round: 1,
+    });
+    const agg = out[0];
+    assert.equal(agg.revenueGross, 0,
+      `closed bakery (no menu) should earn $0 gross, got $${agg.revenueGross}`);
+  });
+
+  it('a menu-open-but-no-stock bakery still earns $0 (kill-switch fires when no stock)', () => {
+    // M-02 regression guard: the original V9 kill-switch fired on "0
+    // customers AND 0 sales", which caught both empty-menu AND
+    // menu-open-but-no-stock teams. Tightening to just "no menu" would
+    // re-open the V9 "$527 profit / 0 customers" bug for teams that
+    // check menu items but stock zero. The kill-switch must also fire
+    // when nothing is stocked anywhere.
+    const noStock = fakePlayer('no_stock', {
+      decision: {
+        menu: { croissant: true, cookie: true, bagel: true },
+        quantities: { croissant: 0, cookie: 0, bagel: 0 },
+        sousChefCount: 0,
+        sousChefAssignments: {},
+        productPrices: { croissant: 4.75, cookie: 4.0, bagel: 4.5 },
+      },
+    });
+    const out = runMonthlySimulation([noStock], prefs, config, {
+      gameId: 'm02-no-stock', round: 1,
+    });
+    const agg = out[0];
+    assert.equal(agg.revenueGross, 0,
+      `menu-open-no-stock bakery should earn $0 gross, got $${agg.revenueGross}`);
   });
 
   it('exposes priceCompetitivenessPct for the lastRoundResult.roundSignals panel (M-21)', () => {
