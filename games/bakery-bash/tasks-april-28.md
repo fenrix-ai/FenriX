@@ -225,7 +225,7 @@ That's it. The CSV writer already does the per-day expansion. No backend change,
 
 ---
 
-## [ ] M-10 [P0, S] — Reclaim a teammate's role when they disconnect
+## [x] M-10 [P0, S] — Reclaim a teammate's role when they disconnect
 
 **Problem.** When a player closes their tab, their role in `teams/{teamId}.roleAssignments` is never released. The remaining teammates can't take over and that submit-button stays disabled forever.
 
@@ -261,7 +261,7 @@ Massaro does the backend. Scott wires the "Take over" button into RoundHeader (s
 
 ---
 
-## [ ] M-13 [P1, S] — Layoff multiple chefs in one shot (backend)
+## [x] M-13 [P1, S] — Layoff multiple chefs in one shot (backend)
 
 **Problem.** `index.js:3264-3335` `layoffChef` accepts one chefId. User wants batch.
 
