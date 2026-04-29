@@ -538,21 +538,20 @@ async function resolveAndApplyAdAuction(gameRef, round) {
   const roundRef = gameRef.collection('rounds').doc(roundId);
   // RECOVERY-1: idempotency guard — if auction already resolved, skip.
   // This makes advanceGamePhase side effects safe to retry after a crash.
-  const roundSnap = await roundRef.get();
-  if (roundSnap.exists && roundSnap.data().adAuctionResolvedAt) {
+  const preCheckSnap = await roundRef.get();
+  if (preCheckSnap.exists && preCheckSnap.data().adAuctionResolvedAt) {
     logger.info('resolveAndApplyAdAuction skipped — already resolved.', { gameId: gameRef.id, round });
     return;
   }
+
+  // Read collections + config OUTSIDE the txn (Firestore transactions don't
+  // permit collection-wide reads). Players are stable post-lobby and config
+  // doesn't change mid-round, so reading these non-transactionally is safe.
   const playersSnap = await gameRef.collection('players').get();
+  const playerIds = playersSnap.docs.map((d) => d.id);
   const playerToTeamKey = new Map(
     playersSnap.docs.map((pd) => [pd.id, getPlayerTeamKey(pd)])
   );
-  const bidSnaps = await Promise.all(
-    playersSnap.docs.map((pd) => pd.ref.collection('bids').doc(roundId).get())
-  );
-
-  const aggregateAds = {};
-  const adAuctionResults = {};
 
   // Balance pass 12: enforce minimum bid floor per ad type so a $1 bid
   // can't sweep up the cash bonus uncontested. Pulled from game config
@@ -562,62 +561,90 @@ async function resolveAndApplyAdAuction(gameRef, round) {
   const mergedCfg = require('./modules/config').mergeConfig(rawCfg);
   const adBidMins = (mergedCfg && mergedCfg.adBidMinimums) || {};
 
-  for (const adType of AD_TYPES) {
-    let winnerId = null;
-    let winnerKey = null;
-    let winningBid = 0;
-    let winningSubmittedAt = null;
-    const minBid = numberOrDefault(adBidMins[adType], 0);
+  // M-16 (2026-04-28): wrap the bid-read + result-write in a transaction.
+  // Pre-M-16 the resolution read every bid doc non-transactionally, which
+  // left a window where a submitBids commit could land between the read
+  // and the result write — the resolved winner would then be stale wrt
+  // the latest bid. With this txn, Firestore's optimistic concurrency
+  // catches any submitBids commit on a bid doc the resolution read,
+  // aborts the txn, and retries until the read+write set is consistent.
+  // submitBids's expectedFromPhase + canSubmitBids gates ensure no new
+  // bids land for a phase that has already flipped.
+  await db.runTransaction(async (transaction) => {
+    // Re-check idempotency inside the txn so concurrent advanceGamePhase
+    // calls (e.g. multiple prof tabs each firing auto-advance) don't
+    // double-resolve.
+    const roundSnap = await transaction.get(roundRef);
+    if (roundSnap.exists && roundSnap.data().adAuctionResolvedAt) {
+      return;
+    }
 
-    for (let i = 0; i < playersSnap.docs.length; i += 1) {
-      const bidSnap = bidSnaps[i];
-      if (!bidSnap.exists) continue;
-      const bidData = bidSnap.data() || {};
-      const amount = numberOrDefault(objectOrDefault(bidData.ad, {})[adType], 0);
-      // Require strictly above zero AND meeting the minimum threshold.
-      // Bids below threshold are silently dropped — the player still
-      // pays nothing (their bid is just disqualified).
-      if (amount <= 0 || amount < minBid) continue;
-      const submittedAt = bidData.adSubmittedAt || null;
-      const isEarlierSubmission =
-        winningSubmittedAt &&
-        submittedAt &&
-        typeof winningSubmittedAt.toMillis === 'function' &&
-        typeof submittedAt.toMillis === 'function' &&
-        submittedAt.toMillis() < winningSubmittedAt.toMillis();
-      if (
-        amount > winningBid ||
-        (amount === winningBid && winningBid > 0 && isEarlierSubmission)
-      ) {
-        winnerId = playersSnap.docs[i].id;
-        winnerKey = playerToTeamKey.get(winnerId) || winnerId;
-        winningBid = amount;
-        winningSubmittedAt = submittedAt;
+    const bidSnaps = await Promise.all(
+      playerIds.map((id) => transaction.get(
+        gameRef.collection('players').doc(id).collection('bids').doc(roundId),
+      )),
+    );
+
+    const aggregateAds = {};
+    const adAuctionResults = {};
+
+    for (const adType of AD_TYPES) {
+      let winnerId = null;
+      let winnerKey = null;
+      let winningBid = 0;
+      let winningSubmittedAt = null;
+      const minBid = numberOrDefault(adBidMins[adType], 0);
+
+      for (let i = 0; i < playerIds.length; i += 1) {
+        const bidSnap = bidSnaps[i];
+        if (!bidSnap.exists) continue;
+        const bidData = bidSnap.data() || {};
+        const amount = numberOrDefault(objectOrDefault(bidData.ad, {})[adType], 0);
+        // Require strictly above zero AND meeting the minimum threshold.
+        // Bids below threshold are silently dropped — the player still
+        // pays nothing (their bid is just disqualified).
+        if (amount <= 0 || amount < minBid) continue;
+        const submittedAt = bidData.adSubmittedAt || null;
+        const isEarlierSubmission =
+          winningSubmittedAt &&
+          submittedAt &&
+          typeof winningSubmittedAt.toMillis === 'function' &&
+          typeof submittedAt.toMillis === 'function' &&
+          submittedAt.toMillis() < winningSubmittedAt.toMillis();
+        if (
+          amount > winningBid ||
+          (amount === winningBid && winningBid > 0 && isEarlierSubmission)
+        ) {
+          winnerId = playerIds[i];
+          winnerKey = playerToTeamKey.get(winnerId) || winnerId;
+          winningBid = amount;
+          winningSubmittedAt = submittedAt;
+        }
       }
+
+      if (!winnerId || !winnerKey || winningBid <= 0) continue;
+
+      aggregateAds[adType] = {
+        adType,
+        winnerId,
+        winnerKey,
+        winningBid,
+      };
+
+      if (!adAuctionResults[winnerKey]) {
+        adAuctionResults[winnerKey] = { adTypes: [], totalPaid: 0 };
+      }
+      adAuctionResults[winnerKey].adTypes.push(adType);
+      adAuctionResults[winnerKey].totalPaid += winningBid;
     }
 
-    if (!winnerId || !winnerKey || winningBid <= 0) continue;
-
-    aggregateAds[adType] = {
-      adType,
-      winnerId,
-      winnerKey,
-      winningBid,
-    };
-
-    if (!adAuctionResults[winnerKey]) {
-      adAuctionResults[winnerKey] = { adTypes: [], totalPaid: 0 };
-    }
-    adAuctionResults[winnerKey].adTypes.push(adType);
-    adAuctionResults[winnerKey].totalPaid += winningBid;
-  }
-
-  await roundRef.set({
-    round,
-    auctionResults: { ads: aggregateAds },
-    adAuctionResults,
-    adAuctionResolvedAt: FieldValue.serverTimestamp(),
-  }, { merge: true });
+    transaction.set(roundRef, {
+      round,
+      auctionResults: { ads: aggregateAds },
+      adAuctionResults,
+      adAuctionResolvedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -848,85 +875,113 @@ async function resolveAndApplyChefAuction(gameRef, round, config) {
   const roundRef = gameRef.collection('rounds').doc(roundId);
 
   // RECOVERY-1: idempotency guard — if auction already resolved, skip.
-  const preRoundSnap = await roundRef.get();
-  if (preRoundSnap.exists && preRoundSnap.data().chefAuctionResolvedAt) {
+  const preCheckSnap = await roundRef.get();
+  if (preCheckSnap.exists && preCheckSnap.data().chefAuctionResolvedAt) {
     logger.info('resolveAndApplyChefAuction skipped — already resolved.', { gameId: gameRef.id, round });
     return;
   }
 
-  // Read the round's chefPool and all player bids for this round in parallel.
-  const [roundSnap, playersSnap] = await Promise.all([
-    roundRef.get(),
-    gameRef.collection('players').get(),
-  ]);
-
-  const chefPool = (roundSnap.exists && roundSnap.data().chefPool) || [];
+  // Read collections OUTSIDE the txn (Firestore transactions don't permit
+  // collection-wide reads). Players are stable post-lobby.
+  const playersSnap = await gameRef.collection('players').get();
+  const playerIds = playersSnap.docs.map((d) => d.id);
   const teamGroups = buildTeamGroupsFromPlayerDocs(playersSnap.docs);
   const playerToTeamKey = new Map(
     playersSnap.docs.map((pd) => [pd.id, getPlayerTeamKey(pd)])
   );
-  if (chefPool.length === 0) {
-    logger.info('No chef pool for this round; skipping auction.', {
-      gameId: gameRef.id, round,
-    });
-    return;
-  }
 
-  // Read all player bid docs for this round.
-  const bidSnaps = await Promise.all(
-    playersSnap.docs.map((pd) =>
-      pd.ref.collection('bids').doc(roundId).get()
-    )
-  );
+  // M-16 (2026-04-28): wrap chefPool read + bid reads + result write in
+  // one transaction. Same rationale as resolveAndApplyAdAuction — the
+  // pre-M-16 non-transactional reads left a window where a submitBids
+  // commit could land between bid read and result write, producing a
+  // stale resolution. This txn ensures Firestore optimistic concurrency
+  // catches any submitBids commit on a bid doc the resolution read.
+  let _winners = null;
+  let _payments = null;
+  let _chefAuctionResults = null;
 
-  // Flatten into the format resolveChefAuction expects:
-  // Array<{ playerId, chefId, amount, submittedAt }>
-  const allBids = [];
-  for (let i = 0; i < playersSnap.docs.length; i++) {
-    const pd = playersSnap.docs[i];
-    const bSnap = bidSnaps[i];
-    if (!bSnap.exists) continue;
-    const bData = bSnap.data() || {};
-    const chefBids = Array.isArray(bData.chef) ? bData.chef : [];
-    const submittedAt = bData.chefSubmittedAt || null;
-    for (const cb of chefBids) {
-      if (cb && cb.chefId && numberOrDefault(cb.amount, 0) > 0) {
-        allBids.push({
-          playerId: playerToTeamKey.get(pd.id) || pd.id,
-          chefId: cb.chefId,
-          amount: numberOrDefault(cb.amount, 0),
-          submittedAt,
-        });
+  await db.runTransaction(async (transaction) => {
+    // Re-check idempotency inside the txn so concurrent advanceGamePhase
+    // calls don't double-resolve.
+    const roundSnap = await transaction.get(roundRef);
+    if (roundSnap.exists && roundSnap.data().chefAuctionResolvedAt) {
+      _winners = null; // sentinel to skip the post-txn batch write
+      return;
+    }
+
+    const chefPool = (roundSnap.exists && roundSnap.data().chefPool) || [];
+    if (chefPool.length === 0) {
+      logger.info('No chef pool for this round; skipping auction.', {
+        gameId: gameRef.id, round,
+      });
+      _winners = null;
+      return;
+    }
+
+    const bidSnaps = await Promise.all(
+      playerIds.map((id) => transaction.get(
+        gameRef.collection('players').doc(id).collection('bids').doc(roundId),
+      )),
+    );
+
+    // Flatten into the format resolveChefAuction expects:
+    // Array<{ playerId, chefId, amount, submittedAt }>
+    const allBids = [];
+    for (let i = 0; i < playerIds.length; i++) {
+      const bSnap = bidSnaps[i];
+      if (!bSnap.exists) continue;
+      const bData = bSnap.data() || {};
+      const chefBids = Array.isArray(bData.chef) ? bData.chef : [];
+      const submittedAt = bData.chefSubmittedAt || null;
+      for (const cb of chefBids) {
+        if (cb && cb.chefId && numberOrDefault(cb.amount, 0) > 0) {
+          allBids.push({
+            playerId: playerToTeamKey.get(playerIds[i]) || playerIds[i],
+            chefId: cb.chefId,
+            amount: numberOrDefault(cb.amount, 0),
+            submittedAt,
+          });
+        }
       }
     }
-  }
 
-  if (allBids.length === 0) {
-    logger.info('No chef bids submitted; skipping auction resolution.', {
-      gameId: gameRef.id, round,
-    });
-    return;
-  }
+    if (allBids.length === 0) {
+      logger.info('No chef bids submitted; skipping auction resolution.', {
+        gameId: gameRef.id, round,
+      });
+      _winners = null;
+      return;
+    }
 
-  // Resolve auction using pure function.
-  const { winners, payments } = resolveChefAuction(chefPool, allBids);
+    // Resolve auction using pure function.
+    const { winners, payments } = resolveChefAuction(chefPool, allBids);
 
-  // Write auction results to round doc.
-  // BE-I03: key by team slug only. Earlier code duplicated the entry under
-  // every member uid, which caused the sim aggregator to sum the cost N× for
-  // a team of N (BE-I01). Consumers read by `team.key`, which is the team
-  // slug for multi-member teams and the player uid for solo players.
-  const chefAuctionResults = {};
-  for (const [winnerKey, chefs] of winners) {
-    chefAuctionResults[winnerKey] = {
-      chefs,
-      totalPaid: payments.get(winnerKey) || 0,
-    };
+    // Write auction results to round doc.
+    // BE-I03: key by team slug only. Earlier code duplicated the entry under
+    // every member uid, which caused the sim aggregator to sum the cost N× for
+    // a team of N (BE-I01). Consumers read by `team.key`, which is the team
+    // slug for multi-member teams and the player uid for solo players.
+    const chefAuctionResults = {};
+    for (const [winnerKey, chefs] of winners) {
+      chefAuctionResults[winnerKey] = {
+        chefs,
+        totalPaid: payments.get(winnerKey) || 0,
+      };
+    }
+    transaction.set(roundRef, {
+      chefAuctionResults,
+      chefAuctionResolvedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    _winners = winners;
+    _payments = payments;
+    _chefAuctionResults = chefAuctionResults;
+  });
+
+  if (!_winners) {
+    return; // skipped (idempotency, no pool, or no bids)
   }
-  await roundRef.set({
-    chefAuctionResults,
-    chefAuctionResolvedAt: FieldValue.serverTimestamp(),
-  }, { merge: true });
+  const winners = _winners;
 
   // Write winning chefs to each player's specialtyChefs and set
   // pendingRosterAction if they exceed the cap.
@@ -961,7 +1016,6 @@ async function resolveAndApplyChefAuction(gameRef, round, config) {
     gameId: gameRef.id,
     round,
     winnersCount: winners.size,
-    totalBids: allBids.length,
   });
 }
 
@@ -3213,6 +3267,21 @@ exports.submitBids = onCall(CALLABLE_OPTS, async (request) => {
     const game = gSnap.data();
     if (!canSubmitBids(game.phase, bidType)) {
       throw new HttpsError('failed-precondition', `Current phase ${game.phase} does not accept ${bidType} bids.`);
+    }
+
+    // M-16 (2026-04-28): defense-in-depth phase gate. The FE passes the
+    // phase it THINKS it's submitting for; if the read-time phase has
+    // moved on (auto-advance fired between FE click and backend read),
+    // reject the bid as a stale submission rather than letting it slip
+    // into the next phase's resolution. Mirrors the pattern in
+    // advanceGamePhase's CRIT-02 fix. Optional — pre-M-16 callers that
+    // don't pass it fall back to the existing canSubmitBids gate above.
+    const expectedFromPhase = cleanString(data.expectedFromPhase);
+    if (expectedFromPhase && game.phase !== expectedFromPhase) {
+      throw new HttpsError(
+        'failed-precondition',
+        `Phase has already advanced. Current: ${game.phase}, expected: ${expectedFromPhase}. Bid rejected as stale.`,
+      );
     }
 
     // BE-N04: server-side timer enforcement — reject bids after the phase timer expires.
