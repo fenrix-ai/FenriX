@@ -2250,6 +2250,7 @@ async function runSimulationAndPersist(gameRef, round, config) {
             {},
           ),
         ),
+        equipmentUpgradePurchased: !!decision.equipmentUpgradePurchased,
       },
       specialtyChefs: Array.isArray(canonicalData.specialtyChefs) ? canonicalData.specialtyChefs : [],
       budgetCurrent: simInputBudget,
