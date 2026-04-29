@@ -518,7 +518,7 @@ Pass `disabled={!roleOwnsX(role, teamRoleAssignments)}` on each input. Add a too
 
 ---
 
-## [ ] K-05 [P0, S] — Carry the menu/products forward into the next round
+## [x] K-05 [P0, S] — Carry the menu/products forward into the next round (✅ DONE 2026-04-29 by Claude/Kavin-Sofia)
 
 **Problem.** User report: "If they buy a new product, it should stay the same the next round." `decision-validation.js:421` resets `menu` to `BASE_MENU` each round; bought-but-unstocked products don't survive.
 
