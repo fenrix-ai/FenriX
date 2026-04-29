@@ -754,10 +754,11 @@ export function AuctionPage() {
   const hasAnyChefBid = chefPool.some((chef) => (pendingChefBids[chef.id] ?? 0) > 0);
   const hasAnyBidForPhase = isAdPhase ? hasAnyAdBid : hasAnyChefBid;
 
-  // DEC-21 role gating: Advertising owns ad bids, Finance owns chef bids,
-  // Solo owns both. Other teammates still see + can edit the inputs (so
-  // they can advise the role-owner) but the submit button is disabled with
-  // an explicit owner tooltip.
+  // DEC-21 role gating (M-18 update, 2026-04-28): Advertising owns BOTH
+  // ad bids and chef bids per the Q6 role split. Solo owns both. Other
+  // teammates still see + can edit the inputs (so they can advise the
+  // role-owner) but the submit button is disabled with an explicit owner
+  // tooltip.
   const ownerLabel = isAdPhase
     ? ownerOfAdBids()
     : isChefPhase

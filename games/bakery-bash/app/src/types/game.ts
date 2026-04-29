@@ -494,8 +494,10 @@ export interface RoundEvent {
  *
  * - `operations` owns the Decide-phase submit (quantities, sous chefs,
  *   maintenance guys).
- * - `advertising` owns the ad-auction submit.
- * - `finance` owns the chef-auction submit + roster (layoff / continue).
+ * - `advertising` owns the ad-auction submit AND the chef-auction submit
+ *   (M-18, 2026-04-28: chef bids moved here under the Q6 role split; the
+ *   FE label is "Analyst" — see S-03).
+ * - `finance` owns the roster (layoff / continue).
  * - `solo` is the fallback when a player joins without teammates: all three
  *   buttons are enabled on their device. Also the default during the
  *   transition window before BE-20 / BE-21 ship per-team schema + role
@@ -562,8 +564,12 @@ export function roleOwnsChefBids(
   role: PlayerRole,
   teamRoleAssignments?: Record<string, PlayerRole | null> | null,
 ): boolean {
-  if (role === "finance" || role === "solo") return true;
-  return teamRoleIsVacant(teamRoleAssignments ?? null, ["finance"]);
+  // M-18 (2026-04-28): chef bid ownership moved from Finance to the renamed
+  // Analyst role (backend role string stays "advertising" for compatibility;
+  // only the FE label changes — see S-03). Analyst now owns BOTH ad bids
+  // and chef bids per the Q6 role split.
+  if (role === "advertising" || role === "solo") return true;
+  return teamRoleIsVacant(teamRoleAssignments ?? null, ["advertising"]);
 }
 export function roleOwnsPricing(
   role: PlayerRole,
@@ -612,7 +618,7 @@ export function ownerOfAdBids(): string {
   return PLAYER_ROLE_LABELS.advertising;
 }
 export function ownerOfChefBids(): string {
-  return PLAYER_ROLE_LABELS.finance;
+  return PLAYER_ROLE_LABELS.advertising;
 }
 export function ownerOfRoster(): string {
   return PLAYER_ROLE_LABELS.operations;

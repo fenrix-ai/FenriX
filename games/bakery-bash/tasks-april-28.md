@@ -331,7 +331,7 @@ Scott consumes this from the FE — see S-05. **Massaro lands first.**
 
 ---
 
-## [ ] M-18 [P0, S] — Move chef bid ownership from Finance to Analyst
+## [x] M-18 [P0, S] — Move chef bid ownership from Finance to Analyst
 
 **Problem (confirmed Q6).** Today `roleOwnsChefBids` returns `finance || solo`. Per the new role split, the renamed Analyst role (was Advertising) owns BOTH ad bids and chef bids.
 
