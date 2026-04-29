@@ -3080,12 +3080,14 @@ exports.submitBids = onCall(CALLABLE_OPTS, async (request) => {
     if (!gSnap.exists) throw new HttpsError('not-found', 'Game not found.');
     if (!pSnap.exists) throw new HttpsError('failed-precondition', 'Join the game before bidding.');
 
-    // BE-21 / FE-I15: advertising (ad bids) / finance (chef bids) —
-    // or solo, or any teammate when that role is unfilled.
+    // BE-21 / FE-I15 / M-18 (2026-04-28): both ad bids AND chef bids are now
+    // owned by the advertising role (renamed to "Analyst" on the FE per the
+    // Q6 role split). Solo always passes; any teammate may submit when the
+    // advertising role is unfilled.
     if (bidType === 'ad') {
       await assertRoleAllowedWithTeam(transaction, gameRef, pSnap, ['advertising']);
     } else {
-      await assertRoleAllowedWithTeam(transaction, gameRef, pSnap, ['finance']);
+      await assertRoleAllowedWithTeam(transaction, gameRef, pSnap, ['advertising']);
     }
     _submitBids_role = pSnap.get('role') || null;
     _submitBids_displayName = pSnap.get('displayName') || '';

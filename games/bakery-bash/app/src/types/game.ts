@@ -537,8 +537,12 @@ export function roleOwnsChefBids(
   role: PlayerRole,
   teamRoleAssignments?: Record<string, PlayerRole | null> | null,
 ): boolean {
-  if (role === "finance" || role === "solo") return true;
-  return teamRoleIsVacant(teamRoleAssignments ?? null, ["finance"]);
+  // M-18 (2026-04-28): chef bid ownership moved from Finance to the renamed
+  // Analyst role (backend role string stays "advertising" for compatibility;
+  // only the FE label changes — see S-03). Analyst now owns BOTH ad bids
+  // and chef bids per the Q6 role split.
+  if (role === "advertising" || role === "solo") return true;
+  return teamRoleIsVacant(teamRoleAssignments ?? null, ["advertising"]);
 }
 export function roleOwnsPricing(
   role: PlayerRole,
