@@ -199,23 +199,29 @@ function ProductTile({
               </button>
               <input
                 type="number"
-                className="product-tile__step-value"
+                className={`product-tile__step-value${qty > 9999 ? " product-tile__step-value--error" : ""}`}
                 min={0}
+                max={9999}
                 step={1}
                 value={qty}
                 onChange={(e) =>
-                  onQtyChange(parseInt(e.target.value, 10) || 0)
+                  onQtyChange(Math.min(parseInt(e.target.value, 10) || 0, 9999))
                 }
+                aria-invalid={qty > 9999 ? "true" : undefined}
                 aria-label={`${d.name} quantity`}
               />
               <button
                 type="button"
                 className="product-tile__step-btn"
-                onClick={() => onQtyChange(qty + 1)}
+                onClick={() => onQtyChange(Math.min(9999, qty + 1))}
+                disabled={qty >= 9999}
                 aria-label={`Increase ${d.name}`}
               >
                 +
               </button>
+              {qty > 9999 && (
+                <p className="product-tile__qty-error" role="alert">Max 9,999 units per product.</p>
+              )}
             </div>
           )}
           <span className="product-tile__unit-cost">Cost: ${unitCost.toFixed(2)} / unit</span>
@@ -505,6 +511,12 @@ export function BakeryView({ readOnly = false }: BakeryViewProps) {
           <div className="bakery-view__total-committed-row">
             <span>· Equipment Upgrade</span>
             <strong>${equipmentUpgradeCost.toLocaleString()}</strong>
+          </div>
+        )}
+        {/* Override of "budget hidden during play" rule — explicitly approved (Q4) */}
+        {budgetCurrent !== null && totalCommitted > budgetCurrent && (
+          <div className="bakery-view__loan-shark-warning" role="alert">
+            ⚠ This decision will trigger the loan shark — 10% interest
           </div>
         )}
       </div>

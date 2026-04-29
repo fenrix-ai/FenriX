@@ -337,6 +337,7 @@ export function GamePage() {
                   : undefined,
               adWon: lrr.adWon ?? null,
               adPaid: typeof lrr.adPaid === "number" ? lrr.adPaid : undefined,
+              chefBidPaid: typeof lrr.chefBidPaid === "number" ? lrr.chefBidPaid : undefined,
               auctionResults: {
                 adWon: lrr.adWon ?? null,
                 chefWon:

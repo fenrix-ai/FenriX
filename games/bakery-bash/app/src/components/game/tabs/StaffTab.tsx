@@ -11,7 +11,7 @@ import {
 } from "../../../lib/cost";
 import { nextEquipmentGrade, tierUpgradeCost } from "../../../lib/equipment";
 
-const MAX_PER_ROLE = 20;
+const MAX_PER_ROLE = 99;
 
 interface StepperProps {
   title: string;
@@ -171,6 +171,7 @@ export function StaffTab({ readOnly = false }: StaffTabProps) {
           onIncrement={() =>
             setCount("bakerySousChefs", staffCounts.bakerySousChefs + 1)
           }
+          incrementDisabled={staffCounts.bakerySousChefs >= MAX_PER_ROLE}
           readOnly={readOnly}
         />
         <RoleStepper
@@ -185,6 +186,7 @@ export function StaffTab({ readOnly = false }: StaffTabProps) {
           onIncrement={() =>
             setCount("deliSousChefs", staffCounts.deliSousChefs + 1)
           }
+          incrementDisabled={staffCounts.deliSousChefs >= MAX_PER_ROLE}
           readOnly={readOnly}
         />
         <RoleStepper
@@ -199,6 +201,7 @@ export function StaffTab({ readOnly = false }: StaffTabProps) {
           onIncrement={() =>
             setCount("baristaSousChefs", staffCounts.baristaSousChefs + 1)
           }
+          incrementDisabled={staffCounts.baristaSousChefs >= MAX_PER_ROLE}
           readOnly={readOnly}
         />
       </div>
@@ -218,6 +221,7 @@ export function StaffTab({ readOnly = false }: StaffTabProps) {
           onIncrement={() =>
             setCount("maintenanceGuys", staffCounts.maintenanceGuys + 1)
           }
+          incrementDisabled={staffCounts.maintenanceGuys >= MAX_PER_ROLE}
           readOnly={readOnly}
         />
       </div>

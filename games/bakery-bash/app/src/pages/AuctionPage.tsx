@@ -260,6 +260,8 @@ export function AuctionPage() {
   const [topBidsLeaderAd, setTopBidsLeaderAd] = useState<Partial<Record<AdType, string>>>({});
   const [topBidsLeaderChef, setTopBidsLeaderChef] = useState<Record<string, string>>({});
   const remaining = usePhaseCountdownSeconds() ?? 0;
+  const [submittedChefIds, setSubmittedChefIds] = useState<Set<string>>(new Set());
+  const [submittedAdTypes, setSubmittedAdTypes] = useState<Set<AdType>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [chefBidInputs, setChefBidInputs] = useState<Record<string, string>>({});
@@ -422,6 +424,8 @@ export function AuctionPage() {
     setBackendPool(null);
     setTopBidsAd({});
     setTopBidsChef({});
+    setSubmittedChefIds(new Set());
+    setSubmittedAdTypes(new Set());
     setTopBidsLeaderAd({});
     setTopBidsLeaderChef({});
     setChefBidInputs({});
@@ -548,6 +552,7 @@ export function AuctionPage() {
         bidType: "chef",
         chefBids: [{ chefId, amount }],
       });
+      setSubmittedChefIds(prev => new Set(prev).add(chefId));
     } catch (err) {
       setSubmitError(humanizeFunctionError(err, "Could not submit chef bid. Please try again."));
     }
@@ -577,6 +582,7 @@ export function AuctionPage() {
           return acc;
         }, {} as Record<AdType, number>);
         await submitBids({ gameId, bidType: "ad", adBids });
+        setSubmittedAdTypes(new Set(AD_TYPES.filter(t => (adBids[t] ?? 0) > 0)));
       } else {
         // If the real chef pool from `rounds/{round}.chefPool` has loaded,
         // send bids keyed by those real IDs. Until then, chef IDs in
@@ -612,6 +618,7 @@ export function AuctionPage() {
           { gameId: string; playerId: string; bidType: string; submitted: boolean }
         >(functions, "submitBids");
         await submitBids({ gameId, bidType: "chef", chefBids });
+        setSubmittedChefIds(new Set(chefBids.map(b => b.chefId)));
       }
     } catch (err) {
       setSubmitError(
@@ -676,6 +683,7 @@ export function AuctionPage() {
   const isLockedAdBid = useCallback(
     (adType: AdType) => {
       if (!isAdPhase) return true;
+      if (submittedAdTypes.has(adType)) return true;
       const myBid = pendingAdBids[adType] ?? 0;
       const topBid = topBidsAd[adType] ?? 0;
       const leader = topBidsLeaderAd[adType];
@@ -687,31 +695,16 @@ export function AuctionPage() {
         leader === myTeamKey
       );
     },
-    [isAdPhase, pendingAdBids, topBidsAd, topBidsLeaderAd, myTeamKey],
+    [isAdPhase, submittedAdTypes, pendingAdBids, topBidsAd, topBidsLeaderAd, myTeamKey],
   );
 
   // True when the player has matched the top bid but someone else submitted
   // first and will win the tie — they need to raise to actually win.
-  const isTiedAdBid = useCallback(
-    (adType: AdType) => {
-      const myBid = pendingAdBids[adType] ?? 0;
-      const topBid = topBidsAd[adType] ?? 0;
-      const leader = topBidsLeaderAd[adType];
-      return (
-        myBid > 0 &&
-        topBid > 0 &&
-        myBid === topBid &&
-        !!myTeamKey &&
-        !!leader &&
-        leader !== myTeamKey
-      );
-    },
-    [pendingAdBids, topBidsAd, topBidsLeaderAd, myTeamKey],
-  );
 
   const isLockedChefBid = useCallback(
     (chefId: string) => {
       if (!isChefPhase) return true;
+      if (submittedChefIds.has(chefId)) return true;
       const myBid = pendingChefBids[chefId] ?? 0;
       const topBid = topBidsChef[chefId] ?? 0;
       const leader = topBidsLeaderChef[chefId];
@@ -723,25 +716,9 @@ export function AuctionPage() {
         leader === myTeamKey
       );
     },
-    [isChefPhase, pendingChefBids, topBidsChef, topBidsLeaderChef, myTeamKey],
+    [isChefPhase, submittedChefIds, pendingChefBids, topBidsChef, topBidsLeaderChef, myTeamKey],
   );
 
-  const isTiedChefBid = useCallback(
-    (chefId: string) => {
-      const myBid = pendingChefBids[chefId] ?? 0;
-      const topBid = topBidsChef[chefId] ?? 0;
-      const leader = topBidsLeaderChef[chefId];
-      return (
-        myBid > 0 &&
-        topBid > 0 &&
-        myBid === topBid &&
-        !!myTeamKey &&
-        !!leader &&
-        leader !== myTeamKey
-      );
-    },
-    [pendingChefBids, topBidsChef, topBidsLeaderChef, myTeamKey],
-  );
 
   const hasEditableAdBid = isAdPhase
     ? AD_TYPES.some((adType) => !isLockedAdBid(adType))
@@ -753,6 +730,16 @@ export function AuctionPage() {
   const hasAnyAdBid = AD_TYPES.some((adType) => (pendingAdBids[adType] ?? 0) > 0);
   const hasAnyChefBid = chefPool.some((chef) => (pendingChefBids[chef.id] ?? 0) > 0);
   const hasAnyBidForPhase = isAdPhase ? hasAnyAdBid : hasAnyChefBid;
+
+  const hasDuplicateAdBid = AD_TYPES.some((adType) => {
+    const val = pendingAdBids[adType] ?? 0;
+    return val > 0 && typeof topBidsAd[adType] === "number" && val === topBidsAd[adType] && topBidsLeaderAd[adType] !== myTeamKey;
+  });
+  const hasDuplicateChefBid = chefPool.some((chef) => {
+    const val = pendingChefBids[chef.id] ?? 0;
+    return val > 0 && typeof topBidsChef[chef.id] === "number" && val === topBidsChef[chef.id] && topBidsLeaderChef[chef.id] !== myTeamKey;
+  });
+  const hasDuplicateBidForPhase = isAdPhase ? hasDuplicateAdBid : hasDuplicateChefBid;
 
   // DEC-21 role gating: Advertising owns ad bids, Finance owns chef bids,
   // Solo owns both. Other teammates still see + can edit the inputs (so
@@ -831,8 +818,7 @@ export function AuctionPage() {
             <div className="auction-ads__grid">
               {isAdPhase && hasEditableBid && (
                 <p className="auction-page__hint">
-                  You can rebid any ad slot where another team has outbid you.
-                  Slots where you already lead are locked.
+                  You may update your bid on any unlocked ad slot before the timer runs out.
                 </p>
               )}
               {AD_CARDS.map((ad) => {
@@ -840,6 +826,10 @@ export function AuctionPage() {
                 const adInputVal = parseInt(adBidInputs[ad.id] ?? "", 10);
                 const adBelowMinimum =
                   adMinBid !== null && !isNaN(adInputVal) && adInputVal > 0 && adInputVal < adMinBid;
+                const adDuplicate =
+                  !isNaN(adInputVal) && adInputVal > 0 &&
+                  typeof topBidsAd[ad.id] === "number" && adInputVal === topBidsAd[ad.id] &&
+                  topBidsLeaderAd[ad.id] !== myTeamKey;
                 return (
                 <div key={ad.id} className="auction-ad">
                   <img
@@ -853,11 +843,7 @@ export function AuctionPage() {
                   </div>
                   <div className="auction-ad__top-bid">
                     <span className="auction-ad__top-bid-label">Top Bid</span>
-                    <span className="auction-ad__top-bid-value">
-                      {typeof topBidsAd[ad.id] === "number"
-                        ? `$${topBidsAd[ad.id]!.toLocaleString()}`
-                        : "--"}
-                    </span>
+                    <span className="auction-ad__top-bid-sealed">Sealed</span>
                   </div>
                   {adMinBid !== null && (
                     <div className="auction-ad__min-bid">
@@ -871,38 +857,42 @@ export function AuctionPage() {
                       <span className="auction-page__bid-prefix">$</span>
                       <input
                         type="number"
-                        className={`auction-ad__bid-input auction-page__bid-input${adBelowMinimum ? " auction-ad__bid-input--error" : ""}`}
+                        className={`auction-ad__bid-input auction-page__bid-input${adBelowMinimum || adDuplicate ? " auction-ad__bid-input--error" : ""}`}
                         placeholder="0"
                         min={0}
+                        max={999999}
                         value={
                           adBidInputs[ad.id] ??
                           (pendingAdBids[ad.id] ? String(pendingAdBids[ad.id]) : "")
                         }
                         disabled={timerExpired || !isAdPhase || isLockedAdBid(ad.id)}
                         readOnly={!isAdPhase || isLockedAdBid(ad.id)}
-                        aria-invalid={adBelowMinimum ? "true" : undefined}
+                        aria-invalid={adBelowMinimum || adDuplicate ? "true" : undefined}
                         onChange={(e) => {
                           const raw = e.target.value;
-                          setAdBidInputs((prev) => ({ ...prev, [ad.id]: raw }));
                           if (raw === "") {
+                            setAdBidInputs((prev) => ({ ...prev, [ad.id]: raw }));
                             setAdBid(ad.id, 0);
                             return;
                           }
                           const parsed = parseInt(raw, 10);
                           if (!isNaN(parsed) && parsed >= 0) {
-                            setAdBid(ad.id, parsed);
+                            const clamped = Math.min(parsed, 999999);
+                            setAdBidInputs((prev) => ({ ...prev, [ad.id]: String(clamped) }));
+                            setAdBid(ad.id, clamped);
                           }
                         }}
+                        onKeyDown={(e) => { if (e.key === "Enter") handleSubmitBids(); }}
                       />
                     </div>
-                    {adBelowMinimum && (
+                    {adDuplicate && (
                       <p className="auction-ad__bid-error" role="alert">
-                        Bid at least ${adMinBid!.toLocaleString()} to qualify.
+                        Another team has already entered this bid amount — please enter a different amount.
                       </p>
                     )}
-                    {!adBelowMinimum && isTiedAdBid(ad.id) && (
-                      <p className="auction-page__tied-warning" role="alert">
-                        ⚠ Tied — raise your bid to win
+                    {!adDuplicate && adBelowMinimum && (
+                      <p className="auction-ad__bid-error" role="alert">
+                        Bid at least ${adMinBid!.toLocaleString()} to qualify.
                       </p>
                     )}
                   </div>
@@ -920,8 +910,7 @@ export function AuctionPage() {
             </p>
             {isChefPhase && hasEditableBid && (
               <p className="auction-page__hint">
-                You can rebid chefs where you have been outbid. Chefs you
-                currently lead are locked.
+                You may update your bid on any unlocked chef before the timer runs out.
               </p>
             )}
             <div className="auction-chefs__grid">
@@ -936,6 +925,10 @@ export function AuctionPage() {
                   minBid !== null &&
                   currentBidAmount > 0 &&
                   currentBidAmount < minBid;
+                const chefDuplicate =
+                  currentBidAmount > 0 &&
+                  typeof topBidsChef[chef.id] === "number" && currentBidAmount === topBidsChef[chef.id] &&
+                  topBidsLeaderChef[chef.id] !== myTeamKey;
                 return (
                   <div
                     key={chef.id}
@@ -958,14 +951,11 @@ export function AuctionPage() {
                     </span>
                     <div className="auction-chef__info">
                       <span className="auction-chef__name">{chef.name}</span>
+                      <span className="auction-chef__nationality">{NATIONALITY_LABELS[chef.nationality]}</span>
                     </div>
                     <div className="auction-chef__top-bid">
                       <span className="auction-chef__top-bid-label">Top Bid</span>
-                      <span className="auction-chef__top-bid-value">
-                        {typeof topBidsChef[chef.id] === "number"
-                          ? `$${topBidsChef[chef.id]!.toLocaleString()}`
-                          : "--"}
-                      </span>
+                      <span className="auction-chef__top-bid-sealed">Sealed</span>
                     </div>
                     {minBid !== null && (
                       <div className="auction-chef__min-bid">
@@ -986,39 +976,45 @@ export function AuctionPage() {
                         <input
                           type="number"
                           className={`auction-chef__bid-input auction-page__bid-input${
-                            belowMinimum ? " auction-chef__bid-input--error" : ""
+                            belowMinimum || chefDuplicate ? " auction-chef__bid-input--error" : ""
                           }`}
                           placeholder="0"
                           min={0}
+                          max={999999}
                           value={chefBidInputs[chef.id] ?? ""}
                           disabled={timerExpired || !isChefPhase || isLockedChefBid(chef.id)}
                           readOnly={!isChefPhase || isLockedChefBid(chef.id)}
-                          aria-invalid={belowMinimum ? "true" : undefined}
+                          aria-invalid={belowMinimum || chefDuplicate ? "true" : undefined}
                           onChange={(e) => {
                             const raw = e.target.value;
-                            setChefBidInputs(prev => ({ ...prev, [chef.id]: raw }));
+                            if (raw === "") {
+                              setChefBidInputs(prev => ({ ...prev, [chef.id]: raw }));
+                              setChefBid(chef.id, 0);
+                              return;
+                            }
                             const parsed = parseInt(raw, 10);
                             if (!isNaN(parsed) && parsed >= 0) {
-                              setChefBid(chef.id, parsed);
-                            } else if (raw === "") {
-                              setChefBid(chef.id, 0);
+                              const clamped = Math.min(parsed, 999999);
+                              setChefBidInputs(prev => ({ ...prev, [chef.id]: String(clamped) }));
+                              setChefBid(chef.id, clamped);
                             }
                           }}
+                          onKeyDown={(e) => { if (e.key === "Enter") handleSubmitSingleBid(chef.id); }}
                         />
                       </div>
-                      {belowMinimum && minBid !== null && (
+                      {chefDuplicate && (
+                        <p className="auction-chef__bid-error" role="alert">
+                          Another team has already entered this bid amount — please enter a different amount.
+                        </p>
+                      )}
+                      {!chefDuplicate && belowMinimum && minBid !== null && (
                         <p className="auction-chef__bid-error" role="alert">
                           Bid must be at least ${minBid.toLocaleString()}.
                         </p>
                       )}
-                      {!belowMinimum && isTiedChefBid(chef.id) && (
-                        <p className="auction-page__tied-warning" role="alert">
-                          ⚠ Tied — raise your bid to win
-                        </p>
-                      )}
                       <button
                         className="btn btn--small chef-card__submit"
-                        disabled={timerExpired || !pendingChefBids[chef.id] || isLockedChefBid(chef.id) || belowMinimum}
+                        disabled={timerExpired || !pendingChefBids[chef.id] || isLockedChefBid(chef.id) || belowMinimum || chefDuplicate}
                         onClick={(e) => { e.preventDefault(); handleSubmitSingleBid(chef.id); }}
                       >
                         Submit Bid
@@ -1047,7 +1043,8 @@ export function AuctionPage() {
           (!isAdPhase && !isChefPhase) ||
           !hasAnyBidForPhase ||
           !hasEditableBid ||
-          !canSubmitForPhase
+          !canSubmitForPhase ||
+          hasDuplicateBidForPhase
         }
         title={submitTooltip}
       >

@@ -39,20 +39,15 @@ export function LoanSharkCallout({
           The loan shark paid you a visit.
         </div>
         <div className="loan-shark-callout__detail">
-          You overspent by <strong>{formatMoney(amountBorrowed)}</strong> this
-          round.
+          Borrowed <strong>{formatMoney(amountBorrowed)}</strong> at 10% interest
           {typeof interestCharged === "number" && (
-            <>
-              {" "}
-              Interest charged:{" "}
-              <strong>{formatMoney(interestCharged)}</strong>.
-            </>
+            <> (<strong>{formatMoney(interestCharged)}</strong> in interest)</>
           )}
+          .
           {total !== null && (
             <>
               {" "}
-              Deducted from your revenue:{" "}
-              <strong>{formatMoney(total)}</strong>.
+              <strong>{formatMoney(total)}</strong> total deducted from your revenue.
             </>
           )}
         </div>

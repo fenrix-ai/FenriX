@@ -64,6 +64,9 @@ export function useGameListener(gameId: string | null, playerId?: string | null)
         if (!snap.exists()) return;
         const data = snap.data() as DocumentData;
         if (typeof data.phase === "string") {
+          if (data.phase === "lobby") {
+            dispatch({ type: "RESET" });
+          }
           dispatch({ type: "SET_PHASE", payload: data.phase });
         }
         const nextRound =

@@ -18,6 +18,7 @@ const ZONE_LABEL: Record<PriceZone, string> = {
 export function PriceInput({ value, onChange, cfg, disabled }: Props) {
   const [raw, setRaw] = useState(value.toFixed(2));
   const zone = classifyZone(value, cfg);
+  const overMax = (Number.parseFloat(raw) || 0) > 999999;
 
   // Resync the visible input whenever the controlled value changes externally:
   // round transitions, carry-over prefill from the player doc, or a parent
@@ -49,14 +50,18 @@ export function PriceInput({ value, onChange, cfg, disabled }: Props) {
         type="number"
         step="0.25"
         min={cfg.floor}
-        max={cfg.ceiling}
+        max={Math.min(cfg.ceiling, 999999)}
         value={raw}
         disabled={disabled}
         onChange={(e) => setRaw(e.target.value)}
         onBlur={() => commit(Number.parseFloat(raw) || cfg.floor)}
-        className="price-input__field"
+        className={`price-input__field${overMax ? " price-input__field--error" : ""}`}
+        aria-invalid={overMax ? "true" : undefined}
         title={`Floor $${cfg.floor.toFixed(2)} / Ceiling $${cfg.ceiling.toFixed(2)}`}
       />
+      {overMax && (
+        <p className="price-input__error" role="alert">Going way over budget there!</p>
+      )}
       <button
         type="button"
         disabled={disabled || value >= cfg.ceiling}

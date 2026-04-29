@@ -1728,6 +1728,15 @@ h3 { font-size: 0.7rem; }
   font-weight: 700;
 }
 
+.auction-chef__top-bid-sealed {
+  font-family: var(--font-pixel);
+  font-size: 0.65rem;
+  color: var(--dark-roast);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.6;
+}
+
 .auction-chef__bid {
   display: flex;
   flex-direction: column;
@@ -1897,6 +1906,15 @@ h3 { font-size: 0.7rem; }
   color: var(--berry);
   text-shadow: var(--shadow-pixel-sm);
   font-weight: 700;
+}
+
+.auction-ad__top-bid-sealed {
+  font-family: var(--font-pixel);
+  font-size: 0.65rem;
+  color: var(--dark-roast);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.6;
 }
 
 .auction-ad__bid {
@@ -5099,4 +5117,66 @@ h3 { font-size: 0.7rem; }
   justify-content: center;
   margin-top: 1rem;
   flex-wrap: wrap;
+}
+
+/* ── Loan Shark Callout ─────────────────────────────────────────────────── */
+
+.loan-shark-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: var(--berry);
+  border: 3px solid var(--outline);
+  box-shadow: var(--shadow-pixel-sm);
+  color: var(--flour);
+  margin: 1rem 0;
+}
+
+.loan-shark-callout__icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.loan-shark-callout__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.loan-shark-callout__title {
+  font-family: var(--font-pixel);
+  font-size: 0.55rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--flour);
+}
+
+.loan-shark-callout__detail {
+  font-family: var(--font-pixel);
+  font-size: 0.45rem;
+  line-height: 1.8;
+  color: var(--flour);
+  opacity: 0.9;
+}
+
+.loan-shark-callout__detail strong {
+  color: var(--flour);
+  opacity: 1;
+}
+
+/* Inline warning chip in Decide phase */
+.bakery-view__loan-shark-warning {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.6rem;
+  background: #f5c842;
+  border: 2px solid var(--outline);
+  box-shadow: var(--shadow-pixel-sm);
+  font-family: var(--font-pixel);
+  font-size: 0.4rem;
+  color: var(--outline);
+  margin-top: 0.5rem;
 }
