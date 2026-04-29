@@ -2691,8 +2691,11 @@ async function runSimulationAndPersist(gameRef, round, config) {
   const rankings = results
     .slice()
     .map((r) => {
-      const memberDoc = playerDocs.find((m) => m.id === r.playerId);
-      const memberData = (memberDoc && memberDoc.data()) || {};
+      const team = teamGroups.get(r.playerId);
+      const canonicalDoc = team
+        ? (team.memberDocs.find((md) => md.id === team.canonicalUid) || team.memberDocs[0])
+        : playerDocs.find((m) => m.id === r.playerId);
+      const memberData = (canonicalDoc && canonicalDoc.data()) || {};
       return {
         ...r,
         cumulativeRevenue:
