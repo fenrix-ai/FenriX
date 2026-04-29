@@ -1,8 +1,15 @@
 import type { SpriteData } from '../sprite-data'
 
 /**
- * Bakery station chef — white apron, flour-dusted cream apron.
+ * Bakery station chef — white hat + white t-shirt + navy apron.
  * 24×40. Frame 0 = standing, Frame 1 = 1-px Y-shift bob.
+ *
+ * K-06 (2026-04-29): standardized the chef uniform across all three
+ * stations to the universal "chef" look — white hat, white shirt,
+ * navy apron — so the sprite reads as a chef from the across-the-room
+ * tile size rather than as "blue/cream/green blob". Per-station
+ * differentiation now lives in the scene context (which counter the
+ * sprite stands behind), not in the uniform itself.
  *
  * Palette:
  *   0 = outline / dark shadow
@@ -10,9 +17,9 @@ import type { SpriteData } from '../sprite-data'
  *   2 = skin shadow
  *   3 = hair / hat brim
  *   4 = hat white
- *   5 = shirt cream
- *   6 = apron white
- *   7 = apron shadow
+ *   5 = shirt white (under apron / collar / cuffs)
+ *   6 = apron navy
+ *   7 = apron navy shadow
  *   8 = pants brown
  *   9 = shoe dark
  */
@@ -24,10 +31,10 @@ export const chefBakery: SpriteData = {
     '#f2c9a3', // 1 skin light
     '#d29872', // 2 skin shadow
     '#3d281a', // 3 hair
-    '#f4efe2', // 4 hat white
-    '#efe0c0', // 5 shirt cream
-    '#ffffff', // 6 apron white
-    '#d8cfb8', // 7 apron shadow
+    '#ffffff', // 4 hat white
+    '#ffffff', // 5 shirt white
+    '#1e3a8a', // 6 apron navy
+    '#172554', // 7 apron navy shadow
     '#6b4428', // 8 pants
     '#2d1810', // 9 shoe
   ],
