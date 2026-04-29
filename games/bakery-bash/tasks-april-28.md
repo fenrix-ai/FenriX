@@ -273,7 +273,7 @@ Scott consumes this from the FE — see S-05. **Massaro lands first.**
 
 ---
 
-## [ ] M-14 [P1, S] — Customers should still walk in even at high prices (price elasticity tuning)
+## [x] M-14 [P1, S] — Customers should still walk in even at high prices (price elasticity tuning)
 
 **Problem.** `pricing.js:43-52` uses a per-product elasticity coefficient; cookies/coffee/bagel/sandwich/matcha are all `high=1.5` (`config.js:169`). Combined with M-02's no-floor bug, a $1 difference can route 0 customers to the higher-priced team.
 
