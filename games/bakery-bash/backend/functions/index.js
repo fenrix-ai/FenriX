@@ -3748,7 +3748,19 @@ exports.markStalePlayersDisconnected = onCall(CALLABLE_OPTS, async (request) => 
 
   let staleCount = 0;
   let rolesCleared = 0;
-  const writes = [];
+  // Use a single WriteBatch so the role-clear pair (team-doc null + player-
+  // doc 'solo') commits atomically per-call. PR #144 fixed exactly this
+  // dual-role race in `reclaimTeammateRole` by wrapping its two writes in a
+  // transaction; if we issued them as separate `Promise.all` updates here,
+  // a partial failure (transient 503, function timeout mid-flight) could
+  // commit the team-doc clear without the player-doc 'solo' — leaving
+  // `playerDoc.role` stale and letting `assertRoleAllowedWithTeam`'s
+  // short-circuit keep passing the disconnected player through role gates.
+  // The `disconnected: true` writes ride along in the same batch — also
+  // idempotent, no harm in atomicity. Batch limit is 500 ops; for our class
+  // sizes (≤80 players) we're nowhere near that ceiling.
+  const batch = db.batch();
+  let opCount = 0;
 
   for (const playerDoc of playersSnap.docs) {
     const targetUid = playerDoc.id;
@@ -3763,12 +3775,11 @@ exports.markStalePlayersDisconnected = onCall(CALLABLE_OPTS, async (request) => 
 
     // Mark disconnected on the player doc. Idempotent under merge.
     if (playerData.disconnected !== true) {
-      writes.push(
-        playerDoc.ref.update({
-          disconnected: true,
-          updatedAt: FieldValue.serverTimestamp(),
-        }),
-      );
+      batch.update(playerDoc.ref, {
+        disconnected: true,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      opCount += 1;
     }
 
     // Clear role claim if the team has one for this uid AND we're in a
@@ -3780,22 +3791,20 @@ exports.markStalePlayersDisconnected = onCall(CALLABLE_OPTS, async (request) => 
     const targetRole = roleMap[targetUid];
     if (targetRole == null) continue;
     rolesCleared += 1;
-    writes.push(
-      gameRef.collection('teams').doc(teamId).update({
-        [`roleAssignments.${targetUid}`]: null,
-        updatedAt: FieldValue.serverTimestamp(),
-      }),
-    );
-    // Also reset the player doc's role to 'solo' so assertRoleAllowedWithTeam's
+    batch.update(gameRef.collection('teams').doc(teamId), {
+      [`roleAssignments.${targetUid}`]: null,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    // Reset the player doc's role to 'solo' so assertRoleAllowedWithTeam's
     // short-circuit (which doesn't consult the team doc) can't keep passing
-    // them through after the team-doc clear. Mirrors M-10's defensive write.
-    writes.push(
-      playerDoc.ref.update({ role: 'solo' }),
-    );
+    // them through after the team-doc clear. Mirrors M-10/PR #144's
+    // defensive write — and now lands atomically with the team-doc clear.
+    batch.update(playerDoc.ref, { role: 'solo' });
+    opCount += 2;
   }
 
-  if (writes.length > 0) {
-    await Promise.all(writes);
+  if (opCount > 0) {
+    await batch.commit();
   }
 
   return {
