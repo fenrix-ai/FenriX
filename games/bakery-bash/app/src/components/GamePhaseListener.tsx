@@ -69,12 +69,26 @@ export function GamePhaseListener() {
   // disconnected players. Hook handles tab visibility internally.
   usePresenceHeartbeat(gameId, playerId, player?.name);
 
-  // M-22 (2026-04-28): every active tab fans out a 60s tick that scans
-  // presence docs and clears stale teammates' role claims, so a team
-  // doesn't get stuck waiting on someone who closed their tab. The
-  // backend `markStalePlayersDisconnected` callable is idempotent; the
-  // hook only ticks while the tab is foreground.
-  useStalePresenceTicker(gameId);
+  // M-22 → S-04 follow-up (2026-04-29): the staleness ticker used to fire
+  // from every student tab here ("every active tab fans out a 60s tick"
+  // — the original concern was that Cloud Scheduler infra wasn't deployed
+  // pre-Friday, so per-tab firing was the cheapest way to guarantee
+  // coverage). The cost of that fan-out at scale is real: 70 student
+  // tabs × 1 ping/min = 70 callable invocations per minute, each scanning
+  // the presence collection — wasted reads when only one of them
+  // accomplishes anything (the callable is idempotent).
+  //
+  // Now: fire only on professor routes (`/professor`, `/professor/leaderboard`,
+  // …). The prof typically keeps that tab focused during a session, so this
+  // covers the staleness-detection window without student-tab fan-out. The
+  // route check (rather than mounting on `ProfessorPage` directly) survives
+  // the prof navigating to the leaderboard subroute mid-session — that
+  // unmounts `ProfessorPage` but `GamePhaseListener` stays mounted.
+  // Visibility-aware throttling inside the hook still pauses ticks when
+  // the prof briefly backgrounds the tab. Passing `null` for non-prof
+  // routes makes the hook a no-op (early-return on null gameId).
+  const isProfessorRoute = location.pathname.startsWith("/professor");
+  useStalePresenceTicker(isProfessorRoute ? gameId : null);
 
   const navigateRef = useRef(navigate);
   const pathnameRef = useRef(location.pathname);
