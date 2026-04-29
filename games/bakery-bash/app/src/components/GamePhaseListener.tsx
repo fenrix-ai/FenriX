@@ -5,7 +5,6 @@ import { httpsCallable } from "firebase/functions";
 import { useGame, useGameDispatch } from "../contexts/GameContext";
 import { useGameListener } from "../hooks/useGameListener";
 import { usePresenceHeartbeat } from "../hooks/usePresenceHeartbeat";
-import { useStalePresenceTicker } from "../hooks/useStalePresenceTicker";
 import { auth, db, functions } from "../lib/firebase";
 import { parseGamePhase } from "../types/game";
 
@@ -69,12 +68,18 @@ export function GamePhaseListener() {
   // disconnected players. Hook handles tab visibility internally.
   usePresenceHeartbeat(gameId, playerId, player?.name);
 
-  // M-22 (2026-04-28): every active tab fans out a 60s tick that scans
-  // presence docs and clears stale teammates' role claims, so a team
-  // doesn't get stuck waiting on someone who closed their tab. The
-  // backend `markStalePlayersDisconnected` callable is idempotent; the
-  // hook only ticks while the tab is foreground.
-  useStalePresenceTicker(gameId);
+  // M-22 → S-04 follow-up (2026-04-29): the staleness ticker used to fire
+  // from every student tab here ("every active tab fans out a 60s tick"
+  // — the original concern was that Cloud Scheduler infra wasn't deployed
+  // pre-Friday, so per-tab firing was the cheapest way to guarantee
+  // coverage). The cost of that fan-out at scale is real: 70 student
+  // tabs × 1 ping/min = 70 callable invocations per minute, each scanning
+  // the presence collection — wasted reads when only one of them
+  // accomplishes anything (the callable is idempotent).
+  // Now: only the prof page fires the ticker (see ProfessorPage.tsx).
+  // The prof keeps that tab open during the session per the runbook;
+  // visibility-aware throttling inside the hook still pauses ticks
+  // when the prof briefly tabs away.
 
   const navigateRef = useRef(navigate);
   const pathnameRef = useRef(location.pathname);
