@@ -890,22 +890,25 @@ async function resolveAndApplyChefAuction(gameRef, round, config) {
     playersSnap.docs.map((pd) => [pd.id, getPlayerTeamKey(pd)])
   );
 
-  // M-16 (2026-04-28): wrap chefPool read + bid reads + result write in
-  // one transaction. Same rationale as resolveAndApplyAdAuction — the
-  // pre-M-16 non-transactional reads left a window where a submitBids
-  // commit could land between bid read and result write, producing a
-  // stale resolution. This txn ensures Firestore optimistic concurrency
-  // catches any submitBids commit on a bid doc the resolution read.
-  let _winners = null;
-  let _payments = null;
-  let _chefAuctionResults = null;
+  // M-16 (2026-04-28): wrap chefPool read + bid reads + result write +
+  // per-player specialtyChefs writes in ONE transaction. Same rationale
+  // as resolveAndApplyAdAuction for the bid-read race; additionally, the
+  // per-player updates were previously a post-txn batch — if that batch
+  // failed (transient error, function timeout) the round was already
+  // marked resolved via chefAuctionResolvedAt and the recovery hook's
+  // idempotency guard would skip a re-run, leaving winners without their
+  // chefs. Folding the player updates into the same txn closes that gap:
+  // either everything commits atomically or nothing does and recovery
+  // can re-run the whole resolution.
+  const specialtyChefCap = numberOrDefault(config.specialtyChefCap, 3);
+  let _didResolve = false;
+  let _winnersCount = 0;
 
   await db.runTransaction(async (transaction) => {
     // Re-check idempotency inside the txn so concurrent advanceGamePhase
     // calls don't double-resolve.
     const roundSnap = await transaction.get(roundRef);
     if (roundSnap.exists && roundSnap.data().chefAuctionResolvedAt) {
-      _winners = null; // sentinel to skip the post-txn batch write
       return;
     }
 
@@ -914,7 +917,6 @@ async function resolveAndApplyChefAuction(gameRef, round, config) {
       logger.info('No chef pool for this round; skipping auction.', {
         gameId: gameRef.id, round,
       });
-      _winners = null;
       return;
     }
 
@@ -949,7 +951,6 @@ async function resolveAndApplyChefAuction(gameRef, round, config) {
       logger.info('No chef bids submitted; skipping auction resolution.', {
         gameId: gameRef.id, round,
       });
-      _winners = null;
       return;
     }
 
@@ -973,50 +974,41 @@ async function resolveAndApplyChefAuction(gameRef, round, config) {
       chefAuctionResolvedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
 
-    _winners = winners;
-    _payments = payments;
-    _chefAuctionResults = chefAuctionResults;
-  });
-
-  if (!_winners) {
-    return; // skipped (idempotency, no pool, or no bids)
-  }
-  const winners = _winners;
-
-  // Write winning chefs to each player's specialtyChefs and set
-  // pendingRosterAction if they exceed the cap.
-  // Uses FieldValue.arrayUnion so the write is atomic and idempotent —
-  // safe on retry without duplicating chefs (addresses PR #19 review).
-  const specialtyChefCap = numberOrDefault(config.specialtyChefCap, 3);
-  const batch = db.batch();
-  let opsCount = 0;
-
-  for (const [winnerKey, wonChefs] of winners) {
-    const winnerGroup = teamGroups.get(winnerKey);
-    const memberDocs = winnerGroup ? winnerGroup.memberDocs : [];
-    for (const playerDoc of memberDocs) {
-      const existingCount = Array.isArray((playerDoc.data() || {}).specialtyChefs)
-        ? playerDoc.data().specialtyChefs.length
-        : 0;
-
-      batch.update(playerDoc.ref, {
-        specialtyChefs: FieldValue.arrayUnion(...wonChefs),
-        pendingRosterAction: (existingCount + wonChefs.length) > specialtyChefCap,
-        updatedAt: FieldValue.serverTimestamp(),
-      });
-      opsCount++;
+    // Write winning chefs to each player's specialtyChefs and set
+    // pendingRosterAction if they exceed the cap. FieldValue.arrayUnion
+    // is idempotent on retry (no duplicates), so this is safe even if
+    // the txn body re-runs.
+    //
+    // existingCount uses the pre-txn playersSnap read — same staleness
+    // window as pre-M-16. Acceptable: the only concurrent writer to
+    // specialtyChefs is layoffChef, which runs in the roster phase
+    // AFTER this resolution.
+    for (const [winnerKey, wonChefs] of winners) {
+      const winnerGroup = teamGroups.get(winnerKey);
+      const memberDocs = winnerGroup ? winnerGroup.memberDocs : [];
+      for (const playerDoc of memberDocs) {
+        const existingCount = Array.isArray((playerDoc.data() || {}).specialtyChefs)
+          ? playerDoc.data().specialtyChefs.length
+          : 0;
+        transaction.update(playerDoc.ref, {
+          specialtyChefs: FieldValue.arrayUnion(...wonChefs),
+          pendingRosterAction: (existingCount + wonChefs.length) > specialtyChefCap,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+      }
     }
-  }
 
-  if (opsCount > 0) {
-    await batch.commit();
-  }
-
-  logger.info('Chef auction resolved and applied.', {
-    gameId: gameRef.id,
-    round,
-    winnersCount: winners.size,
+    _didResolve = true;
+    _winnersCount = winners.size;
   });
+
+  if (_didResolve) {
+    logger.info('Chef auction resolved and applied.', {
+      gameId: gameRef.id,
+      round,
+      winnersCount: _winnersCount,
+    });
+  }
 }
 
 // ===========================================================================
