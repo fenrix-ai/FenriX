@@ -20,7 +20,7 @@ This doc verifies every note from the two scribe sheets against the code, dedupe
 
 | Team | Owner | Surface area | Approx total effort |
 |---|---|---|---|
-| 🔴 **Massaro** | game lead | All `backend/`, plus `ProfessorPage`, `GameContext` | ~2.5 days |
+| 🔴 **Massaro** | game lead | All `backend/`, plus `ProfessorPage`, `GameContext`, presence/disconnect | ~3 days |
 | 🟡 **Kavin / Sofia** | pair | Decide phase + sprites (BakeryView, StaffTab, ChefLayer) | ~1.5 days |
 | 🟢 **Barlava** | solo | AuctionPage + data-purchase relocation + LoanSharkCallout | ~1 day |
 | 🔵 **Scott** | solo | RoundHeader + ProfessorPage timer + naming/labels | ~1 day |
@@ -419,6 +419,39 @@ The first four are already computed — pure passthrough. `priceCompetitivenessP
 **Files:** `backend/functions/modules/multi-day-simulation.js` (compute `priceCompetitivenessPct`), `backend/functions/index.js:2343-2349` (passthrough), `app/src/types/game.ts` (add type).
 
 **Acceptance.** `lastRoundResult.roundSignals` is populated for every team after every round with all four signals.
+
+---
+
+## [ ] M-22 [P0, M] — Player-leaves-mid-game graceful handling
+
+**Problem.** Original playtest note: *"Need error handling for when a teammate leaves, their role is just gone."* M-10 + S-06 cover the **manual** role-reclaim path (a teammate clicks "Take over"). But there's no broader story for "a player closed their tab and isn't coming back" — and a non-trivial number of students will abandon mid-round in a 70-player class. Today the team is effectively stuck waiting for them:
+- Their `presence` heartbeat goes stale ~60 s after last ping (already detected)
+- Their `players/{uid}.disconnected` flag is set only at end-of-round (too late)
+- Their `roleAssignments[uid]` claim stays put forever
+- The team's submission grid stays at ⏳ for any phase they own
+- Auto-advance still fires per the timer, but the team submitted nothing for that role's decisions → loses the round
+
+**Scope (minimum viable for Friday).** Backend-led, ~4 hours:
+
+1. **Promote stale-presence detection from end-of-round to live.** Add a Firestore-triggered (or scheduled) function that flips `players/{uid}.disconnected = true` when their `presence/{uid}.lastSeenAt` is more than **90 s** old. Today this only fires at end-of-round; do it continuously so the team sees the disconnect within a round.
+2. **Auto-clear the role claim when stale during a submission phase.** When a player goes stale AND the current phase is one they own (`bid_ad`/`bid_chef`/`roster`/`decide`), automatically clear `teams/{teamId}.roleAssignments[uid] = null`. Existing FE-I15 helpers (`roleOwnsX` falls back to "any teammate" when nobody holds the role) take it from there — any teammate can submit. This is the auto version of M-10's manual `reclaimTeammateRole` callable.
+3. **Team-visible banner.** When a teammate is detected stale, render a banner on every other teammate's screen: *"Bob disconnected — anyone on the team can submit their role's decisions now."* Reuses S-06's "Take Over" button pattern but at the team-banner level rather than per-pill.
+4. **Verify team can advance.** After M-17 + M-18 land (role moves), explicitly test: 3-person team where one player goes stale during decide — the remaining 2 must be able to submit on the leaver's behalf and the round must advance normally.
+5. **Don't double-charge.** If a stale player had pending bids/decisions submitted before going stale, those stay valid (they paid for them). Only the role *claim* gets released, not the *work* they already submitted.
+
+**Pairs with:** M-10 (manual reclaim, already on Massaro's list), S-06 (Take Over button per-pill, on Scott's list). M-22 is the layer above — auto-detect + team banner + don't-block-on-them.
+
+**Files:** `backend/functions/index.js` (presence stale detection + auto-clear role), possibly a new `backend/functions/modules/presence.js` for the staleness logic, `app/src/components/game/RoundHeader.tsx` (team-visible banner; coordinate with S-01 / S-06 if landing same day), `app/src/types/game.ts` (verify `roleOwnsX` fallback still works post-M-17/M-18).
+
+**Acceptance.**
+- Open 3 tabs as a team. Close one tab. Within 90 s, the other 2 see a banner naming the disconnected player.
+- The remaining 2 can submit any decision (bids, prices, quantities, staff) without the prof manually intervening.
+- The round auto-advances on the timer regardless of the disconnected player.
+- The disconnected player's previously submitted decisions (if any) still apply to the simulation.
+
+**Effort:** M (~4 hr backend + ~1 hr FE banner). Higher-priority than M-19 since it directly affects whether a team can complete a round.
+
+**Risk.** False positives — a player on a slow connection might tick stale, lose their role, then reconnect to find they can't submit anymore. Mitigation: when a stale player reconnects, restore their role claim if no teammate has taken it over yet. Track via `roleAssignments[uid] === null` AND `roleAssignments[uid]_releasedAt` timestamp; on reconnect within 5 min, restore.
 
 ---
 
@@ -903,11 +936,11 @@ Schedule below is built around hitting both playtests with all required tasks la
 
 After the playtest, immediately list any new bugs in the doc as `## [ ] PT-01 [P0/P1, X] — title` so they're tracked.
 
-**Wed PM (post-playtest) → Thurs AM:** Race-condition fix + lay-off UX redesign + playtest-driven fixes.
-- **Massaro:** M-16 (4–6 hr — bid attribution race, P0 confirmed; investigation + transactional fix — the highest-risk task on the list) → M-07 (1 hr — auto-advance setInterval) → M-19 (1 hr — prof checkmarks always ✓ on advance) → M-10 backend (2 hr — reclaim disconnected role) → `rehireChef` callable for S-05 (1 hr) → M-20 verification + any playtest fixes.
+**Wed PM (post-playtest) → Thurs AM:** Race-condition fix + lay-off UX redesign + disconnect handling + playtest-driven fixes.
+- **Massaro:** M-16 (4–6 hr — bid attribution race, P0 confirmed; investigation + transactional fix — the highest-risk task on the list) → M-22 (4 hr — player-leaves-mid-game graceful handling, P0 because a 70-player class will see drop-offs every round) → M-07 (1 hr — auto-advance setInterval) → M-10 backend (2 hr — manual reclaim, complements M-22's auto path) → M-19 (1 hr — prof checkmarks always ✓ on advance) → `rehireChef` callable for S-05 (1 hr) → M-20 verification + any playtest fixes.
 - **Kavin/Sofia:** K-06 (3 hr — sprite recolor) → K-07 (4 hr — specialty chef rendering, time-permitting) → playtest fixes.
 - **Barlava:** B-06 (1 hr — loan shark) → playtest fixes.
-- **Scott:** S-05 (3 hr — full lay-off UX: instant lay-off + Lay offs panel + Re-hire button; depends on Massaro's `rehireChef` callable) + S-06 (1.5 hr — pair with Massaro's M-10) → playtest fixes.
+- **Scott:** S-05 (3 hr — full lay-off UX: instant lay-off + Lay offs panel + Re-hire button; depends on Massaro's `rehireChef` callable) + S-06 (1.5 hr — pair with Massaro's M-10/M-22) → playtest fixes.
 
 **🎯 Thu 8 AM playtest** — final integration. Run the full game end-to-end with 4 of you + 4 dummy clients on a fresh build. Look for:
 - Any P0 still ⏳ in this doc → must close before noon
