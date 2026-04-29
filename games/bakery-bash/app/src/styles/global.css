@@ -3979,6 +3979,58 @@ h3 { font-size: 0.7rem; }
 .results-phase__metric-card--cost        { background: #fff7ed; }
 .results-phase__metric-card--customer    { background: #eff6ff; }
 .results-phase__metric-card--satisfaction{ background: #fdf4ff; }
+
+/* ── Results phase — "What hurt this round" signals (B-07) ─────────── */
+.results-phase__signals {
+  margin: 1.5rem 0;
+}
+.results-phase__signal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.results-phase__signal-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.6rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid var(--cream, #fff7e6);
+  font-size: 0.85rem;
+}
+.results-phase__signal-label {
+  font-weight: 600;
+  color: var(--espresso);
+}
+.results-phase__signal-value {
+  font-weight: bold;
+  font-variant-numeric: tabular-nums;
+}
+.results-phase__signal-row--green {
+  background: #f0fdf4;
+  border-color: #22c55e;
+}
+.results-phase__signal-row--green .results-phase__signal-value {
+  color: #15803d;
+}
+.results-phase__signal-row--yellow {
+  background: #fefce8;
+  border-color: #eab308;
+}
+.results-phase__signal-row--yellow .results-phase__signal-value {
+  color: #a16207;
+}
+.results-phase__signal-row--red {
+  background: #fef2f2;
+  border-color: #ef4444;
+}
+.results-phase__signal-row--red .results-phase__signal-value {
+  color: #b91c1c;
+}
+
 /* ── Results phase — leaderboard ────────────────────────────────────── */
 .results-phase__leaderboard     { margin-top: 2rem; }
 .results-phase__section-title   { font-size: 1rem; font-weight: bold; margin-bottom: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
