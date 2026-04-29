@@ -5564,6 +5564,8 @@ exports.onBotPhaseChange = onDocumentWritten(
           seed,
         );
 
+        const botDisplayName = botData.displayName || 'Bot';
+
         if (parsed.phase === 'bid_ad') {
           const bidsRef = botDoc.ref.collection('bids').doc(`round_${round}`);
           await bidsRef.set({
@@ -5571,6 +5573,10 @@ exports.onBotPhaseChange = onDocumentWritten(
             ad: decisions.adBids || {},
             adSubmittedAt: FieldValue.serverTimestamp(),
           }, { merge: true });
+          await recordSubmission(
+            gameRef, `round_${round}_bid_ad`, botDoc.id,
+            botDisplayName, 'solo'
+          );
         }
 
         if (parsed.phase === 'bid_chef') {
@@ -5580,6 +5586,10 @@ exports.onBotPhaseChange = onDocumentWritten(
             chef: decisions.chefBids || [],
             chefSubmittedAt: FieldValue.serverTimestamp(),
           }, { merge: true });
+          await recordSubmission(
+            gameRef, `round_${round}_bid_chef`, botDoc.id,
+            botDisplayName, 'solo'
+          );
         }
 
         if (parsed.phase === 'roster' && decisions.layoffs && decisions.layoffs.length > 0) {
@@ -5597,6 +5607,10 @@ exports.onBotPhaseChange = onDocumentWritten(
             rosterUpdate.rosterCompleted = true;
           }
           await botDoc.ref.update(rosterUpdate);
+          await recordSubmission(
+            gameRef, `round_${round}_roster`, botDoc.id,
+            botDisplayName, 'solo'
+          );
         }
 
         if (parsed.phase === 'decide') {
@@ -5629,6 +5643,10 @@ exports.onBotPhaseChange = onDocumentWritten(
 
           // Write to submittedCount shard
           await writeUidToSubmittedCountShard(gameRef, `round_${round}`, botDoc.id);
+          await recordSubmission(
+            gameRef, `round_${round}_decide`, botDoc.id,
+            botDisplayName, 'solo'
+          );
         }
 
         logger.info('onBotPhaseChange: bot decision submitted.', {
