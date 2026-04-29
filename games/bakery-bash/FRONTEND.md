@@ -298,10 +298,11 @@ Add a CI check (lint rule or grep test) that fails if `budgetCurrent`, `budgetRe
 - `pages/ConclusionPage.tsx`
 - `pages/ProfessorPage.tsx`
 - `pages/ProfessorLeaderboardPage.tsx`
-- `components/game/BudgetSummary.tsx` (unmounted reference component — retained in case the spec flips; not rendered today)
 - `pages/GamePage.tsx` (only for the player-doc listener that dispatches `SET_BUDGET` into context so Conclusion + professor views can render it later)
 - `contexts/GameContext.tsx` (only for the `budgetCurrent` field on `GameState` and the `SET_BUDGET` action)
 - `lib/cost.ts` (cost-only helpers; never reads or renders `budgetCurrent` itself)
+- `components/game/BakeryView.tsx` (B-06 carve-out: yellow loan-shark warning chip when `totalCommitted > budgetCurrent`, plus the `cannotAfford` boolean used to disable product-unlock buttons. Reads `budgetCurrent` for boolean comparison only — never renders the dollar amount.)
+- `components/game/tabs/StaffTab.tsx` (K-01: equipment-upgrade affordability gate. Reads `budgetCurrent` to compute `available` for the upgrade button's `disabled` state — never renders the value.)
 
 This catches accidental budget leaks in PRs. Implemented in `scripts/audit-ui-rules.sh` (FE-01) and wired to a pre-push hook via `scripts/install-git-hooks.sh`.
 
