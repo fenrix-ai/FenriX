@@ -452,7 +452,7 @@ const DEFAULT_GAME_CONFIG = {
     // flips the phase to results_ready when done, so this is just an
     // upper bound for the professor's auto-advance fallback if the
     // simulating side-effect somehow stalls. 8s is a generous timeout.
-    simulating: 8,
+    simulating: 25,
     results: 60,
   },
 
