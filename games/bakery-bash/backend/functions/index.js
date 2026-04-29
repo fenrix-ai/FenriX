@@ -1432,6 +1432,29 @@ exports.createTeam = onCall(CALLABLE_OPTS, async (request) => {
   const playerRef = gameRef.collection('players').doc(auth.uid);
   const rosterRef = gameRef.collection('roster').doc(auth.uid);
 
+  // S-04 follow-up (2026-04-29) — fast-path duplicate-name check, OUTSIDE
+  // the transaction. Previously this was a `.where('name', '==', teamName)`
+  // query *inside* the transaction. Firestore queries inside a transaction
+  // place a read lock on the entire query result set, so under concurrent
+  // createTeam load the lock is contended by every writer to the teams
+  // collection — a 24-team load test took ~19s wall time (avg 800ms per
+  // call) for what should be sub-second creates.
+  //
+  // Doing the dup check outside the transaction has a small TOCTOU race —
+  // two students typing the same team name at the exact same time can both
+  // pass this check. The slug-collision loop inside the txn (below) catches
+  // that case: the second team gets a suffixed slug like `bakery-bois-x9k`
+  // instead of overwriting the first. Both teams keep the same display
+  // name, which is a minor UX wart in the lobby but acceptably rare.
+  const dupSnap = await gameRef
+    .collection('teams')
+    .where('name', '==', teamName)
+    .limit(1)
+    .get();
+  if (!dupSnap.empty) {
+    throw new HttpsError('already-exists', 'A team with that name already exists in this game.');
+  }
+
   let resolvedTeamId = baseSlug;
   // P0-2: track whether this call enrolled a brand-new player so the
   // post-transaction totalPlayers increment only fires when it should.
@@ -1474,16 +1497,10 @@ exports.createTeam = onCall(CALLABLE_OPTS, async (request) => {
       throw new HttpsError('failed-precondition', 'You already joined this game. Refresh the page to rejoin your team.');
     }
 
-    // Duplicate-name check: any existing team doc with the same name is a
-    // conflict. `name` isn't indexed in this collection so we'd need either
-    // a query-in-transaction (supported — single-doc result fine) or a
-    // deterministic id collision check. We do both: slug collision + query.
-    const dupSnap = await transaction.get(
-      gameRef.collection('teams').where('name', '==', teamName).limit(1)
-    );
-    if (!dupSnap.empty) {
-      throw new HttpsError('already-exists', 'A team with that name already exists in this game.');
-    }
+    // Duplicate-name check now lives outside the transaction (see the
+    // comment above the gameSnap query). The slug-collision loop below is
+    // still load-bearing — it's the only thing that handles a same-name
+    // race that slipped past the pre-txn dup check.
 
     // Slug-collision check: if `baseSlug` is taken by a different team,
     // append a short suffix until we find a free id.
