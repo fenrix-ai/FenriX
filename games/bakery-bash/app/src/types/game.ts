@@ -448,6 +448,31 @@ export interface RoundResult {
    * cards in the Events section of the Results screen.
    */
   events?: RoundEvent[];
+  /**
+   * M-21 (2026-04-28): "What hurt this round?" signals grouped onto one
+   * object so the FE (B-07) can render the Results-screen panel without
+   * cherry-picking five separate fields. Satisfaction is fill-rate-driven
+   * here; price affects demand not satisfaction; cleanliness affects foot
+   * traffic not satisfaction — see M-21 investigation in tasks-april-28.md
+   * for the full rationale on why these are sibling signals rather than
+   * "components of satisfaction".
+   */
+  roundSignals?: {
+    /** Aggregate fill-rate satisfaction, 0–100. */
+    satisfactionPct: number;
+    /** Per-product fill-rate satisfaction (subset of products on the menu). */
+    perProductSatisfaction: Partial<Record<ProductKey, number>>;
+    /** Equipment cleanliness letter grade (A–F). */
+    cleanlinessGrade: string;
+    /** Numeric cleanliness score, 0–100. */
+    cleanlinessScore: number;
+    /**
+     * Average of `min(priceDemandMultiplier, 1.0) × 100` across products on
+     * the menu. 100 = demand-optimal pricing. < 100 means premium prices
+     * cost the team some demand share.
+     */
+    priceCompetitivenessPct: number;
+  };
 }
 
 /** One row of the curveball-events feed shown on the Results screen. */
@@ -469,8 +494,10 @@ export interface RoundEvent {
  *
  * - `operations` owns the Decide-phase submit (quantities, sous chefs,
  *   maintenance guys).
- * - `advertising` owns the ad-auction submit.
- * - `finance` owns the chef-auction submit + roster (layoff / continue).
+ * - `advertising` owns the ad-auction submit AND the chef-auction submit
+ *   (M-18, 2026-04-28: chef bids moved here under the Q6 role split; the
+ *   FE label is "Analyst" — see S-03).
+ * - `finance` owns the roster (layoff / continue).
  * - `solo` is the fallback when a player joins without teammates: all three
  *   buttons are enabled on their device. Also the default during the
  *   transition window before BE-20 / BE-21 ship per-team schema + role
@@ -537,10 +564,27 @@ export function roleOwnsChefBids(
   role: PlayerRole,
   teamRoleAssignments?: Record<string, PlayerRole | null> | null,
 ): boolean {
+  // M-18 (2026-04-28): chef bid ownership moved from Finance to the renamed
+  // Analyst role (backend role string stays "advertising" for compatibility;
+  // only the FE label changes — see S-03). Analyst now owns BOTH ad bids
+  // and chef bids per the Q6 role split.
+  if (role === "advertising" || role === "solo") return true;
+  return teamRoleIsVacant(teamRoleAssignments ?? null, ["advertising"]);
+}
+export function roleOwnsPricing(
+  role: PlayerRole,
+  teamRoleAssignments?: Record<string, PlayerRole | null> | null,
+): boolean {
   if (role === "finance" || role === "solo") return true;
   return teamRoleIsVacant(teamRoleAssignments ?? null, ["finance"]);
 }
-export function roleOwnsPricing(
+/**
+ * M-17 (2026-04-28): quantities ownership moved from Operations to Finance.
+ * Mirror semantics to `roleOwnsPricing` since the same role submits both
+ * fields via the unified `submitPrices` callable. K-10/K-01 use this helper
+ * to gate the quantity steppers in BakeryView per the new role split.
+ */
+export function roleOwnsQuantities(
   role: PlayerRole,
   teamRoleAssignments?: Record<string, PlayerRole | null> | null,
 ): boolean {
@@ -574,7 +618,7 @@ export function ownerOfAdBids(): string {
   return PLAYER_ROLE_LABELS.advertising;
 }
 export function ownerOfChefBids(): string {
-  return PLAYER_ROLE_LABELS.finance;
+  return PLAYER_ROLE_LABELS.advertising;
 }
 export function ownerOfRoster(): string {
   return PLAYER_ROLE_LABELS.operations;

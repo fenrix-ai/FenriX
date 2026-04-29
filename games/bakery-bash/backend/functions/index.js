@@ -215,6 +215,11 @@ try {
  */
 const BATCH_OP_LIMIT = 487;
 
+// M-05 (2026-04-28): max members per team. Used by the joinGame auto-route
+// query and the in-transaction cap check. Keep these in sync — see the
+// joinGame body for both call sites.
+const TEAM_CAP = 3;
+
 /**
  * Batch-delete every document in a collection. Used by `resetGame` to wipe
  * round/sim subcollections without leaving orphans. Chunks at BATCH_OP_LIMIT
@@ -1056,9 +1061,10 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
   if (displayName.length < 2 || displayName.length > 40) {
     throw new HttpsError('invalid-argument', 'displayName must be 2–40 characters.');
   }
-  if (!teamNumber && !explicitTeamId) {
-    throw new HttpsError('invalid-argument', 'Provide either teamNumber (1–8) or teamId.');
-  }
+  // M-06 (2026-04-28): teamNumber/teamId is no longer required up-front. If
+  // the caller doesn't pass one, we auto-route below to a non-full team —
+  // or auto-create one — so a late-arriving student can join with no
+  // server-trip back to the FE for team selection.
   if (bakeryName.length > 60) {
     throw new HttpsError('invalid-argument', 'bakeryName must be 60 characters or fewer.');
   }
@@ -1075,11 +1081,46 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
   const playerRef = gameRef.collection('players').doc(auth.uid);
   const rosterRef = gameRef.collection('roster').doc(auth.uid);
 
-  // teamId: explicit wins, else derived from teamNumber. The team doc
-  // for explicit ids must already exist (the createTeam callable writes
-  // it); we fail fast if it's missing rather than silently creating an
-  // orphan team.
-  const teamId = explicitTeamId || `team-${teamNumber}`;
+  // M-06: auto-route when the caller didn't pick a team. Find an existing
+  // team with room (memberCount < TEAM_CAP); if none has room, claim the
+  // lowest unused team-{N} slot in [1..8]. The query is best-effort — the
+  // M-05 cap check inside the transaction is what actually gates the slot,
+  // so a TOCTOU race here just produces a 'team full' error the FE can retry.
+  let autoRoutedTeamId = null;
+  if (!explicitTeamId && !teamNumber) {
+    const teamsCol = gameRef.collection('teams');
+    const candidatesSnap = await teamsCol
+      .where('memberCount', '<', TEAM_CAP)
+      .orderBy('memberCount')
+      .limit(1)
+      .get();
+    if (!candidatesSnap.empty) {
+      autoRoutedTeamId = candidatesSnap.docs[0].id;
+    } else {
+      // No team has room: claim the lowest unused team-{N} slot. .select()
+      // with no args returns doc refs only — we just need ids, not bodies.
+      const allSnap = await teamsCol.select().get();
+      const used = new Set();
+      allSnap.docs.forEach((d) => {
+        const m = /^team-(\d+)$/.exec(d.id);
+        if (m) used.add(Number(m[1]));
+      });
+      let next = 1;
+      while (used.has(next) && next <= 8) next += 1;
+      if (next > 8) {
+        throw new HttpsError('resource-exhausted',
+          'No team has space and no available team slot remains.');
+      }
+      autoRoutedTeamId = `team-${next}`;
+    }
+  }
+
+  // teamId: explicit wins, else auto-routed (M-06), else derived from
+  // teamNumber. The team doc for explicit ids must already exist (the
+  // createTeam callable writes it); we fail fast if it's missing rather
+  // than silently creating an orphan team. Auto-routed ids may or may
+  // not exist — the txn-body auto-create path handles either case.
+  const teamId = explicitTeamId || autoRoutedTeamId || `team-${teamNumber}`;
   const teamRef = gameRef.collection('teams').doc(teamId);
 
   let playerId = auth.uid;
@@ -1124,14 +1165,14 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
 
     const config = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
 
-    // BE-24: new joins are only accepted during lobby and are subject to the
-    // player cap. Rejoins (same uid, existing player doc) are allowed at any
-    // phase so a student who refreshes their browser mid-game can recover
-    // without being locked out.
+    // M-06 (2026-04-28): late joiners are now allowed — a fresh student who
+    // arrives after the prof presses Start should slot into a team with
+    // room (auto-routed above when no team was specified). The previous
+    // BE-24 lobby gate that rejected non-lobby new joiners is removed.
+    // The playerCap check stays in place to prevent unbounded growth.
+    // Rejoins (same uid, existing player doc) continue to be allowed at
+    // any phase so a student who refreshes mid-game recovers cleanly.
     if (!pSnap.exists) {
-      if (gSnap.get('phase') !== 'lobby') {
-        throw new HttpsError('failed-precondition', 'This game is no longer accepting new players.');
-      }
       const playerCap = numberOrDefault(config.playerCap, 20);
       const currentTotal = numberOrDefault(gSnap.get('totalPlayers'), 0);
       if (currentTotal >= playerCap) {
@@ -1189,6 +1230,23 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
     // increments (game.totalPlayers, team.memberCount) move below the txn.
     outcomeNewJoin = true;
     outcomeTeamExistedAtTxnTime = tSnap.exists;
+
+    // M-05 (2026-04-28): cap team size at TEAM_CAP. Only checked when the
+    // team doc already exists at txn-time — a brand-new team has
+    // memberCount baked at 1 in the auto-create branch below. For legacy
+    // team docs that pre-date the memberCount field, fall back to counting
+    // roleAssignments. The check sits inside the transaction so concurrent
+    // joiners contending for the last slot serialize correctly: the loser
+    // sees memberCount=TEAM_CAP on its retry and throws.
+    if (outcomeTeamExistedAtTxnTime) {
+      const rawMemberCount = tSnap.get('memberCount');
+      const teamMemberCount = (typeof rawMemberCount === 'number' && Number.isFinite(rawMemberCount))
+        ? rawMemberCount
+        : Object.keys(tSnap.get('roleAssignments') || {}).length;
+      if (teamMemberCount >= TEAM_CAP) {
+        throw new HttpsError('resource-exhausted', `That team is full (${TEAM_CAP} max).`);
+      }
+    }
 
     transaction.set(playerRef, {
       uid: auth.uid,
@@ -2416,6 +2474,32 @@ async function runSimulationAndPersist(gameRef, round, config) {
                 aggregateSatisfactionPct: d.aggregateSatisfactionPct,
               }))
             : [],
+          // M-21 (2026-04-28): "what hurt this round" signals grouped on
+          // one object so the FE (Barlava — B-07) can render a single
+          // panel of indicators. The first four are pure passthrough; the
+          // last is computed in multi-day-simulation.js
+          // (priceCompetitivenessPctFromPrices). Satisfaction in this
+          // game is fill-rate-driven; price affects DEMAND not
+          // satisfaction; cleanliness affects FOOT TRAFFIC not
+          // satisfaction — see M-21 investigation in tasks-april-28.md
+          // for the full rationale on why these are sibling signals
+          // rather than "components of satisfaction".
+          roundSignals: {
+            satisfactionPct: r.aggregateSatisfactionPct,
+            // Map to { [product]: number } to match the FE type
+            // (Partial<Record<ProductKey, number>>) — r.perProductSatisfaction
+            // values are objects { satisfactionPct, qtySold, qtyStocked, ... }.
+            perProductSatisfaction: Object.fromEntries(
+              Object.entries(r.perProductSatisfaction || {})
+                .map(([product, pps]) => [
+                  product,
+                  numberOrDefault(pps && pps.satisfactionPct, 0),
+                ]),
+            ),
+            cleanlinessGrade: r.cleanlinessGrade,
+            cleanlinessScore: r.cleanlinessScore,
+            priceCompetitivenessPct: numberOrDefault(r.priceCompetitivenessPct, 100),
+          },
         },
         updatedAt: FieldValue.serverTimestamp(),
       };
@@ -2770,11 +2854,16 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
       }
 
       // Validate using the decision-validation module (pure).
-      // ValidationError is a plain JS error — convert to HttpsError so the
-      // Firebase Functions runtime surfaces the right code to the client.
+      // M-17 (2026-04-28): Operations no longer owns quantities — Finance
+      // does, via submitPrices. Strip data.quantities BEFORE validation so
+      // a stale Operations FE that still includes quantities (during the
+      // K-10 transition window) can't trip the menu-vs-quantities cross
+      // check. We then delete validated.quantities after validation so
+      // it never overwrites Finance's quantity write on the decision doc.
+      const opsInput = { ...data, quantities: {} };
       let validated;
       try {
-        validated = decisionValidation.validateDecision(data, currentRound, config, {
+        validated = decisionValidation.validateDecision(opsInput, currentRound, config, {
           unlockedProducts,
         });
       } catch (vErr) {
@@ -2783,6 +2872,11 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
         }
         throw vErr;
       }
+      // M-17: drop quantities from Operations' validated output entirely.
+      // The decisionRef set-merge below uses ...validated, so removing the
+      // field here means Finance's quantities (written by submitPrices)
+      // survive untouched.
+      delete validated.quantities;
 
       roundId = `round_${currentRound}`;
       const decisionRef = playerRef.collection('decisions').doc(roundId);
@@ -2794,11 +2888,11 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
         throw new HttpsError('already-exists', 'Decision already submitted for this round.');
       }
 
-      // Merge so an existing Finance-written `productPrices` survives.
-      // POST-01 follow-up: `staffCounts` (including the maintenanceGuys
-      // default of 2) is included in `validated` and flows through the
-      // spread — do not re-assign it from raw `data.staffCounts`, which
-      // would discard the validator's defaulting.
+      // Merge so an existing Finance-written `productPrices` + `quantities`
+      // survive. POST-01 follow-up: `staffCounts` (including the
+      // maintenanceGuys default of 2) is included in `validated` and flows
+      // through the spread — do not re-assign it from raw `data.staffCounts`,
+      // which would discard the validator's defaulting.
       const decisionPatch = {
         round: currentRound,
         submittedAt: FieldValue.serverTimestamp(),
@@ -2811,15 +2905,17 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
       // Timestamp.now() for the nested submittedAt.
       //
       // POST-01: use dot-paths rather than replacing the whole `pendingDecision`
-      // so Finance's `pendingDecision.productPrices` (written by submitPrices)
-      // isn't clobbered when Operations submits after Finance.
+      // so Finance's `pendingDecision.productPrices` + `pendingDecision.quantities`
+      // (written by submitPrices) aren't clobbered when Operations submits
+      // after Finance.
+      // M-17 (2026-04-28): pendingDecision.quantities is intentionally NOT
+      // written here — Finance owns that field via submitPrices.
       const submittedAtTs = Timestamp.now();
       const draftFields = {
         submitted: true,
         submittedAt: submittedAtTs,
         round: currentRound,
         menu: validated.menu || {},
-        quantities: validated.quantities || {},
         sousChefCount: validated.sousChefCount || 0,
         sousChefAssignments: validated.sousChefAssignments || {},
         staffCounts: objectOrDefault(data.staffCounts, {}),
@@ -2829,7 +2925,6 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
         'pendingDecision.submittedAt': draftFields.submittedAt,
         'pendingDecision.round': draftFields.round,
         'pendingDecision.menu': draftFields.menu,
-        'pendingDecision.quantities': draftFields.quantities,
         'pendingDecision.sousChefCount': draftFields.sousChefCount,
         'pendingDecision.sousChefAssignments': draftFields.sousChefAssignments,
         'pendingDecision.staffCounts': draftFields.staffCounts,
@@ -2983,12 +3078,17 @@ exports.submitPrices = onCall(CALLABLE_OPTS, async (request) => {
     // zone overrides from config.
     void mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
 
-    // Validate + snap + clamp
+    // Validate + snap + clamp.
+    // M-17 (2026-04-28): submitPrices also accepts `quantities` now —
+    // Finance owns prices AND quantities per the Q6 role split. Operations'
+    // submitDecision strips quantities so the two writes don't race.
     // ValidationError is a plain JS error — convert to HttpsError so the
     // Firebase Functions runtime surfaces the right code to the client.
     let validated;
+    let validatedQuantities;
     try {
       validated = decisionValidation.validateProductPrices(data.productPrices);
+      validatedQuantities = decisionValidation.validateQuantitiesPayload(data.quantities);
     } catch (vErr) {
       if (ValidationError && vErr instanceof ValidationError) {
         throw new HttpsError(vErr.code || 'invalid-argument', vErr.message);
@@ -3004,6 +3104,7 @@ exports.submitPrices = onCall(CALLABLE_OPTS, async (request) => {
     transaction.set(decisionRef, {
       round: currentRound,
       productPrices: validated,
+      quantities: validatedQuantities,
       pricesSubmittedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
 
@@ -3023,6 +3124,7 @@ exports.submitPrices = onCall(CALLABLE_OPTS, async (request) => {
 
     transaction.update(playerRef, {
       'pendingDecision.productPrices': validated,
+      'pendingDecision.quantities': validatedQuantities,
       'pendingDecision.pricesSubmitted': true,
       ...playerMenuUpdate,
       updatedAt: FieldValue.serverTimestamp(),
@@ -3039,6 +3141,7 @@ exports.submitPrices = onCall(CALLABLE_OPTS, async (request) => {
     if (teamId) {
       const teamDraftPatch = {
         productPrices: validated,
+        quantities: validatedQuantities,
         pricesSubmitted: true,
         menu: optionalMenuPatch,
       };
@@ -3094,12 +3197,14 @@ exports.submitBids = onCall(CALLABLE_OPTS, async (request) => {
     if (!gSnap.exists) throw new HttpsError('not-found', 'Game not found.');
     if (!pSnap.exists) throw new HttpsError('failed-precondition', 'Join the game before bidding.');
 
-    // BE-21 / FE-I15: advertising (ad bids) / finance (chef bids) —
-    // or solo, or any teammate when that role is unfilled.
+    // BE-21 / FE-I15 / M-18 (2026-04-28): both ad bids AND chef bids are now
+    // owned by the advertising role (renamed to "Analyst" on the FE per the
+    // Q6 role split). Solo always passes; any teammate may submit when the
+    // advertising role is unfilled.
     if (bidType === 'ad') {
       await assertRoleAllowedWithTeam(transaction, gameRef, pSnap, ['advertising']);
     } else {
-      await assertRoleAllowedWithTeam(transaction, gameRef, pSnap, ['finance']);
+      await assertRoleAllowedWithTeam(transaction, gameRef, pSnap, ['advertising']);
     }
     _submitBids_role = pSnap.get('role') || null;
     _submitBids_displayName = pSnap.get('displayName') || '';
@@ -3346,6 +3451,216 @@ exports.layoffChef = onCall(CALLABLE_OPTS, async (request) => {
   });
 
   return { gameId, chefId, laidOff: true };
+});
+
+// ===========================================================================
+// layoffChefs (M-13)
+// ===========================================================================
+//
+// Batch lay-off variant of layoffChef. Accepts an array of chefIds and writes
+// every chef to the chefReturnPool + the team's specialtyChefs update inside
+// a single transaction so concurrent layoffs by teammates can't drift the
+// roster between reads and writes. Mirrors the auth + phase + cap rules of
+// the single-chef callable. Scott consumes this from the FE for the new
+// "Lay offs" panel UX (S-05).
+
+exports.layoffChefs = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
+  const auth = requireAuth(request);
+  const data = request.data || {};
+  const gameId = cleanGameId(data.gameId);
+  const rawChefIds = Array.isArray(data.chefIds) ? data.chefIds : null;
+  if (!rawChefIds || rawChefIds.length === 0) {
+    throw new HttpsError('invalid-argument', 'chefIds must be a non-empty array.');
+  }
+  const chefIds = [];
+  const seen = new Set();
+  for (const c of rawChefIds) {
+    const id = cleanString(c);
+    if (!id) {
+      throw new HttpsError('invalid-argument', 'chefIds entries must be non-empty strings.');
+    }
+    if (!seen.has(id)) {
+      seen.add(id);
+      chefIds.push(id);
+    }
+  }
+
+  const uid = auth.uid;
+  const gameRef = gameDoc(gameId);
+  const playerRef = gameRef.collection('players').doc(uid);
+
+  let _laidOffCount = 0;
+
+  await db.runTransaction(async (transaction) => {
+    const [gSnap, pSnap, cfgSnap] = await Promise.all([
+      transaction.get(gameRef),
+      transaction.get(playerRef),
+      transaction.get(gameRef.collection('config').doc('params')),
+    ]);
+    if (!gSnap.exists) throw new HttpsError('not-found', 'Game not found.');
+    if (!pSnap.exists) throw new HttpsError('failed-precondition', 'Player not in this game.');
+
+    await assertRoleAllowedWithTeam(transaction, gameRef, pSnap, ['operations']);
+
+    const game = gSnap.data();
+    const { phase } = parsePhase(game.phase, game.currentRound || game.round);
+    if (phase !== 'roster') {
+      throw new HttpsError('failed-precondition', 'Chefs can only be laid off during the roster phase.');
+    }
+
+    const config = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
+    const specialtyChefCap = numberOrDefault(config.specialtyChefCap, 3);
+    const player = pSnap.data();
+    const teamId = getPlayerTeamId(player);
+    const teamPlayerDocs = teamId
+      ? (await transaction.get(gameRef.collection('players').where('teamId', '==', teamId))).docs
+      : [pSnap];
+    const specialtyChefs = Array.isArray(player.specialtyChefs) ? player.specialtyChefs : [];
+    const round = numberOrDefault(game.currentRound || game.round, 1);
+
+    // All-or-nothing: validate every requested chef before any writes so
+    // partial failures can't leave the roster in an unexpected state.
+    const removed = [];
+    for (const chefId of chefIds) {
+      const chef = specialtyChefs.find((c) => c && c.id === chefId);
+      if (!chef) {
+        throw new HttpsError('not-found', `Chef ${chefId} not on your roster.`);
+      }
+      removed.push(chef);
+    }
+    const removedIds = new Set(chefIds);
+    const remaining = specialtyChefs.filter(
+      (c) => !c || !removedIds.has(c.id),
+    );
+
+    for (const chef of removed) {
+      const returnPoolRef = gameRef
+        .collection('rounds')
+        .doc(`round_${round}`)
+        .collection('chefReturnPool')
+        .doc(chef.id);
+      transaction.set(returnPoolRef, {
+        ...chef,
+        returnedByPlayerId: uid,
+        returnedAt: FieldValue.serverTimestamp(),
+      });
+    }
+
+    for (const teamPlayerDoc of teamPlayerDocs) {
+      transaction.update(teamPlayerDoc.ref, {
+        specialtyChefs: remaining,
+        pendingRosterAction: remaining.length > specialtyChefCap,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
+
+    _laidOffCount = removed.length;
+  });
+
+  return { gameId, chefIds, laidOffCount: _laidOffCount };
+});
+
+// ===========================================================================
+// reclaimTeammateRole (M-10)
+// ===========================================================================
+//
+// Allows any teammate to clear `roleAssignments[targetUid]` on the team doc
+// when the target's presence has gone stale or their player doc is flagged
+// disconnected. Without this, a closed-tab teammate's specialist role
+// stays locked on the team forever and the remaining teammates can't take
+// over the corresponding submit button.
+
+const PRESENCE_STALE_MS = 60_000;
+
+exports.reclaimTeammateRole = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
+  const auth = requireAuth(request, 'Sign in to reclaim a teammate role.');
+  const data = request.data || {};
+  const gameId = cleanGameId(data.gameId);
+  const teamId = cleanString(data.teamId);
+  const targetUid = cleanString(data.targetUid);
+  if (!teamId) throw new HttpsError('invalid-argument', 'teamId is required.');
+  if (!targetUid) throw new HttpsError('invalid-argument', 'targetUid is required.');
+  if (targetUid === auth.uid) {
+    throw new HttpsError('invalid-argument', 'Cannot reclaim your own role — clear it via setTeamRole.');
+  }
+
+  const uid = auth.uid;
+  const gameRef = gameDoc(gameId);
+  const teamRef = gameRef.collection('teams').doc(teamId);
+  const callerRef = gameRef.collection('players').doc(uid);
+  const targetPlayerRef = gameRef.collection('players').doc(targetUid);
+  const targetPresenceRef = gameRef.collection('presence').doc(targetUid);
+
+  await db.runTransaction(async (transaction) => {
+    const [gSnap, callerSnap, teamSnap, targetSnap, presenceSnap] = await Promise.all([
+      transaction.get(gameRef),
+      transaction.get(callerRef),
+      transaction.get(teamRef),
+      transaction.get(targetPlayerRef),
+      transaction.get(targetPresenceRef),
+    ]);
+
+    if (!gSnap.exists) throw new HttpsError('not-found', 'Game not found.');
+    if (!callerSnap.exists) {
+      throw new HttpsError('failed-precondition', 'Join the game before reclaiming a role.');
+    }
+    if (!teamSnap.exists) {
+      throw new HttpsError('not-found', 'Team not found.');
+    }
+    const callerTeamId = getPlayerTeamId(callerSnap.data());
+    if (callerTeamId !== teamId) {
+      throw new HttpsError('permission-denied', 'You can only reclaim a role on your own team.');
+    }
+
+    // Eligibility: presence stale OR disconnected flag set on the target's
+    // player doc. The disconnected flag is set by the simulation when a
+    // player misses two consecutive rounds (BE-19); presence is set when
+    // their tab closes / backgrounds for > 60s.
+    const lastSeenAt = presenceSnap.exists ? presenceSnap.get('lastSeenAt') : null;
+    const lastSeenMs = lastSeenAt && typeof lastSeenAt.toMillis === 'function'
+      ? lastSeenAt.toMillis()
+      : 0;
+    const presenceStale = lastSeenMs > 0
+      ? (Timestamp.now().toMillis() - lastSeenMs) > PRESENCE_STALE_MS
+      : true; // no presence doc → treat as stale (never connected this session)
+    const targetDisconnected = targetSnap.exists
+      && targetSnap.get('disconnected') === true;
+
+    if (!presenceStale && !targetDisconnected) {
+      throw new HttpsError(
+        'failed-precondition',
+        'That teammate is still connected. Wait 60s after they leave before reclaiming.',
+      );
+    }
+
+    const teamData = teamSnap.data() || {};
+    const roleAssignments = teamData.roleAssignments || {};
+    if (roleAssignments[targetUid] === undefined || roleAssignments[targetUid] === null) {
+      // Idempotent — no role to clear, return success rather than error.
+      return;
+    }
+
+    transaction.update(teamRef, {
+      [`roleAssignments.${targetUid}`]: null,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    // Mirror `setTeamRole`'s clear path: drop the target's mirrored role
+    // on the player doc too. `assertRoleAllowedWithTeam` short-circuits
+    // on `playerRole === 'solo' || allowedRoles.includes(playerRole)`
+    // (without consulting the team doc), so leaving a stale role on the
+    // player doc would let the reclaimed teammate keep passing role gates
+    // even after their team-doc assignment is null — meaning two players
+    // could simultaneously submit as `operations` (or any role) after a
+    // reclaim. `solo` is the safe post-clear default, matching
+    // `setTeamRole`.
+    if (targetSnap.exists) {
+      transaction.update(targetPlayerRef, { role: 'solo' });
+    }
+  });
+
+  return { gameId, teamId, targetUid, reclaimed: true };
 });
 
 // ===========================================================================
