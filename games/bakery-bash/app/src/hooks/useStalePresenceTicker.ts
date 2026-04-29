@@ -60,20 +60,31 @@ export function useStalePresenceTicker(gameId: string | null) {
       });
     };
 
+    // Both timer handles live at effect-closure scope so `stop()` can cancel
+    // the staggered first-fire `setTimeout` regardless of which `start()`
+    // call scheduled it. The previous shape returned the cleanup arrow from
+    // `start()` and only assigned it on the very first call — so a hide-
+    // before-5s would leave the staggered tick to fire on a backgrounded
+    // tab, and a hide→show→hide cycle would leak uncancelable timeouts.
     let intervalId: number | null = null;
+    let initialDelayId: number | null = null;
 
     const start = () => {
       if (intervalId !== null) return;
       // Stagger the first fire by 5s so a fresh page load doesn't immediately
       // hammer the callable while everyone else is still booting.
-      const initialDelay = window.setTimeout(tick, 5_000);
+      initialDelayId = window.setTimeout(() => {
+        initialDelayId = null;
+        tick();
+      }, 5_000);
       intervalId = window.setInterval(tick, TICK_INTERVAL_MS);
-      // Track the timeout so cleanup can clear it; using interval handle for
-      // the named slot.
-      return () => window.clearTimeout(initialDelay);
     };
 
     const stop = () => {
+      if (initialDelayId !== null) {
+        window.clearTimeout(initialDelayId);
+        initialDelayId = null;
+      }
       if (intervalId !== null) {
         window.clearInterval(intervalId);
         intervalId = null;
@@ -85,15 +96,13 @@ export function useStalePresenceTicker(gameId: string | null) {
       else stop();
     };
 
-    let cleanupInitial: (() => void) | undefined;
     if (document.visibilityState === "visible") {
-      cleanupInitial = start();
+      start();
     }
     document.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
       stop();
-      cleanupInitial?.();
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [gameId]);

@@ -3804,7 +3804,22 @@ exports.markStalePlayersDisconnected = onCall(CALLABLE_OPTS, async (request) => 
   // marks `disconnected: true` but leaves the role claim alone so the
   // team's role assignments stay intact through the simulation phase
   // (no FE submit gate to unblock there).
-  const { phase: currentBasePhase } = parsePhase(gameSnap.get('phase'), gameSnap.get('currentRound') || gameSnap.get('round'));
+  //
+  // `parsePhase` throws a raw Error on a missing/non-string phase string,
+  // which would surface as `internal` to the FE caller after we've already
+  // burned three Firestore reads above. Guard explicitly so an in-between
+  // game doc state (no `phase` field yet) returns a clean no-op rather
+  // than a 500 — the next tick will re-check once the game has phased in.
+  const rawPhase = gameSnap.get('phase');
+  if (typeof rawPhase !== 'string' || rawPhase.length === 0) {
+    return {
+      gameId, staleCount: 0, rolesCleared: 0, scannedAt: nowMs, phase: null,
+    };
+  }
+  const { phase: currentBasePhase } = parsePhase(
+    rawPhase,
+    gameSnap.get('currentRound') || gameSnap.get('round'),
+  );
   const shouldClearRoles = M22_OWNED_PHASES.has(currentBasePhase);
 
   let staleCount = 0;
