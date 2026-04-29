@@ -338,7 +338,7 @@ export function RosterPhasePage() {
             <div className="roster-phase-page__base-portrait">👨‍🍳</div>
             <div className="roster-phase-page__base-name">You</div>
             <div className="roster-phase-page__base-hint">
-              Always in your kitchen.
+              Your free chef. Produces 30 units per round.
             </div>
           </div>
         </div>
