@@ -272,8 +272,19 @@ describe("Bakery Bash Firestore security rules", function () {
     const db = authedDb(PLAYER_A);
     const playerRef = doc(db, "games", GAME_ID, "players", PLAYER_A);
 
+    // The player-doc update rule (firestore.rules:83-86) restricts client-
+    // side writes to `displayName` ONLY. Decision drafts (pendingDecision /
+    // pendingBids) flow through the `saveDecisionDraft`, `submitDecision`,
+    // `submitPrices`, and `submitBids` callables — clients never update
+    // those fields directly. The earlier version of this test asserted
+    // success on `pendingDecision` updates against an older permissive
+    // rule; that rule was tightened (a "nested-map poisoning" security
+    // fix) but this test wasn't updated to match.
     await assertSucceeds(updateDoc(playerRef, { displayName: "Crumb Club" }));
-    await assertSucceeds(updateDoc(playerRef, { pendingDecision: {
+
+    // Direct client writes to backend-owned fields (financial state,
+    // submitted draft state) are all rejected.
+    await assertFails(updateDoc(playerRef, { pendingDecision: {
       ...pendingDecision,
       staffCounts: {
         ...pendingDecision.staffCounts,
