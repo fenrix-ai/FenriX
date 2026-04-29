@@ -3527,6 +3527,18 @@ exports.reclaimTeammateRole = onCall(CALLABLE_OPTS, async (request) => {
       [`roleAssignments.${targetUid}`]: null,
       updatedAt: FieldValue.serverTimestamp(),
     });
+    // Mirror `setTeamRole`'s clear path: drop the target's mirrored role
+    // on the player doc too. `assertRoleAllowedWithTeam` short-circuits
+    // on `playerRole === 'solo' || allowedRoles.includes(playerRole)`
+    // (without consulting the team doc), so leaving a stale role on the
+    // player doc would let the reclaimed teammate keep passing role gates
+    // even after their team-doc assignment is null — meaning two players
+    // could simultaneously submit as `operations` (or any role) after a
+    // reclaim. `solo` is the safe post-clear default, matching
+    // `setTeamRole`.
+    if (targetSnap.exists) {
+      transaction.update(targetPlayerRef, { role: 'solo' });
+    }
   });
 
   return { gameId, teamId, targetUid, reclaimed: true };
