@@ -39,11 +39,15 @@ service cloud.firestore {
     // /eventBoards/{sessionId}
     // Shared event-visuals control/display state used for the cookie
     // activity, Bakery round visuals, and winner announcements.
-    // Read/write is allowed for any signed-in user so multiple devices
-    // can collaborate on the same live event board.
+    // Read is open to any signed-in viewer (the /event/display surface
+    // can run on a projection laptop without per-device claims).
+    // Writes require the professor custom claim — without that gate,
+    // anonymous-auth visitors (the AuthProvider auto-signs everyone in)
+    // could overwrite live event state mid-session.
     // ─────────────────────────────────────────────────────────
     match /eventBoards/{sessionId} {
-      allow read, write: if signedIn();
+      allow read: if signedIn();
+      allow write: if isProfessor();
     }
 
     // ─────────────────────────────────────────────────────────

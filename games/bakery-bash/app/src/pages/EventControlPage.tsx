@@ -4,6 +4,7 @@ import { PixelAvatar } from "../components/ui/PixelAvatar";
 import { PageShell } from "../components/ui/PageShell";
 import { useGame } from "../contexts/GameContext";
 import { useEventLeaderboard } from "../hooks/useEventLeaderboard";
+import { useIsProfessor } from "../hooks/useIsProfessor";
 import { normalizeAvatarName } from "../lib/avatarManifest";
 import { db } from "../lib/firebase";
 import type {
@@ -37,6 +38,12 @@ const STATUS_BUTTONS: Array<{ value: EventPlayerStatus; label: string }> = [
 
 export function EventControlPage() {
   const { gameId, gameCode } = useGame();
+  // Render-gate the control surface on the professor custom claim. The
+  // Firestore rule for /eventBoards now also requires `isProfessor()` for
+  // writes, so a non-professor visitor can't actually mutate the board even
+  // if this gate were bypassed — but we still hide the UI to avoid leaking
+  // the participant roster to anonymous visitors who happen onto the URL.
+  const { isProfessor, loading: professorLoading } = useIsProfessor();
   const [newPlayerName, setNewPlayerName] = useState("");
   const [bulkTeamText, setBulkTeamText] = useState("");
   const [bulkMessage, setBulkMessage] = useState("");
@@ -181,6 +188,30 @@ export function EventControlPage() {
     }));
     setBulkMessage(`Saved team for ${playerName}.`);
   };
+
+  if (professorLoading) {
+    return (
+      <PageShell className="event-board event-board--control">
+        <p className="event-board__subtitle">Checking access…</p>
+      </PageShell>
+    );
+  }
+
+  if (!isProfessor) {
+    return (
+      <PageShell className="event-board event-board--control">
+        <header className="event-board__header">
+          <div>
+            <p className="event-board__eyebrow">Event Visuals</p>
+            <h1 className="event-board__title">Restricted</h1>
+            <p className="event-board__subtitle">
+              The event control board is only available to professors.
+            </p>
+          </div>
+        </header>
+      </PageShell>
+    );
+  }
 
   return (
     <PageShell className="event-board event-board--control">
