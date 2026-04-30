@@ -78,6 +78,47 @@ describe('runMonthlySimulation', () => {
     assert.ok(agg.totalSpent > 500, `expected monthly cost > $500, got $${agg.totalSpent}`);
   });
 
+  it('persists equipment upgrades as the next round starting grade', () => {
+    const round1 = runMonthlySimulation([
+      fakePlayer('p_a', {
+        equipmentGrade: 'C',
+        decision: {
+          ...fakePlayer('p_a').decision,
+          equipmentUpgradePurchased: true,
+        },
+      }),
+    ], prefs, config, { gameId: 'equipment-carryover', round: 1 })[0];
+
+    assert.equal(round1.equipmentGrade, 'B', 'C→B upgrade should persist as B for the next round');
+    assert.equal(round1.equipmentUpgradeApplied, true, 'round 1 upgrade should be applied');
+
+    const round2NoUpgrade = runMonthlySimulation([
+      fakePlayer('p_a', {
+        equipmentGrade: round1.equipmentGrade,
+        decision: {
+          ...fakePlayer('p_a').decision,
+          equipmentUpgradePurchased: false,
+        },
+      }),
+    ], prefs, config, { gameId: 'equipment-carryover', round: 2 })[0];
+
+    assert.equal(round2NoUpgrade.equipmentGrade, 'B', 'B should remain the starting grade when no round 2 upgrade is bought');
+    assert.equal(round2NoUpgrade.equipmentUpgradeApplied, false, 'round 2 should not auto-buy another upgrade');
+
+    const round2Upgrade = runMonthlySimulation([
+      fakePlayer('p_a', {
+        equipmentGrade: round1.equipmentGrade,
+        decision: {
+          ...fakePlayer('p_a').decision,
+          equipmentUpgradePurchased: true,
+        },
+      }),
+    ], prefs, config, { gameId: 'equipment-carryover', round: 2 })[0];
+
+    assert.equal(round2Upgrade.equipmentGrade, 'A', 'after C→B, the next purchased upgrade should be B→A');
+    assert.equal(round2Upgrade.equipmentUpgradeApplied, true, 'round 2 B→A upgrade should be applied');
+  });
+
   it('does NOT charge loan-shark interest 30x for an overspending team', () => {
     // Force overspend: tiny budget, expensive decisions.
     const broke = fakePlayer('p_a', { budgetCurrent: 100 });
