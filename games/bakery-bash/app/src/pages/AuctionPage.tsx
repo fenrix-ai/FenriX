@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   collection,
   doc,
@@ -321,7 +321,22 @@ export function AuctionPage() {
   const [submittedChefIds, setSubmittedChefIds] = useState<Set<string>>(
     new Set(),
   );
+  const [chefBidInputs, setChefBidInputs] = useState<Record<string, string>>({});
+  // FE-I16: keep the ad/chef bid input value as a string so an empty field
+  // stays empty (placeholder "0" gives the visual affordance) instead of
+  // forcing a literal "0" character that gets prepended when the user types.
+  // The buffer also shields the active input from listener-driven re-renders
+  // (player-doc + team-pending) that would otherwise clobber typed-but-
+  // unsubmitted values mid-keystroke. Cleared on round-roll/submit below.
+  const [adBidInputs, setAdBidInputs] = useState<Partial<Record<AdType, string>>>({});
   const [showExpiredPopup, setShowExpiredPopup] = useState(false);
+  // Player-doc bids are hydrated once on mount (e.g. for refresh recovery).
+  // Subsequent player-doc snapshots fire on unrelated writes (budget
+  // deductions, equipment purchases, etc.) and would clobber typed bids,
+  // so we ignore them after the first hydration. Cross-teammate sync
+  // continues via the team-pending listener (which has its own
+  // updatedByUid self-write guard).
+  const hasHydratedPlayerBidsRef = useRef(false);
 
   // A24-I05 — ad-winner banner rendered at the top of the chef phase.
   // Reads the current round's `auctionResults.ads` — same surface
@@ -376,11 +391,21 @@ export function AuctionPage() {
 
   useEffect(() => {
     if (!gameId || !playerId) return;
+    hasHydratedPlayerBidsRef.current = false;
     const playerRef = doc(db, "games", gameId, "players", playerId);
     const unsubscribe = onSnapshot(
       playerRef,
       (snap) => {
         if (!snap.exists()) return;
+        // Hydrate the player's persisted bids exactly once per mount.
+        // After that, the user's local typing owns the reducer state,
+        // SET_ROUND handles round transitions, and the team-pending
+        // listener handles cross-teammate sync. Re-dispatching on every
+        // unrelated player-doc write (e.g. budget decrements from
+        // purchaseChefData) would otherwise reset typed-but-unsubmitted
+        // bids back to whatever was last persisted.
+        if (hasHydratedPlayerBidsRef.current) return;
+        hasHydratedPlayerBidsRef.current = true;
         const data = snap.data() as DocumentData;
         const pendingBids =
           data.pendingBids && typeof data.pendingBids === "object"
@@ -550,6 +575,8 @@ export function AuctionPage() {
     // Barlava follow-up: round-roll clears the permanent-submit lock too.
     setSubmittedAdTypes(new Set());
     setSubmittedChefIds(new Set());
+    setChefBidInputs({});
+    setAdBidInputs({});
     if (!gameId || !currentRound) {
       return;
     }
@@ -683,6 +710,14 @@ export function AuctionPage() {
         next.add(chefId);
         return next;
       });
+      // Drop the typing buffer for the chef we just submitted so the
+      // input re-renders from the canonical reducer state.
+      setChefBidInputs((prev) => {
+        if (!(chefId in prev)) return prev;
+        const next = { ...prev };
+        delete next[chefId];
+        return next;
+      });
     } catch (err) {
       setSubmitError(humanizeFunctionError(err, "Could not submit chef bid. Please try again."));
     }
@@ -730,6 +765,10 @@ export function AuctionPage() {
         setSubmittedAdTypes(
           new Set(AD_TYPES.filter((t) => (adBids[t] ?? 0) > 0)),
         );
+        // After submit, the reducer state holds the canonical bid amounts;
+        // drop the typing buffer so the input falls back to those values
+        // and re-renders cleanly if a teammate writes the team-pending doc.
+        setAdBidInputs({});
       } else {
         // If the real chef pool from `rounds/{round}.chefPool` has loaded,
         // send bids keyed by those real IDs. Until then, chef IDs in
@@ -777,6 +816,14 @@ export function AuctionPage() {
         setSubmittedChefIds((prev) => {
           const next = new Set(prev);
           for (const b of chefBids) next.add(b.chefId);
+          return next;
+        });
+        // Drop the typing buffer for chefs that just submitted; the
+        // reducer state is now authoritative for those rows.
+        setChefBidInputs((prev) => {
+          if (chefBids.length === 0) return prev;
+          const next = { ...prev };
+          for (const b of chefBids) delete next[b.chefId];
           return next;
         });
       }
@@ -1028,12 +1075,22 @@ export function AuctionPage() {
                     : 0;
                 const effectiveFloor = Math.max(perTypeFloor, perRoundFloor);
                 const adMinBid = effectiveFloor > 0 ? effectiveFloor : null;
-                const adInputVal = pendingAdBids[ad.id] ?? 0;
+                const adReducerVal = pendingAdBids[ad.id] ?? 0;
+                const adBuffered = adBidInputs[ad.id];
+                const adInputDisplay =
+                  adBuffered ?? (adReducerVal > 0 ? String(adReducerVal) : "");
+                const adInputVal =
+                  adBuffered !== undefined
+                    ? parseInt(adBuffered, 10)
+                    : adReducerVal;
                 const adBelowMinimum =
-                  adMinBid !== null && adInputVal > 0 && adInputVal < adMinBid;
+                  adMinBid !== null
+                    && !isNaN(adInputVal)
+                    && adInputVal > 0
+                    && adInputVal < adMinBid;
                 // B-02 (2026-04-29): $999,999 typo cap (Q17). Pure FE
                 // safety — backend has its own bid validators.
-                const adAboveCap = adInputVal > BID_DOLLAR_MAX;
+                const adAboveCap = !isNaN(adInputVal) && adInputVal > BID_DOLLAR_MAX;
                 // Barlava follow-up: per-row duplicate-bid flag.
                 const adDuplicate = isDuplicateAdBid(ad.id);
                 return (
@@ -1077,7 +1134,7 @@ export function AuctionPage() {
                         placeholder="0"
                         min={0}
                         max={BID_DOLLAR_MAX}
-                        value={adInputVal > 0 ? String(adInputVal) : ""}
+                        value={adInputDisplay}
                         disabled={timerExpired || !isAdPhase || isLockedAdBid(ad.id)}
                         readOnly={!isAdPhase || isLockedAdBid(ad.id)}
                         aria-invalid={
@@ -1087,6 +1144,7 @@ export function AuctionPage() {
                         }
                         onChange={(e) => {
                           const raw = e.target.value;
+                          setAdBidInputs((prev) => ({ ...prev, [ad.id]: raw }));
                           if (raw === "") {
                             setAdBid(ad.id, 0);
                             return;
@@ -1151,13 +1209,23 @@ export function AuctionPage() {
                   typeof chef.minBidFloor === "number"
                     ? chef.minBidFloor
                     : null;
-                const currentBidAmount = pendingChefBids[chef.id] ?? 0;
+                const reducerBidAmount = pendingChefBids[chef.id] ?? 0;
+                const chefBuffered = chefBidInputs[chef.id];
+                const chefInputDisplay =
+                  chefBuffered ??
+                  (reducerBidAmount > 0 ? String(reducerBidAmount) : "");
+                const currentBidAmount =
+                  chefBuffered !== undefined
+                    ? parseInt(chefBuffered, 10)
+                    : reducerBidAmount;
                 const belowMinimum =
                   minBid !== null &&
+                  !isNaN(currentBidAmount) &&
                   currentBidAmount > 0 &&
                   currentBidAmount < minBid;
                 // B-02 (2026-04-29): $999,999 typo cap (Q17).
-                const aboveCap = currentBidAmount > BID_DOLLAR_MAX;
+                const aboveCap =
+                  !isNaN(currentBidAmount) && currentBidAmount > BID_DOLLAR_MAX;
                 // Barlava follow-up: per-row duplicate-bid flag.
                 const chefDuplicate = isDuplicateChefBid(chef.id);
                 return (
@@ -1224,10 +1292,10 @@ export function AuctionPage() {
                               ? " auction-chef__bid-input--error"
                               : ""
                           }`}
-                        placeholder="0"
-                        min={0}
-                        max={BID_DOLLAR_MAX}
-                        value={currentBidAmount > 0 ? String(currentBidAmount) : ""}
+                          placeholder="0"
+                          min={0}
+                          max={BID_DOLLAR_MAX}
+                          value={chefInputDisplay}
                           disabled={timerExpired || !isChefPhase || isLockedChefBid(chef.id)}
                           readOnly={!isChefPhase || isLockedChefBid(chef.id)}
                           aria-invalid={
@@ -1237,6 +1305,7 @@ export function AuctionPage() {
                           }
                           onChange={(e) => {
                             const raw = e.target.value;
+                            setChefBidInputs((prev) => ({ ...prev, [chef.id]: raw }));
                             const parsed = parseInt(raw, 10);
                             if (!isNaN(parsed) && parsed >= 0) {
                               setChefBid(chef.id, parsed);
