@@ -251,10 +251,26 @@ function calculateRoundCosts(decision, auctionResults, cfg = config) {
   // stations — charging substantially more than the UI displayed.
   const staffCounts = (decision && decision.staffCounts) || {};
   const baseCost = cfg && cfg.sousChefBaseCost;
-  const sousChefHireCost =
-    _sousChefHireCost(Math.max(0, _num(staffCounts.bakerySousChefs)), baseCost) +
-    _sousChefHireCost(Math.max(0, _num(staffCounts.deliSousChefs)), baseCost) +
-    _sousChefHireCost(Math.max(0, _num(staffCounts.baristaSousChefs)), baseCost);
+  const bakerySous = Math.max(0, _num(staffCounts.bakerySousChefs));
+  const deliSous = Math.max(0, _num(staffCounts.deliSousChefs));
+  const baristaSous = Math.max(0, _num(staffCounts.baristaSousChefs));
+  let sousChefHireCost;
+  if (bakerySous + deliSous + baristaSous > 0) {
+    // Per-station path: humans submit explicit per-station counts via the
+    // StaffTab UI.
+    sousChefHireCost =
+      _sousChefHireCost(bakerySous, baseCost) +
+      _sousChefHireCost(deliSous, baseCost) +
+      _sousChefHireCost(baristaSous, baseCost);
+  } else {
+    // Bot path: bot-engine emits `sousChefCount` (aggregate) with
+    // `staffCounts: {}`. Without this fallback the new per-station code
+    // above returns 0 for every bot, letting bots staff for free. Apply
+    // the legacy aggregate curve so the bot economy stays consistent
+    // with what bots paid pre-PR.
+    const aggregate = Math.max(0, _num((decision && decision.sousChefCount) || 0));
+    sousChefHireCost = _sousChefHireCost(aggregate, baseCost);
+  }
 
   const adBidCost = Math.max(0, _num((auctionResults && auctionResults.adAuctionWinningBid) || 0));
   const chefBidCost = Math.max(0, _num((auctionResults && auctionResults.chefAuctionWinningBid) || 0));
