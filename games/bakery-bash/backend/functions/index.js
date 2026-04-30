@@ -790,6 +790,10 @@ async function resetPendingPlayerStateForRound(gameRef) {
       // Clear round-scoped Operations staffing state so round N+1 does not
       // inherit round N's staffing from a missed submission.
       'pendingDecision.staffCounts': {},
+      // Equipment upgrades are one-round purchases. The durable grade lives
+      // on `players/{uid}.equipmentGrade`; carrying this flag forward makes
+      // the next round look like the previous upgrade is still pending.
+      'pendingDecision.equipmentUpgradePurchased': false,
       'pendingBids.ad': null,
       'pendingBids.chef': null,
       pendingRosterAction: false,
@@ -2611,6 +2615,11 @@ async function runSimulationAndPersist(gameRef, round, config) {
                 interestCharged: d.interestCharged || 0,
                 customerCount: d.customerCount,
                 aggregateSatisfactionPct: d.aggregateSatisfactionPct,
+                productBreakdown: Object.fromEntries(
+                  Object.entries(d.perProductSatisfaction || {})
+                    .filter(([, pps]) => pps && typeof pps === 'object' && typeof pps.qtySold === 'number')
+                    .map(([product, pps]) => [product, pps.qtySold]),
+                ),
               }))
             : [],
           // M-21 (2026-04-28): "what hurt this round" signals grouped on
@@ -5145,19 +5154,12 @@ exports.purchaseChefData = onCall(CALLABLE_OPTS, async (request) => {
     }
   } else {
     rows.push("round,chef_id,name,nationality,gender,skill_tier,specialties,min_bid_floor");
-    // Aggregate the chef pool across EVERY round played so far. Previously
-    // this only dumped the current round's 12-chef pool, which the UI's
-    // "Full chef profile dump (30+ per nationality)" tagline contradicted —
-    // players reported missing chefs because the file only contained the
-    // current pool.
     const totalRounds = numberOrDefault(game.currentRound, 1);
     const roundIds = [];
     for (let r = 1; r <= totalRounds; r += 1) roundIds.push(`round_${r}`);
     const roundSnaps = await Promise.all(
       roundIds.map((rid) => gameRef.collection("rounds").doc(rid).get()),
     );
-    // Dedupe by chef.id so a chef who appears in multiple rounds (rare,
-    // but possible if the pool generator recycles IDs) shows once.
     const seen = new Set();
     for (let i = 0; i < roundSnaps.length; i += 1) {
       const snap = roundSnaps[i];
@@ -5628,8 +5630,8 @@ exports.onBotPhaseChange = onDocumentWritten(
     const gameRef = gameDoc(gameId);
 
     // Find all bots
-    const playersSnap = await gameRef.collection('players').get();
-    const bots = playersSnap.docs.filter((d) => d.get('isBot') === true);
+    let playersSnap = await gameRef.collection('players').get();
+    let bots = playersSnap.docs.filter((d) => d.get('isBot') === true);
     if (bots.length === 0) return;
 
     const cfgSnap = await gameRef.collection('config').doc('params').get();
@@ -5667,6 +5669,12 @@ exports.onBotPhaseChange = onDocumentWritten(
           gameId, round, phase: parsed.phase, missing: requiredField,
         });
       }
+    }
+
+    if (parsed.phase === 'roster') {
+      playersSnap = await gameRef.collection('players').get();
+      bots = playersSnap.docs.filter((d) => d.get('isBot') === true);
+      if (bots.length === 0) return;
     }
 
     // Load opponents (human players) for opponent modeling
