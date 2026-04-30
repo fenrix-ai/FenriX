@@ -94,7 +94,6 @@ const {
 
 const {
   generateChefPool,
-  MIN_BID_FLOOR_MULTIPLIERS,
   resolveChefAuction,
 } = require('./modules/chef-system');
 
@@ -5154,27 +5153,34 @@ exports.purchaseChefData = onCall(CALLABLE_OPTS, async (request) => {
       rows.push(`${nationality},"${specs}"`);
     }
   } else {
-    rows.push("chef_id,name,nationality,gender,skill_tier,specialties,min_bid_floor");
-    const sousChefBaseCost = numberOrDefault(config.sousChefBaseCost, 10);
-    for (const [nationality, chefData] of Object.entries(CHEF_NATIONALITIES)) {
-      const specs = Array.isArray(chefData.specialties) ? chefData.specialties.join(";") : "";
-      const namesByGender = chefData.names || {};
-      for (const gender of ["male", "female"]) {
-        const names = Array.isArray(namesByGender[gender]) ? namesByGender[gender] : [];
-        for (const name of names) {
-          for (const skillTier of ["novel", "intermediate", "advanced"]) {
-            const minBidFloor = numberOrDefault(MIN_BID_FLOOR_MULTIPLIERS[skillTier], 0) * sousChefBaseCost;
-            rows.push([
-              `${nationality}_${gender}_${String(name).toLowerCase().replace(/[^a-z0-9]+/g, "_")}_${skillTier}`,
-              `"${String(name || "").replace(/"/g, '""')}"`,
-              nationality,
-              gender,
-              skillTier,
-              `"${specs}"`,
-              minBidFloor,
-            ].join(","));
-          }
-        }
+    rows.push("round,chef_id,name,nationality,gender,skill_tier,specialties,min_bid_floor");
+    const totalRounds = numberOrDefault(game.currentRound, 1);
+    const roundIds = [];
+    for (let r = 1; r <= totalRounds; r += 1) roundIds.push(`round_${r}`);
+    const roundSnaps = await Promise.all(
+      roundIds.map((rid) => gameRef.collection("rounds").doc(rid).get()),
+    );
+    const seen = new Set();
+    for (let i = 0; i < roundSnaps.length; i += 1) {
+      const snap = roundSnaps[i];
+      if (!snap.exists) continue;
+      const pool = Array.isArray(snap.data().chefPool) ? snap.data().chefPool : [];
+      const round = i + 1;
+      for (const chef of pool) {
+        const id = chef.id || "";
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        const specs = Array.isArray(chef.specialties) ? chef.specialties.join(";") : "";
+        rows.push([
+          round,
+          id,
+          `"${String(chef.name || "").replace(/"/g, '""')}"`,
+          chef.nationality || "",
+          chef.gender || "",
+          chef.skillTier || "",
+          `"${specs}"`,
+          numberOrDefault(chef.minBidFloor, 0),
+        ].join(","));
       }
     }
   }
