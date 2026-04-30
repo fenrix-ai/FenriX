@@ -9,6 +9,14 @@ import type { FunctionsError } from "firebase/functions";
 export function humanizeFunctionError(err: unknown, fallback: string): string {
   if (err && typeof err === "object" && ("code" in err || "message" in err)) {
     const fnErr = err as FunctionsError;
+    // Firebase surfaces unhandled backend exceptions as code="functions/internal"
+    // with message="INTERNAL" — not useful to show verbatim. Match case-
+    // insensitively so a future SDK formatting tweak ("Internal", "internal
+    // error", etc.) still gets caught.
+    const msg = typeof fnErr.message === "string" ? fnErr.message.trim() : "";
+    if (fnErr.code === "functions/internal" || /^internal( error)?$/i.test(msg)) {
+      return fallback;
+    }
     if (fnErr.message) {
       return fnErr.message.replace(/\bminBidFloor\b/g, "Minimum Ask");
     }
