@@ -894,6 +894,15 @@ export function GamePage() {
         </p>
       )}
 
+      {/* DR-8 (2026-04-30): warn before commit. The professor can't roll
+          back individual decisions once submitted, so the team needs to
+          know this before clicking. Hidden once already submitted. */}
+      {!allSubmitted && canSubmit && (
+        <p className="game-page__submit-warning" role="note">
+          ⚠ Once you submit, you cannot change your decisions for this round.
+        </p>
+      )}
+
       {/* FE-17 — timer + live submission counter + role-gated submit. */}
       {/* K-11 (2026-04-29): collapsed to a single button. Finance / Operations
           / Solo all click the same control; `handleSubmitDecide` runs the

@@ -560,6 +560,13 @@ async function resolveAndApplyAdAuction(gameRef, round) {
   const rawCfg = cfgSnap.exists ? (cfgSnap.data() || {}) : {};
   const mergedCfg = require('./modules/config').mergeConfig(rawCfg);
   const adBidMins = (mergedCfg && mergedCfg.adBidMinimums) || {};
+  // AA-2 (2026-04-30): per-round floor, clamped to the array length.
+  const adRoundFloors = (mergedCfg && Array.isArray(mergedCfg.adBidRoundFloor))
+    ? mergedCfg.adBidRoundFloor
+    : [];
+  const adRoundFloor = adRoundFloors.length > 0
+    ? adRoundFloors[Math.min(Math.max(round - 1, 0), adRoundFloors.length - 1)]
+    : 0;
 
   // M-16 (2026-04-28): wrap the bid-read + result-write in a transaction.
   // Pre-M-16 the resolution read every bid doc non-transactionally, which
@@ -593,7 +600,12 @@ async function resolveAndApplyAdAuction(gameRef, round) {
       let winnerKey = null;
       let winningBid = 0;
       let winningSubmittedAt = null;
-      const minBid = numberOrDefault(adBidMins[adType], 0);
+      // AA-2 (2026-04-30): the effective floor is the larger of the
+      // per-type floor (legacy) and the per-round floor.
+      const minBid = Math.max(
+        numberOrDefault(adBidMins[adType], 0),
+        adRoundFloor,
+      );
 
       for (let i = 0; i < playerIds.length; i += 1) {
         const bidSnap = bidSnaps[i];
@@ -836,6 +848,12 @@ async function resetPendingTeamStateForRound(gameRef) {
       && !Array.isArray(prevDraft.productPrices))
       ? prevDraft.productPrices
       : {};
+    const carryoverQuantities = (prevDraft
+      && prevDraft.quantities
+      && typeof prevDraft.quantities === 'object'
+      && !Array.isArray(prevDraft.quantities))
+      ? prevDraft.quantities
+      : {};
 
     batch.set(ref, {
       ad: null,
@@ -845,7 +863,7 @@ async function resetPendingTeamStateForRound(gameRef) {
         submittedAt: null,
         round: null,
         menu: {},
-        quantities: {},
+        quantities: carryoverQuantities,
         sousChefCount: 0,
         sousChefAssignments: {},
         staffCounts: {},
@@ -2497,6 +2515,11 @@ async function runSimulationAndPersist(gameRef, round, config) {
           amountBorrowed: r.amountBorrowed,
           interestCharged: r.interestCharged,
           selloutAnywhere: r.selloutAnywhere || false,
+          productBreakdown: Object.fromEntries(
+            Object.entries(r.perProductSatisfaction || {})
+              .filter(([, pps]) => pps && typeof pps === 'object' && typeof pps.qtySold === 'number')
+              .map(([product, pps]) => [product, pps.qtySold]),
+          ),
           adWon: r.adWon || null,
           adWins: Array.isArray(r.adWins) ? r.adWins : [],
           adPaid: r.adBidPaid || 0,

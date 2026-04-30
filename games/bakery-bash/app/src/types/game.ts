@@ -354,6 +354,13 @@ export interface GameConfigParams {
   phaseDurations?: Record<string, number>;
   adBonuses?: Partial<Record<AdType, number>>;
   adBidMinimums?: Partial<Record<AdType, number>>;
+  /**
+   * AA-2 (2026-04-30): per-round ad bid floor. Index = round - 1; rounds
+   * past the array clamp to the last entry. Frontend takes the max of
+   * `adBidMinimums[type]` and `adBidRoundFloor[round-1]` for the displayed
+   * minimum. Backend mirrors the same logic in `resolveAndApplyAdAuction`.
+   */
+  adBidRoundFloor?: number[];
   /** Cost to purchase last round's competitor decisions CSV. */
   competitorInsightCost?: number;
   /** Cost to purchase the static nationality → specialty CSV. */

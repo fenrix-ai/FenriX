@@ -271,10 +271,15 @@ const CHEF_NATIONALITIES = {
  * differentiate themselves from a no-chef team in the customer-allocation
  * stage.
  */
+// Balance pass 17: buffed specialty multipliers ~25-30%. Chefs were
+// undervalued relative to ads — an advanced specialty chef producing
+// 30×3.0 = 90 units/day didn't justify auction costs when a TV ad
+// gave $400 + 15% foot traffic for free. New values make specialty
+// chefs clearly the best way to scale product output and revenue.
 const CHEF_MULTIPLIERS = {
-  novel:        { nonSpecialty: 1.0,  specialty: 1.5 },
-  intermediate: { nonSpecialty: 1.4,  specialty: 2.2 },
-  advanced:     { nonSpecialty: 1.8,  specialty: 3.0 },
+  novel:        { nonSpecialty: 1.0,  specialty: 1.8 },
+  intermediate: { nonSpecialty: 1.5,  specialty: 2.8 },
+  advanced:     { nonSpecialty: 2.0,  specialty: 3.8 },
 };
 
 // ---------------------------------------------------------------------------
@@ -286,12 +291,19 @@ const CHEF_MULTIPLIERS = {
  * Array index = round - 1. Each entry gives the probability of a generated chef
  * being at each skill tier for that round.
  */
+// CA-1 (2026-04-30): slower progression so high-tier chefs feel earned in
+// late rounds. Backend keys stay `novel/intermediate/advanced` (renaming
+// would touch every chef doc / CSV consumer); the FE maps them to
+// Low/Medium/High at render time. R2 is now predominantly Low (no High);
+// R3 leans Medium with only rare High; R4–R5 ramp gradually toward the
+// final mix of 0.55 medium / 0.35 high (capped well below the previous
+// 0.50 advanced share so end-game stays competitive, not auto-win).
 const CHEF_SPAWN_RATES = [
-  { novel: 0.65, intermediate: 0.30, advanced: 0.05 }, // R1
-  { novel: 0.55, intermediate: 0.35, advanced: 0.10 }, // R2
-  { novel: 0.40, intermediate: 0.40, advanced: 0.20 }, // R3
-  { novel: 0.20, intermediate: 0.45, advanced: 0.35 }, // R4
-  { novel: 0.05, intermediate: 0.45, advanced: 0.50 }, // R5
+  { novel: 0.85, intermediate: 0.15, advanced: 0.00 }, // R1 — almost all Low
+  { novel: 0.70, intermediate: 0.28, advanced: 0.02 }, // R2 — predominantly Low, very rare High
+  { novel: 0.25, intermediate: 0.65, advanced: 0.10 }, // R3 — mostly Medium, occasional Low, rare High
+  { novel: 0.15, intermediate: 0.60, advanced: 0.25 }, // R4 — Medium-heavy with growing High
+  { novel: 0.10, intermediate: 0.55, advanced: 0.35 }, // R5 — final mix per design spec
 ];
 
 // ---------------------------------------------------------------------------
@@ -402,26 +414,24 @@ const DEFAULT_GAME_CONFIG = {
   // edge — they bring in real customer traffic via the foot-traffic boost
   // added below — but bidding is no longer a money cannon.
   adBonuses: {
-    // Balance pass 16: 50× scale-down. TV $400 = ~10% of starting budget
-    // (was 4% of $500k starting). Winning an ad is now a meaningful round
-    // event — covers ~80–100 units of product worth of bonus revenue.
-    // Foot-traffic bonus (below) is unchanged because it's a percentage.
-    TV: 400,
-    Billboard: 250,
-    Radio: 150,
-    Newspaper: 80,
+    // Balance pass 17: nerfed ~40% from pass 16. Ads were still too dominant
+    // compared to chef investment — a single TV win was worth more than
+    // hiring an advanced specialty chef for 3 rounds. Reduced so ads are
+    // a nice bonus but not the primary strategy.
+    TV: 250,
+    Billboard: 150,
+    Radio: 100,
+    Newspaper: 50,
   },
 
-  // Balance pass 1: ad winners get a foot-traffic bonus that scales with
-  // ad reach. A team that wins TV pulls noticeably more customers than a
-  // team that wins nothing — but these stack capped at +30% so winning
-  // all 4 ads doesn't dominate.
-  // Read by satisfaction.getFootTrafficModifier when adWins is supplied.
+  // Balance pass 17: ad foot-traffic bonuses reduced ~30%. Combined with
+  // the flat bonus nerf, ads are still worth bidding on but no longer
+  // overshadow chef investment as a growth strategy.
   adFootTrafficBonuses: {
-    TV: 0.15,
-    Billboard: 0.10,
-    Radio: 0.05,
-    Newspaper: 0.025,
+    TV: 0.10,
+    Billboard: 0.07,
+    Radio: 0.04,
+    Newspaper: 0.02,
   },
 
   // V7 (Apr 26): per-ad minimum bid floor removed at the user's request.
@@ -440,13 +450,22 @@ const DEFAULT_GAME_CONFIG = {
     Newspaper: 0,
   },
 
+  // AA-2 (2026-04-30): per-round minimum bid floor for the ad auction.
+  // Applied as a strict lower bound on every ad bid regardless of ad type;
+  // the backend takes the max of `adBidMinimums[adType]` and this round
+  // value when validating winners. Index = round - 1; rounds beyond the
+  // array clamp to the last entry. Designed for the $10k starting budget
+  // across 5 rounds with multiple bidding categories per round.
+  adBidRoundFloor: [100, 150, 200, 250, 300],
+
   phaseDurations: {
     // Apr 25 V5: dropped from 30 → 8s. The "Get Ready to Bake Round N"
     // splash that opens every round.
-    // Apr 26 V6: bumped 8 → 15s after playtester said R1 felt too short
-    // to read. 15s is a compromise: long enough to read "Round N starting,
-    // here's the market insight" but still well under the old 30s.
-    email: 15,
+    // Apr 26 V6: bumped 8 → 15s after playtester said R1 felt too short.
+    // G-3 (2026-04-30): trimmed 15 → 10s per latest spec. Round transition
+    // screens should not idle past 10s; the briefing copy is short enough
+    // to read in that window and players prefer a faster cadence.
+    email: 10,
     decide: 300,
     // 60 → 90: at 25-team load, p95 sharded-write latency is ~12s after the
     // burst starts; 60s left no margin for last-second clickers. Bumping to
@@ -626,6 +645,15 @@ function mergeConfig(rawConfig) {
       Radio:     numberOrDefault((raw.adBidMinimums || {}).Radio,     d.adBidMinimums.Radio),
       Newspaper: numberOrDefault((raw.adBidMinimums || {}).Newspaper, d.adBidMinimums.Newspaper),
     },
+
+    // AA-2 (2026-04-30): per-round ad floor. Accept an array; element-wise
+    // numberOrDefault against the package default so a partial array still
+    // covers later rounds.
+    adBidRoundFloor: Array.isArray(raw.adBidRoundFloor)
+      ? d.adBidRoundFloor.map((def, i) =>
+          numberOrDefault(raw.adBidRoundFloor[i], def),
+        )
+      : d.adBidRoundFloor.slice(),
 
     phaseDurations: {
       email:      numberOrDefault(rawPhases.email,      d.phaseDurations.email),
