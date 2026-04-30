@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import { doc, onSnapshot, setDoc, serverTimestamp } from "firebase/firestore";
+import { useAuth } from "../contexts/AuthContext";
 import { normalizeAvatarName, slugifyAvatarKey } from "../lib/avatarManifest";
 import { fetchEventRoster } from "../lib/eventRoster";
+import { db } from "../lib/firebase";
 import type {
   CookieShape,
   EventBoardMeta,
@@ -11,8 +14,9 @@ import type {
   EventVisualMode,
 } from "../types/event";
 
-const STORAGE_KEY = "bakery-bash:event-leaderboard:v2";
+const DEFAULT_SESSION_ID = "live-event-board";
 const LEGACY_STORAGE_KEY = "bakery-bash:event-leaderboard:v1";
+const LEGACY_STORAGE_KEY_V2 = "bakery-bash:event-leaderboard:v2";
 
 const DEFAULT_PLAYER_STATE: EventPlayerState = {
   status: "pending",
@@ -29,6 +33,10 @@ interface StoredBoardState {
   customPlayers: string[];
 }
 
+interface StoredBoardDocument extends StoredBoardState {
+  updatedAt?: unknown;
+}
+
 interface BulkTeamAssignment {
   team: string;
   names: string[];
@@ -40,6 +48,16 @@ interface BulkAssignResult {
 }
 
 const REMOVED_PLAYER_SLUGS = new Set<string>(["dylan-massaro"]);
+
+function normalizeEventSessionId(value: string | null | undefined) {
+  const normalized = (value ?? "").trim().toLowerCase();
+  const sanitized = normalized.replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-");
+  return sanitized.replace(/^-|-$/g, "") || DEFAULT_SESSION_ID;
+}
+
+function storageKeyForSession(sessionId: string) {
+  return `bakery-bash:event-leaderboard:${sessionId}:v3`;
+}
 
 function dedupeNamesBySlug(names: string[]) {
   const seen = new Set<string>();
@@ -120,7 +138,51 @@ function loadLegacyPlayers(raw: string): EventStateMap {
   }
 }
 
-function loadStoredBoardState(): StoredBoardState {
+function normalizeStoredBoardState(parsed: unknown): StoredBoardState {
+  if (isPlainObject(parsed)) {
+    const mode =
+      parsed.meta && isPlainObject(parsed.meta) && parsed.meta.mode === "bakery"
+        ? "bakery"
+        : parsed.meta && isPlainObject(parsed.meta) && parsed.meta.mode === "winners"
+          ? "winners"
+          : "cookie";
+    const defaults = cloneDefaultMeta(mode);
+    const metaSource = parsed.meta && isPlainObject(parsed.meta) ? parsed.meta : {};
+    const playersSource =
+      parsed.players && isPlainObject(parsed.players) ? parsed.players : {};
+    const customPlayersSource = Array.isArray(parsed.customPlayers)
+      ? parsed.customPlayers.filter((value): value is string => typeof value === "string")
+      : [];
+    return {
+      meta: {
+        mode,
+        title:
+          typeof metaSource.title === "string" && metaSource.title.trim()
+            ? metaSource.title
+            : defaults.title,
+        subtitle:
+          typeof metaSource.subtitle === "string" && metaSource.subtitle.trim()
+            ? metaSource.subtitle
+            : defaults.subtitle,
+      },
+      players: Object.fromEntries(
+        Object.entries(playersSource).map(([name, player]) => [
+          name,
+          normalizeStoredPlayer(player),
+        ]),
+      ),
+      customPlayers: customPlayersSource.map(normalizeAvatarName).filter(Boolean),
+    };
+  }
+
+  return {
+    meta: cloneDefaultMeta("cookie"),
+    players: {},
+    customPlayers: [],
+  };
+}
+
+function loadStoredBoardState(sessionId: string): StoredBoardState {
   if (typeof window === "undefined") {
     return {
       meta: cloneDefaultMeta("cookie"),
@@ -130,48 +192,16 @@ function loadStoredBoardState(): StoredBoardState {
   }
 
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(storageKeyForSession(sessionId));
     if (raw) {
-      const parsed = JSON.parse(raw) as unknown;
-      if (isPlainObject(parsed)) {
-        const mode =
-          parsed.meta && isPlainObject(parsed.meta) && parsed.meta.mode === "bakery"
-            ? "bakery"
-            : parsed.meta && isPlainObject(parsed.meta) && parsed.meta.mode === "winners"
-              ? "winners"
-              : "cookie";
-        const defaults = cloneDefaultMeta(mode);
-        const metaSource =
-          parsed.meta && isPlainObject(parsed.meta) ? parsed.meta : {};
-        const playersSource =
-          parsed.players && isPlainObject(parsed.players) ? parsed.players : {};
-        const customPlayersSource = Array.isArray(parsed.customPlayers)
-          ? parsed.customPlayers.filter((value): value is string => typeof value === "string")
-          : [];
-        return {
-          meta: {
-            mode,
-            title:
-              typeof metaSource.title === "string" && metaSource.title.trim()
-                ? metaSource.title
-                : defaults.title,
-            subtitle:
-              typeof metaSource.subtitle === "string" && metaSource.subtitle.trim()
-                ? metaSource.subtitle
-                : defaults.subtitle,
-          },
-          players: Object.fromEntries(
-            Object.entries(playersSource).map(([name, player]) => [
-              name,
-              normalizeStoredPlayer(player),
-            ]),
-          ),
-          customPlayers: customPlayersSource.map(normalizeAvatarName).filter(Boolean),
-        };
-      }
+      return normalizeStoredBoardState(JSON.parse(raw) as unknown);
     }
 
-    const legacyRaw = window.localStorage.getItem(LEGACY_STORAGE_KEY);
+    const legacyRaw =
+      sessionId === DEFAULT_SESSION_ID
+        ? window.localStorage.getItem(LEGACY_STORAGE_KEY_V2) ??
+          window.localStorage.getItem(LEGACY_STORAGE_KEY)
+        : null;
     return {
       meta: cloneDefaultMeta("cookie"),
       players: legacyRaw ? loadLegacyPlayers(legacyRaw) : {},
@@ -186,8 +216,17 @@ function loadStoredBoardState(): StoredBoardState {
   }
 }
 
-function saveStoredBoardState(state: StoredBoardState) {
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+function saveStoredBoardState(sessionId: string, state: StoredBoardState) {
+  window.localStorage.setItem(storageKeyForSession(sessionId), JSON.stringify(state));
+}
+
+function serializeBoardState(state: StoredBoardState): StoredBoardDocument {
+  return {
+    meta: state.meta,
+    players: state.players,
+    customPlayers: state.customPlayers,
+    updatedAt: serverTimestamp(),
+  };
 }
 
 const EMPTY_COUNTS: EventCounts = {
@@ -211,10 +250,20 @@ function createCustomRosterPlayer(name: string): EventRosterPlayer {
 }
 
 export function useEventLeaderboard() {
+  const { user, loading: authLoading } = useAuth();
+  const sessionId = useMemo(() => {
+    if (typeof window === "undefined") return DEFAULT_SESSION_ID;
+    return normalizeEventSessionId(
+      new URLSearchParams(window.location.search).get("session"),
+    );
+  }, []);
   const [roster, setRoster] = useState<EventRosterPlayer[]>([]);
-  const [boardState, setBoardState] = useState<StoredBoardState>(() => loadStoredBoardState());
+  const [boardState, setBoardState] = useState<StoredBoardState>(() =>
+    loadStoredBoardState(sessionId),
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const eventBoardRef = useMemo(() => doc(db, "eventBoards", sessionId), [sessionId]);
 
   useEffect(() => {
     let active = true;
@@ -238,13 +287,40 @@ export function useEventLeaderboard() {
 
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
-      if (event.key === STORAGE_KEY || event.key === LEGACY_STORAGE_KEY) {
-        setBoardState(loadStoredBoardState());
+      if (
+        event.key === storageKeyForSession(sessionId) ||
+        (sessionId === DEFAULT_SESSION_ID &&
+          (event.key === LEGACY_STORAGE_KEY || event.key === LEGACY_STORAGE_KEY_V2))
+      ) {
+        setBoardState(loadStoredBoardState(sessionId));
       }
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
-  }, []);
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (authLoading || !user) return;
+
+    const unsubscribe = onSnapshot(
+      eventBoardRef,
+      (snapshot) => {
+        if (!snapshot.exists()) {
+          void setDoc(eventBoardRef, serializeBoardState(loadStoredBoardState(sessionId)));
+          return;
+        }
+
+        const nextState = normalizeStoredBoardState(snapshot.data() as StoredBoardDocument);
+        setBoardState(nextState);
+        saveStoredBoardState(sessionId, nextState);
+      },
+      () => {
+        setError("Could not sync the shared event board.");
+      },
+    );
+
+    return unsubscribe;
+  }, [authLoading, eventBoardRef, sessionId, user]);
 
   const rosterNameBySlug = useMemo(
     () =>
@@ -302,7 +378,12 @@ export function useEventLeaderboard() {
 
   const saveBoard = (next: StoredBoardState) => {
     setBoardState(next);
-    saveStoredBoardState(next);
+    saveStoredBoardState(sessionId, next);
+    if (user) {
+      void setDoc(eventBoardRef, serializeBoardState(next), { merge: true }).catch(() => {
+        setError("Could not save the shared event board.");
+      });
+    }
   };
 
   const updatePlayer = (normalizedName: string, patch: Partial<EventPlayerState>) => {
@@ -489,11 +570,11 @@ export function useEventLeaderboard() {
       players: {},
       customPlayers: boardState.customPlayers,
     };
-    setBoardState(next);
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    saveBoard(next);
   };
 
   return {
+    sessionId,
     players,
     counts,
     meta: boardState.meta,

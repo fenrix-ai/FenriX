@@ -36,6 +36,17 @@ service cloud.firestore {
     }
 
     // ─────────────────────────────────────────────────────────
+    // /eventBoards/{sessionId}
+    // Shared event-visuals control/display state used for the cookie
+    // activity, Bakery round visuals, and winner announcements.
+    // Read/write is allowed for any signed-in user so multiple devices
+    // can collaborate on the same live event board.
+    // ─────────────────────────────────────────────────────────
+    match /eventBoards/{sessionId} {
+      allow read, write: if signedIn();
+    }
+
+    // ─────────────────────────────────────────────────────────
     // /games/{gameId}
     // Players can read game state to track phase, round, timers.
     // Only Cloud Functions can write (phase transitions, score updates).

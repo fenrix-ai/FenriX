@@ -44,6 +44,7 @@ export function EventControlPage() {
   const [teamDrafts, setTeamDrafts] = useState<Record<string, string>>({});
   const [importingTeams, setImportingTeams] = useState(false);
   const {
+    sessionId,
     players,
     counts,
     meta,
@@ -63,6 +64,10 @@ export function EventControlPage() {
     bulkAssignTeams,
     resetAll,
   } = useEventLeaderboard();
+  const sharedOrigin = typeof window === "undefined" ? "" : window.location.origin;
+  const sharedQuery = `?session=${sessionId}`;
+  const controlLink = `${sharedOrigin}/event/control${sharedQuery}`;
+  const displayLink = `${sharedOrigin}/event/display${sharedQuery}`;
 
   const teams = buildTeamSummaries(players);
   const normalizedLookup = normalizeAvatarName(playerLookup).toLowerCase();
@@ -191,6 +196,18 @@ export function EventControlPage() {
       </header>
 
       <section className="event-board__meta-panel">
+        <div className="event-player-card__field">
+          <span>Shared session</span>
+          <input type="text" value={sessionId} readOnly />
+        </div>
+        <div className="event-player-card__field">
+          <span>Control link</span>
+          <input type="text" value={controlLink} readOnly />
+        </div>
+        <div className="event-player-card__field">
+          <span>Display link</span>
+          <input type="text" value={displayLink} readOnly />
+        </div>
         <label className="event-player-card__field">
           <span>Mode</span>
           <select
