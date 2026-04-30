@@ -415,6 +415,7 @@ Saidie Felix, Peyton Gray`}</pre>
             >
               <div className="event-player-card__identity">
                 <PixelAvatar
+                  avatarFilename={player.expectedFilename}
                   displayName={player.normalizedName}
                   className="event-player-card__avatar"
                   forceDefault={player.isCustom}

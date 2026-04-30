@@ -1,11 +1,18 @@
 import { useState } from "react";
-import { avatarPathForMember, initialsForName } from "../../lib/avatarManifest";
+import { avatarPathForFilename, avatarPathForMember, initialsForName } from "../../lib/avatarManifest";
 
 const DEFAULT_EVENT_AVATAR_PATH = "/assets/avatars/defaults/pixel-spark.svg";
 
 interface PixelAvatarProps {
   uid?: string | null;
   displayName?: string | null;
+  /**
+   * The opaque-hash avatar filename (e.g. `474109343644.png`) supplied by the
+   * roster fetch. Preferred over `displayName`-derived URLs because the
+   * manifest no longer derives URL slugs from human names — server-rendered
+   * filenames are the only way to reach a roster avatar PNG.
+   */
+  avatarFilename?: string | null;
   className?: string;
   forceDefault?: boolean;
 }
@@ -13,6 +20,7 @@ interface PixelAvatarProps {
 export function PixelAvatar({
   uid,
   displayName,
+  avatarFilename,
   className = "",
   forceDefault = false,
 }: PixelAvatarProps) {
@@ -21,7 +29,9 @@ export function PixelAvatar({
     ? null
     : forceDefault
       ? DEFAULT_EVENT_AVATAR_PATH
-      : avatarPathForMember({ uid, displayName });
+      : avatarFilename
+        ? avatarPathForFilename(avatarFilename)
+        : avatarPathForMember({ uid, displayName });
   const fallbackLabel = initialsForName(displayName ?? "");
   const avatarClassName = ["pixel-avatar", className].filter(Boolean).join(" ");
 

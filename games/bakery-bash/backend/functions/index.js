@@ -99,6 +99,8 @@ const {
 
 const { runMonthlySimulation } = require('./modules/multi-day-simulation');
 
+const { EVENT_ROSTER_DATA } = require('./modules/event-roster-data');
+
 const {
   buildCsvString,
 } = require('./modules/csv-export');
@@ -1734,6 +1736,22 @@ exports.getTeamsInLobby = onCall(CALLABLE_OPTS, async (request) => {
   });
 
   return { gameId: gameRef.id, teams };
+});
+
+// ===========================================================================
+// getEventRoster
+// ===========================================================================
+//
+// Returns the static event-board participant roster. Moved server-side so
+// the participant name list is no longer bundled into the public FE JS
+// asset (avatar slugs are also opaque hashes — see PR rename).
+// Auth-gated to any signed-in user; anonymous-auth visitors still pass,
+// but every fetch is now logged through Firebase Auth instead of being a
+// silent static asset read.
+exports.getEventRoster = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
+  requireAuth(request, 'Sign in before loading the event roster.');
+  return { players: EVENT_ROSTER_DATA };
 });
 
 // ===========================================================================

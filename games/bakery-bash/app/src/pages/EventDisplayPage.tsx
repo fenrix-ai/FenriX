@@ -62,6 +62,7 @@ export function EventDisplayPage() {
                           className={`event-display-person-card event-display-person-card--${player.status}`}
                         >
                           <PixelAvatar
+                            avatarFilename={player.expectedFilename}
                             displayName={player.normalizedName}
                             className="event-display-person-card__avatar"
                             forceDefault={player.isCustom}
@@ -107,6 +108,7 @@ export function EventDisplayPage() {
                     {team.players.slice(0, 6).map((player) => (
                       <div key={player.normalizedName} className="event-display-member-chip">
                         <PixelAvatar
+                          avatarFilename={player.expectedFilename}
                           displayName={player.normalizedName}
                           className="event-display-member-chip__avatar"
                           forceDefault={player.isCustom}
@@ -140,6 +142,7 @@ export function EventDisplayPage() {
                             {team.players.slice(0, 8).map((player) => (
                               <PixelAvatar
                                 key={player.normalizedName}
+                                avatarFilename={player.expectedFilename}
                                 displayName={player.normalizedName}
                                 className="event-display-row__avatar"
                                 forceDefault={player.isCustom}
