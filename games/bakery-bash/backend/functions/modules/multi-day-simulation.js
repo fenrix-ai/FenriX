@@ -181,10 +181,13 @@ function runMonthlySimulation(players, roundPreferences, cfg = config, { gameId 
     const dayPlayers = day === 0 ? playersDay0 : playersOtherDays;
     const dayResults = runSimulation(dayPlayers, dayPrefs, cfg, {
       gameId, round, day, skipCostAccounting: true,
-      // Scale qtyStocked per day so monthly stock is shared across the 30
-      // days. Without this, each daily call sees the full monthly stock
-      // and a player who stocked 100 could sell up to 100/day = 3000/month.
-      dailyStockScale: 1 / days,
+      // Slice qtyStocked per day so the SUM of daily caps equals exactly
+      // the monthly stock the player paid for. The simulation distributes
+      // `monthlyStock % daysPerRound` extra units across the first N days
+      // so there's no integer-floor loss. Without this slicing each daily
+      // call would see the full monthly stock and a player who stocked
+      // 100 could sell up to 100/day = 3000/month.
+      daysPerRound: days,
     });
     for (const r of dayResults) {
       dailyResultsByPlayer.get(r.playerId).push({ day, ...r });

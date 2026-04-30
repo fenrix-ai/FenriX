@@ -172,7 +172,7 @@ describe('calculateRoundCosts — per-station sous-chef escalation', () => {
     assert.equal(result.sousChefHireCost, 10);
   });
 
-  it('charges $202.50 for 3 chefs at each of 3 stations (NOT $387.50 aggregate)', () => {
+  it('charges $142.50 for 3 chefs at each of 3 stations (NOT $340 aggregate)', () => {
     // Per-station 3 chefs = $10 + $15 + $22.50 = $47.50, × 3 = $142.50
     // Aggregate 9 chefs = $10 + $15 + $22.50 + $30 + $37.50 + $45 + $52.50 + $60 + $67.50 = $340
     // Hidden overcharge: $340 − $142.50 = $197.50
