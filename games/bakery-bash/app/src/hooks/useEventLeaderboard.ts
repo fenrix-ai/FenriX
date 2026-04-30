@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { doc, onSnapshot, setDoc, serverTimestamp } from "firebase/firestore";
 import { useAuth } from "../contexts/AuthContext";
+import { useIsProfessor } from "./useIsProfessor";
 import { normalizeAvatarName, slugifyAvatarKey } from "../lib/avatarManifest";
 import { fetchEventRoster } from "../lib/eventRoster";
 import { db } from "../lib/firebase";
@@ -251,6 +252,11 @@ function createCustomRosterPlayer(name: string): EventRosterPlayer {
 
 export function useEventLeaderboard() {
   const { user, loading: authLoading } = useAuth();
+  // Only professors can write the eventBoards doc (firestore.rules:45-48).
+  // Display-only consumers should not try to seed-on-empty — the setDoc
+  // call would silently fail and the hook would re-trigger on every
+  // snapshot. Gate seeding + mutation paths on the professor claim.
+  const { isProfessor } = useIsProfessor();
   const sessionId = useMemo(() => {
     if (typeof window === "undefined") return DEFAULT_SESSION_ID;
     return normalizeEventSessionId(
@@ -306,7 +312,13 @@ export function useEventLeaderboard() {
       eventBoardRef,
       (snapshot) => {
         if (!snapshot.exists()) {
-          void setDoc(eventBoardRef, serializeBoardState(loadStoredBoardState(sessionId)));
+          // Seed-on-empty only when the caller can actually write
+          // (firestore.rules requires isProfessor() for write). Display
+          // consumers stay in a "waiting for board" state until the
+          // professor opens the control surface.
+          if (isProfessor) {
+            void setDoc(eventBoardRef, serializeBoardState(loadStoredBoardState(sessionId)));
+          }
           return;
         }
 
@@ -320,7 +332,7 @@ export function useEventLeaderboard() {
     );
 
     return unsubscribe;
-  }, [authLoading, eventBoardRef, sessionId, user]);
+  }, [authLoading, eventBoardRef, isProfessor, sessionId, user]);
 
   const rosterNameBySlug = useMemo(
     () =>
