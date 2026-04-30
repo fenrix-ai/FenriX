@@ -4969,7 +4969,11 @@ exports.purchaseCompetitorInsight = onCall(CALLABLE_OPTS, async (request) => {
     throw new HttpsError("internal", "Failed to process purchase. Please try again.");
   }
 
-  // Collect all player decisions for the requested round (parallel reads).
+  // Collect all player decisions for the requested round.
+  // Group by team (mirroring the simulation's buildTeamGroupsFromPlayerDocs)
+  // so multi-role teams appear as one row-set under their bakery name, and
+  // quantities always come from the Finance player's decisions doc (M-17:
+  // Finance owns quantities; Operations' doc has them stripped).
   let playersSnap;
   try {
     playersSnap = await gameRef.collection("players").get();
@@ -4978,10 +4982,30 @@ exports.purchaseCompetitorInsight = onCall(CALLABLE_OPTS, async (request) => {
     throw new HttpsError("internal", "Could not read player data. Please try again.");
   }
 
+  const teamGroups = buildTeamGroupsFromPlayerDocs(playersSnap.docs);
+
+  // For each team, identify the Finance player (falls back to solo → ops →
+  // advertising → canonical) whose decisions doc carries quantities + prices.
+  const teamEntries = Array.from(teamGroups.values()).map((team) => {
+    const financeUid =
+      team.financeUid ||
+      team.soloUid ||
+      team.operationsUid ||
+      team.advertisingUid ||
+      team.canonicalUid;
+    const bakeryName = (
+      team.bakeryName ||
+      (team.memberDocs[0] && team.memberDocs[0].data().displayName) ||
+      team.key
+    ).replace(/"/g, '""');
+    const financeDoc = team.memberDocs.find((pd) => pd.id === financeUid) || team.memberDocs[0];
+    return { bakeryName, financeDoc };
+  });
+
   const decisionSnaps = await Promise.all(
-    playersSnap.docs.map((pDoc) =>
-      pDoc.ref.collection("decisions").doc(`round_${round}`).get().catch((e) => {
-        logger.warn("purchaseCompetitorInsight decisions read failed for player", { playerId: pDoc.id, round, error: e && e.message });
+    teamEntries.map(({ financeDoc }) =>
+      financeDoc.ref.collection("decisions").doc(`round_${round}`).get().catch((e) => {
+        logger.warn("purchaseCompetitorInsight decisions read failed", { playerId: financeDoc.id, round, error: e && e.message });
         return null;
       })
     )
@@ -4989,19 +5013,17 @@ exports.purchaseCompetitorInsight = onCall(CALLABLE_OPTS, async (request) => {
 
   const rows = [];
   rows.push("team_name,product,quantity,price");
-  for (let i = 0; i < playersSnap.docs.length; i++) {
-    const pDoc = playersSnap.docs[i];
+  for (let i = 0; i < teamEntries.length; i++) {
+    const { bakeryName } = teamEntries[i];
     const decisionSnap = decisionSnaps[i];
     if (!decisionSnap || !decisionSnap.exists) continue;
-    const pData = pDoc.data();
-    const teamName = (pData.displayName || pDoc.id).replace(/"/g, '""');
     const dec = decisionSnap.data();
     const quantities = dec.quantities && typeof dec.quantities === "object" ? dec.quantities : {};
     const prices = dec.productPrices && typeof dec.productPrices === "object" ? dec.productPrices : {};
     for (const [product, qty] of Object.entries(quantities)) {
       if (typeof qty === "number" && qty > 0) {
         const price = prices[product] || 0;
-        rows.push(`"${teamName}",${product},${qty},${price}`);
+        rows.push(`"${bakeryName}",${product},${qty},${price}`);
       }
     }
   }
