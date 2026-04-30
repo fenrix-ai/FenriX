@@ -36,6 +36,21 @@ service cloud.firestore {
     }
 
     // ─────────────────────────────────────────────────────────
+    // /eventBoards/{sessionId}
+    // Shared event-visuals control/display state used for the cookie
+    // activity, Bakery round visuals, and winner announcements.
+    // Read is open to any signed-in viewer (the /event/display surface
+    // can run on a projection laptop without per-device claims).
+    // Writes require the professor custom claim — without that gate,
+    // anonymous-auth visitors (the AuthProvider auto-signs everyone in)
+    // could overwrite live event state mid-session.
+    // ─────────────────────────────────────────────────────────
+    match /eventBoards/{sessionId} {
+      allow read: if signedIn();
+      allow write: if isProfessor();
+    }
+
+    // ─────────────────────────────────────────────────────────
     // /games/{gameId}
     // Players can read game state to track phase, round, timers.
     // Only Cloud Functions can write (phase transitions, score updates).
