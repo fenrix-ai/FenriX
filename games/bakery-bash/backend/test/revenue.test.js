@@ -126,3 +126,75 @@ describe('runSimulation equipment upgrade affordability (PR #128)', () => {
       'equipmentUpgradeApplied should be false when maintenance + upgrade exceed budget');
   });
 });
+
+describe('calculateRoundCosts — per-station sous-chef escalation', () => {
+  const { calculateRoundCosts } = require('../functions/modules/revenue');
+
+  // Per-station escalation curve at base=$10:
+  //   1 chef = $10 (1.0×)
+  //   2 chefs = $10 + $15 = $25 (1.0× + 1.5×)
+  // Three stations × 2 chefs each: 3 × $25 = $75 (per-station, frontend-matched)
+  // Aggregate-curve cost (the OLD broken behavior):
+  //   6 chefs = $10 + $15 + $22.50 + $30 + $37.50 + $45 = $160
+  it('charges $75 for 2 chefs at each of 3 stations (NOT $160 aggregate)', () => {
+    const decision = {
+      perProductQtyStocked: {},
+      sousChefCount: 6, // intentionally set; should be IGNORED
+      staffCounts: {
+        bakerySousChefs: 2,
+        deliSousChefs: 2,
+        baristaSousChefs: 2,
+      },
+    };
+    const result = calculateRoundCosts(decision, {}, { sousChefBaseCost: 10 });
+    assert.equal(result.sousChefHireCost, 75,
+      `per-station: 3 × ($10 + $15) = $75. Got ${result.sousChefHireCost}. ` +
+      `If you got 160, the aggregate curve is back.`);
+  });
+
+  it('charges $0 when all stations are empty', () => {
+    const decision = {
+      perProductQtyStocked: {},
+      sousChefCount: 0,
+      staffCounts: { bakerySousChefs: 0, deliSousChefs: 0, baristaSousChefs: 0 },
+    };
+    const result = calculateRoundCosts(decision, {}, { sousChefBaseCost: 10 });
+    assert.equal(result.sousChefHireCost, 0);
+  });
+
+  it('charges $10 for a single chef on one station', () => {
+    const decision = {
+      perProductQtyStocked: {},
+      sousChefCount: 1,
+      staffCounts: { bakerySousChefs: 1, deliSousChefs: 0, baristaSousChefs: 0 },
+    };
+    const result = calculateRoundCosts(decision, {}, { sousChefBaseCost: 10 });
+    assert.equal(result.sousChefHireCost, 10);
+  });
+
+  it('charges $202.50 for 3 chefs at each of 3 stations (NOT $387.50 aggregate)', () => {
+    // Per-station 3 chefs = $10 + $15 + $22.50 = $47.50, × 3 = $142.50
+    // Aggregate 9 chefs = $10 + $15 + $22.50 + $30 + $37.50 + $45 + $52.50 + $60 + $67.50 = $340
+    // Hidden overcharge: $340 − $142.50 = $197.50
+    const decision = {
+      perProductQtyStocked: {},
+      sousChefCount: 9,
+      staffCounts: { bakerySousChefs: 3, deliSousChefs: 3, baristaSousChefs: 3 },
+    };
+    const result = calculateRoundCosts(decision, {}, { sousChefBaseCost: 10 });
+    assert.equal(result.sousChefHireCost, 142.5,
+      `per-station: 3 × ($10 + $15 + $22.50) = $142.50. Got ${result.sousChefHireCost}.`);
+  });
+
+  it('handles asymmetric station counts correctly', () => {
+    // 1 + 2 + 4 = 7 chefs total
+    // Per-station: $10 + ($10 + $15) + ($10 + $15 + $22.50 + $30) = $10 + $25 + $77.50 = $112.50
+    const decision = {
+      perProductQtyStocked: {},
+      sousChefCount: 7,
+      staffCounts: { bakerySousChefs: 1, deliSousChefs: 2, baristaSousChefs: 4 },
+    };
+    const result = calculateRoundCosts(decision, {}, { sousChefBaseCost: 10 });
+    assert.equal(result.sousChefHireCost, 112.5);
+  });
+});

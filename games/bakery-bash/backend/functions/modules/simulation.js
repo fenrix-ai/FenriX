@@ -176,7 +176,7 @@ function getChefsWon(player) {
  *     }
  *   }
  */
-function computePlayerOutputAndSatisfaction(player, roundPreferences, config) {
+function computePlayerOutputAndSatisfaction(player, roundPreferences, config, dailyStockScale = 1) {
   const decision = player.decision || {};
   const specialtyChefs = Array.isArray(player.specialtyChefs) ? player.specialtyChefs : [];
   const sousChefAssignments = (decision && decision.sousChefAssignments) || {};
@@ -194,8 +194,14 @@ function computePlayerOutputAndSatisfaction(player, roundPreferences, config) {
     // Step 1: raw total output from base + specialty + sous chefs
     const totalOutput = calculateTotalProductOutput(product, specialtyChefs, sousChefAssignments);
 
-    // Step 2: supply cap — cannot exceed what was stocked
-    const qtyStocked = getQuantity(decision, product);
+    // Step 2: supply cap — cannot exceed what was stocked.
+    // dailyStockScale is set to 1/daysPerRound by the multi-day wrapper so the
+    // daily simulation operates on a per-day slice of the monthly stock. Without
+    // this scale, each of the 30 daily calls sees the full monthly stock as
+    // available, allowing total monthly qtySold to reach 30× what the player
+    // paid for. Default 1 preserves single-day callers and existing tests.
+    const monthlyStock = getQuantity(decision, product);
+    const qtyStocked = Math.floor(monthlyStock * dailyStockScale);
     const supplyCapped = Math.min(totalOutput, qtyStocked);
 
     // Step 3: equipment factor on throughput
@@ -291,7 +297,7 @@ function computeReturningCustomersEarned(aggregateSatPct, customerCount, config)
  * @param {object}        config            merged game config
  * @returns {Array<object>} per-player results
  */
-function runSimulation(players, roundPreferences, config, { gameId = 'game', round = 0, day = 0, skipCostAccounting = false } = {}) {
+function runSimulation(players, roundPreferences, config, { gameId = 'game', round = 0, day = 0, skipCostAccounting = false, dailyStockScale = 1 } = {}) {
   const safePlayers = Array.isArray(players) ? players : [];
 
   // Numeric sanitizer: coerces value to a finite number, defaulting to 0.
@@ -302,7 +308,7 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
   // ---------------------------------------------------------------------
   const perPlayer = safePlayers.map((player) => {
     const { offeredProducts, perProduct, equipmentGrade, cleanlinessGrade } =
-      computePlayerOutputAndSatisfaction(player, roundPreferences, config);
+      computePlayerOutputAndSatisfaction(player, roundPreferences, config, dailyStockScale);
 
     // Aggregate satisfaction (weighted) across this player's offered products.
     const aggResult = calculateAggregateSatisfaction(perProduct);

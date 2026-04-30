@@ -387,8 +387,18 @@ export function ResultsPhase() {
           {typeof latest.revenueGross === "number" && (
             <div className="results-phase__kpis">
               <Kpi
-                label="Gross revenue"
+                label="Gross revenue (this round)"
                 value={formatMoney(latest.revenueGross)}
+              />
+              <Kpi
+                label="Profit (cumulative)"
+                value={formatMoney(
+                  roundResults.reduce(
+                    (sum, r) =>
+                      sum + (typeof r.revenueNet === "number" ? r.revenueNet : 0),
+                    0,
+                  ),
+                )}
               />
             </div>
           )}
