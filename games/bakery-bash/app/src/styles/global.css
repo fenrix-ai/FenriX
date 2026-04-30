@@ -3533,7 +3533,14 @@ h3 { font-size: 0.7rem; }
 }
 
 .staff-tab__stepper-value--static,
-.product-tile__step-value--static,
+.product-tile__step-value--static {
+  font-family: var(--font-pixel, sans-serif);
+  font-size: 0.7rem;
+  padding: 0.25rem 0.5rem;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 4px;
+}
+
 .staff-tab__task-static {
   font-family: var(--font-pixel, sans-serif);
   font-size: 0.7rem;
