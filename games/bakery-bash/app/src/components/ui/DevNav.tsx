@@ -64,6 +64,8 @@ export function DevNav() {
         </Link>
       ))}
       <Link to="/leaderboard">Board</Link>
+      <Link to="/event/control">Event Ctrl</Link>
+      <Link to="/event/display">Event View</Link>
       <Link to="/professor">Prof</Link>
       {isAuctionPhase && (
         <span className="dev-nav__phase-indicator">

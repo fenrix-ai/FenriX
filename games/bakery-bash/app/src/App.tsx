@@ -17,6 +17,8 @@ import { RosterPhasePage } from "./pages/RosterPhasePage";
 import { ConclusionPage } from "./pages/ConclusionPage";
 import { HowToPlayPage } from "./pages/HowToPlayPage";
 import { BakeryScenePreviewPage } from "./pages/BakeryScenePreviewPage";
+import { EventControlPage } from "./pages/EventControlPage";
+import { EventDisplayPage } from "./pages/EventDisplayPage";
 
 export default function App() {
   return (
@@ -39,6 +41,8 @@ export default function App() {
             <Route path="/game/:phase" element={<GamePage />} />
             <Route path="/auction" element={<AuctionPage />} />
             <Route path="/leaderboard" element={<LeaderboardPage />} />
+            <Route path="/event/control" element={<EventControlPage />} />
+            <Route path="/event/display" element={<EventDisplayPage />} />
             <Route path="/professor" element={<ProfessorPage />} />
             <Route
               path="/professor/leaderboard"
