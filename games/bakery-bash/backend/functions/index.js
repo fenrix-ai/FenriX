@@ -791,6 +791,10 @@ async function resetPendingPlayerStateForRound(gameRef) {
       // Clear round-scoped Operations staffing state so round N+1 does not
       // inherit round N's staffing from a missed submission.
       'pendingDecision.staffCounts': {},
+      // Equipment upgrades are one-round purchases. The durable grade lives
+      // on `players/{uid}.equipmentGrade`; carrying this flag forward makes
+      // the next round look like the previous upgrade is still pending.
+      'pendingDecision.equipmentUpgradePurchased': false,
       'pendingBids.ad': null,
       'pendingBids.chef': null,
       pendingRosterAction: false,
