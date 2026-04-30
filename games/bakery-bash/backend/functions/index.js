@@ -2706,6 +2706,10 @@ async function runSimulationAndPersist(gameRef, round, config) {
         adPaid: r.adBidPaid || 0,
         chefsWon: Array.isArray(r.chefsWon) ? r.chefsWon : [],
         chefBidPaid: r.chefBidPaid || 0,
+        equipmentGrade: r.equipmentGrade || null,
+        cleanlinessGrade: r.cleanlinessGrade || null,
+        cleanlinessScore: typeof r.cleanlinessScore === 'number' ? r.cleanlinessScore : null,
+        equipmentUpgradeApplied: !!r.equipmentUpgradeApplied,
         computedAt: FieldValue.serverTimestamp(),
       });
 
@@ -5140,23 +5144,42 @@ exports.purchaseChefData = onCall(CALLABLE_OPTS, async (request) => {
       rows.push(`${nationality},"${specs}"`);
     }
   } else {
-    rows.push("chef_id,name,nationality,gender,skill_tier,specialties,min_bid_floor");
-    const round = game.currentRound || 1;
-    const roundSnap = await gameRef.collection("rounds").doc(`round_${round}`).get();
-    const pool = (roundSnap.exists && Array.isArray(roundSnap.data().chefPool))
-      ? roundSnap.data().chefPool
-      : [];
-    for (const chef of pool) {
-      const specs = Array.isArray(chef.specialties) ? chef.specialties.join(";") : "";
-      rows.push([
-        chef.id || "",
-        `"${String(chef.name || "").replace(/"/g, '""')}"`,
-        chef.nationality || "",
-        chef.gender || "",
-        chef.skillTier || "",
-        `"${specs}"`,
-        numberOrDefault(chef.minBidFloor, 0),
-      ].join(","));
+    rows.push("round,chef_id,name,nationality,gender,skill_tier,specialties,min_bid_floor");
+    // Aggregate the chef pool across EVERY round played so far. Previously
+    // this only dumped the current round's 12-chef pool, which the UI's
+    // "Full chef profile dump (30+ per nationality)" tagline contradicted —
+    // players reported missing chefs because the file only contained the
+    // current pool.
+    const totalRounds = numberOrDefault(game.currentRound, 1);
+    const roundIds = [];
+    for (let r = 1; r <= totalRounds; r += 1) roundIds.push(`round_${r}`);
+    const roundSnaps = await Promise.all(
+      roundIds.map((rid) => gameRef.collection("rounds").doc(rid).get()),
+    );
+    // Dedupe by chef.id so a chef who appears in multiple rounds (rare,
+    // but possible if the pool generator recycles IDs) shows once.
+    const seen = new Set();
+    for (let i = 0; i < roundSnaps.length; i += 1) {
+      const snap = roundSnaps[i];
+      if (!snap.exists) continue;
+      const pool = Array.isArray(snap.data().chefPool) ? snap.data().chefPool : [];
+      const round = i + 1;
+      for (const chef of pool) {
+        const id = chef.id || "";
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        const specs = Array.isArray(chef.specialties) ? chef.specialties.join(";") : "";
+        rows.push([
+          round,
+          id,
+          `"${String(chef.name || "").replace(/"/g, '""')}"`,
+          chef.nationality || "",
+          chef.gender || "",
+          chef.skillTier || "",
+          `"${specs}"`,
+          numberOrDefault(chef.minBidFloor, 0),
+        ].join(","));
+      }
     }
   }
 

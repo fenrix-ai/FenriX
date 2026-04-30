@@ -19,13 +19,19 @@ const config = {
   ...configMod.DEFAULT_GAME_CONFIG,
 };
 
+// Stocking 500 per product = 16.7/day, comfortably above the ~8/day demand
+// (baseDemand 240 / 30 days) so satisfaction-dependent tests still hit the
+// excellent tier after the per-day stock-cap fix. Pre-fix this could be 200
+// because each daily call saw the full monthly stock; post-fix the daily slice
+// is what bounds the supply cap, so we need monthly stock × (1/days) ≥ daily
+// demand for fillRate ≥ 1 (excellent).
 const fakePlayer = (id, overrides = {}) => ({
   playerId: id,
   displayName: id,
   bakeryName: id,
   decision: {
     menu: { croissant: true, cookie: true, bagel: true },
-    quantities: { croissant: 200, cookie: 200, bagel: 200 },
+    quantities: { croissant: 500, cookie: 500, bagel: 500 },
     sousChefCount: 1,
     sousChefAssignments: { croissant: 1 },
     productPrices: { croissant: 4.75, cookie: 4.0, bagel: 4.5 },
@@ -403,6 +409,75 @@ describe('runMonthlySimulation', () => {
       `priceCompetitivenessPct should be in [0, 100], got ${agg.priceCompetitivenessPct}`);
     assert.ok(agg.priceCompetitivenessPct >= 90,
       `at near-mid prices, expected priceCompetitivenessPct >= 90, got ${agg.priceCompetitivenessPct}`);
+  });
+
+  it('monthly qtySold cannot exceed monthly qtyStocked (per-day stock-cap fix)', () => {
+    // Bug: pre-fix, each daily call saw the full monthly qtyStocked as the cap.
+    // A player stocking 100 could sell up to 100/day = 3000/month while only
+    // paying for 100. The fix scales qtyStocked by 1/daysPerRound inside the
+    // daily call so monthly qtySold caps at the original monthly stock.
+    //
+    // Setup: stock 100 per product (under-stocked vs ~240 monthly demand) so
+    // demand pulls in customers faster than supply allows. Without the cap,
+    // qtySold would balloon past 100. With the cap, it stays ≤ 100.
+    const player = {
+      ...fakePlayer('p_a'),
+      decision: {
+        ...fakePlayer('p_a').decision,
+        quantities: { croissant: 100, cookie: 100, bagel: 100 },
+      },
+    };
+    const out = runMonthlySimulation([player], prefs, config, {
+      gameId: 'g1', round: 1,
+    });
+    const agg = out[0];
+    for (const product of ['croissant', 'cookie', 'bagel']) {
+      const sold = (agg.perProductSatisfaction[product] || {}).qtySold || 0;
+      assert.ok(sold <= 100,
+        `${product}: monthly qtySold (${sold}) must NOT exceed monthly qtyStocked (100). ` +
+        `If sold ≫ 100, the per-day stock-cap fix has regressed.`);
+    }
+  });
+
+  it('daily stock slices sum to exactly monthly qtyStocked (no integer-floor loss)', () => {
+    // Review feedback: an earlier `Math.floor(monthly * 1/days)` per day lost
+    // up to (days-1) units to integer-floor truncation — a player stocking
+    // 100 over 30 days had a sum of `floor(100/30) * 30 = 3 * 30 = 90`, so
+    // they paid for 100 but could only sell 90. The fix distributes the
+    // remainder across the first (monthly % days) days so the daily caps
+    // sum to EXACTLY monthly stock.
+    //
+    // Test setup: stock with deliberate non-zero remainders (97 % 30 = 7,
+    // 119 % 30 = 29, 1000 % 30 = 10). Drive demand high so all stock is
+    // pulled. Verify each daily qtyStocked sums to the full monthly value.
+    const trendingPrefs = { modifiers: { croissant: 4.0, cookie: 4.0, bagel: 4.0 } };
+    const player = {
+      ...fakePlayer('p_a'),
+      decision: {
+        ...fakePlayer('p_a').decision,
+        quantities: { croissant: 97, cookie: 119, bagel: 1000 },
+      },
+    };
+    const out = runMonthlySimulation([player], trendingPrefs, config, {
+      gameId: 'g1', round: 1,
+    });
+    const agg = out[0];
+    // Sum each product's daily qtyStocked across the dailyResults rows.
+    const dailyStocks = { croissant: 0, cookie: 0, bagel: 0 };
+    for (const d of agg.dailyResults) {
+      for (const product of ['croissant', 'cookie', 'bagel']) {
+        const ps = (d.perProductSatisfaction || {})[product];
+        if (ps && typeof ps.qtyStocked === 'number') {
+          dailyStocks[product] += ps.qtyStocked;
+        }
+      }
+    }
+    assert.equal(dailyStocks.croissant, 97,
+      `daily caps must sum to monthly stock: 97. Got ${dailyStocks.croissant}.`);
+    assert.equal(dailyStocks.cookie, 119,
+      `daily caps must sum to monthly stock: 119. Got ${dailyStocks.cookie}.`);
+    assert.equal(dailyStocks.bagel, 1000,
+      `daily caps must sum to monthly stock: 1000. Got ${dailyStocks.bagel}.`);
   });
 
   it('priceCompetitivenessPct drops when prices move into the premium zone (M-21)', () => {

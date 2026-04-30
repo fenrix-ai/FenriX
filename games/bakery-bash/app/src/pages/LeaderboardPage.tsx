@@ -115,9 +115,12 @@ export function LeaderboardPage() {
                 typeof entry.lastRoundRevenue === "number"
                   ? entry.lastRoundRevenue
                   : null;
+              // "Profit (Total)" is cumulative across rounds; revenueNet
+              // is THIS ROUND only. Read cumulativeRevenue first, fall
+              // back to revenueNet only when cumulative isn't on the doc.
               const totalRevenue = readNumber(
-                entry.revenueNet,
                 entry.cumulativeRevenue,
+                entry.revenueNet,
               );
               const change =
                 typeof entry.rankChange === "number" ? entry.rankChange : null;

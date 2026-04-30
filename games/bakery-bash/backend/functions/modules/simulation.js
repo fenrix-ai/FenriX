@@ -176,7 +176,7 @@ function getChefsWon(player) {
  *     }
  *   }
  */
-function computePlayerOutputAndSatisfaction(player, roundPreferences, config) {
+function computePlayerOutputAndSatisfaction(player, roundPreferences, config, stockSliceOpts) {
   const decision = player.decision || {};
   const specialtyChefs = Array.isArray(player.specialtyChefs) ? player.specialtyChefs : [];
   const sousChefAssignments = (decision && decision.sousChefAssignments) || {};
@@ -190,12 +190,29 @@ function computePlayerOutputAndSatisfaction(player, roundPreferences, config) {
   const offeredProducts = getOfferedProducts(decision);
   const perProduct = {};
 
+  // Default to a single-day slice (daysPerRound=1, day=0) for single-round
+  // callers (tests, single-day sims). Multi-day wrapper passes
+  // { daysPerRound, day } so each day gets its proper share of monthly stock
+  // with the remainder distributed across early days (no integer-floor loss).
+  const daysPerRound = (stockSliceOpts && stockSliceOpts.daysPerRound) || 1;
+  const day = (stockSliceOpts && stockSliceOpts.day) || 0;
+
   for (const product of offeredProducts) {
     // Step 1: raw total output from base + specialty + sous chefs
     const totalOutput = calculateTotalProductOutput(product, specialtyChefs, sousChefAssignments);
 
-    // Step 2: supply cap — cannot exceed what was stocked
-    const qtyStocked = getQuantity(decision, product);
+    // Step 2: supply cap — cannot exceed what was stocked.
+    // The multi-day wrapper splits monthly stock across days so the SUM of
+    // daily caps equals exactly the monthly stock the player paid for.
+    // Distribution: floor(monthly/days) per day + 1 extra unit on the first
+    // (monthly % days) days, so a player with monthly_stock=100 and
+    // days=30 gets 4-day caps of 4 each and 26 days of 3, summing to
+    // 4*4 + 26*3 = 94 + 0 ... wait. 100/30 = 3 r 10. So 10 days at 4 +
+    // 20 days at 3 = 40 + 60 = 100. ✓ exact, no loss.
+    const monthlyStock = getQuantity(decision, product);
+    const baseSlice = Math.floor(monthlyStock / daysPerRound);
+    const remainder = monthlyStock - baseSlice * daysPerRound;
+    const qtyStocked = baseSlice + (day < remainder ? 1 : 0);
     const supplyCapped = Math.min(totalOutput, qtyStocked);
 
     // Step 3: equipment factor on throughput
@@ -291,7 +308,7 @@ function computeReturningCustomersEarned(aggregateSatPct, customerCount, config)
  * @param {object}        config            merged game config
  * @returns {Array<object>} per-player results
  */
-function runSimulation(players, roundPreferences, config, { gameId = 'game', round = 0, day = 0, skipCostAccounting = false } = {}) {
+function runSimulation(players, roundPreferences, config, { gameId = 'game', round = 0, day = 0, skipCostAccounting = false, daysPerRound = 1 } = {}) {
   const safePlayers = Array.isArray(players) ? players : [];
 
   // Numeric sanitizer: coerces value to a finite number, defaulting to 0.
@@ -302,7 +319,7 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
   // ---------------------------------------------------------------------
   const perPlayer = safePlayers.map((player) => {
     const { offeredProducts, perProduct, equipmentGrade, cleanlinessGrade } =
-      computePlayerOutputAndSatisfaction(player, roundPreferences, config);
+      computePlayerOutputAndSatisfaction(player, roundPreferences, config, { daysPerRound, day });
 
     // Aggregate satisfaction (weighted) across this player's offered products.
     const aggResult = calculateAggregateSatisfaction(perProduct);

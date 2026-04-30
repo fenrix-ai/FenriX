@@ -708,6 +708,10 @@ export function GamePage() {
             sanitizedAssignments as PendingDecisionDraft["sousChefAssignments"],
           staffCounts: pendingDecision.staffCounts,
           productPrices: pendingDecision.productPrices,
+          // Equipment upgrade flag — without this the StaffTab toggle was
+          // a no-op: validateDecision happily defaults to false when the
+          // field is missing, and the simulation upgrade branch never fires.
+          equipmentUpgradePurchased: pendingDecision.equipmentUpgradePurchased,
           expectedFromPhase,
         });
         dispatch({ type: "SET_DECISION_SUBMITTED", payload: true });
