@@ -1,5 +1,16 @@
 const AVATAR_BASE_PATH = "/assets/avatars";
 
+/**
+ * Build a URL for a roster-provided opaque avatar filename. The filename
+ * is the SHA-256-12 hash slug (`<12-hex>.png`) the renamer script writes,
+ * never derived from the display name on the client. Stripping the hash
+ * derivation client-side prevents a name-based URL enumeration attack
+ * that a `slugifyAvatarKey(displayName)` URL would have allowed.
+ */
+export function avatarPathForFilename(filename: string): string {
+  return `${AVATAR_BASE_PATH}/${filename}`;
+}
+
 type AvatarOverride = {
   path: string;
 };
