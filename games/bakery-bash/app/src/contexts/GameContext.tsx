@@ -270,6 +270,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       // transition before the player-doc listener re-hydrates them.
       const nextDecisionDraft = buildDefaultDecisionDraft();
       nextDecisionDraft.productPrices = { ...state.pendingDecision.productPrices };
+      // Carry staffCounts forward so students don't have to re-enter the same
+      // headcount every round. Mirrors the price carry-over pattern above.
+      nextDecisionDraft.staffCounts = { ...state.pendingDecision.staffCounts };
       // K-05 (2026-04-29): carry the team's unlocked-product menu toggles
       // forward into the next round so a product unlocked in round N is
       // still ON at the start of round N+1. Without this the OPTIONAL_MENU
@@ -305,9 +308,12 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const existing = state.roundResults.findIndex(
         (r) => r.round === result.round,
       );
+      // Merge: two listeners (GamePage + useGameListener) can both emit for
+      // the same round. The thinner listener must not overwrite fields the
+      // richer one already populated (e.g. dailyBreakdown, totalSpent).
       const nextResults =
         existing >= 0
-          ? state.roundResults.map((r, i) => (i === existing ? result : r))
+          ? state.roundResults.map((r, i) => (i === existing ? { ...r, ...result } : r))
           : [...state.roundResults, result];
       return {
         ...state,

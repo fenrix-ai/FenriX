@@ -229,12 +229,15 @@ export function ConclusionPage() {
     };
   })();
 
-  // Fall back to the last round's running revenue if leaderboard hasn't
-  // hydrated yet.
+  // Fall back to cumulative revenue if the leaderboard hasn't hydrated yet.
+  // Prefer cumulativeRevenueAfter on the last result; sum all rounds otherwise.
   const fallbackRevenue =
     roundResults.length > 0
-      ? roundResults[roundResults.length - 1].revenueNet ??
-        roundResults[roundResults.length - 1].revenue
+      ? roundResults[roundResults.length - 1].cumulativeRevenueAfter ??
+        roundResults.reduce(
+          (sum, r) => sum + (r.revenueNet ?? r.revenue ?? 0),
+          0,
+        )
       : null;
 
   const finalRevenue =

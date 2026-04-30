@@ -240,8 +240,60 @@ export function useGameListener(gameId: string | null, playerId?: string | null)
                 lrr.staffCounts && typeof lrr.staffCounts === "object"
                   ? lrr.staffCounts
                   : undefined,
+              // P1/P2 fields for the CSV export — decision inputs + daily breakdown.
+              productPrices:
+                lrr.productPrices && typeof lrr.productPrices === "object"
+                  ? lrr.productPrices
+                  : undefined,
+              quantitiesStocked:
+                lrr.quantitiesStocked && typeof lrr.quantitiesStocked === "object"
+                  ? lrr.quantitiesStocked
+                  : undefined,
+              numProducts:
+                typeof lrr.numProducts === "number" ? lrr.numProducts : undefined,
+              dailyBreakdown: Array.isArray(lrr.dailyBreakdown)
+                ? lrr.dailyBreakdown
+                : undefined,
+              totalSpent:
+                typeof lrr.totalSpent === "number" ? lrr.totalSpent : undefined,
+              equipmentGrade:
+                typeof lrr.equipmentGrade === "string"
+                  ? lrr.equipmentGrade
+                  : undefined,
+              cleanlinessGrade:
+                typeof lrr.cleanlinessGrade === "string"
+                  ? lrr.cleanlinessGrade
+                  : undefined,
+              specialtyChefCount:
+                typeof lrr.specialtyChefCount === "number"
+                  ? lrr.specialtyChefCount
+                  : undefined,
+              cumulativeRevenueAfter:
+                typeof lrr.cumulativeRevenueAfter === "number"
+                  ? lrr.cumulativeRevenueAfter
+                  : undefined,
             } as RoundResult,
           });
+
+          // If the backend wrote equipmentGrade on lastRoundResult but not
+          // yet on the player-doc root field, use lrr's value so the StaffTab
+          // shows the correct next upgrade tier immediately after simulation.
+          if (
+            typeof lrr.equipmentGrade === "string" &&
+            VALID_GRADES.includes(lrr.equipmentGrade as EquipmentGrade)
+          ) {
+            dispatch({
+              type: "UPDATE_PLAYER_GRADES",
+              payload: {
+                equipmentGrade: lrr.equipmentGrade as EquipmentGrade,
+                cleanlinessGrade:
+                  VALID_GRADES.includes(lrr.cleanlinessGrade as EquipmentGrade)
+                    ? (lrr.cleanlinessGrade as EquipmentGrade)
+                    : cleanlinessGrade,
+                cleanlinessScore,
+              },
+            });
+          }
         }
       },
       (err) => {

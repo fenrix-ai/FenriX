@@ -844,7 +844,7 @@ export function AuctionPage() {
     : submitting
     ? "Submitting…"
     : !hasEditableBid
-    ? "You currently lead every submitted bid"
+    ? "All Bids Submitted"
     : "Submit All Bids";
 
   return (
