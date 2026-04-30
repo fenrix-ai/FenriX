@@ -393,11 +393,19 @@ export function ResultsPhase() {
               <Kpi
                 label="Profit (cumulative)"
                 value={formatMoney(
-                  roundResults.reduce(
-                    (sum, r) =>
-                      sum + (typeof r.revenueNet === "number" ? r.revenueNet : 0),
-                    0,
-                  ),
+                  roundResults.reduce((sum, r) => {
+                    // Pre-rename round docs only carry `revenue`; new docs
+                    // use `revenueNet`. Mirror the same-file `revenueNet ??
+                    // revenue` fallback used elsewhere so cumulative isn't
+                    // under-counted for games that span the migration.
+                    const value =
+                      typeof r.revenueNet === "number"
+                        ? r.revenueNet
+                        : typeof r.revenue === "number"
+                          ? r.revenue
+                          : 0;
+                    return sum + value;
+                  }, 0),
                 )}
               />
             </div>
