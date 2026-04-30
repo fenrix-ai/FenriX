@@ -1,6 +1,12 @@
-import type { EventRosterPlayer } from "../types/event";
+// Static event-board roster used by the getEventRoster callable.
+// Moved server-side (was app/src/lib/eventRosterData.ts) so the participant
+// list is not bundled into the public FE JS asset. The avatar filenames
+// are 12-hex-char SHA-256 slugs of the canonical name; matching PNGs live
+// at app/public/assets/avatars/<filename>.
 
-export const EVENT_ROSTER_DATA: EventRosterPlayer[] = [
+'use strict';
+
+const EVENT_ROSTER_DATA = [
   {
     "normalizedName": "Aalia Rodriguez",
     "expectedFilename": "474109343644.png",
@@ -467,3 +473,5 @@ export const EVENT_ROSTER_DATA: EventRosterPlayer[] = [
     "noPicture": false
   }
 ];
+
+module.exports = { EVENT_ROSTER_DATA };
