@@ -525,6 +525,7 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
       const costDecision = {
         perProductQtyStocked: decision.quantities || {},
         sousChefCount,
+        staffCounts: decision.staffCounts || {},
       };
       const costAuction = {
         adAuctionWinningBid: adBidPaid,
