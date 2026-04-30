@@ -14,6 +14,7 @@ import {
 } from "../components/game/AdWinnerBanner";
 import { useGame, useGameDispatch } from "../contexts/GameContext";
 import { useGamePhaseNav } from "../hooks/useGamePhaseNav";
+import { usePhaseCountdownSeconds } from "../hooks/usePhaseCountdownSeconds";
 import { db, functions } from "../lib/firebase";
 import { humanizeFunctionError } from "../lib/errors";
 import {
@@ -49,6 +50,9 @@ function chefIcon(nationality: ChefNationality, gender: ChefGender): string {
   return `/assets/chefs/${nationality}-${gender}.svg`;
 }
 
+// V6 (Apr 26): users want the original Low / Medium / High labels back; the
+// bronze/silver/gold border palette stays so the visual progression is
+// preserved.
 const SKILL_CONFIG: Record<
   SkillLevel,
   { label: string; multiplier: number; cssClass: string }
@@ -77,8 +81,12 @@ const AD_CARDS: readonly AdCard[] = [
   { id: "Billboard", label: "Billboard",   icon: "/assets/ads/billboard.svg", desc: "Plant your brand right in their path. Hard to miss, impossible to forget." },
 ];
 
-const TAB_DURATION_SECONDS = 60;
 const POOL_SIZE = 6;
+
+// B-02 (2026-04-29): typo cap on dollar bid inputs (Q17 confirmed
+// $999,999). Backend has its own bid validators; this is the FE
+// user-error guard that drives the red error chip.
+const BID_DOLLAR_MAX = 999_999;
 
 // Skill-tier roll probabilities for the cosmetic placeholder pool. The roll
 // is a `Math.random()` value in [0, 1); cutoffs determine which tier the
@@ -228,6 +236,7 @@ export function AuctionPage() {
     chefBidsSubmitted,
     role,
     teamRoleAssignments,
+    config,
   } = useGame();
   const dispatch = useGameDispatch();
   // Backend writes leader keys as `teamId || playerId` — match that here so
@@ -255,9 +264,19 @@ export function AuctionPage() {
   // team" (don't lock — let the player raise to break the tie).
   const [topBidsLeaderAd, setTopBidsLeaderAd] = useState<Partial<Record<AdType, string>>>({});
   const [topBidsLeaderChef, setTopBidsLeaderChef] = useState<Record<string, string>>({});
-  const [remaining, setRemaining] = useState<number>(TAB_DURATION_SECONDS);
+  const remaining = usePhaseCountdownSeconds() ?? 0;
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Barlava follow-up: once a slot is submitted, lock it forever for
+  // this round. Sealed-bid + permanent commitment — no rebidding even
+  // if another team beats you. Cleared on round-roll alongside the
+  // other auction state in the round-clear effect below.
+  const [submittedAdTypes, setSubmittedAdTypes] = useState<Set<AdType>>(
+    new Set(),
+  );
+  const [submittedChefIds, setSubmittedChefIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [chefBidInputs, setChefBidInputs] = useState<Record<string, string>>({});
   // FE-I16: keep the ad-bid input value as a string so an empty field stays
   // empty (placeholder "0" gives the visual affordance) instead of forcing
@@ -420,6 +439,9 @@ export function AuctionPage() {
     setTopBidsChef({});
     setTopBidsLeaderAd({});
     setTopBidsLeaderChef({});
+    // Barlava follow-up: round-roll clears the permanent-submit lock too.
+    setSubmittedAdTypes(new Set());
+    setSubmittedChefIds(new Set());
     setChefBidInputs({});
     setAdBidInputs({});
     if (!gameId || !currentRound) {
@@ -530,17 +552,35 @@ export function AuctionPage() {
 
   const handleSubmitSingleBid = useCallback(async (chefId: string) => {
     if (timerExpired || !gameId) return;
+    const amount = pendingChefBids[chefId] ?? 0;
+    const chef = chefPool.find((c) => c.id === chefId);
+    const floor = chef?.minBidFloor ?? 0;
+    if (floor > 0 && amount < floor) {
+      setSubmitError(`Bid must be at least $${floor}.`);
+      return;
+    }
     try {
       const submitBids = httpsCallable(functions, "submitBids");
       await submitBids({
         gameId,
         bidType: "chef",
-        chefBids: [{ chefId, amount: pendingChefBids[chefId] ?? 0 }],
+        chefBids: [{ chefId, amount }],
+        // M-16: pin the bid to the phase the FE thinks it's submitting for
+        // so a stale click landing AFTER auto-advance flips the round to
+        // bid_chef → roster gets rejected as `failed-precondition` rather
+        // than slipping into the next phase's resolution.
+        expectedFromPhase: phase ?? undefined,
+      });
+      // Barlava follow-up: lock this chef permanently for this round.
+      setSubmittedChefIds((prev) => {
+        const next = new Set(prev);
+        next.add(chefId);
+        return next;
       });
     } catch (err) {
       setSubmitError(humanizeFunctionError(err, "Could not submit chef bid. Please try again."));
     }
-  }, [timerExpired, gameId, pendingChefBids]);
+  }, [timerExpired, gameId, pendingChefBids, chefPool, phase]);
 
   const handleSubmitBids = useCallback(async () => {
     if (timerExpired) { setShowExpiredPopup(true); return; }
@@ -558,14 +598,32 @@ export function AuctionPage() {
     try {
       if (isAdPhase) {
         const submitBids = httpsCallable<
-          { gameId: string; bidType: "ad"; adBids: Record<AdType, number> },
+          {
+            gameId: string;
+            bidType: "ad";
+            adBids: Record<AdType, number>;
+            expectedFromPhase?: string;
+          },
           { gameId: string; playerId: string; bidType: string; submitted: boolean }
         >(functions, "submitBids");
         const adBids = AD_TYPES.reduce((acc, ad) => {
           acc[ad] = Math.max(0, pendingAdBids[ad] ?? 0);
           return acc;
         }, {} as Record<AdType, number>);
-        await submitBids({ gameId, bidType: "ad", adBids });
+        // M-16: pin to the FE's view of the phase so a late submit gets
+        // a clean rejection instead of slipping into the next phase.
+        await submitBids({
+          gameId,
+          bidType: "ad",
+          adBids,
+          expectedFromPhase: phase ?? undefined,
+        });
+        // Barlava follow-up: lock every ad slot this submission carried
+        // a non-zero bid for. Subsequent submits within the same round
+        // can't reach a locked slot — see isLockedAdBid.
+        setSubmittedAdTypes(
+          new Set(AD_TYPES.filter((t) => (adBids[t] ?? 0) > 0)),
+        );
       } else {
         // If the real chef pool from `rounds/{round}.chefPool` has loaded,
         // send bids keyed by those real IDs. Until then, chef IDs in
@@ -585,7 +643,7 @@ export function AuctionPage() {
             // case a player submits via the bulk "Submit Bids" path.
             const floor = chef.minBidFloor ?? 0;
             if (floor > 0 && amount < floor) {
-              setSubmitError("Bid above the minimum bid.");
+              setSubmitError(`Bid must be at least $${floor}.`);
               setSubmitting(false);
               return;
             }
@@ -597,10 +655,24 @@ export function AuctionPage() {
             gameId: string;
             bidType: "chef";
             chefBids: Array<{ chefId: string; amount: number }>;
+            expectedFromPhase?: string;
           },
           { gameId: string; playerId: string; bidType: string; submitted: boolean }
         >(functions, "submitBids");
-        await submitBids({ gameId, bidType: "chef", chefBids });
+        // M-16: pin to the FE's view of the phase.
+        await submitBids({
+          gameId,
+          bidType: "chef",
+          chefBids,
+          expectedFromPhase: phase ?? undefined,
+        });
+        // Barlava follow-up: permanent lock for the chef ids that just
+        // landed. Mirrors the per-card single-submit handler above.
+        setSubmittedChefIds((prev) => {
+          const next = new Set(prev);
+          for (const b of chefBids) next.add(b.chefId);
+          return next;
+        });
       }
     } catch (err) {
       setSubmitError(
@@ -619,23 +691,8 @@ export function AuctionPage() {
     chefPool,
     chefPoolIsReal,
     dispatch,
+    phase,
   ]);
-
-  // A24-I05 — reset and tick the local `remaining` timer whenever the
-  // phase flips (bid_ad → bid_chef). Previously this keyed off
-  // `activeTab` (local tab state); now that the tab bar is gone, drive
-  // it off `basePhase` directly so the "auction expired" popup still
-  // fires at the right moment.
-  useEffect(() => {
-    setRemaining(TAB_DURATION_SECONDS);
-  }, [basePhase]);
-
-  useEffect(() => {
-    const tick = setInterval(() => {
-      setRemaining((prev) => Math.max(0, prev - 1));
-    }, 1000);
-    return () => clearInterval(tick);
-  }, [basePhase]);
 
   useEffect(() => {
     if (timerExpired) {
@@ -645,12 +702,24 @@ export function AuctionPage() {
     }
   }, [timerExpired]);
 
+  // V7 (Apr 26): clear the "Auction timer is up!" popup the moment the
+  // phase actually changes. Previously the popup hung around for its
+  // full 4s timeout even after the player had already advanced from
+  // bid_ad to bid_chef, so the chef-auction screen opened with a stale
+  // "results will display shortly" banner about the ad auction.
+  useEffect(() => {
+    setShowExpiredPopup(false);
+  }, [basePhase]);
+
   // Phase timer display lives exclusively in <RoundHeader /> (it reads
   // `phaseEndsAt` from the backend and shows a unified clock across every
   // phase). The AuctionPage used to render a second local timer at
   // `.auction-page__timer`, which showed a duplicate clock on both bid
-  // tabs — removed. The `remaining` counter + `timerExpired` flag are
-  // kept internal because they still gate the bid inputs + the
+  // tabs — removed.
+  //
+  // `remaining` is now driven by `usePhaseCountdownSeconds()` (shared
+  // backend `phaseEndsAtMs`) so the auction expiry is always in sync with
+  // the professor-controlled phase timer. It gates bid inputs and the
   // timer-expired popup.
 
   const alreadySubmitted =
@@ -662,13 +731,16 @@ export function AuctionPage() {
   // the Ads tab stays editable during the ad phase even after chefs lock
   // (and vice-versa). Out-of-phase is always read-only.
   //
-  // Leader-aware lock: a slot only locks when *we* are the unique top
-  // bidder. If the leader key is missing (legacy round doc) or doesn't
-  // match us, the slot stays editable so a tied team can raise to break
-  // the tie instead of being silently frozen out.
+  // Barlava follow-up (2026-04-29): once you submit, the slot stays
+  // locked permanently for this round — `submittedAdTypes` /
+  // `submittedChefIds` short-circuit before the leader check below.
+  // The leader-aware branch is still useful for the pre-submit case
+  // (lock when you're already the unique top bidder so you don't waste
+  // a click rebidding yourself).
   const isLockedAdBid = useCallback(
     (adType: AdType) => {
       if (!isAdPhase) return true;
+      if (submittedAdTypes.has(adType)) return true;
       const myBid = pendingAdBids[adType] ?? 0;
       const topBid = topBidsAd[adType] ?? 0;
       const leader = topBidsLeaderAd[adType];
@@ -680,12 +752,14 @@ export function AuctionPage() {
         leader === myTeamKey
       );
     },
-    [isAdPhase, pendingAdBids, topBidsAd, topBidsLeaderAd, myTeamKey],
+    [isAdPhase, submittedAdTypes, pendingAdBids, topBidsAd, topBidsLeaderAd, myTeamKey],
   );
 
   const isLockedChefBid = useCallback(
     (chefId: string) => {
       if (!isChefPhase) return true;
+      // Barlava follow-up: permanent lock once submitted.
+      if (submittedChefIds.has(chefId)) return true;
       const myBid = pendingChefBids[chefId] ?? 0;
       const topBid = topBidsChef[chefId] ?? 0;
       const leader = topBidsLeaderChef[chefId];
@@ -697,7 +771,7 @@ export function AuctionPage() {
         leader === myTeamKey
       );
     },
-    [isChefPhase, pendingChefBids, topBidsChef, topBidsLeaderChef, myTeamKey],
+    [isChefPhase, submittedChefIds, pendingChefBids, topBidsChef, topBidsLeaderChef, myTeamKey],
   );
 
   const hasEditableAdBid = isAdPhase
@@ -711,10 +785,44 @@ export function AuctionPage() {
   const hasAnyChefBid = chefPool.some((chef) => (pendingChefBids[chef.id] ?? 0) > 0);
   const hasAnyBidForPhase = isAdPhase ? hasAnyAdBid : hasAnyChefBid;
 
-  // DEC-21 role gating: Advertising owns ad bids, Finance owns chef bids,
-  // Solo owns both. Other teammates still see + can edit the inputs (so
-  // they can advise the role-owner) but the submit button is disabled with
-  // an explicit owner tooltip.
+  // Barlava follow-up: duplicate-bid detection. If our bid value matches
+  // another team's current top bid for the same slot, we can't win even
+  // by tying — block submission with a red error chip and disable the
+  // bottom Submit button. Compares against `topBidsAd` / `topBidsChef`
+  // which still flow through (we just don't display the value, per B-01).
+  const isDuplicateAdBid = (adType: AdType) => {
+    const myBid = pendingAdBids[adType] ?? 0;
+    const topBid = topBidsAd[adType];
+    const leader = topBidsLeaderAd[adType];
+    return (
+      myBid > 0 &&
+      typeof topBid === "number" &&
+      myBid === topBid &&
+      !!leader &&
+      leader !== myTeamKey
+    );
+  };
+  const isDuplicateChefBid = (chefId: string) => {
+    const myBid = pendingChefBids[chefId] ?? 0;
+    const topBid = topBidsChef[chefId];
+    const leader = topBidsLeaderChef[chefId];
+    return (
+      myBid > 0 &&
+      typeof topBid === "number" &&
+      myBid === topBid &&
+      !!leader &&
+      leader !== myTeamKey
+    );
+  };
+  const hasDuplicateAdBid = AD_TYPES.some(isDuplicateAdBid);
+  const hasDuplicateChefBid = chefPool.some((chef) => isDuplicateChefBid(chef.id));
+  const hasDuplicateBidForPhase = isAdPhase ? hasDuplicateAdBid : hasDuplicateChefBid;
+
+  // DEC-21 role gating (M-18 update, 2026-04-28): Advertising owns BOTH
+  // ad bids and chef bids per the Q6 role split. Solo owns both. Other
+  // teammates still see + can edit the inputs (so they can advise the
+  // role-owner) but the submit button is disabled with an explicit owner
+  // tooltip.
   const ownerLabel = isAdPhase
     ? ownerOfAdBids()
     : isChefPhase
@@ -782,17 +890,34 @@ export function AuctionPage() {
               bakery.
             </p>
             <p className="auction-page__ad-description">
-              The highest bidder for each ad holds it for the entire round &#8212; one full month of exclusive
-              reach. Ownership resets every auction, so no team can hold a slot forever. May the best bid win!
+              {/* B-01 (2026-04-29): switched from open-bid to sealed-bid
+                  semantics. We still fetch top bids in the background to
+                  drive the lock-out logic for slots you currently lead,
+                  but we don't display competitor bid values during the
+                  auction. */}
+              Sealed-bid auction: submit your best bid before the timer
+              runs out — you won't see opponents' bids until results.
+              The highest bidder per slot holds the ad for the whole
+              round; ownership resets next auction.
             </p>
             <div className="auction-ads__grid">
               {isAdPhase && hasEditableBid && (
                 <p className="auction-page__hint">
-                  You can rebid any ad slot where another team has outbid you.
-                  Slots where you already lead are locked.
+                  Submit your bid before the timer runs out. Once submitted,
+                  a slot stays locked for this round — there's no rebidding.
                 </p>
               )}
-              {AD_CARDS.map((ad) => (
+              {AD_CARDS.map((ad) => {
+                const adMinBid = config?.adBidMinimums?.[ad.id] ?? null;
+                const adInputVal = parseInt(adBidInputs[ad.id] ?? "", 10);
+                const adBelowMinimum =
+                  adMinBid !== null && !isNaN(adInputVal) && adInputVal > 0 && adInputVal < adMinBid;
+                // B-02 (2026-04-29): $999,999 typo cap (Q17). Pure FE
+                // safety — backend has its own bid validators.
+                const adAboveCap = !isNaN(adInputVal) && adInputVal > BID_DOLLAR_MAX;
+                // Barlava follow-up: per-row duplicate-bid flag.
+                const adDuplicate = isDuplicateAdBid(ad.id);
+                return (
                 <div key={ad.id} className="auction-ad">
                   <img
                     src={ad.icon}
@@ -803,29 +928,47 @@ export function AuctionPage() {
                     <span className="auction-ad__name">{ad.label}</span>
                     <span className="auction-ad__desc">{ad.desc}</span>
                   </div>
+                  {/* B-01 (2026-04-29): hide the live top-bid value for
+                      sealed-bid semantics. Keep the slot for layout
+                      stability and surface a sealed placeholder so the
+                      space doesn't read as "no data". */}
                   <div className="auction-ad__top-bid">
                     <span className="auction-ad__top-bid-label">Top Bid</span>
-                    <span className="auction-ad__top-bid-value">
-                      {typeof topBidsAd[ad.id] === "number"
-                        ? `$${topBidsAd[ad.id]!.toLocaleString()}`
-                        : "--"}
+                    <span className="auction-ad__top-bid-value auction-ad__top-bid-value--sealed">
+                      Sealed
                     </span>
                   </div>
+                  {adMinBid !== null && (
+                    <div className="auction-ad__min-bid">
+                      <span className="auction-ad__min-bid-label">Min Bid</span>
+                      <span className="auction-ad__min-bid-value">${adMinBid.toLocaleString()}</span>
+                    </div>
+                  )}
                   <div className="auction-ad__bid">
                     <label className="auction-ad__bid-label">Your Bid</label>
                     <div className="auction-page__bid-wrapper">
                       <span className="auction-page__bid-prefix">$</span>
                       <input
                         type="number"
-                        className="auction-ad__bid-input auction-page__bid-input"
+                        className={`auction-ad__bid-input auction-page__bid-input${
+                          adBelowMinimum || adAboveCap || adDuplicate
+                            ? " auction-ad__bid-input--error"
+                            : ""
+                        }`}
                         placeholder="0"
                         min={0}
+                        max={BID_DOLLAR_MAX}
                         value={
                           adBidInputs[ad.id] ??
                           (pendingAdBids[ad.id] ? String(pendingAdBids[ad.id]) : "")
                         }
                         disabled={timerExpired || !isAdPhase || isLockedAdBid(ad.id)}
                         readOnly={!isAdPhase || isLockedAdBid(ad.id)}
+                        aria-invalid={
+                          adBelowMinimum || adAboveCap || adDuplicate
+                            ? "true"
+                            : undefined
+                        }
                         onChange={(e) => {
                           const raw = e.target.value;
                           setAdBidInputs((prev) => ({ ...prev, [ad.id]: raw }));
@@ -838,11 +981,39 @@ export function AuctionPage() {
                             setAdBid(ad.id, parsed);
                           }
                         }}
+                        onKeyDown={(e) => {
+                          // B-03 (2026-04-29): Enter submits all ad bids
+                          // at once (matches the bottom Submit button).
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleSubmitBids();
+                          }
+                        }}
                       />
                     </div>
+                    {adBelowMinimum && (
+                      <p className="auction-ad__bid-error" role="alert">
+                        Bid at least ${adMinBid!.toLocaleString()} to qualify.
+                      </p>
+                    )}
+                    {adAboveCap && (
+                      <p className="auction-ad__bid-error" role="alert">
+                        Going way over budget there!
+                      </p>
+                    )}
+                    {adDuplicate && !adBelowMinimum && !adAboveCap && (
+                      <p className="auction-ad__bid-error" role="alert">
+                        Another team already bid this exact amount — pick a
+                        different number.
+                      </p>
+                    )}
+                    {/* B-01 (2026-04-29): "Tied — raise your bid to win"
+                        leaked sealed-bid information; removed alongside
+                        the live top-bid display. */}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -854,8 +1025,8 @@ export function AuctionPage() {
             </p>
             {isChefPhase && hasEditableBid && (
               <p className="auction-page__hint">
-                You can rebid chefs where you have been outbid. Chefs you
-                currently lead are locked.
+                Submit a bid on each chef before the timer runs out. Once
+                submitted, that chef's bid stays locked for this round.
               </p>
             )}
             <div className="auction-chefs__grid">
@@ -870,6 +1041,10 @@ export function AuctionPage() {
                   minBid !== null &&
                   currentBidAmount > 0 &&
                   currentBidAmount < minBid;
+                // B-02 (2026-04-29): $999,999 typo cap (Q17).
+                const aboveCap = currentBidAmount > BID_DOLLAR_MAX;
+                // Barlava follow-up: per-row duplicate-bid flag.
+                const chefDuplicate = isDuplicateChefBid(chef.id);
                 return (
                   <div
                     key={chef.id}
@@ -892,13 +1067,23 @@ export function AuctionPage() {
                     </span>
                     <div className="auction-chef__info">
                       <span className="auction-chef__name">{chef.name}</span>
+                      {/* B-04 (2026-04-29): nationality badge so the chef
+                          card explicitly states the nationality alongside
+                          the name (which already encodes it, but as a flat
+                          string, e.g. "French Chef"). Mirrors the existing
+                          skill-tag pattern. */}
+                      <span
+                        className={`auction-chef__nationality auction-chef__nationality--${chef.nationality}`}
+                        aria-label={`${NATIONALITY_LABELS[chef.nationality]} chef`}
+                      >
+                        {NATIONALITY_LABELS[chef.nationality]}
+                      </span>
                     </div>
+                    {/* B-01 (2026-04-29): sealed-bid — hide live value. */}
                     <div className="auction-chef__top-bid">
                       <span className="auction-chef__top-bid-label">Top Bid</span>
-                      <span className="auction-chef__top-bid-value">
-                        {typeof topBidsChef[chef.id] === "number"
-                          ? `$${topBidsChef[chef.id]!.toLocaleString()}`
-                          : "--"}
+                      <span className="auction-chef__top-bid-value auction-chef__top-bid-value--sealed">
+                        Sealed
                       </span>
                     </div>
                     {minBid !== null && (
@@ -920,14 +1105,21 @@ export function AuctionPage() {
                         <input
                           type="number"
                           className={`auction-chef__bid-input auction-page__bid-input${
-                            belowMinimum ? " auction-chef__bid-input--error" : ""
+                            belowMinimum || aboveCap || chefDuplicate
+                              ? " auction-chef__bid-input--error"
+                              : ""
                           }`}
                           placeholder="0"
                           min={0}
+                          max={BID_DOLLAR_MAX}
                           value={chefBidInputs[chef.id] ?? ""}
                           disabled={timerExpired || !isChefPhase || isLockedChefBid(chef.id)}
                           readOnly={!isChefPhase || isLockedChefBid(chef.id)}
-                          aria-invalid={belowMinimum ? "true" : undefined}
+                          aria-invalid={
+                            belowMinimum || aboveCap || chefDuplicate
+                              ? "true"
+                              : undefined
+                          }
                           onChange={(e) => {
                             const raw = e.target.value;
                             setChefBidInputs(prev => ({ ...prev, [chef.id]: raw }));
@@ -938,16 +1130,53 @@ export function AuctionPage() {
                               setChefBid(chef.id, 0);
                             }
                           }}
+                          onKeyDown={(e) => {
+                            // B-03 (2026-04-29): Enter submits this
+                            // chef's bid (each chef has its own row +
+                            // submit, so we target the single chef
+                            // rather than the round-wide submit).
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              if (
+                                !timerExpired &&
+                                pendingChefBids[chef.id] &&
+                                !isLockedChefBid(chef.id) &&
+                                !belowMinimum &&
+                                !chefDuplicate
+                              ) {
+                                void handleSubmitSingleBid(chef.id);
+                              }
+                            }
+                          }}
                         />
                       </div>
-                      {belowMinimum && (
+                      {belowMinimum && minBid !== null && (
                         <p className="auction-chef__bid-error" role="alert">
-                          Bid above the minimum bid.
+                          Bid must be at least ${minBid.toLocaleString()}.
                         </p>
                       )}
+                      {aboveCap && (
+                        <p className="auction-chef__bid-error" role="alert">
+                          Going way over budget there!
+                        </p>
+                      )}
+                      {chefDuplicate && !belowMinimum && !aboveCap && (
+                        <p className="auction-chef__bid-error" role="alert">
+                          Another team already bid this exact amount — pick
+                          a different number.
+                        </p>
+                      )}
+                      {/* B-01 (2026-04-29): tied-bid warning removed
+                          (leaked sealed-bid info). */}
                       <button
                         className="btn btn--small chef-card__submit"
-                        disabled={timerExpired || !pendingChefBids[chef.id] || isLockedChefBid(chef.id) || belowMinimum}
+                        disabled={
+                          timerExpired ||
+                          !pendingChefBids[chef.id] ||
+                          isLockedChefBid(chef.id) ||
+                          belowMinimum ||
+                          chefDuplicate
+                        }
                         onClick={(e) => { e.preventDefault(); handleSubmitSingleBid(chef.id); }}
                       >
                         Submit Bid
@@ -976,7 +1205,11 @@ export function AuctionPage() {
           (!isAdPhase && !isChefPhase) ||
           !hasAnyBidForPhase ||
           !hasEditableBid ||
-          !canSubmitForPhase
+          !canSubmitForPhase ||
+          // Barlava follow-up: block bulk submit while any row holds a
+          // duplicate bid. The per-row chip explains why; this guard
+          // keeps a sloppy click from blasting all bids through anyway.
+          hasDuplicateBidForPhase
         }
         title={submitTooltip}
       >

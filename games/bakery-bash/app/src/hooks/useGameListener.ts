@@ -8,11 +8,14 @@ import {
 import { useGame, useGameDispatch } from "../contexts/GameContext";
 import { db } from "../lib/firebase";
 import {
+  DEFAULT_UNLOCKED_PRODUCTS,
+  PRODUCT_KEYS,
+  type EquipmentGrade,
   type GameConfigParams,
   type LeaderboardRanking,
-  type MaintenanceBars,
   type Player,
   type PlayerRole,
+  type ProductKey,
   type RoundResult,
 } from "../types/game";
 
@@ -61,6 +64,15 @@ export function useGameListener(gameId: string | null, playerId?: string | null)
         if (!snap.exists()) return;
         const data = snap.data() as DocumentData;
         if (typeof data.phase === "string") {
+          // Barlava follow-up: when the professor's `resetGame` flips
+          // the doc back to "lobby", clear the in-memory per-round
+          // results / drafts / submission flags so a re-played game
+          // doesn't carry forward last game's conclusion screen. RESET
+          // preserves gameId/playerId so the Firestore listeners stay
+          // attached — see GameContext reducer.
+          if (data.phase === "lobby") {
+            dispatch({ type: "RESET" });
+          }
           dispatch({ type: "SET_PHASE", payload: data.phase });
         }
         const nextRound =
@@ -122,26 +134,6 @@ export function useGameListener(gameId: string | null, playerId?: string | null)
         if (!snap.exists()) return;
         const data = snap.data() as DocumentData;
 
-        const bars = data.maintenanceBars as Partial<MaintenanceBars> | undefined;
-        if (
-          bars &&
-          typeof bars.cleanliness === "number" &&
-          typeof bars.ovenHealth === "number" &&
-          typeof bars.slicerHealth === "number" &&
-          typeof bars.espressoHealth === "number"
-        ) {
-          dispatch({
-            type: "SET_MAINTENANCE_BARS",
-            payload: bars as MaintenanceBars,
-          });
-        }
-        const scores = data.chefSatisfactionScores;
-        if (scores && typeof scores === "object") {
-          dispatch({
-            type: "SET_CHEF_SATISFACTION",
-            payload: scores as Record<string, number>,
-          });
-        }
         if (typeof data.budgetCurrent === "number") {
           dispatch({ type: "SET_BUDGET", payload: data.budgetCurrent });
         } else {
@@ -172,6 +164,26 @@ export function useGameListener(gameId: string | null, playerId?: string | null)
           dispatch({ type: "SET_TEAM_ID", payload: null });
         }
 
+        // Equipment grade + cleanliness — written by the backend maintenance
+        // system. Fall back to the GameContext defaults if not yet present.
+        const VALID_GRADES: EquipmentGrade[] = ['F', 'E', 'D', 'C', 'B', 'A'];
+        const equipmentGrade: EquipmentGrade =
+          VALID_GRADES.includes(data.equipmentGrade as EquipmentGrade)
+            ? (data.equipmentGrade as EquipmentGrade)
+            : 'C';
+        const cleanlinessGrade: EquipmentGrade =
+          VALID_GRADES.includes(data.cleanlinessGrade as EquipmentGrade)
+            ? (data.cleanlinessGrade as EquipmentGrade)
+            : 'B';
+        const cleanlinessScore: number =
+          typeof data.cleanlinessScore === 'number' && Number.isFinite(data.cleanlinessScore)
+            ? Math.max(0, Math.min(100, data.cleanlinessScore))
+            : 75;
+        dispatch({
+          type: 'UPDATE_PLAYER_GRADES',
+          payload: { equipmentGrade, cleanlinessGrade, cleanlinessScore },
+        });
+
         const lrr = data.lastRoundResult;
         if (lrr && typeof lrr === "object" && typeof lrr.round === "number") {
           const revenue =
@@ -200,18 +212,6 @@ export function useGameListener(gameId: string | null, playerId?: string | null)
                   : typeof lrr.customerSatisfaction === "number"
                     ? lrr.customerSatisfaction
                     : 0,
-              chefSatisfactionScore:
-                typeof lrr.chefSatisfactionScore === "number"
-                  ? lrr.chefSatisfactionScore
-                  : undefined,
-              chefSatisfactionScores:
-                lrr.chefSatisfactionScores &&
-                typeof lrr.chefSatisfactionScores === "object"
-                  ? (lrr.chefSatisfactionScores as Record<string, number>)
-                  : undefined,
-              chefDepartures: Array.isArray(lrr.chefDepartures)
-                ? (lrr.chefDepartures as string[])
-                : undefined,
               chefDepartureNames: Array.isArray(lrr.chefDepartureNames)
                 ? (lrr.chefDepartureNames as string[])
                 : undefined,
@@ -236,10 +236,6 @@ export function useGameListener(gameId: string | null, playerId?: string | null)
                     ? lrr.chefWon
                     : (lrr.chefWon ?? null),
               },
-              maintenanceBars:
-                lrr.maintenanceBars && typeof lrr.maintenanceBars === "object"
-                  ? lrr.maintenanceBars
-                  : undefined,
               staffCounts:
                 lrr.staffCounts && typeof lrr.staffCounts === "object"
                   ? lrr.staffCounts
@@ -339,14 +335,25 @@ export function useGameListener(gameId: string | null, playerId?: string | null)
     return unsubscribe;
   }, [gameId, dispatch]);
 
-  // Listener 5 — team doc (FE-I15). Mirrors `roleAssignments` into
-  // context so the role-gate helpers can relax when nobody on the team
-  // holds the specialist role (2-player teams, cleared roles, mid-game
-  // disconnects). Re-subscribes when teamId changes; unsubscribes when
+  // Listener 5 — team doc (FE-I15). Mirrors `roleAssignments` and the Apr
+  // 28 2026 station-unlock fields (`unlockedProducts`, `unlocksPurchased`)
+  // into context. The role map relaxes the role-gate helpers when nobody
+  // holds the specialist role; the unlock fields drive the BakeryView's
+  // lock/unlock UI. Re-subscribes when teamId changes; unsubscribes when
   // the player leaves the team (rare — usually only on RESET).
   useEffect(() => {
     if (!gameId || !teamId) {
       dispatch({ type: "SET_TEAM_ROLE_ASSIGNMENTS", payload: {} });
+      // No team yet → keep the starter unlock set so the BakeryView still
+      // renders the three free starters in the meantime (matches initial
+      // state in GameContext).
+      dispatch({
+        type: "SET_TEAM_UNLOCKS",
+        payload: {
+          unlockedProducts: [...DEFAULT_UNLOCKED_PRODUCTS],
+          unlocksPurchased: 0,
+        },
+      });
       return;
     }
     const teamRef = doc(db, "games", gameId, "teams", teamId);
@@ -373,6 +380,29 @@ export function useGameListener(gameId: string | null, playerId?: string | null)
           }
         }
         dispatch({ type: "SET_TEAM_ROLE_ASSIGNMENTS", payload: sanitized });
+
+        // Apr 28 2026 — sanitize team unlocks. Backwards-compat: a team doc
+        // created before this feature shipped won't have these fields, so
+        // we treat that as "starter set, zero unlocks bought" matching the
+        // backend default. Only ProductKey strings get through.
+        const rawUnlocked = Array.isArray(data.unlockedProducts)
+          ? data.unlockedProducts
+          : null;
+        const unlockedProducts: ProductKey[] = rawUnlocked
+          ? (rawUnlocked.filter(
+              (p): p is ProductKey =>
+                typeof p === "string" && (PRODUCT_KEYS as string[]).includes(p),
+            ) as ProductKey[])
+          : [...DEFAULT_UNLOCKED_PRODUCTS];
+        const unlocksPurchased =
+          typeof data.unlocksPurchased === "number" &&
+          Number.isFinite(data.unlocksPurchased)
+            ? Math.max(0, Math.floor(data.unlocksPurchased))
+            : 0;
+        dispatch({
+          type: "SET_TEAM_UNLOCKS",
+          payload: { unlockedProducts, unlocksPurchased },
+        });
       },
       (err) => {
         console.error("useGameListener/team snapshot error", {

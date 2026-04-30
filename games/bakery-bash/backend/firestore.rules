@@ -74,10 +74,16 @@ service cloud.firestore {
       match /players/{playerId} {
         allow read: if isOwner(playerId);
         allow create: if false;
+        // SECURITY FIX: restrict client-side updates to displayName only.
+        // pendingDecision / pendingBids are written exclusively by Cloud
+        // Functions (submitDecision, submitPrices, submitBids). Allowing
+        // them here permitted nested-map poisoning (e.g. writing
+        // pendingDecision.budgetCurrent = 999999 through a direct client
+        // update since Firestore rules do not validate nested map shapes).
         allow update: if isOwner(playerId)
           && request.resource.data.diff(resource.data)
                .changedKeys()
-               .hasOnly(["displayName", "pendingDecision", "pendingBids"]);
+               .hasOnly(["displayName"]);
 
         // Immutable decision snapshots are written by Cloud Functions after
         // server-side validation in submitDecision.
@@ -94,11 +100,9 @@ service cloud.firestore {
           allow write: if false;
         }
 
-        // Email phase data drops are written exclusively by Cloud Functions.
-        match /emails/{emailId} {
-          allow read: if isOwner(playerId);
-          allow write: if false;
-        }
+        // The legacy `players/{uid}/emails` CSV-attachment queue was retired
+        // when in-app market insights replaced the mail-merge flow. The
+        // collection is no longer written. The default-deny rule covers it.
       }
 
       // ─────────────────────────────────────────────────────
@@ -109,6 +113,20 @@ service cloud.firestore {
       match /rounds/{roundId} {
         allow read: if signedIn();
         allow write: if false;
+
+        // ───────────────────────────────────────────────────
+        // /games/{gameId}/rounds/{roundId}/topBidsShards/{shardIdx}
+        // Sharded live-bid intake. Each shard holds the per-team bid
+        // amounts for the teams hashed to that shard. Server-only:
+        // exposing the per-team breakdown would defeat the sealed-bid
+        // design. The aggregated leader/top values are mirrored to
+        // `rounds/{roundId}.topBids` + `topBidsLeader` by the
+        // `onTopBidsShardWritten` trigger and read from there by the FE.
+        // ───────────────────────────────────────────────────
+        match /topBidsShards/{shardIdx} {
+          allow read: if false;
+          allow write: if false;
+        }
       }
 
       // ─────────────────────────────────────────────────────
@@ -155,6 +173,24 @@ service cloud.firestore {
       match /teams/{teamId} {
         allow read: if signedIn();
         allow write: if false;
+
+        // ───────────────────────────────────────────────────
+        // /games/{gameId}/teams/{teamId}/state/{stateDocId}
+        // T2.2: per-team transient round state — `pending` doc
+        // mirrors team-shared `pendingBids` / `pendingDecision`
+        // fields so teammates see what each other has staged
+        // without us cascading the write to every teammate's
+        // player doc. Readable only by team members (player doc's
+        // `teamId` matches this teamId), since the doc reveals
+        // the team's pre-submit bid amounts. Server-only writes —
+        // submitBids / submitDecision are the only writers.
+        // ───────────────────────────────────────────────────
+        match /state/{stateDocId} {
+          allow read: if signedIn()
+            && exists(/databases/$(database)/documents/games/$(gameId)/players/$(request.auth.uid))
+            && get(/databases/$(database)/documents/games/$(gameId)/players/$(request.auth.uid)).data.teamId == teamId;
+          allow write: if false;
+        }
       }
 
       // ─────────────────────────────────────────────────────
@@ -162,12 +198,103 @@ service cloud.firestore {
       // BE-22: Professor submission-state mirror. Written
       // exclusively by Cloud Functions (submitDecision,
       // submitBids, continueFromRoster). Readable only by
-      // the professor (custom claim: professor == true).
+      // the professor (custom claim: professor == true) or
+      // the game's professor UID. Contains per-player
+      // submission status, displayName, role, and timestamps —
+      // do NOT widen this rule. Player-facing UIs that need a
+      // submission count should read /submissionCounts/{doc}
+      // (count-only mirror written alongside this doc).
       // Doc IDs follow the pattern "round_{N}_{phase}".
       // ─────────────────────────────────────────────────────
       match /submissions/{doc} {
         allow read: if isProfessor() || isGameProfessor(gameId);
         allow write: if false;
+
+        // ───────────────────────────────────────────────────
+        // /games/{gameId}/submissions/{doc}/shards/{shardIdx}
+        // Sharded intake for the submissions mirror — server-only.
+        // The aggregated public view lives one level up at
+        // `submissions/{doc}` and is maintained by the
+        // `onSubmissionShardWritten` trigger from the shard data.
+        // ───────────────────────────────────────────────────
+        match /shards/{shardIdx} {
+          allow read: if false;
+          allow write: if false;
+        }
+      }
+
+      // ─────────────────────────────────────────────────────
+      // /games/{gameId}/submissionCounts/{doc}
+      // Public-safe count mirror for /submissions. Schema:
+      //   { count: number, updatedAt: Timestamp }
+      // Written exclusively by Cloud Functions in lockstep
+      // with /submissions. Readable by any signed-in player so
+      // the SubmissionLock footer can show "X / Y submitted"
+      // without leaking opposing-team submission identities.
+      // Doc IDs follow the pattern "round_{N}_{phase}".
+      // ─────────────────────────────────────────────────────
+      match /submissionCounts/{doc} {
+        allow read: if signedIn();
+        allow write: if false;
+      }
+
+      // ─────────────────────────────────────────────────────
+      // /games/{gameId}/submittedCountShards/{roundDocId}/shards/{shardIdx}
+      // T3.3: Sharded uid-set intake for the submittedCount counter on
+      // the game doc. Server-only. The aggregated count is mirrored to
+      // `games/{gameId}.submittedCount` by the
+      // `onSubmittedCountShardWritten` trigger; FE never reads these shards
+      // directly (use `submissionCounts/{doc}` for player-facing counts).
+      // ─────────────────────────────────────────────────────
+      match /submittedCountShards/{roundDocId} {
+        allow read: if false;
+        allow write: if false;
+
+        match /shards/{shardIdx} {
+          allow read: if false;
+          allow write: if false;
+        }
+      }
+
+      // ─────────────────────────────────────────────────────
+      // /games/{gameId}/presence/{playerId}
+      // T3.2: Liveness ping written by each player every ~30s while their
+      // tab is active. Lets the professor see "X / Y players online" and
+      // flag stragglers who silently disconnected (closed laptop, wifi
+      // drop, etc.) so they can be told to refresh. Schema:
+      //   { uid: string, lastSeenAt: Timestamp, displayName?: string }
+      // Read is professor-only (matches /submissions and /snapshots), so
+      // students can't enumerate other players' tab activity. The player
+      // can still read/write their OWN doc, which is all the heartbeat
+      // hook needs. Writes are restricted to the player themselves, only
+      // to fields in the allowed set, with `uid` matching their auth uid.
+      // ─────────────────────────────────────────────────────
+      match /presence/{playerId} {
+        allow read: if isProfessor() || isGameProfessor(gameId) || isOwner(playerId);
+        allow create, update: if isOwner(playerId)
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.keys().hasOnly(['uid', 'lastSeenAt', 'displayName']);
+        allow delete: if false;
+      }
+
+      // ─────────────────────────────────────────────────────
+      // /games/{gameId}/snapshots/{snapshotId}
+      // T2.4: Per-round game-state snapshots for crash recovery. Index
+      // docs are readable by the professor only so they can list available
+      // restore points on the prof UI; the chunked payload subcollection
+      // is server-only (FE never reassembles a snapshot — that's done by
+      // the `restoreSnapshot` callable on the backend). Written
+      // exclusively by Cloud Functions (auto-snapshot in advanceGamePhase
+      // and the manual createSnapshot callable).
+      // ─────────────────────────────────────────────────────
+      match /snapshots/{snapshotId} {
+        allow read: if isProfessor() || isGameProfessor(gameId);
+        allow write: if false;
+
+        match /chunks/{chunkIdx} {
+          allow read: if false;
+          allow write: if false;
+        }
       }
     }
   }

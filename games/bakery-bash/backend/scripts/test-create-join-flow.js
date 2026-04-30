@@ -73,7 +73,6 @@ async function main() {
     createdAt: FieldValue.serverTimestamp(),
   });
   await gameRef.collection('config').doc('params').set({
-    startingBudget: 500000,
     playerCap: 20,
   });
 
@@ -193,7 +192,12 @@ async function main() {
     'joiner bakeryName mirrors team name'
   );
 
-  // ------- 4b. BE-I04: 2 → 3 transition flips solo → specialists -------
+  // ------- 4b. 2 → 3 transition keeps everyone on `solo` until they pick -------
+  // Apr 25 revision: the cascade that used to force-flip everyone onto
+  // specialist roles was removed. The picker UI now disables every button
+  // *only* when the team is 1-person; from 2 members on, players actively
+  // claim their role via setTeamRole. Each of these joiners is therefore
+  // expected to land (and stay) on `solo`.
   const THIRD_JOINER_UID = 'create-join-third';
   await signIn(auth, adminAuth, THIRD_JOINER_UID);
   await joinGame({
@@ -209,30 +213,41 @@ async function main() {
     'member count reaches 3 after third join'
   );
   const assignmentsAfterThird = teamAfterThird.get('roleAssignments');
-  const assignedRoles = [
-    assignmentsAfterThird[CREATOR_A_UID],
-    assignmentsAfterThird[JOINER_UID],
-    assignmentsAfterThird[THIRD_JOINER_UID],
-  ];
-  const specialistRoles = ['finance', 'advertising', 'operations'].sort();
-  assert.deepStrictEqual(
-    [...assignedRoles].sort(),
-    specialistRoles,
-    'every seat flips to a distinct specialist role when team hits 3 members'
-  );
-  // Mirror on the player docs too.
-  for (const [uid, expected] of [
-    [CREATOR_A_UID, assignmentsAfterThird[CREATOR_A_UID]],
-    [JOINER_UID, assignmentsAfterThird[JOINER_UID]],
-    [THIRD_JOINER_UID, assignmentsAfterThird[THIRD_JOINER_UID]],
-  ]) {
+  for (const uid of [CREATOR_A_UID, JOINER_UID, THIRD_JOINER_UID]) {
+    assert.strictEqual(
+      assignmentsAfterThird[uid],
+      'solo',
+      `roleAssignments[${uid}] should remain 'solo' until the player picks via setTeamRole`,
+    );
     const pSnap = await gameRef.collection('players').doc(uid).get();
     assert.strictEqual(
       pSnap.get('role'),
-      expected,
-      `players/${uid}.role mirrors team roleAssignment after flip`
+      'solo',
+      `players/${uid}.role mirrors the 'solo' default — no auto-cascade`,
     );
   }
+
+  // Verify the manual pick path: each player can claim a distinct
+  // specialist role and end up with the classic 3-way split that the
+  // old cascade used to grant for free.
+  await signIn(auth, adminAuth, CREATOR_A_UID);
+  await callableAs('setTeamRole', functions)({
+    gameId: GAME_ID, teamId: 'sourdough-squad', role: 'finance',
+  });
+  await signIn(auth, adminAuth, JOINER_UID);
+  await callableAs('setTeamRole', functions)({
+    gameId: GAME_ID, teamId: 'sourdough-squad', role: 'advertising',
+  });
+  await signIn(auth, adminAuth, THIRD_JOINER_UID);
+  await callableAs('setTeamRole', functions)({
+    gameId: GAME_ID, teamId: 'sourdough-squad', role: 'operations',
+  });
+
+  const teamAfterPicks = await gameRef.collection('teams').doc('sourdough-squad').get();
+  const picked = teamAfterPicks.get('roleAssignments');
+  assert.strictEqual(picked[CREATOR_A_UID], 'finance');
+  assert.strictEqual(picked[JOINER_UID], 'advertising');
+  assert.strictEqual(picked[THIRD_JOINER_UID], 'operations');
 
   // ------- 5. joinGame with bogus teamId → not-found -------
   try {

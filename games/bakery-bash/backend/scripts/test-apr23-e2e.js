@@ -91,15 +91,12 @@ async function seedGame(db) {
     createdAt: FieldValue.serverTimestamp(),
   });
   await db.doc(`games/${GAME_ID}/config/params`).set({
-    startingBudget: 500000,
     playerCap: 20,
-    sousChefBaseCost: 12500,
     unitCostPerProduct: 1,
     specialtyChefCap: 3,
-    revenueCoefficients: {
-      base: 500, sousChefCoeff: 12, satisfactionCoeff: 8,
-      adSpendCoeff: 0.8, numProductsCoeff: 50, noiseMin: 0, noiseMax: 0,
-    },
+    // Force-zero noise so the simulation is deterministic across reruns;
+    // other coefficients fall back to DEFAULT_GAME_CONFIG.
+    revenueCoefficients: { noiseMin: 0, noiseMax: 0 },
   });
 }
 
@@ -122,12 +119,16 @@ async function signAs(auth, adminAuth, uid) {
   await signInWithCustomToken(auth, token);
 }
 
+// Apr 28 2026 — only croissant, bagel, coffee are in BASE_MENU; cookie /
+// sandwich / matcha must be unlocked via purchaseProduct before they can
+// go on the menu. Tests that don't drive purchaseProduct must use just
+// the starter set.
 function validDecision(roundOverride) {
   return {
     gameId: GAME_ID,
     round: roundOverride || 1,
-    menu: { croissant: true, cookie: true, bagel: true, sandwich: false, coffee: true, matcha: false },
-    quantities: { croissant: 50, cookie: 50, bagel: 50, coffee: 50 },
+    menu: { croissant: true, bagel: true, coffee: true, cookie: false, sandwich: false, matcha: false },
+    quantities: { croissant: 50, bagel: 50, coffee: 50 },
     sousChefCount: 2,
     sousChefAssignments: { croissant: 1, coffee: 1 },
   };
@@ -268,9 +269,10 @@ async function main() {
   console.log("  ✓ alice (role=solo) submits chef bids");
 
   // =========================================================================
-  // BE-I04 scenario 3 — 2→3 join cascades specialist roles
+  // BE-I04 (revised Apr 25) — 2→3 join keeps everyone on `solo`; players
+  // claim specialist roles explicitly via the picker / setTeamRole.
   // =========================================================================
-  console.log("\n── BE-I04: 2→3 join cascades to finance/advertising/operations ──");
+  console.log("\n── 2→3 join keeps everyone on solo until they pick ──");
 
   // Reset phase so createTeam / joinGame are allowed again. joinGame
   // allows rejoin at any phase — but for a new 3rd member we need
@@ -288,20 +290,37 @@ async function main() {
   const teamAfter3 = await db.doc(`games/${GAME_ID}/teams/${TEAM_ID}`).get();
   assert(teamAfter3.get("memberCount") === 3, "memberCount bumped to 3");
 
-  const roleMap = teamAfter3.get("roleAssignments");
-  const assignedRoles = [
-    roleMap[ALICE_UID],
-    roleMap[BOB_UID],
-    roleMap[CARLA_UID],
-  ];
-  const specialist = ["finance", "advertising", "operations"].sort();
-  assert(
-    JSON.stringify([...assignedRoles].sort()) === JSON.stringify(specialist),
-    `all three seats flip to distinct specialists, got ${JSON.stringify(assignedRoles)}`,
-  );
-  console.log(`  ✓ alice=${roleMap[ALICE_UID]}, bob=${roleMap[BOB_UID]}, carla=${roleMap[CARLA_UID]}`);
+  const roleMapAuto = teamAfter3.get("roleAssignments");
+  for (const uid of [ALICE_UID, BOB_UID, CARLA_UID]) {
+    assert(
+      roleMapAuto[uid] === "solo",
+      `roleAssignments[${uid}] should remain 'solo' until the player picks via setTeamRole`,
+    );
+    const pSnap = await db.doc(`games/${GAME_ID}/players/${uid}`).get();
+    assert(
+      pSnap.get("role") === "solo",
+      `players/${uid}.role mirrors the 'solo' default — no auto-cascade`,
+    );
+  }
+  console.log("  ✓ every seat stays on 'solo' (no auto-cascade)");
 
-  // Player docs should mirror the flip.
+  // Now drive the picker the way the FE does — each teammate calls
+  // setTeamRole to claim a specialist. The downstream FE-I15 / role-gate
+  // assertions below depend on this 3-way split.
+  const aliceSetRole = httpsCallable(alice.functions, "setTeamRole");
+  await aliceSetRole({ gameId: GAME_ID, teamId: TEAM_ID, role: "finance" });
+  const bobSetRole = httpsCallable(bob.functions, "setTeamRole");
+  await bobSetRole({ gameId: GAME_ID, teamId: TEAM_ID, role: "advertising" });
+  const carlaSetRole = httpsCallable(carla.functions, "setTeamRole");
+  await carlaSetRole({ gameId: GAME_ID, teamId: TEAM_ID, role: "operations" });
+
+  const teamAfterPicks = await db.doc(`games/${GAME_ID}/teams/${TEAM_ID}`).get();
+  const roleMap = teamAfterPicks.get("roleAssignments");
+  assert(roleMap[ALICE_UID] === "finance", "alice picked finance");
+  assert(roleMap[BOB_UID] === "advertising", "bob picked advertising");
+  assert(roleMap[CARLA_UID] === "operations", "carla picked operations");
+
+  // Player docs should mirror the picks.
   for (const uid of [ALICE_UID, BOB_UID, CARLA_UID]) {
     const pSnap = await db.doc(`games/${GAME_ID}/players/${uid}`).get();
     assert(
@@ -309,7 +328,8 @@ async function main() {
       `players/${uid}.role mirrors roleMap: expected ${roleMap[uid]}, got ${pSnap.get("role")}`,
     );
   }
-  console.log("  ✓ every player doc's role mirrors the team flip");
+  console.log(`  ✓ alice=${roleMap[ALICE_UID]}, bob=${roleMap[BOB_UID]}, carla=${roleMap[CARLA_UID]} (manual picks)`);
+  console.log("  ✓ every player doc's role mirrors the team picks");
 
   // =========================================================================
   // FE-I15 scenario 2 — 3-role team enforces strict role gate
@@ -364,8 +384,8 @@ async function main() {
   const financeSubmitPrices = httpsCallable(financeClient.functions, "submitPrices");
   await financeSubmitPrices({
     gameId: GAME_ID,
-    productPrices: { croissant: 5, cookie: 3, bagel: 4, coffee: 4 },
-    menu: { croissant: true, cookie: true, bagel: true, sandwich: false, coffee: true, matcha: false },
+    productPrices: { croissant: 5, bagel: 4, coffee: 4 },
+    menu: { croissant: true, bagel: true, coffee: true, cookie: false, sandwich: false, matcha: false },
   });
 
   const opsResult = await opsSubmit(validDecision(2));

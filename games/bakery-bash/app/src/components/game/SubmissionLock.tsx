@@ -11,14 +11,20 @@ import { useGame } from "../../contexts/GameContext";
  * FE-17 — Shared phase-submission footer for Decide / BidAd / BidChef /
  * Roster screens. Shows:
  *   - Countdown to `phaseEndsAt` (seconds precision).
- *   - Live "N / M submitted" pulled from `submissions/round_{N}_{phase}`
- *     (BE-22 mirror: `{[uid]: {status: "submitted", ...}}`).
+ *   - Live "N / M submitted" pulled from
+ *     `submissionCounts/round_{N}_{phase}` (count-only mirror written by
+ *     Cloud Functions alongside the professor-only `/submissions` doc — see
+ *     `firestore.rules` and `recordSubmission` in `functions/index.js`).
  *   - A role-gated submit button supplied by the parent via `action`.
  *
  * The component is intentionally dumb about *what* a submit does — each
  * phase passes its own `action` node (usually a `<button onClick={...}>`).
  * This keeps the role-gating / callable wiring inside the phase page while
  * the visual chrome + timer + submission-count stays consistent.
+ *
+ * Privacy: this component intentionally reads the count-only mirror, not
+ * `/submissions` itself, so opposing teams' submission identities and
+ * timestamps stay hidden during live phases (FRONTEND.md Hard UI Rule #4).
  */
 
 export type SubmissionPhaseKey = "decide" | "bid_ad" | "bid_chef" | "roster";
@@ -49,7 +55,7 @@ export function SubmissionLock({
 }: SubmissionLockProps) {
   const { gameId, currentRound, phaseEndsAtMs, players } = useGame();
 
-  const [submittedUids, setSubmittedUids] = useState<string[]>([]);
+  const [submittedCount, setSubmittedCount] = useState<number>(0);
   const [canReadCount, setCanReadCount] = useState(true);
   const [now, setNow] = useState(() => Date.now());
 
@@ -59,51 +65,52 @@ export function SubmissionLock({
     return () => window.clearInterval(id);
   }, []);
 
-  // Subscribe to the per-phase submission mirror.
+  // Subscribe to the per-phase submission count mirror. We read the
+  // count-only doc (not /submissions itself) so this works for player
+  // accounts without the professor claim and without leaking opposing-team
+  // submission identities.
   useEffect(() => {
     if (!gameId || !currentRound) {
       // Clearing happens in the cleanup; don't call setState in the body.
       return;
     }
     const docId = `round_${currentRound}_${phase}`;
-    const submissionRef = doc(db, "games", gameId, "submissions", docId);
+    const countRef = doc(db, "games", gameId, "submissionCounts", docId);
     const unsubscribe = onSnapshot(
-      submissionRef,
+      countRef,
       (snap) => {
         if (!snap.exists()) {
-          setSubmittedUids([]);
+          setSubmittedCount(0);
           return;
         }
         const data = snap.data() as DocumentData;
-        // The doc shape is `{[uid]: {status: "submitted", ...}}`. Treat any
-        // key whose value is an object with `status === "submitted"` as
-        // submitted.
-        const uids = Object.entries(data)
-          .filter(
-            ([, v]) =>
-              v && typeof v === "object" && (v as DocumentData).status === "submitted",
-          )
-          .map(([uid]) => uid);
-        setSubmittedUids(uids);
+        const raw = data.count;
+        setSubmittedCount(typeof raw === "number" && raw > 0 ? raw : 0);
       },
       (err) => {
-        // Most players can't read /submissions (BE-22 scoped to professors);
-        // hide the count rather than showing a misleading 0.
+        // Should not happen — /submissionCounts is signedIn-readable. Log
+        // and hide the count rather than showing a misleading 0.
         console.debug("SubmissionLock snapshot error:", err);
-        setSubmittedUids([]);
+        setSubmittedCount(0);
         setCanReadCount(false);
       },
     );
     return () => {
       unsubscribe();
-      setSubmittedUids([]);
+      setSubmittedCount(0);
       setCanReadCount(true);
     };
   }, [gameId, currentRound, phase]);
 
+  // The backend counts one submission per team (the Operations submitter's
+  // UID), so the denominator must be the number of teams, not individual
+  // players. Team members share a bakeryName, so counting unique names
+  // gives the correct team-level count for both team and solo games.
   const expected = useMemo(() => {
     if (typeof expectedPlayerCount === "number") return expectedPlayerCount;
-    if (players && players.length > 0) return players.length;
+    if (players && players.length > 0) {
+      return new Set(players.map((p) => p.bakeryName)).size;
+    }
     return null;
   }, [expectedPlayerCount, players]);
 
@@ -127,7 +134,7 @@ export function SubmissionLock({
       <div className="submission-lock__counts">
         <span className="submission-lock__counts-label">Submitted:</span>{" "}
         <span className="submission-lock__counts-value">
-          {canReadCount ? submittedUids.length : "—"}
+          {canReadCount ? submittedCount : "—"}
           {expected !== null && ` / ${expected}`}
         </span>
       </div>

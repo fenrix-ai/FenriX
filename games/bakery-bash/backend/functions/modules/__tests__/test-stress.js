@@ -715,7 +715,6 @@ function runCsvExportStress() {
       interestCharged: 0,
       customerCount: 10,
       aggregateSatisfactionPct: 75,
-      chefSatisfactionScore: 100,
       perProductSatisfaction: {},
     });
     let csvStr;
@@ -1264,7 +1263,7 @@ function runDynamicPricingStress() {
       productPrices: PRODUCT_KEYS.reduce((a, p) => ({ ...a, [p]: randomPrice(PRICE_ZONES[p]) }), {}),
     },
     specialtyChefs: [],
-    budgetCurrent: 500000,
+    budgetCurrent: 10000,
     returningCustomersPending: 0,
     auctionResults: { adWon: null, adBidPaid: 0, chefsWon: [], chefBidPaid: 0 },
     priorSubmittedPrices: [],

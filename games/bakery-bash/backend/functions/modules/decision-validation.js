@@ -89,6 +89,11 @@ function requireNonNegNumber(value, label) {
  * @param {object} data           raw decision payload
  * @param {number} currentRound   round number (stored on the sanitized output)
  * @param {object} _config        merged game config (unused here; reserved for future rules)
+ * @param {object} [opts]         { unlockedProducts?: string[] } — Apr 28 2026:
+ *   list of products the team has unlocked (always includes BASE_MENU starters).
+ *   If a player tries to put an OPTIONAL_MENU product on the menu without
+ *   having unlocked it, validation fails. When omitted (legacy callers / tests),
+ *   defaults to BASE_MENU only — i.e., locked products are rejected.
  * @returns {object} sanitized decision:
  *   {
  *     round,
@@ -100,9 +105,22 @@ function requireNonNegNumber(value, label) {
  *   }
  * @throws {ValidationError} on any invalid field
  */
-function validateDecision(data, currentRound, _config) {
+function validateDecision(data, currentRound, _config, opts) {
   if (!data || typeof data !== 'object') {
     fail('invalid-argument', 'Decision payload must be an object');
+  }
+
+  // Apr 28 2026 — station unlocks. Build a Set of products the team is
+  // allowed to put on the menu. BASE_MENU is always allowed (starters);
+  // OPTIONAL_MENU products must appear in `unlockedProducts`.
+  const optsUnlocked = opts && Array.isArray(opts.unlockedProducts)
+    ? opts.unlockedProducts
+    : null;
+  const allowedSet = new Set(BASE_MENU);
+  if (optsUnlocked) {
+    for (const p of optsUnlocked) {
+      if (typeof p === 'string') allowedSet.add(p);
+    }
   }
 
   // --- menu ---
@@ -116,7 +134,14 @@ function validateDecision(data, currentRound, _config) {
     menu[p] = true;
   }
   for (const p of OPTIONAL_MENU) {
-    menu[p] = !!rawMenu[p];
+    const requested = !!rawMenu[p];
+    if (requested && !allowedSet.has(p)) {
+      fail(
+        'failed-precondition',
+        `Product "${p}" is locked. Unlock it on the bakery view before adding it to the menu.`,
+      );
+    }
+    menu[p] = requested;
   }
 
   const offeredProducts = PRODUCT_KEYS.filter((p) => menu[p]);
@@ -187,12 +212,38 @@ function validateDecision(data, currentRound, _config) {
     );
   }
 
+  // --- equipmentUpgradePurchased (boolean, default false) ---
+  let equipmentUpgradePurchased = false;
+  if (data.equipmentUpgradePurchased !== undefined && data.equipmentUpgradePurchased !== null) {
+    if (typeof data.equipmentUpgradePurchased !== 'boolean') {
+      fail('invalid-argument', `equipmentUpgradePurchased must be a boolean`);
+    }
+    equipmentUpgradePurchased = data.equipmentUpgradePurchased;
+  }
+
+  // --- staffCounts.maintenanceGuys (non-negative int, default 0) ---
+  // staffCounts is a permissive object today; we add only the maintenanceGuys
+  // bound check and leave other keys untouched. Default flipped 2 → 0 to
+  // match the FE DEFAULT_STAFF_COUNTS — see app/src/types/game.ts.
+  const staffCounts = (data.staffCounts && typeof data.staffCounts === 'object')
+    ? { ...data.staffCounts }
+    : {};
+  if (staffCounts.maintenanceGuys === undefined || staffCounts.maintenanceGuys === null) {
+    staffCounts.maintenanceGuys = 0; // default
+  } else {
+    staffCounts.maintenanceGuys = requireNonNegInt(
+      staffCounts.maintenanceGuys, 'staffCounts.maintenanceGuys'
+    );
+  }
+
   return {
     round: Number.isFinite(Number(currentRound)) ? Number(currentRound) : null,
     menu,
     quantities,
     sousChefCount,
     sousChefAssignments,
+    equipmentUpgradePurchased,
+    staffCounts,
     numProducts: offeredProducts.length,
   };
 }
@@ -355,6 +406,45 @@ function validateProductPrices(raw) {
 }
 
 // ---------------------------------------------------------------------------
+// validateQuantitiesPayload (M-17)
+// ---------------------------------------------------------------------------
+
+/**
+ * Validate a quantities payload submitted by Finance via `submitPrices`.
+ * Independent of menu state: Finance may submit quantities before Operations
+ * sets the menu, so we only check that each value is a non-negative integer.
+ * The simulator naturally produces 0 customers / 0 revenue for products not
+ * on the menu, so a stocked-but-disabled product just wastes the cost — a
+ * UX concern (handled by the unified Decide screen post-K-10), not a
+ * validation error.
+ *
+ * Returns a canonical map keyed by every PRODUCT_KEY, defaulting missing
+ * fields to 0. Unknown product keys are rejected.
+ *
+ * @param {unknown} raw - { [product]: number | string } | null | undefined
+ * @returns {object} canonical { [product]: number } with every PRODUCT_KEY present
+ * @throws {ValidationError} on unknown keys or non-int / negative values
+ */
+function validateQuantitiesPayload(raw) {
+  const input = (raw && typeof raw === 'object') ? raw : {};
+  for (const key of Object.keys(input)) {
+    if (!PRODUCT_KEYS.includes(key)) {
+      fail('invalid-argument', `quantities has unknown product "${key}"`);
+    }
+  }
+  const out = {};
+  for (const p of PRODUCT_KEYS) {
+    const v = input[p];
+    if (v == null || v === '') {
+      out[p] = 0;
+    } else {
+      out[p] = requireNonNegInt(v, `quantities.${p}`);
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // buildDefaultDecision / buildDefaultBids
 // ---------------------------------------------------------------------------
 
@@ -410,6 +500,7 @@ module.exports = {
   validateAdBids,
   validateChefBids,
   validateProductPrices,
+  validateQuantitiesPayload,
   buildDefaultDecision,
   buildDefaultBids,
   // Exposed for tests

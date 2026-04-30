@@ -36,8 +36,6 @@ const {
   generateChefPool,
   getChefOutputForProduct,
   calculateTotalProductOutput,
-  calculateChefSatisfactionScore,
-  calculateEffectiveOutput,
   getSousChefCost,
   getTotalSousChefHireCost,
   BASE_CHEF_RATE,
@@ -120,15 +118,16 @@ function section(title) {
 
 section('A1. Revenue Formula');
 {
-  // Spec: 500 + 12×sousChef + 8×aggSatisfaction + 0.8×adSpend + 50×numProducts
-  //       + Σ(qtySold×fixedPrice) + noise[-100,+100]
+  // Balance pass: 500 + 25×sousChef + 60×aggSatisfaction + 0×adSpend + 100×numProducts
+  //               + Σ(qtySold×fixedPrice) + noise[-100,+100]
+  // adSpendCoeff zeroed to kill the original ad-bid arbitrage exploit.
   const { computeGrossRevenue } = require(path.join(BASE, 'revenue'));
   const cfg = mergeConfig({});
 
-  // Seeded test — noise is deterministic when noiseSeed is provided.
-  // With these known inputs, gross should be:
-  //   500 + 12*2 + 8*75 + 0.8*1000 + 50*4 + 200 + noise
-  //   = 500 + 24 + 600 + 800 + 200 + 200 + noise = 2324 + noise
+  // Seeded test — noise is deterministic when noiseSeed is provided. The
+  // expected formula value derives from the live coefficients in cfg so the
+  // assertion stays correct across balance rescales.
+  const rc = cfg.revenueCoefficients;
   const r = computeGrossRevenue({
     sousChefCount: 2,
     aggregateSatisfactionPct: 75,
@@ -138,34 +137,52 @@ section('A1. Revenue Formula');
     noiseSeed: 'test-seed-1',
   }, cfg);
 
-  // Without noise, formula value = 2324
-  const formulaBase = 500 + 12*2 + 8*75 + 0.8*1000 + 50*4 + 200;
+  const formulaBase =
+    rc.base +
+    rc.sousChefCoeff * 2 +
+    rc.satisfactionCoeff * 75 +
+    rc.adSpendCoeff * 1000 +
+    rc.numProductsCoeff * 4 +
+    200;
+  // Noise is clamped to [noiseMin, noiseMax], so the maximum deviation from
+  // formulaBase is bounded by max(|noiseMin|, noiseMax). +1 floor avoids a
+  // zero-tolerance window when noise is disabled.
+  const noiseTolerance = Math.max(Math.abs(rc.noiseMin), rc.noiseMax) + 1;
   assert(typeof r === 'number' && Number.isFinite(r),    'Revenue formula returns a finite number');
-  assert(r >= formulaBase - 100 && r <= formulaBase + 100,
+  assert(r >= formulaBase - noiseTolerance && r <= formulaBase + noiseTolerance,
     'Revenue formula value within noise bounds',
     `formulaBase=${formulaBase}, got=${r}`);
 
-  // Verify coefficient structure in config
-  const rc = cfg.revenueCoefficients;
-  assert(rc.base === 500,            'base coefficient = 500');
-  assert(rc.sousChefCoeff === 12,    'sousChefCoeff = 12');
-  assert(rc.satisfactionCoeff === 8, 'satisfactionCoeff = 8.0');
-  assert(rc.adSpendCoeff === 0.8,    'adSpendCoeff = 0.8');
-  assert(rc.numProductsCoeff === 50, 'numProductsCoeff = 50');
-  assert(rc.noiseMin === -100,       'noiseMin = -100');
-  assert(rc.noiseMax === 100,        'noiseMax = 100');
+  // Coefficient structure is locked; absolute values are tuned by balance work.
+  assert(typeof rc.base === 'number',                      'base coefficient is numeric');
+  assert(typeof rc.sousChefCoeff === 'number',             'sousChefCoeff is numeric');
+  assert(typeof rc.satisfactionCoeff === 'number',         'satisfactionCoeff is numeric');
+  assert(rc.adSpendCoeff === 0,                            'adSpendCoeff = 0 (anti-arbitrage)');
+  assert(typeof rc.numProductsCoeff === 'number',          'numProductsCoeff is numeric');
+  assert(typeof rc.noiseMin === 'number' && rc.noiseMin <= 0,
+                                                            'noiseMin is non-positive');
+  assert(typeof rc.noiseMax === 'number' && rc.noiseMax >= 0,
+                                                            'noiseMax is non-negative');
 }
 
 section('A2. Products & Pricing');
 {
-  // Spec: Coffee $4.00, Croissant $4.75, Bagel $3.00, Cookie $2.50, Sandwich $8.75, Matcha $6.25
+  // Balance-tuned catalog (passes 1, 6, 8, 9, 11). Demand 4–6× original spec to make
+  // product sales the dominant income source; satisfactionWeight equalized to 1.0;
+  // bagel/cookie prices raised to close the per-customer revenue gap; sandwich/matcha
+  // prices lowered so premium tier ≈ 1.6× cheap (was 3.5×).
+  // Balance pass 11 (Apr 28 2026): cookie moved from BASE → OPTIONAL and
+  // coffee moved from OPTIONAL → BASE so American's specialty pair (bagel +
+  // cookie = $8.50) approximately matches French's (croissant + coffee =
+  // $8.75). Update isBaseMenu + BASE_MENU/OPTIONAL_MENU expectations to
+  // match the new starter set.
   const expected = {
-    coffee:    { fixedPrice: 4.00,  baseDemand: 70, satisfactionWeight: 1.5, isBaseMenu: false },
-    croissant: { fixedPrice: 4.75,  baseDemand: 60, satisfactionWeight: 1.2, isBaseMenu: true  },
-    bagel:     { fixedPrice: 3.00,  baseDemand: 55, satisfactionWeight: 1.0, isBaseMenu: true  },
-    cookie:    { fixedPrice: 2.50,  baseDemand: 50, satisfactionWeight: 1.0, isBaseMenu: true  },
-    sandwich:  { fixedPrice: 8.75,  baseDemand: 45, satisfactionWeight: 1.0, isBaseMenu: false },
-    matcha:    { fixedPrice: 6.25,  baseDemand: 25, satisfactionWeight: 1.3, isBaseMenu: false },
+    coffee:    { fixedPrice: 4.00,  baseDemand: 240, satisfactionWeight: 1.0, isBaseMenu: true  },
+    croissant: { fixedPrice: 4.75,  baseDemand: 240, satisfactionWeight: 1.0, isBaseMenu: true  },
+    bagel:     { fixedPrice: 4.50,  baseDemand: 240, satisfactionWeight: 1.0, isBaseMenu: true  },
+    cookie:    { fixedPrice: 4.00,  baseDemand: 240, satisfactionWeight: 1.0, isBaseMenu: false },
+    sandwich:  { fixedPrice: 5.50,  baseDemand: 200, satisfactionWeight: 1.0, isBaseMenu: false },
+    matcha:    { fixedPrice: 4.50,  baseDemand: 200, satisfactionWeight: 1.0, isBaseMenu: false },
   };
 
   for (const [product, vals] of Object.entries(expected)) {
@@ -177,14 +194,14 @@ section('A2. Products & Pricing');
     assert(cat.isBaseMenu === vals.isBaseMenu,             `${product} isBaseMenu = ${vals.isBaseMenu}`, `got ${cat.isBaseMenu}`);
   }
 
-  // Base menu: croissant, cookie, bagel
-  assert(BASE_MENU.includes('croissant') && BASE_MENU.includes('cookie') && BASE_MENU.includes('bagel'),
-    'Base menu = croissant, cookie, bagel');
+  // Base menu: croissant, bagel, coffee (post balance pass 11)
+  assert(BASE_MENU.includes('croissant') && BASE_MENU.includes('bagel') && BASE_MENU.includes('coffee'),
+    'Base menu = croissant, bagel, coffee');
   assert(BASE_MENU.length === 3, 'Base menu has exactly 3 items');
 
-  // Optional: sandwich, coffee, matcha
-  assert(OPTIONAL_MENU.includes('sandwich') && OPTIONAL_MENU.includes('coffee') && OPTIONAL_MENU.includes('matcha'),
-    'Optional menu = sandwich, coffee, matcha');
+  // Optional: cookie, sandwich, matcha
+  assert(OPTIONAL_MENU.includes('cookie') && OPTIONAL_MENU.includes('sandwich') && OPTIONAL_MENU.includes('matcha'),
+    'Optional menu = cookie, sandwich, matcha');
 }
 
 section('A2b. Pricing Zones (POST-01)');
@@ -218,15 +235,18 @@ section('A2b. Pricing Zones (POST-01)');
     assert(['high', 'medium', 'low'].includes(tier), `${p}: tier ${tier}`);
   }
 
-  // ELASTICITY_COEFFICIENTS covers each referenced tier
-  assertClose(ELASTICITY_COEFFICIENTS.high, 1.5, 'high');
+  // ELASTICITY_COEFFICIENTS covers each referenced tier.
+  // M-14 (2026-04-28): `high` softened 1.5 → 1.2 so premium-priced
+  // teams still pull traffic instead of losing 100% of customers on a
+  // $1 price step. See config.js comment + tasks-april-28.md M-14.
+  assertClose(ELASTICITY_COEFFICIENTS.high, 1.2, 'high');
   assertClose(ELASTICITY_COEFFICIENTS.medium, 1.0, 'medium');
   assertClose(ELASTICITY_COEFFICIENTS.low, 0.6, 'low');
 
   // Constants match spec
   assertClose(PRICE_STEP, 0.25, 'PRICE_STEP');
   assertClose(FLOOR_BONUS, 0.15, 'FLOOR_BONUS');
-  assertClose(MULTIPLIER_FLOOR, 0.1, 'MULTIPLIER_FLOOR');
+  assertClose(MULTIPLIER_FLOOR, 0.05, 'MULTIPLIER_FLOOR');
 
   // Coffee zone matches proposal table
   const z_coffee = PRICE_ZONES.coffee;
@@ -238,15 +258,16 @@ section('A2b. Pricing Zones (POST-01)');
   assertClose(z_coffee.ceiling, 6.50, 'coffee ceiling');
   assert(z_coffee.elasticityTier === 'high', 'coffee elasticity = high');
 
-  // Matcha zone matches proposal table
+  // Matcha zone — balance pass 6: rescaled to $2.50–$7 (mid $4.50), elasticityTier 'high'.
+  // Premium pricing now a real tradeoff (more $/customer, way fewer customers).
   const z_matcha = PRICE_ZONES.matcha;
-  assertClose(z_matcha.floor, 3.50, 'matcha floor');
-  assertClose(z_matcha.competitiveRangeLow, 5.50, 'matcha competitiveRangeLow');
-  assertClose(z_matcha.competitiveRangeHigh, 7.00, 'matcha competitiveRangeHigh');
-  assertClose(z_matcha.premiumRangeLow, 7.50, 'matcha premiumRangeLow');
-  assertClose(z_matcha.premiumRangeHigh, 9.00, 'matcha premiumRangeHigh');
-  assertClose(z_matcha.ceiling, 10.00, 'matcha ceiling');
-  assert(z_matcha.elasticityTier === 'low', 'matcha elasticity = low');
+  assertClose(z_matcha.floor, 2.50, 'matcha floor');
+  assertClose(z_matcha.competitiveRangeLow, 3.50, 'matcha competitiveRangeLow');
+  assertClose(z_matcha.competitiveRangeHigh, 5.50, 'matcha competitiveRangeHigh');
+  assertClose(z_matcha.premiumRangeLow, 6.00, 'matcha premiumRangeLow');
+  assertClose(z_matcha.premiumRangeHigh, 6.50, 'matcha premiumRangeHigh');
+  assertClose(z_matcha.ceiling, 7.00, 'matcha ceiling');
+  assert(z_matcha.elasticityTier === 'high', 'matcha elasticity = high');
 }
 
 section('A3. Chef System');
@@ -265,11 +286,11 @@ section('A3. Chef System');
     assert(match, `${nat} specialties = ${specs.join(', ')}`, `got ${JSON.stringify(n.specialties)}`);
   }
 
-  // Chef multipliers
+  // Chef multipliers (balance pass — bumped to widen competitive separation)
   const expectedMults = {
-    novel:        { nonSpecialty: 1.0,  specialty: 1.4 },
-    intermediate: { nonSpecialty: 1.25, specialty: 1.75 },
-    advanced:     { nonSpecialty: 1.6,  specialty: 2.2 },
+    novel:        { nonSpecialty: 1.0,  specialty: 1.5 },
+    intermediate: { nonSpecialty: 1.4,  specialty: 2.2 },
+    advanced:     { nonSpecialty: 1.8,  specialty: 3.0 },
   };
   for (const [tier, vals] of Object.entries(expectedMults)) {
     const m = CHEF_MULTIPLIERS[tier];
@@ -283,8 +304,8 @@ section('A3. Chef System');
 
   // Output formula: 30 × multiplier
   const frenchAdv = { skillTier: 'advanced', specialties: ['croissant', 'coffee'] };
-  assertClose(getChefOutputForProduct(frenchAdv, 'croissant'), 30 * 2.2, 'Advanced French chef on croissant = 66');
-  assertClose(getChefOutputForProduct(frenchAdv, 'bagel'),     30 * 1.6, 'Advanced French chef on bagel (non-spec) = 48');
+  assertClose(getChefOutputForProduct(frenchAdv, 'croissant'), 30 * 3.0, 'Advanced French chef on croissant = 90');
+  assertClose(getChefOutputForProduct(frenchAdv, 'bagel'),     30 * 1.8, 'Advanced French chef on bagel (non-spec) = 54');
 
   // Base chef (no skillTier) returns 30 always
   const baseChef = { skillTier: 'base', specialties: [] };
@@ -293,21 +314,7 @@ section('A3. Chef System');
 
   // Total output example: base + advanced French on croissant, with 0 sous chefs
   const total = calculateTotalProductOutput('croissant', [frenchAdv], {});
-  assertClose(total, 30 + 66, 'Total output: base(30) + advanced French(66) = 96 for croissant');
-
-  // Chef Satisfaction Score: max(35, 100 - max(0, n-4) × 16)
-  const cfg = mergeConfig({});
-  assert(calculateChefSatisfactionScore(0,  cfg) === 100, 'Chef sat 0 sous chefs = 100');
-  assert(calculateChefSatisfactionScore(4,  cfg) === 100, 'Chef sat 4 sous chefs = 100');
-  assert(calculateChefSatisfactionScore(5,  cfg) === 84,  'Chef sat 5 sous chefs = 84');
-  assert(calculateChefSatisfactionScore(6,  cfg) === 68,  'Chef sat 6 sous chefs = 68');
-  assert(calculateChefSatisfactionScore(7,  cfg) === 52,  'Chef sat 7 sous chefs = 52');
-  assert(calculateChefSatisfactionScore(9,  cfg) === 35,  'Chef sat 9 sous chefs = 35 (floor)');
-  assert(calculateChefSatisfactionScore(15, cfg) === 35,  'Chef sat 15 sous chefs = 35 (floor)');
-
-  // Effective output: totalOutput × (chefSatisfaction / 100)
-  const eff = calculateEffectiveOutput(100, 52);
-  assertClose(eff, 52, 'Effective output 100 × (52/100) = 52');
+  assertClose(total, 30 + 90, 'Total output: base(30) + advanced French(90) = 120 for croissant');
 
   // Sous chef cost escalation: 1.0×, 1.5×, 2.25×, 3.0×, 5th= 3.75×
   const baseCost = 50;
@@ -345,9 +352,14 @@ section('A3. Chef System');
   // Specialty chef cap = 3
   assert(DEFAULT_GAME_CONFIG.specialtyChefCap === 3, 'Specialty chef cap = 3');
 
-  // Chef pool generation produces 6-8 chefs
-  const pool = generateChefPool(1, cfg);
-  assert(pool.length >= 6 && pool.length <= 8, `Chef pool size 6-8 (got ${pool.length})`);
+  // Chef pool generation matches the configured pool size. Reuse
+  // `cfgWith50` (set up earlier in this section via mergeConfig) — the
+  // earlier rename from `cfg` to `cfgWith50` left this call site
+  // referencing the old name, crashing the script with `cfg is not
+  // defined` before later sections could run.
+  const pool = generateChefPool(1, cfgWith50);
+  assert(pool.length === cfgWith50.chefPoolSize,
+    `Chef pool size = cfg.chefPoolSize (${cfgWith50.chefPoolSize}, got ${pool.length})`);
   assert(pool.every(c => ['novel','intermediate','advanced'].includes(c.skillTier)),
     'All chefs have valid skill tiers');
   assert(pool.every(c => ['french','japanese','italian','american'].includes(c.nationality)),
@@ -482,25 +494,23 @@ section('A6. Ad Types');
   assert(adBonuses.Radio > 0,     'Radio bonus > 0');
   assert(adBonuses.Newspaper > 0, 'Newspaper bonus > 0');
 
-  // ⚠️ KNOWN DISCREPANCY: code defaults are 200/150/100/75 (not 250× scaled 50000/37500/25000/18750)
-  // This is acknowledged in DEC-13 as a placeholder pending INT-06 tuning.
-  const scaledOk = adBonuses.TV === 50000 && adBonuses.Billboard === 37500;
-  if (!scaledOk) {
-    console.log('  ⚠️  NOTE: adBonuses are placeholder values (DEC-13) — not yet scaled 250×');
-  }
+  // Post Balance pass 16: defaults are TV=400, Billboard=250, Radio=150,
+  // Newspaper=80 — proportional to the $10k starting budget. The ordering
+  // assertions above are the spec; absolute values are tuned by balance work.
 }
 
 section('A7. Phase Transitions');
 {
-  // Spec: lobby → round_1_email → round_1_decide → round_1_bid_ad → round_1_bid_chef
-  //       → round_1_roster → simulating → results_ready → round_2_email → ...→ game_over
+  // Canonical order from phases.js PHASE_ORDER:
+  //   lobby → round_1_email → round_1_bid_ad → round_1_bid_chef → round_1_roster
+  //         → round_1_decide → simulating → results_ready → round_2_email → … → game_over
   const transitions = [
     ['lobby',             { phase: 'round_1_email', round: 1  }],
-    ['round_1_email',     { phase: 'round_1_decide', round: 1 }],
-    ['round_1_decide',    { phase: 'round_1_bid_ad', round: 1 }],
+    ['round_1_email',     { phase: 'round_1_bid_ad', round: 1 }],
     ['round_1_bid_ad',    { phase: 'round_1_bid_chef', round: 1 }],
     ['round_1_bid_chef',  { phase: 'round_1_roster', round: 1 }],
-    ['round_1_roster',    { phase: 'simulating', round: 1 }],
+    ['round_1_roster',    { phase: 'round_1_decide', round: 1 }],
+    ['round_1_decide',    { phase: 'simulating', round: 1 }],
     ['simulating',        { phase: 'results_ready', round: 1 }],
   ];
 
@@ -618,14 +628,12 @@ section('A10. Game Creation Defaults');
   assert(DEFAULT_GAME_CONFIG.totalRounds === 5, 'Default totalRounds = 5');
   assert(cfg.totalRounds === 5, 'mergeConfig preserves totalRounds = 5');
 
-  // Spec: startingBudget = $500,000 (DEC-01)
-  // Code default is $2000 (placeholder); real value set via createGame config override
-  // This is a known discrepancy — the DEFAULT is a placeholder
-  if (DEFAULT_GAME_CONFIG.startingBudget !== 500000) {
-    console.log(`  ⚠️  NOTE: DEFAULT startingBudget=${DEFAULT_GAME_CONFIG.startingBudget} (not $500,000 DEC-01 — expected to be injected via config/params at game creation)`);
-  }
+  // Post Balance pass 16: startingBudget rescaled from the original DEC-01
+  // $500,000 spec to $10,000 to keep the economy proportional to product
+  // sell prices. The DEC-01 figure was play-money scale; the new figure is
+  // the live default professors run at.
   assert(typeof DEFAULT_GAME_CONFIG.startingBudget === 'number' && DEFAULT_GAME_CONFIG.startingBudget > 0,
-    'startingBudget is a positive number (placeholder; real value injected at game create)');
+    'startingBudget is a positive number');
 
   // maxPlayers: spec says 20 per game (DEC-12), schema must support 50
   // No hard cap in the modules themselves — cap is enforced at joinGame in index.js
@@ -639,10 +647,11 @@ section('A10. Game Creation Defaults');
   // Spec: specialtyChefCap = 3
   assert(cfg.specialtyChefCap === 3, 'specialtyChefCap = 3');
 
-  // mergeConfig does not corrupt numeric values
-  const custom = mergeConfig({ startingBudget: 500000, sousChefBaseCost: 12500 });
-  assert(custom.startingBudget === 500000, 'mergeConfig accepts $500,000 startingBudget');
-  assert(custom.sousChefBaseCost === 12500, 'mergeConfig accepts $12,500 sousChefBaseCost');
+  // mergeConfig does not corrupt numeric values — exercise with values that
+  // are NOT the current default so the assertions actually test propagation.
+  const custom = mergeConfig({ startingBudget: 25000, sousChefBaseCost: 75 });
+  assert(custom.startingBudget === 25000, 'mergeConfig propagates startingBudget override');
+  assert(custom.sousChefBaseCost === 75, 'mergeConfig propagates sousChefBaseCost override');
 }
 
 // ---------------------------------------------------------------------------
@@ -723,7 +732,9 @@ const STRATEGIES = [
   },
 ];
 
-const config = mergeConfig({ startingBudget: 500000, sousChefBaseCost: 12500 });
+// Section B exercises the lifecycle at the production-default economy so a
+// real budget-exhaustion or loan-shark edge would surface here.
+const config = mergeConfig({});
 
 // Generate round preferences for 4 rounds
 const ROUND_PREFS = generateGamePreferences(4, config);
@@ -751,17 +762,8 @@ for (let round = 1; round <= 4; round++) {
          prefs.neutral.length === 1 && prefs.cold.length === 1,
     `Round ${round}: preferences have correct distribution`);
 
-  // Phase sequence verification
-  const phaseSequence = [
-    `round_${round}_email`,
-    `round_${round}_decide`,
-    `round_${round}_bid_ad`,
-    `round_${round}_bid_chef`,
-    `round_${round}_roster`,
-    'simulating',
-    'results_ready',
-  ];
-  let currentPhase = round === 1 ? 'lobby' : `round_${round-1}_roster`;
+  // Phase sequence verification — round 1 enters via `lobby → round_1_email`.
+  // Mid-round transitions are exhaustively asserted in Section A7.
   if (round === 1) {
     const next = getNextPhase('lobby', 0, 4);
     assert(next.phase === 'round_1_email', `Round 1: lobby → round_1_email`);
@@ -769,13 +771,13 @@ for (let round = 1; round <= 4; round++) {
 
   // Generate chef pool for this round
   const pool = generateChefPool(round, config);
-  assert(pool.length >= 6 && pool.length <= 8,
-    `Round ${round}: chef pool size = ${pool.length}`);
+  assert(pool.length === config.chefPoolSize,
+    `Round ${round}: chef pool size = cfg.chefPoolSize (${config.chefPoolSize}, got ${pool.length})`);
 
   // Build player inputs for simulation
   const players = STRATEGIES.map(s => {
     const decision = s.getDecision(round);
-    const adBidPaid = s.id === 'adHeavy' ? 5000 : 0;
+    const adBidPaid = s.id === 'adHeavy' ? 100 : 0;
     return {
       playerId: s.id,
       displayName: s.displayName,
@@ -813,9 +815,6 @@ for (let round = 1; round <= 4; round++) {
     assert(r.aggregateSatisfactionPct >= 0 && r.aggregateSatisfactionPct <= 100,
       `Round ${round} ${r.playerId}: aggregateSatisfactionPct in [0,100]`,
       `got ${r.aggregateSatisfactionPct}`);
-    assert(r.chefSatisfactionScore >= 35 && r.chefSatisfactionScore <= 100,
-      `Round ${round} ${r.playerId}: chefSatisfactionScore in [35,100]`,
-      `got ${r.chefSatisfactionScore}`);
 
     // Customer count
     assert(typeof r.customerCount === 'number' && r.customerCount >= 0,
@@ -954,7 +953,6 @@ section('C2. CSV Export Integrity');
     amountBorrowed: round1Result.amountBorrowed,
     interestCharged: round1Result.interestCharged,
     aggregateSatisfactionPct: round1Result.aggregateSatisfactionPct,
-    chefSatisfactionScore: round1Result.chefSatisfactionScore,
   });
 
   // All expected CSV column keys should be present
@@ -966,7 +964,7 @@ section('C2. CSV Export Integrity');
     'croissant_qty_stocked', 'cookie_qty_stocked', 'bagel_qty_stocked',
     'sandwich_qty_stocked', 'coffee_qty_stocked', 'matcha_qty_stocked',
     'revenue', 'amount_borrowed', 'interest_charged', 'customer_count',
-    'aggregate_satisfaction_pct', 'chef_satisfaction_score',
+    'aggregate_satisfaction_pct',
     'croissant_satisfaction_pct', 'cookie_satisfaction_pct', 'bagel_satisfaction_pct',
     'sandwich_satisfaction_pct', 'coffee_satisfaction_pct', 'matcha_satisfaction_pct',
     'croissant_qty_sold', 'cookie_qty_sold', 'bagel_qty_sold',
@@ -996,7 +994,6 @@ section('C2. CSV Export Integrity');
       amountBorrowed: r.amountBorrowed,
       interestCharged: r.interestCharged,
       aggregateSatisfactionPct: r.aggregateSatisfactionPct,
-      chefSatisfactionScore: r.chefSatisfactionScore,
     }))
   );
 
@@ -1030,22 +1027,27 @@ section('C2. CSV Export Integrity');
 section('C3. Decision Validation');
 {
   const cfg = mergeConfig({});
+  // Balance pass 11 (Apr 28 2026): cookie moved BASE → OPTIONAL and
+  // coffee moved OPTIONAL → BASE. Tests that put cookie on the menu
+  // must pass `opts.unlockedProducts` so the locked-product gate
+  // doesn't fire before the test's actual assertion.
+  const allUnlocked = { unlockedProducts: ['cookie', 'sandwich', 'matcha'] };
 
   // Valid decision
   const validDecision = validateDecision({
-    menu: { croissant: true, cookie: true, bagel: true, sandwich: false, coffee: false, matcha: false },
-    quantities: { croissant: 50, cookie: 40, bagel: 30, sandwich: 0, coffee: 0, matcha: 0 },
+    menu: { croissant: true, cookie: true, bagel: true, sandwich: false, coffee: true, matcha: false },
+    quantities: { croissant: 50, cookie: 40, bagel: 30, sandwich: 0, coffee: 10, matcha: 0 },
     sousChefCount: 2,
     sousChefAssignments: { croissant: 2 },
-  }, 1, cfg);
-  assert(validDecision.numProducts === 3, 'Valid decision: numProducts = 3');
+  }, 1, cfg, allUnlocked);
+  assert(validDecision.numProducts === 4, 'Valid decision: numProducts = 4');
   assert(validDecision.sousChefCount === 2, 'Valid decision: sousChefCount = 2');
 
   // Base menu cannot be disabled
   let baseMenuError = false;
   try {
     validateDecision({
-      menu: { croissant: false, cookie: true, bagel: true },
+      menu: { croissant: false, bagel: true, coffee: true },
       quantities: { croissant: 0 },
       sousChefCount: 0, sousChefAssignments: {},
     }, 1, cfg);
@@ -1060,15 +1062,17 @@ section('C3. Decision Validation');
       quantities: { croissant: 30, cookie: 30, bagel: 30 },
       sousChefCount: 3,
       sousChefAssignments: { croissant: 1 }, // sum=1 ≠ 3
-    }, 1, cfg);
+    }, 1, cfg, allUnlocked);
   } catch (e) { assignError = true; }
   assert(assignError, 'Assignment sum ≠ sousChefCount throws error');
 
-  // Default decision has base menu products = true
+  // Default decision has base menu products = true (balance pass 11:
+  // base set is now croissant + bagel + coffee; cookie is optional).
   const def = buildDefaultDecision(cfg);
   assert(def.menu.croissant === true, 'Default decision has croissant = true');
-  assert(def.menu.cookie === true,    'Default decision has cookie = true');
+  assert(def.menu.coffee === true,    'Default decision has coffee = true');
   assert(def.menu.bagel === true,     'Default decision has bagel = true');
+  assert(def.menu.cookie === false,   'Default decision has cookie = false (optional)');
   assert(def.menu.sandwich === false, 'Default decision has sandwich = false');
   assert(def.sousChefCount === 0,     'Default decision: sousChefCount = 0');
 }

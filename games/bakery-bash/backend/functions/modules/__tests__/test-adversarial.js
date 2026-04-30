@@ -95,7 +95,7 @@ section('A: config.js — type confusion & boundary fuzzing');
 
 test('mergeConfig: null input → full defaults', () => {
   const cfg = config.mergeConfig(null);
-  assert(cfg.startingBudget === 2000, 'startingBudget default');
+  assert(cfg.startingBudget === 10000, 'startingBudget default');
   assert(cfg.totalRounds === 5, 'totalRounds default');
 }, 'HIGH');
 
@@ -116,17 +116,17 @@ test('mergeConfig: string input → full defaults', () => {
 
 test('mergeConfig: NaN budget → default', () => {
   const cfg = config.mergeConfig({ startingBudget: NaN });
-  assert(cfg.startingBudget === 2000, `NaN budget should fall back to default, got ${cfg.startingBudget}`);
+  assert(cfg.startingBudget === 10000, `NaN budget should fall back to default, got ${cfg.startingBudget}`);
 }, 'HIGH');
 
 test('mergeConfig: Infinity budget → default', () => {
   const cfg = config.mergeConfig({ startingBudget: Infinity });
-  assert(cfg.startingBudget === 2000, `Infinity budget should fall back to default, got ${cfg.startingBudget}`);
+  assert(cfg.startingBudget === 10000, `Infinity budget should fall back to default, got ${cfg.startingBudget}`);
 }, 'HIGH');
 
 test('mergeConfig: -Infinity budget → default', () => {
   const cfg = config.mergeConfig({ startingBudget: -Infinity });
-  assert(cfg.startingBudget === 2000, `-Infinity budget should fall back to default`);
+  assert(cfg.startingBudget === 10000, `-Infinity budget should fall back to default`);
 }, 'HIGH');
 
 test('mergeConfig: negative budget override is accepted as-is (no domain clamp)', () => {
@@ -142,12 +142,12 @@ test('mergeConfig: MAX_SAFE_INTEGER budget', () => {
 
 test('mergeConfig: injection string in startingBudget → default', () => {
   const cfg = config.mergeConfig({ startingBudget: "'; DROP TABLE games; --" });
-  assert(cfg.startingBudget === 2000, 'SQL injection in budget → default');
+  assert(cfg.startingBudget === 10000, 'SQL injection in budget → default');
 }, 'CRITICAL');
 
 test('mergeConfig: script tag in startingBudget → default', () => {
   const cfg = config.mergeConfig({ startingBudget: '<script>alert(1)</script>' });
-  assert(cfg.startingBudget === 2000, 'XSS in budget → default');
+  assert(cfg.startingBudget === 10000, 'XSS in budget → default');
 }, 'CRITICAL');
 
 test('mergeConfig: numeric string budget → parsed correctly', () => {
@@ -157,14 +157,14 @@ test('mergeConfig: numeric string budget → parsed correctly', () => {
 
 test('mergeConfig: nested NaN coefficients → defaults', () => {
   const cfg = config.mergeConfig({ revenueCoefficients: { base: NaN, sousChefCoeff: 'hack' } });
-  assert(cfg.revenueCoefficients.base === 500, `base should default to 500, got ${cfg.revenueCoefficients.base}`);
-  assert(cfg.revenueCoefficients.sousChefCoeff === 12, 'sousChefCoeff default');
+  assert(cfg.revenueCoefficients.base === 10, `base should default to 10, got ${cfg.revenueCoefficients.base}`);
+  assert(cfg.revenueCoefficients.sousChefCoeff === 0.5, 'sousChefCoeff default (balance pass 16)');
 }, 'HIGH');
 
 test('mergeConfig: empty nested objects → nested defaults', () => {
   const cfg = config.mergeConfig({ revenueCoefficients: {}, adBonuses: {} });
-  assert(cfg.revenueCoefficients.base === 500, 'empty obj → revenueCoefficients.base default');
-  assert(cfg.adBonuses.TV === 200, 'empty obj → adBonuses.TV default');
+  assert(cfg.revenueCoefficients.base === 10, 'empty obj → revenueCoefficients.base default');
+  assert(cfg.adBonuses.TV === 400, 'empty obj → adBonuses.TV default');
 }, 'MEDIUM');
 
 test('numberOrDefault: null → fallback', () => {
@@ -243,8 +243,8 @@ test('computeGrossRevenue: string fields → treated as zero', () => {
     noiseSeed: 'seed'
   }, defaultCfg);
   assertFinite(r, 'string fields: gross revenue finite');
-  // base(500) + noise(-100..100) → should be in roughly [400, 600]
-  assertRange(r, 300, 700, 'string fields: revenue in plausible range');
+  // base(10) + noise(-2..2) → should be in roughly [8, 12]
+  assertRange(r, 5, 15, 'string fields: revenue in plausible range');
 }, 'HIGH');
 
 test('computeGrossRevenue: NaN fields → treated as zero', () => {
@@ -930,34 +930,6 @@ test('calculateTotalProductOutput: 100 specialty chefs → no crash', () => {
   }, '100 specialty chefs should not crash');
 }, 'MEDIUM');
 
-test('calculateChefSatisfactionScore: 0 sous chefs → 100', () => {
-  const s = chefSystem.calculateChefSatisfactionScore(0, defaultCfg);
-  assert(s === 100, `0 sous chefs → 100, got ${s}`);
-}, 'LOW');
-
-test('calculateChefSatisfactionScore: 9+ sous chefs → floor (35)', () => {
-  const s = chefSystem.calculateChefSatisfactionScore(9, defaultCfg);
-  assert(s === 35, `9 sous chefs → floor 35, got ${s}`);
-}, 'MEDIUM');
-
-test('calculateChefSatisfactionScore: 500 sous chefs → floor (no crash)', () => {
-  const s = chefSystem.calculateChefSatisfactionScore(500, defaultCfg);
-  assert(s === defaultCfg.chefSatisfactionFloor,
-    `500 sous chefs → floor, got ${s}`);
-}, 'MEDIUM');
-
-test('calculateChefSatisfactionScore: negative sous chefs → 100 (over is 0)', () => {
-  const s = chefSystem.calculateChefSatisfactionScore(-5, defaultCfg);
-  assert(s === 100, `negative sous chefs → 100 (no over), got ${s}`);
-}, 'MEDIUM');
-
-test('calculateChefSatisfactionScore: NaN sous chefs → check', () => {
-  const s = chefSystem.calculateChefSatisfactionScore(NaN, defaultCfg);
-  if (Number.isNaN(s)) {
-    throw new Error('NaN sousChefCount propagates to NaN chefSatisfactionScore');
-  }
-}, 'HIGH');
-
 test('resolveChefAuction: empty pool + empty bids → empty results', () => {
   const { winners, payments } = chefSystem.resolveChefAuction([], []);
   assert(winners.size === 0, 'empty pool → empty winners');
@@ -1620,14 +1592,7 @@ test('[Balance] Budget CAN go negative (spec allows it) — no Math.max(0) clamp
   assert(r.budgetAfter < 0, `Expected negative budget for massively overspending player, got ${r.budgetAfter}`);
 }, 'CRITICAL');
 
-test('[Balance] Chef satisfaction floor applied at 35', () => {
-  const score = chefSystem.calculateChefSatisfactionScore(100, defaultCfg);
-  assert(score === defaultCfg.chefSatisfactionFloor,
-    `100 sous chefs → floor ${defaultCfg.chefSatisfactionFloor}, got ${score}`);
-  assert(score >= 0 && score <= 100, `chefSatisfaction in [0,100]: ${score}`);
-}, 'HIGH');
-
-test('[Balance] Ad bonus correctly reflected in revenue formula', () => {
+test('[Balance] Anti-arbitrage: adSpendCoeff zeroed out so adSpend cannot inflate revenue', () => {
   const baseRevenue = revenue.computeGrossRevenue({
     sousChefCount: 0,
     aggregateSatisfactionPct: 0,
@@ -1640,15 +1605,15 @@ test('[Balance] Ad bonus correctly reflected in revenue formula', () => {
   const withAd = revenue.computeGrossRevenue({
     sousChefCount: 0,
     aggregateSatisfactionPct: 0,
-    adSpend: 1000,
+    adSpend: 1000000,
     numProducts: 0,
     totalProductRevenue: 0,
     noiseSeed: 'fixed-seed'
   }, defaultCfg);
 
-  // With same seed, difference should be adSpendCoeff(0.8) * 1000 = 800
+  // adSpendCoeff is 0 (KILLED ARBITRAGE EXPLOIT) — adSpend must NOT change revenue.
   const diff = withAd - baseRevenue;
-  assert(Math.abs(diff - 800) < 1, `adSpend diff should be 800, got ${diff}`);
+  assert(Math.abs(diff) < 0.001, `adSpend must not affect revenue (coeff=0), got diff ${diff}`);
 }, 'HIGH');
 
 test('[Balance] Loan shark interest applied correctly', () => {
@@ -1684,8 +1649,10 @@ test('[Balance] Revenue with 6 products > revenue with 3 products (numProductsCo
     numProducts: 6, totalProductRevenue: 0, noiseSeed: 'test'
   }, defaultCfg);
   const diff = r6 - r3;
-  // numProductsCoeff(50) * (6-3) = 150
-  assert(Math.abs(diff - 150) < 1, `3 more products → 150 more revenue, got diff ${diff}`);
+  // Test the relationship rather than a literal — numProductsCoeff is tuned
+  // by balance work and was rescaled in pass 16 (100 → 2).
+  const expected = defaultCfg.revenueCoefficients.numProductsCoeff * (6 - 3);
+  assert(Math.abs(diff - expected) < 1, `3 more products → ${expected} more revenue, got diff ${diff}`);
 }, 'MEDIUM');
 
 // ============================================================================

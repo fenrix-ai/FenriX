@@ -19,10 +19,13 @@
  *   interestCharged           number
  *   customerCount             number
  *   aggregateSatisfactionPct  number
- *   chefSatisfactionScore     number
  *   perProductSatisfaction:   { [product]: number }
  *   perProductSold:           { [product]: number }
  *   selloutFlags:             { [product]: boolean }
+ *   equipmentGrade            string   (letter grade, e.g. 'A', 'B', 'C')
+ *   cleanlinessGrade          string   (letter grade)
+ *   cleanlinessScore          number   (0-100)
+ *   equipmentUpgradePurchased boolean
  *
  * Fields may be missing on rounds where a product wasn't offered; this module
  * renders those as blank cells (null).
@@ -80,8 +83,6 @@ const CSV_COLUMNS = [
   { key: 'interest_charged',         header: 'interest_charged',         type: 'float' },
   { key: 'customer_count',           header: 'customer_count',           type: 'int'   },
   { key: 'aggregate_satisfaction_pct', header: 'aggregate_satisfaction_pct', type: 'pct' },
-  { key: 'chef_satisfaction_score',  header: 'chef_satisfaction_score',  type: 'float' },
-
   { key: 'croissant_satisfaction_pct', header: 'croissant_satisfaction_pct', type: 'pct' },
   { key: 'cookie_satisfaction_pct',    header: 'cookie_satisfaction_pct',    type: 'pct' },
   { key: 'bagel_satisfaction_pct',     header: 'bagel_satisfaction_pct',     type: 'pct' },
@@ -104,12 +105,14 @@ const CSV_COLUMNS = [
   { key: 'sellout_matcha',    header: 'sellout_matcha',    type: 'bool' },
 
   // Staff and maintenance
-  { key: 'avg_cleanliness_pct',     header: 'avg_cleanliness_pct',     type: 'pct'   },
-  { key: 'avg_machine_health_pct',  header: 'avg_machine_health_pct',  type: 'pct'   },
-  { key: 'bakery_sous_chef_count',  header: 'bakery_sous_chef_count',  type: 'int'   },
-  { key: 'deli_sous_chef_count',    header: 'deli_sous_chef_count',    type: 'int'   },
-  { key: 'barista_sous_chef_count', header: 'barista_sous_chef_count', type: 'int'   },
-  { key: 'maintenance_guy_count',   header: 'maintenance_guy_count',   type: 'int'   },
+  { key: 'equipment_grade',             header: 'equipment_grade',             type: 'string' },
+  { key: 'cleanliness_grade',           header: 'cleanliness_grade',           type: 'string' },
+  { key: 'cleanliness_score',           header: 'cleanliness_score',           type: 'int'    },
+  { key: 'equipment_upgrade_purchased', header: 'equipment_upgrade_purchased', type: 'bool'   },
+  { key: 'bakery_sous_chef_count',      header: 'bakery_sous_chef_count',      type: 'int'    },
+  { key: 'deli_sous_chef_count',        header: 'deli_sous_chef_count',        type: 'int'    },
+  { key: 'barista_sous_chef_count',     header: 'barista_sous_chef_count',     type: 'int'    },
+  { key: 'maintenance_staff_count',     header: 'maintenance_staff_count',     type: 'int'    },
 ];
 
 /**
@@ -262,7 +265,6 @@ function buildCsvRow(roundResult) {
   row.interest_charged            = firstDefined(r.interestCharged, 0);
   row.customer_count              = firstDefined(r.customerCount, 0);
   row.aggregate_satisfaction_pct  = firstDefined(r.aggregateSatisfactionPct);
-  row.chef_satisfaction_score     = firstDefined(r.chefSatisfactionScore);
 
   for (const p of CSV_PRODUCT_ORDER) {
     const onMenu = !!menu[p];
@@ -289,22 +291,19 @@ function buildCsvRow(roundResult) {
 
   // --- Staff + maintenance columns ---
   //
-  // POST-01 follow-up: populate per-station sous-chef counts + maintenance
-  // guy count from `decision.staffCounts`. Previously these columns were
-  // blank because nothing in the write path forwarded `staffCounts` into the
-  // csvRow — the validator strips it and index.js never reattached it.
-  //
-  // `avg_cleanliness_pct` / `avg_machine_health_pct` remain blank by design:
-  // the simulation doesn't yet track those bars (feature not implemented),
-  // so filling in a fake 100 here would be misleading.
+  // Populate per-station sous-chef counts + maintenance staff count from
+  // `decision.staffCounts`. Equipment/cleanliness fields come from the
+  // simulation result (Phase C onwards).
   const staffCounts = (decision && decision.staffCounts) || {};
   const intOrNull = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
-  row.avg_cleanliness_pct     = firstDefined(r.avg_cleanliness_pct);
-  row.avg_machine_health_pct  = firstDefined(r.avg_machine_health_pct);
-  row.bakery_sous_chef_count  = intOrNull(staffCounts.bakerySousChefs);
-  row.deli_sous_chef_count    = intOrNull(staffCounts.deliSousChefs);
-  row.barista_sous_chef_count = intOrNull(staffCounts.baristaSousChefs);
-  row.maintenance_guy_count   = intOrNull(staffCounts.maintenanceGuys);
+  row.equipment_grade             = firstDefined(r.equipmentGrade);
+  row.cleanliness_grade           = firstDefined(r.cleanlinessGrade);
+  row.cleanliness_score           = firstDefined(r.cleanlinessScore);
+  row.equipment_upgrade_purchased = !!r.equipmentUpgradePurchased;
+  row.bakery_sous_chef_count      = intOrNull(staffCounts.bakerySousChefs);
+  row.deli_sous_chef_count        = intOrNull(staffCounts.deliSousChefs);
+  row.barista_sous_chef_count     = intOrNull(staffCounts.baristaSousChefs);
+  row.maintenance_staff_count     = intOrNull(staffCounts.maintenanceGuys);
 
   return row;
 }

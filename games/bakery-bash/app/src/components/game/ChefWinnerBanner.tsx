@@ -28,16 +28,26 @@ export interface ChefWinnerBannerProps {
   winners: ChefWinnerEntry[];
   /** Hide completely when empty (e.g. on a round with no bids). */
   hideWhenEmpty?: boolean;
+  /**
+   * V4 fix (Apr 25): true once the backend's chef auction post-transaction
+   * side-effect has stamped `chefAuctionResolvedAt` on the round doc. While
+   * `false`, the banner shows a "Resolving auction…" placeholder rather than
+   * the misleading "No chefs hired" empty state — the auction may still be
+   * running for a few seconds after we land on the roster page.
+   */
+  resolved?: boolean;
 }
 
 function chefIcon(nationality: ChefNationality, gender: ChefGender): string {
   return `/assets/chefs/${nationality}-${gender}.svg`;
 }
 
+// V6 (Apr 26): revert to the original Low/Medium/High labels — see the
+// matching note in ChefCard.tsx.
 const SKILL_LABEL: Record<NonNullable<ChefWinnerEntry["skillTier"]>, string> = {
-  novel: "Novel",
-  intermediate: "Intermediate",
-  advanced: "Advanced",
+  novel: "Low",
+  intermediate: "Medium",
+  advanced: "High",
   base: "Base",
 };
 
@@ -45,9 +55,13 @@ export function ChefWinnerBanner({
   round,
   winners,
   hideWhenEmpty,
+  resolved = true,
 }: ChefWinnerBannerProps) {
   const hasAny = winners.length > 0;
-  if (hideWhenEmpty && !hasAny) return null;
+  // Hide when the caller asked us to AND we know the auction has finished
+  // resolving. While `resolved` is false (results haven't been written yet)
+  // we always show the banner so the loading copy is visible.
+  if (hideWhenEmpty && !hasAny && resolved) return null;
 
   return (
     <section
@@ -89,6 +103,10 @@ export function ChefWinnerBanner({
             </li>
           ))}
         </ul>
+      ) : !resolved ? (
+        <p className="chef-winner-banner__empty">
+          Resolving the chef auction… your hires will appear here in a moment.
+        </p>
       ) : (
         <p className="chef-winner-banner__empty">
           No chefs hired this round — your team passed on the auction or was outbid.

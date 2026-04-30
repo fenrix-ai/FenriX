@@ -322,6 +322,21 @@ h3 { font-size: 0.7rem; }
   cursor: not-allowed;
 }
 
+/* S-04 — full-team card. Backend (M-05) caps team size at 3; the FE
+   greys out cards that have hit the cap so students don't try to join
+   them. The `Full` label replaces the member count via the JSX. */
+.team-select__card--full {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.team-select__card--full .team-select__count {
+  color: var(--berry, #ef4444);
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
 .team-select__logo {
   width: 60px;
   height: 60px;
@@ -393,9 +408,52 @@ h3 { font-size: 0.7rem; }
   margin-bottom: 1.5rem;
 }
 
-.lobby-page__players h2 {
+.lobby-page__players h2,
+.lobby-page__teams h2 {
   font-size: 0.7rem;
   margin-bottom: 0.75rem;
+}
+
+/* V6 (Apr 26): teams + members layout for the lobby. Each team renders
+   as a card with the team name as a heading and members listed below. */
+.lobby-page__team-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin: 0 0 1.5rem;
+  padding: 0;
+}
+.lobby-page__team {
+  font-family: var(--font-body);
+  padding: 0.7rem 1rem;
+  background: var(--flour);
+  border: 2px solid var(--dough);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.lobby-page__team--you {
+  background: var(--honey);
+  border-color: var(--caramel);
+}
+.lobby-page__team-name {
+  font-family: var(--font-pixel);
+  font-size: 0.7rem;
+  color: var(--dark-roast);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+}
+.lobby-page__team-members {
+  list-style: disc;
+  padding-left: 1.4rem;
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--espresso);
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
 }
 
 .lobby-page__player-list {
@@ -484,6 +542,12 @@ h3 { font-size: 0.7rem; }
   line-height: 1.8;
 }
 
+.lobby-page__actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 1rem;
+}
+
 /* ─── Round Header ───────────────────────────────────────── */
 
 .round-header {
@@ -496,6 +560,14 @@ h3 { font-size: 0.7rem; }
   border: var(--border);
   box-shadow: var(--shadow-pixel-sm);
   margin-bottom: 1.5rem;
+  /* S-09 — pin the header to the top while the page scrolls so the timer
+     is always visible during long Decide / Auction / Results pages. The
+     PageShell (flex column on body's scroll) doesn't constrain sticky, so
+     `top: 0` pins to the viewport. Background is already opaque so content
+     scrolling under it stays hidden. */
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
 .round-header__round {
@@ -512,11 +584,6 @@ h3 { font-size: 0.7rem; }
 
 .round-header__timer--urgent {
   color: var(--berry);
-  animation: blink 0.6s step-end infinite;
-}
-
-@keyframes blink {
-  50% { opacity: 0; }
 }
 
 
@@ -524,10 +591,12 @@ h3 { font-size: 0.7rem; }
 
 .page-shell.game-page--wide {
   max-width: none;
-  /* Lock the decide-phase layout to viewport height so the dashboard can
-     flex:1 / min-height:0 and the Submit button is always on screen. */
-  height: 100dvh;
-  min-height: 0;
+  /* V8 (Apr 26): bakery preview now sits ABOVE the choices at 1.5×
+     scale, which doesn't leave enough room to viewport-lock the layout
+     anymore. Allow the full page to scroll instead so all controls stay
+     reachable on a desktop monitor. */
+  min-height: 100dvh;
+  height: auto;
   padding: 1rem 1.25rem;
 }
 
@@ -539,13 +608,6 @@ h3 { font-size: 0.7rem; }
    * the grid row stretches the BakeryView to match the sidebar height,
    * leaving a tall empty whitespace below the last station. */
   align-items: start;
-  /* Absorb the remaining vertical space inside .decide-phase__layout
-   * (which itself flexes to fill .page-shell.game-page--wide) and
-   * scroll internally so the round-cost panel + Submit button below
-   * the layout wrapper stay pinned to the viewport. */
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
 }
 
 .game-page__submit {
@@ -750,29 +812,6 @@ h3 { font-size: 0.7rem; }
   background: var(--cream);
 }
 
-.product-tile__remove {
-  font-family: var(--font-pixel);
-  font-size: 0.6rem;
-  width: 28px;
-  border: var(--border-light);
-  background: var(--cream);
-  color: var(--berry);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.product-tile__remove:hover {
-  background: var(--berry);
-  color: var(--flour);
-}
-
-.product-tile__remove:focus-visible {
-  outline: none;
-  border-color: var(--berry);
-}
-
 .product-tile__step-btn {
   font-family: var(--font-pixel);
   font-size: 0.7rem;
@@ -815,6 +854,20 @@ h3 { font-size: 0.7rem; }
 .product-tile__step-value:focus {
   outline: 2px solid var(--caramel);
   outline-offset: -2px;
+}
+
+/* B-02 (2026-04-29): red border + helper text once the per-product
+   quantity exceeds the 9,999 cap. The qty error chip lives below the
+   stepper row inside the same product tile. */
+.product-tile__step-value--error {
+  border-color: var(--berry, #ef4444);
+  outline-color: var(--berry, #ef4444);
+}
+.product-tile__qty-error {
+  margin: 0.25rem 0 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--berry, #ef4444);
 }
 
 /* ─── PriceInput (POST-01) ─────────────────────────────────── */
@@ -906,25 +959,72 @@ h3 { font-size: 0.7rem; }
   border-color: var(--caramel);
 }
 
-.product-tile__add {
+/* ─── Apr 28 2026 — station-unlock paywall ─────────────────── */
+
+.product-tile--paywall {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--cream),
+    var(--cream) 6px,
+    var(--flour) 6px,
+    var(--flour) 12px
+  );
+  opacity: 0.85;
+}
+
+.product-tile__unlock {
   grid-column: 1 / -1;
   font-family: var(--font-pixel);
   font-size: 0.5rem;
   padding: 0.45rem 0.7rem;
   border: var(--border-light);
-  background: var(--honey);
-  color: var(--espresso);
+  background: var(--caramel);
+  color: var(--flour);
   cursor: pointer;
   text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
-.product-tile__add:hover:not(:disabled) {
-  background: var(--golden);
+.product-tile__unlock:hover:not(:disabled) {
+  background: var(--berry);
+  color: var(--flour);
 }
 
-.product-tile__add:disabled {
-  opacity: 0.3;
+.product-tile__unlock:disabled {
+  opacity: 0.5;
   cursor: not-allowed;
+}
+
+.bakery-view__unlock-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.65rem 0.85rem;
+  margin-top: 0.75rem;
+  border: var(--border-light);
+  background: var(--cream);
+  font-size: 0.85rem;
+  color: var(--espresso);
+  line-height: 1.35;
+}
+
+.bakery-view__unlock-banner-icon {
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+.bakery-view__unlock-banner-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.bakery-view__unlock-error {
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.7rem;
+  border: 2px solid var(--berry);
+  background: var(--flour);
+  color: var(--berry);
+  font-size: 0.8rem;
 }
 
 /* ─── Game Sidebar (Tabbed) ──────────────────────────────── */
@@ -1233,6 +1333,57 @@ h3 { font-size: 0.7rem; }
   margin-bottom: 0.75rem;
 }
 
+.staff-tab__equipment {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.staff-tab__equipment-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.6rem 0.75rem;
+  background: var(--cream);
+  border: 2px solid var(--dough);
+}
+
+.staff-tab__equipment-btn {
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  border: 2px solid var(--caramel);
+  background: var(--cream);
+  color: var(--espresso);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: background 0.1s;
+}
+
+.staff-tab__equipment-btn:hover:not(:disabled) {
+  background: var(--dough);
+}
+
+.staff-tab__equipment-btn--active {
+  background: var(--caramel);
+  color: var(--cream);
+  border-color: var(--dark-roast);
+}
+
+.staff-tab__equipment-btn--active:hover:not(:disabled) {
+  background: var(--dark-roast);
+}
+
+.staff-tab__equipment-maxed {
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  color: var(--espresso);
+  padding: 0.4rem 0;
+  margin: 0;
+}
+
 .staff-tab__tasks {
   list-style: none;
   padding: 0.5rem 0.75rem;
@@ -1428,7 +1579,6 @@ h3 { font-size: 0.7rem; }
 
 .auction-page__timer--urgent {
   color: var(--berry);
-  animation: blink 0.6s step-end infinite;
 }
 
 .auction-page__hint {
@@ -1487,19 +1637,25 @@ h3 { font-size: 0.7rem; }
   letter-spacing: 0.05em;
 }
 
+/* V7 (Apr 26): user-requested palette — gray for low, orange for
+   medium, gold stays for high. Reads as drab → warm → premium so the
+   skill progression is unmistakable on a glance. */
 .auction-chef--low {
-  border-color: #c0392b;
-  box-shadow: inset 0 0 0 1px #e74c3c44;
+  /* Low: muted gray */
+  border-color: #8a8e94;
+  box-shadow: inset 0 0 0 1px #c0c4caaa;
 }
 
 .auction-chef--medium {
-  border-color: #b8860b;
-  box-shadow: inset 0 0 0 1px #daa52044;
+  /* Medium: warm orange */
+  border-color: #d97a2c;
+  box-shadow: inset 0 0 0 1px #f0a866aa;
 }
 
 .auction-chef--high {
-  border-color: #5ea05e;
-  box-shadow: inset 0 0 0 1px #7bc97b44;
+  /* High: rich gold */
+  border-color: #c9a227;
+  box-shadow: inset 0 0 0 1px #f0d068aa;
 }
 
 .auction-chef__portrait {
@@ -1529,32 +1685,71 @@ h3 { font-size: 0.7rem; }
   border: 1px solid;
 }
 
+/* V7 (Apr 26): match the new gray/orange/gold border palette. */
 .auction-chef__skill-tag--low {
-  background: #c0392b;
+  background: #8a8e94;
   color: #fff;
-  border-color: #922b21;
+  border-color: #5d6166;
 }
 
 .auction-chef__skill-tag--medium {
-  background: #b8860b;
+  background: #d97a2c;
   color: #fff;
-  border-color: #8b6508;
+  border-color: #a85916;
 }
 
 .auction-chef__skill-tag--high {
-  background: #5ea05e;
+  background: #c9a227;
   color: #fff;
-  border-color: #3e7a3e;
+  border-color: #8b6e10;
 }
 
 .auction-chef__info {
   display: flex;
   flex-direction: column;
+  gap: 0.25rem;
+  align-items: center;
 }
 
 .auction-chef__name {
   font-weight: 700;
   font-size: 0.75rem;
+}
+
+/* B-04 — nationality badge. Mirrors the skill-tag pattern; per-nation
+   accent so a player can scan the card grid by flag rather than by
+   reading every name. Cream/honey base; per-nation colors are subtle
+   tints over the same chip shape. */
+.auction-chef__nationality {
+  font-size: 0.55rem;
+  font-family: var(--font-pixel);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--honey, #f59e0b);
+  background: var(--cream, #fff7e6);
+  color: var(--espresso);
+}
+
+.auction-chef__nationality--american {
+  background: #e0f2fe;
+  border-color: #38bdf8;
+}
+
+.auction-chef__nationality--french {
+  background: #fee2e2;
+  border-color: #ef4444;
+}
+
+.auction-chef__nationality--italian {
+  background: #dcfce7;
+  border-color: #22c55e;
+}
+
+.auction-chef__nationality--japanese {
+  background: #fef3c7;
+  border-color: #f59e0b;
 }
 
 /*
@@ -1590,6 +1785,18 @@ h3 { font-size: 0.7rem; }
   color: var(--berry);
   text-shadow: var(--shadow-pixel-sm);
   font-weight: 700;
+}
+
+/* B-01 (2026-04-29): sealed-bid placeholder reads as muted/secondary
+   so the slot doesn't compete visually with the player's own bid. */
+.auction-chef__top-bid-value--sealed,
+.auction-ad__top-bid-value--sealed {
+  font-size: 0.9rem;
+  color: var(--dark-roast, #6b4226);
+  text-shadow: none;
+  font-weight: 500;
+  font-style: italic;
+  letter-spacing: 0.02em;
 }
 
 .auction-chef__bid {
@@ -1651,6 +1858,40 @@ h3 { font-size: 0.7rem; }
 }
 
 .auction-chef__bid-error {
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  color: var(--berry);
+  margin: 0.2rem 0 0;
+}
+
+.auction-ad__min-bid {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  padding: 0.25rem 0.4rem;
+}
+
+.auction-ad__min-bid-label {
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  color: var(--dark-roast);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.auction-ad__min-bid-value {
+  font-family: var(--font-body);
+  font-weight: 600;
+  color: var(--espresso);
+}
+
+.auction-ad__bid-input--error {
+  border-color: var(--berry) !important;
+  background: rgba(220, 58, 90, 0.08);
+}
+
+.auction-ad__bid-error {
   font-family: var(--font-pixel);
   font-size: 0.5rem;
   color: var(--berry);
@@ -1938,7 +2179,27 @@ h3 { font-size: 0.7rem; }
   gap: 0.75rem;
   flex-wrap: wrap;
   justify-content: center;
+  align-items: center;
   margin-bottom: 1.5rem;
+}
+
+/* S-02 — phase countdown chip, mirrors the round-header timer styling so
+   the professor sees the same numbers as the students. Goes red under 30s. */
+.professor-page__timer {
+  font-family: var(--font-pixel);
+  font-size: 0.9rem;
+  color: var(--sage);
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--sage);
+  border-radius: 6px;
+  min-width: 4ch;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.professor-page__timer--urgent {
+  color: var(--berry);
+  border-color: var(--berry);
 }
 
 .professor-page__note {
@@ -2168,6 +2429,98 @@ h3 { font-size: 0.7rem; }
   font-weight: 700;
 }
 
+/* S-01 — per-teammate role pill cluster. Sits inline with the team label
+   and the existing "Active: <role>" badge. The signed-in player is
+   highlighted (bold "You" + caramel border); the teammate whose role
+   owns the current phase gets a filled pip so the team can quickly tell
+   whose move it is right now. */
+.round-header__roster-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.round-header__roster-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  background: var(--cream, #fff7e6);
+  border: 1px solid var(--honey, #f59e0b);
+  color: var(--espresso);
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  white-space: nowrap;
+}
+
+.round-header__roster-pill--mine {
+  border-color: var(--caramel, #d97706);
+  border-width: 2px;
+}
+
+.round-header__roster-pill--active {
+  background: var(--caramel, #d97706);
+  border-color: var(--caramel, #d97706);
+  color: #fff;
+}
+
+.round-header__roster-pill-sep {
+  opacity: 0.6;
+}
+
+.round-header__roster-pill-role {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* S-06 — stale teammate pill + inline take-over button. Pill desaturates
+   so the team's eye is drawn to the action button rather than the inert
+   role label. The button is small + low-affordance to discourage
+   accidental clicks; the backend re-checks presence stale status before
+   actually clearing the role. */
+.round-header__roster-pill--stale {
+  opacity: 0.7;
+  background: var(--cream, #fff7e6);
+  border-style: dashed;
+}
+
+.round-header__roster-pill-takeover {
+  margin-left: 0.4rem;
+  padding: 0.1rem 0.4rem;
+  font: inherit;
+  font-size: 0.45rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: var(--berry, #ef4444);
+  color: #fff;
+  border: 1px solid var(--berry, #ef4444);
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.round-header__roster-pill-takeover:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.round-header__roster-pill-takeover:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.round-header__takeover-error {
+  flex-basis: 100%;
+  font-size: 0.5rem;
+  font-family: var(--font-pixel);
+  color: var(--berry, #ef4444);
+  margin-top: 0.25rem;
+}
+
 /* ─── Professor monitor (April 19) ───────────────────────── */
 
 .professor-page__monitor {
@@ -2279,6 +2632,140 @@ h3 { font-size: 0.7rem; }
   flex-wrap: wrap;
 }
 
+.professor-page__warmup-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.65rem;
+  border-radius: 999px;
+  font-family: var(--font-pixel);
+  font-size: 0.55rem;
+  letter-spacing: 0.04em;
+  border: 2px solid var(--dough);
+  background: var(--cream);
+  color: var(--dark-roast);
+  align-self: center;
+}
+
+.professor-page__warmup-pill--done {
+  border-color: var(--sage);
+  color: var(--sage);
+  animation: warmup-pill-pop 280ms ease-out;
+}
+
+.professor-page__warmup-pill--partial {
+  border-color: var(--berry);
+  color: var(--berry);
+}
+
+.professor-page__warmup-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  font-size: 0.7rem;
+  font-weight: bold;
+}
+
+.professor-page__warmup-spinner {
+  width: 10px;
+  height: 10px;
+  background: var(--caramel);
+  animation: pixel-spin 1s steps(4) infinite;
+  box-shadow:
+    3px 0 0 var(--golden),
+    -3px 0 0 var(--golden),
+    0 3px 0 var(--golden),
+    0 -3px 0 var(--golden);
+}
+
+@keyframes warmup-pill-pop {
+  0%   { transform: scale(0.85); opacity: 0; }
+  60%  { transform: scale(1.05); opacity: 1; }
+  100% { transform: scale(1);    opacity: 1; }
+}
+
+/* T3.2 — disconnect banner */
+.professor-page__disconnect-banner {
+  margin: 0.5rem 0;
+  padding: 0.65rem 0.85rem;
+  background: var(--cream);
+  border: 2px dashed var(--berry);
+  border-radius: 0.4rem;
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  color: var(--dark-roast);
+}
+
+/* T2.4 — last-saved indicator + restore dialog */
+.professor-page__last-saved {
+  margin: 0.5rem 0 0.25rem;
+  font-family: var(--font-pixel);
+  font-size: 0.55rem;
+  letter-spacing: 0.04em;
+  color: var(--dark-roast);
+  opacity: 0.75;
+}
+
+/* S-04 — flips on when the auto-snapshot for the current round didn't
+   land. Drops the muted opacity and adds an amber tint so the prof
+   actually notices, since the recovery point is now stale. */
+.professor-page__last-saved--stale {
+  opacity: 1;
+  color: #b45309; /* amber-700, readable on the cream page background */
+}
+
+.professor-page__last-saved-warning {
+  font-weight: 600;
+}
+
+.professor-page__restore-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 1rem;
+}
+
+.professor-page__restore-dialog {
+  background: var(--cream);
+  border: 3px solid var(--dark-roast);
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  max-width: 520px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  box-shadow: 6px 6px 0 var(--dark-roast);
+}
+
+.professor-page__restore-title {
+  margin: 0;
+  font-family: var(--font-pixel);
+  font-size: 1rem;
+  color: var(--berry);
+}
+
+.professor-page__restore-input {
+  font-family: var(--font-body);
+  padding: 0.5rem 0.65rem;
+  border: 2px solid var(--dough);
+  border-radius: 0.3rem;
+  font-size: 0.95rem;
+}
+
+.professor-page__restore-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 0.25rem;
+}
+
 .professor-page__field {
   display: flex;
   flex-direction: column;
@@ -2353,6 +2840,51 @@ h3 { font-size: 0.7rem; }
 
 .professor-page__leaderboard-link {
   margin-left: auto;
+}
+
+/* Bot management section. */
+.professor-page__bots {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: var(--cream);
+  border: 2px solid var(--dough);
+  border-radius: 0.4rem;
+}
+
+.professor-page__bots-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.professor-page__bots-or {
+  font-family: var(--font-pixel);
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  color: var(--caramel);
+  margin-bottom: 0.4rem;
+}
+
+.professor-page__field select {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--dough);
+  border-radius: 0.25rem;
+  font-family: var(--font-body);
+  background: var(--cream);
+  min-width: 10rem;
+}
+
+.professor-page__bot-list {
+  margin-top: 0.5rem;
+  padding-left: 1rem;
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  color: var(--dark-roast);
+}
+
+.professor-page__bot-item {
+  margin-bottom: 0.15rem;
 }
 
 /* FE-16 — Professor leaderboard page. */
@@ -2493,6 +3025,15 @@ h3 { font-size: 0.7rem; }
 
 .team-page__title {
   margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* V4 (Apr 25): per-team bakery emoji, sized to match the title text. */
+.team-page__emoji {
+  font-size: 1.5em;
+  line-height: 1;
 }
 
 .team-page__hello {
@@ -2870,7 +3411,6 @@ h3 { font-size: 0.7rem; }
 
 .submission-lock--critical .submission-lock__timer-value {
   color: var(--berry);
-  animation: blink 0.6s step-end infinite;
 }
 
 .submission-lock__counts-value {
@@ -2896,10 +3436,19 @@ h3 { font-size: 0.7rem; }
 
 .submission-lock__locked {
   font-family: var(--font-pixel);
-  font-size: 0.6rem;
-  color: var(--sage);
+  /* V5 (Apr 25): bumped from 0.6rem → 0.85rem and added a chip background +
+     border so the "Locked in" confirmation actually reads at a glance. The
+     previous treatment was the same size as a label and players were
+     missing it / pressing Continue twice on the kitchen-roster screen. */
+  font-size: 0.85rem;
+  color: #fff;
+  background: var(--sage, #5ea05e);
+  border: 2px solid #3e7a3e;
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  box-shadow: 0 2px 6px rgba(62, 122, 62, 0.35);
 }
 
 .submission-lock__action {
@@ -3130,6 +3679,37 @@ h3 { font-size: 0.7rem; }
   margin-bottom: 1rem;
 }
 
+/* V5 (Apr 25): prominent "locked in" banner that appears at the top of the
+   kitchen roster screen after the player presses Continue. Without this the
+   only confirmation was a 0.6rem pill at the bottom of the page that
+   students missed, leading to "did it actually submit?" double-clicks. */
+.roster-phase-page__submitted-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin: 0 0 1.25rem;
+  padding: 0.95rem 1.1rem;
+  background: linear-gradient(135deg, #5ea05e 0%, #7bc97b 100%);
+  color: #fff;
+  border: 3px solid #3e7a3e;
+  border-radius: 0.75rem;
+  font-family: var(--font-pixel);
+  font-size: 0.85rem;
+  line-height: 1.35;
+  box-shadow: 0 4px 16px rgba(62, 122, 62, 0.35);
+}
+
+.roster-phase-page__submitted-banner-icon {
+  font-size: 1.6rem;
+  font-weight: 800;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.roster-phase-page__submitted-banner-text {
+  flex: 1;
+}
+
 .roster-phase-page__slots {
   display: grid;
   gap: 0.6rem;
@@ -3193,6 +3773,70 @@ h3 { font-size: 0.7rem; }
 
 .roster-phase-page__slot--overflow .roster-phase-page__slot-label {
   color: var(--berry);
+}
+
+/* S-05 (2026-04-29) — "Lay-offs this round" panel. Shows chefs the
+   team has dropped this round; each gets a green Re-hire button. The
+   panel is desaturated (vs. the active roster grid above) so the
+   eye reads it as "in limbo, not on the kitchen floor". */
+.roster-phase-page__layoffs {
+  margin-top: 1.25rem;
+  padding: 1rem;
+  background: var(--cream, #fff7e6);
+  border: 1px dashed var(--honey, #f59e0b);
+  border-radius: 8px;
+}
+
+.roster-phase-page__layoffs-title {
+  font-family: var(--font-pixel);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 0.4rem 0;
+  color: var(--dark-roast, #6b4226);
+}
+
+.roster-phase-page__layoffs-hint {
+  font-size: 0.85rem;
+  color: var(--dark-roast, #6b4226);
+  margin: 0 0 0.75rem 0;
+}
+
+.roster-phase-page__layoff-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.roster-phase-page__layoff-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.roster-phase-page__layoff-card {
+  flex: 1;
+  min-width: 220px;
+  opacity: 0.85;
+}
+
+.roster-phase-page__rehire-btn {
+  background: var(--sage, #5e8055);
+  color: #fff;
+  border-color: var(--sage, #5e8055);
+}
+
+.roster-phase-page__rehire-btn:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.roster-phase-page__rehire-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .roster-phase-page__base-card {
@@ -3626,16 +4270,73 @@ h3 { font-size: 0.7rem; }
 
 /* ── FE-N09: Product tile unit cost & bakery total committed ─────────── */
 .product-tile__unit-cost { font-size: 0.75rem; color: #888; margin-top: 0.2rem; }
-.bakery-view__total-committed { padding: 0.75rem 1rem; background: var(--cream, #fff7e6); border-top: 2px solid var(--honey, #f59e0b); font-size: 0.9rem; }
+.bakery-view__total-committed { padding: 0.75rem 1rem; background: var(--cream, #fff7e6); border-top: 2px solid var(--honey, #f59e0b); font-size: 0.9rem; display: flex; flex-direction: column; gap: 0.2rem; }
+.bakery-view__total-committed-row { display: flex; justify-content: space-between; align-items: baseline; }
+.bakery-view__total-committed-row--total { font-size: 1.05rem; padding-bottom: 0.25rem; border-bottom: 1px dashed var(--dough, #e8d4a8); margin-bottom: 0.25rem; }
+.bakery-view__total-committed-row:not(.bakery-view__total-committed-row--total) { color: var(--dark-roast, #6b4226); font-size: 0.85rem; padding-left: 0.25rem; }
+
+/* B-06 (2026-04-29): yellow loan-shark warning chip. Sits inside the
+   total-committed block so it reads as a sibling of the spend rows. */
+.bakery-view__loan-shark-warning {
+  margin-top: 0.4rem;
+  padding: 0.5rem 0.7rem;
+  background: var(--honey, #f59e0b);
+  color: var(--espresso, #4a2c1a);
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
 
 /* ── FE-N09: Round header timer expired message ──────────────────────── */
 .round-header__timer-expired { font-size: 0.85rem; color: var(--berry, #ef4444); font-weight: bold; }
 
-/* ── FE-N09: Competitor intel sidebar section ────────────────────────── */
-.sidebar__intel-section { padding: 0.75rem; border-top: 1px solid #eee; }
-.sidebar__intel-btn     { width: 100%; font-size: 0.8rem; }
-.sidebar__intel-confirm { background: var(--cream, #fff7e6); border-radius: 6px; padding: 0.75rem; margin-top: 0.5rem; font-size: 0.85rem; }
-.sidebar__intel-result  { margin-top: 0.5rem; font-size: 0.85rem; }
+/* ── B-05: Data-purchase section on the Results screen ──────────────── */
+/* (Lifted out of the right sidebar; the old sidebar styles are gone.) */
+.results-phase__data-purchases {
+  margin: 1.5rem 0;
+  padding: 1rem;
+  background: var(--cream, #fff7e6);
+  border-radius: 8px;
+  border: 1px solid var(--honey, #f59e0b);
+}
+.results-phase__data-purchases-hint {
+  font-size: 0.85rem;
+  color: var(--dark-roast, #6b4226);
+  margin: 0 0 0.75rem 0;
+}
+.results-phase__data-purchase-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.6rem;
+}
+.results-phase__data-purchase-hint {
+  font-size: 0.75rem;
+  color: #555;
+  margin: 0;
+}
+.results-phase__intel-confirm {
+  background: #fff;
+  border-radius: 6px;
+  padding: 0.75rem;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  border: 1px dashed var(--honey, #f59e0b);
+}
+.results-phase__intel-confirm > p {
+  margin: 0 0 0.5rem 0;
+}
+.results-phase__data-info {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--sage, #5e8055);
+}
+.results-phase__data-error {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--berry, #ef4444);
+}
 
 /* ── Results phase — metric cards ───────────────────────────────────── */
 .results-phase__metric-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
@@ -3646,6 +4347,58 @@ h3 { font-size: 0.7rem; }
 .results-phase__metric-card--cost        { background: #fff7ed; }
 .results-phase__metric-card--customer    { background: #eff6ff; }
 .results-phase__metric-card--satisfaction{ background: #fdf4ff; }
+
+/* ── Results phase — "What hurt this round" signals (B-07) ─────────── */
+.results-phase__signals {
+  margin: 1.5rem 0;
+}
+.results-phase__signal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.results-phase__signal-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.6rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid var(--cream, #fff7e6);
+  font-size: 0.85rem;
+}
+.results-phase__signal-label {
+  font-weight: 600;
+  color: var(--espresso);
+}
+.results-phase__signal-value {
+  font-weight: bold;
+  font-variant-numeric: tabular-nums;
+}
+.results-phase__signal-row--green {
+  background: #f0fdf4;
+  border-color: #22c55e;
+}
+.results-phase__signal-row--green .results-phase__signal-value {
+  color: #15803d;
+}
+.results-phase__signal-row--yellow {
+  background: #fefce8;
+  border-color: #eab308;
+}
+.results-phase__signal-row--yellow .results-phase__signal-value {
+  color: #a16207;
+}
+.results-phase__signal-row--red {
+  background: #fef2f2;
+  border-color: #ef4444;
+}
+.results-phase__signal-row--red .results-phase__signal-value {
+  color: #b91c1c;
+}
+
 /* ── Results phase — leaderboard ────────────────────────────────────── */
 .results-phase__leaderboard     { margin-top: 2rem; }
 .results-phase__section-title   { font-size: 1rem; font-weight: bold; margin-bottom: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
@@ -3654,7 +4407,7 @@ h3 { font-size: 0.7rem; }
 .results-phase__team-name       { flex: 1; }
 .results-phase__team-revenue    { font-weight: bold; }
 
-/* ── Curveball event cards (burglary, food-safety inspection) ──────── */
+/* ── Curveball event cards (food-safety inspection) ──────────────── */
 .results-phase__event-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -3670,11 +4423,6 @@ h3 { font-size: 0.7rem; }
   border-radius: 10px;
   border: 2px solid var(--caramel);
   background: var(--cream);
-}
-
-.event-card--burglary {
-  border-color: #ef4444;
-  background: #fff1f1;
 }
 
 .event-card--inspection {
@@ -3791,26 +4539,82 @@ h3 { font-size: 0.7rem; }
  * on the scene so it scrolls off-screen as the player reads the panels. */
 .decide-phase__layout {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 1.5rem;
   margin: 0 0 1rem;
-  /* Claim the leftover vertical space in .page-shell.game-page--wide
-   * so .game-page__dashboard inside has room to flex:1 / scroll, and
-   * the round-cost + Submit button siblings stay above the fold. */
   flex: 1;
   min-height: 0;
+  align-items: flex-start;
 }
 
 .decide-phase__scene-panel {
   display: flex;
-  justify-content: center;
-  align-items: flex-start;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: center;
+  flex-shrink: 0;
+  width: 320px;
 }
 
 .decide-phase__scene-panel .pixel-bakery-scene {
+  transform: scale(1.2);
+  transform-origin: top center;
+  margin-bottom: calc(270px * 0.2); /* compensate for 1.2x visual height */
+}
+
+/* V8 (Apr 25): bakery preview hoisted ABOVE the choices on desktop. The
+   previous 0.65× version below the round-cost panel read as decorative;
+   desktop players asked for their kitchen front-and-center at a readable
+   scale, so we bump to 1.5× and reserve the matching height. */
+.decide-phase__bakery-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem 0.5rem;
+  background: var(--cream, #f7eedd);
+  border: 2px solid var(--caramel, #a0522d);
+  border-radius: 12px;
+  flex-shrink: 0;
+}
+
+.decide-phase__bakery-preview-header {
+  text-align: center;
+  font-family: var(--font-pixel);
+}
+
+.decide-phase__bakery-preview-eyebrow {
+  display: inline-block;
+  background: var(--caramel, #a0522d);
+  color: #fff;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.55rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.decide-phase__bakery-preview-title {
+  margin: 0.25rem 0 0;
+  font-size: 0.95rem;
+  text-transform: uppercase;
+}
+
+.decide-phase__bakery-preview-stage {
+  /* Native scene is 480×270; at 1.5× scale we reserve 720×405 so the
+     wrapper takes the scaled visual size without clipping. */
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  width: 100%;
+  height: calc(270px * 1.5);
+  overflow: hidden;
+}
+
+.decide-phase__bakery-preview-stage .pixel-bakery-scene {
   transform: scale(1.5);
   transform-origin: top center;
-  margin-bottom: calc(270px * 0.5); /* compensate for 1.5x visual height */
 }
 
 /* ── Ad Winner Banner (Decide screen, rounds 2+) ───────────────────────
@@ -4136,20 +4940,21 @@ h3 { font-size: 0.7rem; }
   color: #fff;
 }
 
+/* V7 (Apr 26): align kitchen-roster chef cards with the new gray /
+   orange / gold palette used in the auction grid. */
 .chef-card__skill--novel {
-  background: #7a8ca3;
-  border-color: #5c6c80;
+  background: #8a8e94;
+  border-color: #5d6166;
 }
 
 .chef-card__skill--intermediate {
-  background: var(--honey);
-  border-color: var(--caramel);
-  color: var(--espresso);
+  background: #d97a2c;
+  border-color: #a85916;
 }
 
 .chef-card__skill--advanced {
-  background: var(--sage);
-  border-color: #4d6548;
+  background: #c9a227;
+  border-color: #8b6e10;
 }
 
 .chef-card__nationality {
@@ -4348,25 +5153,11 @@ h3 { font-size: 0.7rem; }
   box-shadow: 0 0 0 2px var(--dark-roast);
 }
 
-.game-progress__croissant {
-  font-size: 1rem;
-  line-height: 1;
-  filter: grayscale(1);
-  opacity: 0.5;
-}
-
-.game-progress__segment--complete .game-progress__croissant,
-.game-progress__segment--current  .game-progress__croissant {
-  filter: none;
-  opacity: 1;
-}
-
 .game-progress__label {
   font-family: var(--font-pixel);
-  font-size: 0.4rem;
+  font-size: 0.55rem;
   color: var(--dark-roast);
   letter-spacing: 0.05em;
-  margin-top: 0.1rem;
 }
 
 /* ─── Conclusion / Game Over page — hero + confetti + podium ─── */

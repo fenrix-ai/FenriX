@@ -62,30 +62,34 @@ const GameDocument = {
 // ─────────────────────────────────────────────────────────────
 const GameConfigDocument = {
   // ── Economy ──────────────────────────────────────────────
-  startingBudget: 500000,         // number ($) — each player's opening budget
-  sousChefBaseCost: 12500,        // number ($) — cost per sous chef hired per round
-  unitCostPerProduct: 1,          // number ($) — flat cost per unit ordered
+  // Balance pass 16 (Apr 2026): all monetary values rescaled 50× down to be
+  // proportional to actual product revenue (~$6,140/round across all teams
+  // at full demand). Product unit cost ($1) and sell prices ($4–$5.50) are
+  // LOCKED. See modules/config.js for the rebalance commentary.
+  startingBudget: 10000,          // number ($) — each player's opening budget
+  sousChefBaseCost: 10,           // number ($) — base for sous-chef escalation
+  unitCostPerProduct: 1,          // number ($) — flat cost per unit ordered (LOCKED)
 
   // ── Revenue model ────────────────────────────────────────
   // revenue = base + sousChefCoeff×sousChefs + satisfactionCoeff×satisfaction
   //         + adSpendCoeff×adSpend + numProductsCoeff×numProducts + noise
   revenueCoefficients: {
-    base: 500,                    // number — intercept
-    sousChefCoeff: 12,            // number — per-sous-chef revenue boost
-    satisfactionCoeff: 8.0,       // number — per-point satisfaction boost
-    adSpendCoeff: 0.8,            // number — multiplier on ad spend ($)
-    numProductsCoeff: 50,         // number — per-active-product boost
-    noiseMin: -100,               // number ($) — lower bound of uniform noise
-    noiseMax: 100,                // number ($) — upper bound of uniform noise
+    base: 10,                     // number — intercept
+    sousChefCoeff: 0.5,           // number — per-sous-chef revenue boost
+    satisfactionCoeff: 1.2,       // number — per-point satisfaction boost
+    adSpendCoeff: 0,              // number — KILLED in pass 1 (was arbitrage exploit)
+    numProductsCoeff: 2,          // number — per-active-product boost
+    noiseMin: -2,                 // number ($) — lower bound of uniform noise
+    noiseMax: 2,                  // number ($) — upper bound of uniform noise
   },
 
   // ── Advertising ──────────────────────────────────────────
   // Sealed-bid first-price auction; winner adds bonus to revenue that round.
   adBonuses: {
-    TV: 50000,                    // number ($)
-    Billboard: 37500,             // number ($)
-    Radio: 25000,                 // number ($)
-    Newspaper: 18750,             // number ($)
+    TV: 400,                      // number ($)
+    Billboard: 250,               // number ($)
+    Radio: 150,                   // number ($)
+    Newspaper: 80,                // number ($)
   },
 
   // ── Phase durations ──────────────────────────────────────
@@ -93,8 +97,8 @@ const GameConfigDocument = {
   phaseDurations: {
     email: 30,                    // market-insight reading window
     decide: 300,                  // menu + quantities + sous chef hiring
-    bid_ad: 60,                   // sealed ad bids
-    bid_chef: 60,                 // sealed chef bids
+    bid_ad: 90,                   // sealed ad bids
+    bid_chef: 90,                 // sealed chef bids
     roster: 60,                   // layoff / continue specialty chef roster
     simulating: 30,               // server-side simulation (auto-advances)
     results: 60,                  // results review
@@ -104,12 +108,6 @@ const GameConfigDocument = {
   totalRounds: 5,                 // number — rounds per game
   specialtyChefCap: 3,            // number — max specialty chefs per player
   chefPoolSize: 12,                 // number — exact pool size per round
-
-  // Chef satisfaction decay: satisfaction = max(floor, 100 - max(0, n - threshold) × decay)
-  // where n = consecutive rounds on roster without a win bonus.
-  chefSatisfactionThreshold: 4,   // number — rounds before decay starts
-  chefSatisfactionDecay: 16,      // number — satisfaction lost per round beyond threshold
-  chefSatisfactionFloor: 35,      // number — minimum satisfaction (prevents instant departure)
 
   // ── Loan shark ───────────────────────────────────────────
   // If a player cannot afford total spend, they borrow the shortfall at this rate.
@@ -138,7 +136,7 @@ const PlayerDocument = {
   joinedAt: null,                 // Timestamp
 
   // Live financial state (never shown to players mid-game — DEC design principle)
-  budgetCurrent: 500000,          // number ($) — updated after each round (DEC-01)
+  budgetCurrent: 10000,           // number ($) — updated after each round (DEC-01)
   cumulativeRevenue: 0,           // number ($) — sum of all round revenues (for leaderboard)
 
   // Current round's working draft (live editable state before submit)
@@ -264,7 +262,6 @@ const RoundResultDocument = {
 
   // Satisfaction
   aggregateSatisfactionPct: 0,    // number (0–100)
-  chefSatisfactionScore: 0,       // number (0–100)
 
   // Per-product breakdown (keyed by product)
   // Each entry: { fillRate, satisfactionPct, qtySold, sellout: boolean }
@@ -432,32 +429,13 @@ const CsvRowsDocument = {
 };
 
 // ─────────────────────────────────────────────────────────────
-// /games/{gameId}/players/{playerId}/emails/{emailId}
-// Backend-owned email phase messages. Used to drop the current CSV dataset
-// before the next decision round so players can update their models.
-// emailId = "round_2_data", "round_3_data", …
-// ─────────────────────────────────────────────────────────────
-const PlayerEmailDocument = {
-  type: "round_data_csv",        // string
-  round: 2,                      // number — next decision round this data supports
-  availableAfterRound: 1,        // number — last completed round included in CSV
-  recipientPlayerId: "uid_abc",  // string
-  subject: "Round 1 data is ready",
-  sender: "Bakery Bash Analytics",
-  body: "Use this CSV before Round 2 to update your model and plan decisions.",
-  read: false,                   // boolean — frontend may track read state locally
-  createdAt: null,               // Timestamp
-  attachments: [
-    {
-      filename: "bakery-bash-through-round-1.csv",
-      contentType: "text/csv",
-      csvText: "day,revenue,num_products,...", // string — full CSV payload
-      rowCount: 1,               // number
-      includedThroughRound: 1,   // number
-    },
-  ],
-};
-
+// (REMOVED) /games/{gameId}/players/{playerId}/emails/{emailId}
+// The legacy `PlayerEmailDocument` schema described a CSV-attachment
+// queue ("Round 1 data is ready") that gated the next decide phase.
+// It was superseded by in-app market insights at
+// /games/{gameId}/marketInsights and rounds/{roundId}.marketEmail.
+// No code still writes this subcollection; the matching firestore rule
+// and resetGame cleanup were removed in S-04 (2026-04-29).
 // ─────────────────────────────────────────────────────────────
 // COLLECTION HIERARCHY SUMMARY
 // ─────────────────────────────────────────────────────────────

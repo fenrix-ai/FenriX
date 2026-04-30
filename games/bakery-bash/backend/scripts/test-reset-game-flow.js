@@ -69,8 +69,6 @@ async function main() {
     pendingRosterAction: true,
     rosterCompleted: true,
     returningCustomersPending: 50,
-    chefSatisfactionScores: { sc1: 80 },
-    maintenanceBars: { cleanliness: 30, ovenHealth: 40, slicerHealth: 50, espressoHealth: 60 },
     lastRoundResult: { round: 2, revenue: 999 },
     consecutiveMissedRounds: 1,
     disconnected: false,

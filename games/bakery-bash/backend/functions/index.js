@@ -1,10 +1,18 @@
 /**
  * index.js — Firebase Cloud Functions entry point for the bakery game backend.
  *
- * This is the ONLY file that imports Firebase. It orchestrates the pure
- * modules (config, phases, chef-system, satisfaction, customer-allocation,
- * revenue, loan-shark, simulation, csv-export, decision-validation,
- * round-preferences, market-insight).
+ * This file owns Firebase orchestration (admin init, function exports,
+ * Firestore client, auth checks). Domain modules (config, phases, chef-system,
+ * satisfaction, customer-allocation, revenue, loan-shark, simulation,
+ * csv-export, decision-validation, round-preferences, market-insight) are
+ * pure JS and never import Firebase.
+ *
+ * Documented exception: `modules/sharded-top-bids.js` and
+ * `modules/sharded-submissions.js` import `FieldValue` and `Timestamp` from
+ * `firebase-admin/firestore` to construct write-time sentinels
+ * (`serverTimestamp()`, `Timestamp.now()`). They take Firestore document refs
+ * as arguments rather than initialising the SDK themselves, so they remain
+ * unit-testable with a fake refs object.
  *
  * Preserved Firebase patterns from index-current.js:
  *   - Firebase admin init via getApps()/initializeApp()
@@ -19,13 +27,30 @@
 // Firebase imports (only file that does this)
 // ---------------------------------------------------------------------------
 
-const { onDocumentCreated } = require('firebase-functions/v2/firestore');
+const { onDocumentCreated, onDocumentWritten } = require('firebase-functions/v2/firestore');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { setGlobalOptions } = require('firebase-functions/v2');
+
+// Halve per-function CPU to fit the project's Cloud Run CPU quota.
+// 256MiB memory + 0.5 CPU is plenty for these short-lived Firestore-bound
+// callables, and avoids "total allowable CPU per project per region" deploy
+// failures when many revisions are rolling at once.
+setGlobalOptions({ cpu: 0.5 });
 
 // Allow Firebase ID tokens (anonymous + real users) to invoke callables.
 // Without this, Cloud Run blocks requests at the IAM layer before they
 // reach the onCall handler, causing 401s instead of auth checks.
 const CALLABLE_OPTS = { invoker: 'public' };
+
+// Callables that fan out widely across the game tree (simulation, snapshot
+// capture/restore, CSV exports across 70 players × 5 rounds) get a 2x
+// safety margin over the Cloud Functions Gen 2 default of 60s. Phase
+// advancement at 70 players runs simulation + chef-pool generation +
+// auto-snapshot upload back-to-back, and a slow Firestore round-trip on
+// the snapshot chunks could push the cumulative time past 60s. The
+// remaining hot callables (`submitBids`, `submitDecision`, `submitPrices`,
+// `joinGame`, `createTeam`) finish well under the default and stay there.
+const HEAVY_CALLABLE_OPTS = { ...CALLABLE_OPTS, timeoutSeconds: 120 };
 
 const { getApps, initializeApp } = require('firebase-admin/app');
 const {
@@ -49,6 +74,9 @@ const {
   DEFAULT_GAME_CONFIG,
   AD_TYPES,
   CHEF_NATIONALITIES,
+  DEFAULT_UNLOCKED_PRODUCTS,
+  OPTIONAL_MENU,
+  BASE_MENU,
   mergeConfig,
   numberOrDefault,
   objectOrDefault,
@@ -68,9 +96,7 @@ const {
   resolveChefAuction,
 } = require('./modules/chef-system');
 
-const {
-  runSimulation,
-} = require('./modules/simulation');
+const { runMonthlySimulation } = require('./modules/multi-day-simulation');
 
 const {
   buildCsvString,
@@ -80,6 +106,33 @@ const {
   DEFAULT_STUCK_THRESHOLD_MS,
   diagnoseSimulationState,
 } = require('./modules/recovery');
+
+const {
+  writeAdBidsToShard,
+  writeChefBidsToShard,
+  recomputeAndCacheTopBids,
+} = require('./modules/sharded-top-bids');
+
+const {
+  writeSubmissionToShard,
+  recomputeAndCacheSubmissions,
+} = require('./modules/sharded-submissions');
+
+const {
+  writeUidToSubmittedCountShard,
+  recomputeAndCacheSubmittedCount,
+} = require('./modules/sharded-counter');
+
+const {
+  generateBotDecisions,
+  PRESETS,
+} = require('./modules/bot-engine');
+
+const {
+  captureGameSnapshot,
+  restoreGameSnapshot,
+  pruneOldSnapshots,
+} = require('./modules/snapshot');
 
 // The following modules are part of the full backend surface. They are
 // required only where needed so that missing optional helpers do not break
@@ -162,6 +215,11 @@ try {
  */
 const BATCH_OP_LIMIT = 487;
 
+// M-05 (2026-04-28): max members per team. Used by the joinGame auto-route
+// query and the in-transaction cap check. Keep these in sync — see the
+// joinGame body for both call sites.
+const TEAM_CAP = 3;
+
 /**
  * Batch-delete every document in a collection. Used by `resetGame` to wipe
  * round/sim subcollections without leaving orphans. Chunks at BATCH_OP_LIMIT
@@ -198,6 +256,15 @@ function requireAuth(request, message = 'Sign in before continuing.') {
     throw new HttpsError('unauthenticated', message);
   }
   return request.auth;
+}
+
+// T2.1: warm-up short-circuit. The professor's "Warm up servers" button
+// invokes each hot callable with { _warmup: true } ~30s before class so
+// Cloud Run spins up an instance per service before students arrive. Gen 2
+// callables each get their own Cloud Run service, so a single warmAll
+// callable can't substitute — every hot callable needs its own short-circuit.
+function isWarmupRequest(request) {
+  return request?.data?._warmup === true;
 }
 
 function cleanGameId(value) {
@@ -237,6 +304,22 @@ function slugifyTeamName(name) {
   if (base.length >= 2) return base;
   // Fallback — caller should still uniqueness-check within the game.
   return `team-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * V4 (Apr 25): bakery-themed emoji palette used as the team logo on the
+ * team-select grid + team page. Picked randomly on createTeam so each
+ * team gets a distinct icon instead of every card defaulting to 🥐.
+ * Keep these all bakery / café flavoured so the visual stays on-brand.
+ */
+const TEAM_EMOJI_POOL = [
+  '🥐', '🥖', '🥨', '🍞', '🥯',
+  '🍩', '🍪', '🧁', '🎂', '🍰',
+  '🥧', '🍮', '🍯', '☕', '🥛',
+  '🍓', '🥥', '🍫', '🌰', '🥜',
+];
+function pickTeamEmoji() {
+  return TEAM_EMOJI_POOL[Math.floor(Math.random() * TEAM_EMOJI_POOL.length)];
 }
 
 /**
@@ -353,6 +436,28 @@ function getPlayerTeamKey(playerDoc) {
 }
 
 /**
+ * T2.2: Single per-team transient-state doc for round-scoped pending bids
+ * and decision drafts. Replaces the previous cascade pattern where
+ * `submitBids` / `submitDecision` wrote `pendingBids` / `pendingDecision`
+ * to every teammate's `players/{uid}` doc — which contended at 3+ members.
+ * Now each team has one doc that any teammate can subscribe to.
+ *
+ * Shape: { ad?, chef?, decisionDraft?, updatedByUid, updatedAt }
+ *   - `ad` mirrors `pendingBids.ad` (the validated bid map)
+ *   - `chef` mirrors `pendingBids.chef` (validated bid array)
+ *   - `decisionDraft` mirrors the team-shared `pendingDecision.*` fields
+ *     written by Operations' `submitDecision` (menu, quantities, staffCounts,
+ *     sousChef*, submitted, submittedAt, round) and
+ *     Finance's `submitPrices` (productPrices, pricesSubmitted, optional
+ *     menu picks). `submitDecision`'s POST-01 gate also reads
+ *     `decisionDraft.pricesSubmitted` from this doc to decide whether
+ *     Finance has posted prices for the current round.
+ */
+function teamPendingDocRef(gameRef, teamId) {
+  return gameRef.collection('teams').doc(teamId).collection('state').doc('pending');
+}
+
+/**
  * BE-I02: Scan every player doc and return the set of (teamKey, memberUid,
  * count) entries whose `specialtyChefs` array exceeds the cap. Used by
  * advanceGamePhase to block leaving the roster phase while anyone is over.
@@ -428,217 +533,150 @@ function buildTeamGroupsFromPlayerDocs(playerDocs) {
   return groups;
 }
 
-// ---------------------------------------------------------------------------
-// updateTopBids — BE-25 competing-bid surface
-// After a successful submitBids, recompute the round's topBids map so the FE
-// can surface the current top VALUE for each ad slot / chef. Also writes
-// `topBidsLeader` so the FE can tell whether *we* are the unique leader (vs.
-// tied with another team) — the per-slot lock UI relies on this to avoid
-// freezing both teams when their bids are equal.
-//
-// Wrapped in `db.runTransaction` so two concurrent submitBids calls cannot
-// each read pre-write state and stomp each other's recomputed `topBids`
-// map (regression guard for PR #54).
-//
-// Non-fatal: logged and swallowed on failure to avoid breaking submitBids's
-// critical path.
-// ---------------------------------------------------------------------------
-async function updateTopBids(gameRef, round, bidType) {
-  const roundId = `round_${round}`;
-  const roundRef = gameRef.collection('rounds').doc(roundId);
-  try {
-    await db.runTransaction(async (tx) => {
-      const playersSnap = await tx.get(gameRef.collection('players'));
-      const bidSnaps = await Promise.all(
-        playersSnap.docs.map((pd) =>
-          tx.get(pd.ref.collection('bids').doc(roundId))
-        )
-      );
-
-      const playerToTeamKey = new Map(
-        playersSnap.docs.map((pd) => [pd.id, getPlayerTeamKey(pd)])
-      );
-
-      const submittedAtMillis = (ts) =>
-        ts && typeof ts.toMillis === 'function' ? ts.toMillis() : Number.POSITIVE_INFINITY;
-
-      const nextTopBidsAd = {};
-      const nextLeaderAd = {};
-      const nextTopBidsChef = {};
-      const nextLeaderChef = {};
-
-      if (bidType === 'ad') {
-        for (const adType of AD_TYPES) {
-          let topAmount = 0;
-          let topLeader = null;
-          let topMillis = Number.POSITIVE_INFINITY;
-          for (let i = 0; i < bidSnaps.length; i += 1) {
-            const bidSnap = bidSnaps[i];
-            if (!bidSnap.exists) continue;
-            const data = bidSnap.data() || {};
-            const amount = numberOrDefault(objectOrDefault(data.ad, {})[adType], 0);
-            if (amount <= 0) continue;
-            const millis = submittedAtMillis(data.adSubmittedAt);
-            const leaderKey = playerToTeamKey.get(playersSnap.docs[i].id) || playersSnap.docs[i].id;
-            if (
-              amount > topAmount ||
-              (amount === topAmount && millis < topMillis)
-            ) {
-              topAmount = amount;
-              topLeader = leaderKey;
-              topMillis = millis;
-            }
-          }
-          if (topAmount > 0) {
-            nextTopBidsAd[adType] = topAmount;
-            if (topLeader) nextLeaderAd[adType] = topLeader;
-          }
-        }
-      } else {
-        const topByChef = {};
-        const leaderByChef = {};
-        const millisByChef = {};
-        for (let i = 0; i < bidSnaps.length; i += 1) {
-          const bidSnap = bidSnaps[i];
-          if (!bidSnap.exists) continue;
-          const data = bidSnap.data() || {};
-          const chefBids = Array.isArray(data.chef) ? data.chef : [];
-          const millis = submittedAtMillis(data.chefSubmittedAt);
-          const leaderKey = playerToTeamKey.get(playersSnap.docs[i].id) || playersSnap.docs[i].id;
-          for (const bid of chefBids) {
-            if (!bid || !bid.chefId) continue;
-            const amount = numberOrDefault(bid.amount, 0);
-            if (amount <= 0) continue;
-            const prevAmount = numberOrDefault(topByChef[bid.chefId], 0);
-            const prevMillis = millisByChef[bid.chefId] ?? Number.POSITIVE_INFINITY;
-            if (
-              amount > prevAmount ||
-              (amount === prevAmount && millis < prevMillis)
-            ) {
-              topByChef[bid.chefId] = amount;
-              leaderByChef[bid.chefId] = leaderKey;
-              millisByChef[bid.chefId] = millis;
-            }
-          }
-        }
-        Object.assign(nextTopBidsChef, topByChef);
-        Object.assign(nextLeaderChef, leaderByChef);
-      }
-
-      const updates = { updatedAt: FieldValue.serverTimestamp() };
-      if (bidType === 'ad') {
-        updates['topBids.ad'] = nextTopBidsAd;
-        updates['topBidsLeader.ad'] = nextLeaderAd;
-      } else {
-        updates['topBids.chef'] = nextTopBidsChef;
-        updates['topBidsLeader.chef'] = nextLeaderChef;
-      }
-
-      const roundSnap = await tx.get(roundRef);
-      if (roundSnap.exists) {
-        tx.update(roundRef, updates);
-      } else {
-        tx.set(roundRef, {
-          round,
-          topBids: { ad: nextTopBidsAd, chef: nextTopBidsChef },
-          topBidsLeader: { ad: nextLeaderAd, chef: nextLeaderChef },
-          updatedAt: FieldValue.serverTimestamp(),
-        }, { merge: true });
-      }
-    });
-  } catch (err) {
-    logger.warn('updateTopBids side-effect failed — non-fatal.', {
-      gameId: gameRef.id, round, bidType, error: err && err.message,
-    });
-  }
-}
-
 async function resolveAndApplyAdAuction(gameRef, round) {
   const roundId = `round_${round}`;
   const roundRef = gameRef.collection('rounds').doc(roundId);
+  // RECOVERY-1: idempotency guard — if auction already resolved, skip.
+  // This makes advanceGamePhase side effects safe to retry after a crash.
+  const preCheckSnap = await roundRef.get();
+  if (preCheckSnap.exists && preCheckSnap.data().adAuctionResolvedAt) {
+    logger.info('resolveAndApplyAdAuction skipped — already resolved.', { gameId: gameRef.id, round });
+    return;
+  }
+
+  // Read collections + config OUTSIDE the txn (Firestore transactions don't
+  // permit collection-wide reads). Players are stable post-lobby and config
+  // doesn't change mid-round, so reading these non-transactionally is safe.
   const playersSnap = await gameRef.collection('players').get();
+  const playerIds = playersSnap.docs.map((d) => d.id);
   const playerToTeamKey = new Map(
     playersSnap.docs.map((pd) => [pd.id, getPlayerTeamKey(pd)])
   );
-  const bidSnaps = await Promise.all(
-    playersSnap.docs.map((pd) => pd.ref.collection('bids').doc(roundId).get())
-  );
 
-  const aggregateAds = {};
-  const adAuctionResults = {};
+  // Balance pass 12: enforce minimum bid floor per ad type so a $1 bid
+  // can't sweep up the cash bonus uncontested. Pulled from game config
+  // so professors can tune live; falls back to the package default.
+  const cfgSnap = await gameRef.collection('config').doc('params').get();
+  const rawCfg = cfgSnap.exists ? (cfgSnap.data() || {}) : {};
+  const mergedCfg = require('./modules/config').mergeConfig(rawCfg);
+  const adBidMins = (mergedCfg && mergedCfg.adBidMinimums) || {};
 
-  for (const adType of AD_TYPES) {
-    let winnerId = null;
-    let winnerKey = null;
-    let winningBid = 0;
-    let winningSubmittedAt = null;
+  // M-16 (2026-04-28): wrap the bid-read + result-write in a transaction.
+  // Pre-M-16 the resolution read every bid doc non-transactionally, which
+  // left a window where a submitBids commit could land between the read
+  // and the result write — the resolved winner would then be stale wrt
+  // the latest bid. With this txn, Firestore's optimistic concurrency
+  // catches any submitBids commit on a bid doc the resolution read,
+  // aborts the txn, and retries until the read+write set is consistent.
+  // submitBids's expectedFromPhase + canSubmitBids gates ensure no new
+  // bids land for a phase that has already flipped.
+  await db.runTransaction(async (transaction) => {
+    // Re-check idempotency inside the txn so concurrent advanceGamePhase
+    // calls (e.g. multiple prof tabs each firing auto-advance) don't
+    // double-resolve.
+    const roundSnap = await transaction.get(roundRef);
+    if (roundSnap.exists && roundSnap.data().adAuctionResolvedAt) {
+      return;
+    }
 
-    for (let i = 0; i < playersSnap.docs.length; i += 1) {
-      const bidSnap = bidSnaps[i];
-      if (!bidSnap.exists) continue;
-      const bidData = bidSnap.data() || {};
-      const amount = numberOrDefault(objectOrDefault(bidData.ad, {})[adType], 0);
-      if (amount <= 0) continue;
-      const submittedAt = bidData.adSubmittedAt || null;
-      const isEarlierSubmission =
-        winningSubmittedAt &&
-        submittedAt &&
-        typeof winningSubmittedAt.toMillis === 'function' &&
-        typeof submittedAt.toMillis === 'function' &&
-        submittedAt.toMillis() < winningSubmittedAt.toMillis();
-      if (
-        amount > winningBid ||
-        (amount === winningBid && winningBid > 0 && isEarlierSubmission)
-      ) {
-        winnerId = playersSnap.docs[i].id;
-        winnerKey = playerToTeamKey.get(winnerId) || winnerId;
-        winningBid = amount;
-        winningSubmittedAt = submittedAt;
+    const bidSnaps = await Promise.all(
+      playerIds.map((id) => transaction.get(
+        gameRef.collection('players').doc(id).collection('bids').doc(roundId),
+      )),
+    );
+
+    const aggregateAds = {};
+    const adAuctionResults = {};
+
+    for (const adType of AD_TYPES) {
+      let winnerId = null;
+      let winnerKey = null;
+      let winningBid = 0;
+      let winningSubmittedAt = null;
+      const minBid = numberOrDefault(adBidMins[adType], 0);
+
+      for (let i = 0; i < playerIds.length; i += 1) {
+        const bidSnap = bidSnaps[i];
+        if (!bidSnap.exists) continue;
+        const bidData = bidSnap.data() || {};
+        const amount = numberOrDefault(objectOrDefault(bidData.ad, {})[adType], 0);
+        // Require strictly above zero AND meeting the minimum threshold.
+        // Bids below threshold are silently dropped — the player still
+        // pays nothing (their bid is just disqualified).
+        if (amount <= 0 || amount < minBid) continue;
+        const submittedAt = bidData.adSubmittedAt || null;
+        const isEarlierSubmission =
+          winningSubmittedAt &&
+          submittedAt &&
+          typeof winningSubmittedAt.toMillis === 'function' &&
+          typeof submittedAt.toMillis === 'function' &&
+          submittedAt.toMillis() < winningSubmittedAt.toMillis();
+        if (
+          amount > winningBid ||
+          (amount === winningBid && winningBid > 0 && isEarlierSubmission)
+        ) {
+          winnerId = playerIds[i];
+          winnerKey = playerToTeamKey.get(winnerId) || winnerId;
+          winningBid = amount;
+          winningSubmittedAt = submittedAt;
+        }
       }
+
+      if (!winnerId || !winnerKey || winningBid <= 0) continue;
+
+      aggregateAds[adType] = {
+        adType,
+        winnerId,
+        winnerKey,
+        winningBid,
+      };
+
+      if (!adAuctionResults[winnerKey]) {
+        adAuctionResults[winnerKey] = { adTypes: [], totalPaid: 0 };
+      }
+      adAuctionResults[winnerKey].adTypes.push(adType);
+      adAuctionResults[winnerKey].totalPaid += winningBid;
     }
 
-    if (!winnerId || !winnerKey || winningBid <= 0) continue;
-
-    aggregateAds[adType] = {
-      adType,
-      winnerId,
-      winnerKey,
-      winningBid,
-    };
-
-    if (!adAuctionResults[winnerKey]) {
-      adAuctionResults[winnerKey] = { adTypes: [], totalPaid: 0 };
-    }
-    adAuctionResults[winnerKey].adTypes.push(adType);
-    adAuctionResults[winnerKey].totalPaid += winningBid;
-  }
-
-  await roundRef.set({
-    round,
-    auctionResults: { ads: aggregateAds },
-    adAuctionResults,
-    adAuctionResolvedAt: FieldValue.serverTimestamp(),
-  }, { merge: true });
+    transaction.set(roundRef, {
+      round,
+      auctionResults: { ads: aggregateAds },
+      adAuctionResults,
+      adAuctionResolvedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+  });
 }
 
 // ---------------------------------------------------------------------------
-// recordSubmission — BE-22 professor submission-state mirror
-// Writes { uid: { status, submittedAt, displayName, role } } to
-// games/{gameId}/submissions/{submissionDocId} with merge so the professor
-// dashboard can track per-player submission state in real time.
+// recordSubmission — BE-22 professor submission-state mirror (sharded path)
+//
+// Writes the player's submission record into a shard under
+// `submissions/{submissionDocId}/shards/{idx}`. The `onSubmissionShardWritten`
+// trigger then aggregates all shards into the public docs that the FE listens
+// to:
+//   - submissions/{submissionDocId}     = { [uid]: { status, submittedAt,
+//                                                    displayName, role } }
+//   - submissionCounts/{submissionDocId} = { count, updatedAt }
+//
+// The counts mirror is readable by all signed-in users (see firestore.rules)
+// so the player-facing SubmissionLock can show "X / Y submitted" without
+// exposing per-player identities.
+//
+// Re-submissions don't double-count: the same uid always maps to the same
+// shard and overwrites the same `perUid[uid]` field, so the aggregator counts
+// each uid exactly once regardless of how many times they re-submit.
+//
 // submissionDocId pattern: "round_{N}_{phase}"  e.g. "round_1_decide"
 // Non-fatal: logged and swallowed on failure.
 // ---------------------------------------------------------------------------
 async function recordSubmission(gameRef, submissionDocId, uid, displayName, role) {
+  // Sharded path: write the submission record into the uid's assigned shard
+  // (no contention with other uids in other shards). The
+  // `onSubmissionShardWritten` trigger then aggregates all shards into the
+  // public `submissions/{docId}` + `submissionCounts/{docId}` docs that the
+  // FE / professor dashboard already listen to. See modules/sharded-submissions.js.
   try {
-    await gameRef.collection('submissions').doc(submissionDocId).set({
-      [uid]: {
-        status: 'submitted',
-        submittedAt: Timestamp.now(),
-        displayName: displayName || '',
-        role: role || null,
-      },
-    }, { merge: true });
+    await writeSubmissionToShard(gameRef, submissionDocId, uid, displayName, role);
   } catch (err) {
     logger.warn('recordSubmission side-effect failed — non-fatal.', {
       gameId: gameRef.id, submissionDocId, uid, error: err && err.message,
@@ -734,16 +772,87 @@ async function resetPendingPlayerStateForRound(gameRef) {
       // the previous round and Operations can submit before Finance posts
       // prices for the new round.
       'pendingDecision.pricesSubmitted': false,
-      // Clear round-scoped Operations staffing state. `runSimulationAndPersist`
-      // falls back to `pendingDecision.staffCounts` / `maintenanceTasks` when
-      // the round's decision doc is missing those fields (e.g., a missed
-      // submission), so leaving them in place would cause round N+1 to
-      // inherit round N's staffing.
+      // Clear round-scoped Operations staffing state so round N+1 does not
+      // inherit round N's staffing from a missed submission.
       'pendingDecision.staffCounts': {},
-      'pendingDecision.maintenanceTasks': [],
       'pendingBids.ad': null,
       'pendingBids.chef': null,
       pendingRosterAction: false,
+      rosterCompleted: false,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    opsInBatch++;
+    if (opsInBatch >= BATCH_SIZE) {
+      await batch.commit();
+      batch = db.batch();
+      opsInBatch = 0;
+    }
+  }
+  if (opsInBatch > 0) await batch.commit();
+}
+
+/**
+ * T2.2: Clear every team's round-scoped pending doc so round N doesn't
+ * surface round N-1 staged bids / decision drafts to teammates. Mirrors
+ * `resetPendingPlayerStateForRound` for the new per-team transient-state
+ * doc. Called from the same email-phase transition.
+ *
+ * NOTE: uses `set` *without* merge on purpose. Firestore set-merge
+ * deep-merges nested maps, so an empty-map field like `menu: {}` would
+ * be a no-op against an existing populated map and the previous round's
+ * menu / quantities / staffCounts would survive into round N (surfacing
+ * a stale draft to teammates after the per-player reset — which uses
+ * dot-paths and clears correctly — already ran). A full overwrite is
+ * safe here: this runs in `advanceGamePhase`'s post-transaction side-
+ * effects, by which point the phase is already `email` and every submit
+ * callable rejects with `failed-precondition`, so there are no
+ * concurrent writers to lose work to.
+ *
+ * `decisionDraft.productPrices` is carried over across the reset so
+ * Finance's last submitted prices default the next round's form
+ * (POST-01 — same semantic as the per-player reset, which preserves
+ * `pendingDecision.productPrices` by leaving it out of its dot-path
+ * update list). We read each team's existing pending doc in parallel
+ * via `db.getAll` to keep the carry-over cheap even at 25+ teams.
+ */
+async function resetPendingTeamStateForRound(gameRef) {
+  const teamsSnap = await gameRef.collection('teams').get();
+  if (teamsSnap.empty) return;
+
+  const refs = teamsSnap.docs.map((td) => teamPendingDocRef(gameRef, td.id));
+  const existingSnaps = refs.length > 0 ? await db.getAll(...refs) : [];
+
+  const BATCH_SIZE = 400;
+  let batch = db.batch();
+  let opsInBatch = 0;
+
+  for (let i = 0; i < teamsSnap.docs.length; i++) {
+    const ref = refs[i];
+    const ex = existingSnaps[i];
+    const prevDraft = (ex && ex.exists && ex.data()) ? ex.data().decisionDraft : null;
+    const carryoverPrices = (prevDraft
+      && prevDraft.productPrices
+      && typeof prevDraft.productPrices === 'object'
+      && !Array.isArray(prevDraft.productPrices))
+      ? prevDraft.productPrices
+      : {};
+
+    batch.set(ref, {
+      ad: null,
+      chef: null,
+      decisionDraft: {
+        submitted: false,
+        submittedAt: null,
+        round: null,
+        menu: {},
+        quantities: {},
+        sousChefCount: 0,
+        sousChefAssignments: {},
+        staffCounts: {},
+        productPrices: carryoverPrices,
+        pricesSubmitted: false,
+      },
+      updatedByUid: null,
       updatedAt: FieldValue.serverTimestamp(),
     });
     opsInBatch++;
@@ -765,115 +874,141 @@ async function resolveAndApplyChefAuction(gameRef, round, config) {
   const roundId = `round_${round}`;
   const roundRef = gameRef.collection('rounds').doc(roundId);
 
-  // Read the round's chefPool and all player bids for this round in parallel.
-  const [roundSnap, playersSnap] = await Promise.all([
-    roundRef.get(),
-    gameRef.collection('players').get(),
-  ]);
+  // RECOVERY-1: idempotency guard — if auction already resolved, skip.
+  const preCheckSnap = await roundRef.get();
+  if (preCheckSnap.exists && preCheckSnap.data().chefAuctionResolvedAt) {
+    logger.info('resolveAndApplyChefAuction skipped — already resolved.', { gameId: gameRef.id, round });
+    return;
+  }
 
-  const chefPool = (roundSnap.exists && roundSnap.data().chefPool) || [];
+  // Read collections OUTSIDE the txn (Firestore transactions don't permit
+  // collection-wide reads). Players are stable post-lobby.
+  const playersSnap = await gameRef.collection('players').get();
+  const playerIds = playersSnap.docs.map((d) => d.id);
   const teamGroups = buildTeamGroupsFromPlayerDocs(playersSnap.docs);
   const playerToTeamKey = new Map(
     playersSnap.docs.map((pd) => [pd.id, getPlayerTeamKey(pd)])
   );
-  if (chefPool.length === 0) {
-    logger.info('No chef pool for this round; skipping auction.', {
-      gameId: gameRef.id, round,
-    });
-    return;
-  }
 
-  // Read all player bid docs for this round.
-  const bidSnaps = await Promise.all(
-    playersSnap.docs.map((pd) =>
-      pd.ref.collection('bids').doc(roundId).get()
-    )
-  );
+  // M-16 (2026-04-28): wrap chefPool read + bid reads + result write +
+  // per-player specialtyChefs writes in ONE transaction. Same rationale
+  // as resolveAndApplyAdAuction for the bid-read race; additionally, the
+  // per-player updates were previously a post-txn batch — if that batch
+  // failed (transient error, function timeout) the round was already
+  // marked resolved via chefAuctionResolvedAt and the recovery hook's
+  // idempotency guard would skip a re-run, leaving winners without their
+  // chefs. Folding the player updates into the same txn closes that gap:
+  // either everything commits atomically or nothing does and recovery
+  // can re-run the whole resolution.
+  const specialtyChefCap = numberOrDefault(config.specialtyChefCap, 3);
+  let _didResolve = false;
+  let _winnersCount = 0;
 
-  // Flatten into the format resolveChefAuction expects:
-  // Array<{ playerId, chefId, amount, submittedAt }>
-  const allBids = [];
-  for (let i = 0; i < playersSnap.docs.length; i++) {
-    const pd = playersSnap.docs[i];
-    const bSnap = bidSnaps[i];
-    if (!bSnap.exists) continue;
-    const bData = bSnap.data() || {};
-    const chefBids = Array.isArray(bData.chef) ? bData.chef : [];
-    const submittedAt = bData.chefSubmittedAt || null;
-    for (const cb of chefBids) {
-      if (cb && cb.chefId && numberOrDefault(cb.amount, 0) > 0) {
-        allBids.push({
-          playerId: playerToTeamKey.get(pd.id) || pd.id,
-          chefId: cb.chefId,
-          amount: numberOrDefault(cb.amount, 0),
-          submittedAt,
+  await db.runTransaction(async (transaction) => {
+    // Re-check idempotency inside the txn so concurrent advanceGamePhase
+    // calls don't double-resolve.
+    const roundSnap = await transaction.get(roundRef);
+    if (roundSnap.exists && roundSnap.data().chefAuctionResolvedAt) {
+      return;
+    }
+
+    const chefPool = (roundSnap.exists && roundSnap.data().chefPool) || [];
+    if (chefPool.length === 0) {
+      logger.info('No chef pool for this round; skipping auction.', {
+        gameId: gameRef.id, round,
+      });
+      return;
+    }
+
+    const bidSnaps = await Promise.all(
+      playerIds.map((id) => transaction.get(
+        gameRef.collection('players').doc(id).collection('bids').doc(roundId),
+      )),
+    );
+
+    // Flatten into the format resolveChefAuction expects:
+    // Array<{ playerId, chefId, amount, submittedAt }>
+    const allBids = [];
+    for (let i = 0; i < playerIds.length; i++) {
+      const bSnap = bidSnaps[i];
+      if (!bSnap.exists) continue;
+      const bData = bSnap.data() || {};
+      const chefBids = Array.isArray(bData.chef) ? bData.chef : [];
+      const submittedAt = bData.chefSubmittedAt || null;
+      for (const cb of chefBids) {
+        if (cb && cb.chefId && numberOrDefault(cb.amount, 0) > 0) {
+          allBids.push({
+            playerId: playerToTeamKey.get(playerIds[i]) || playerIds[i],
+            chefId: cb.chefId,
+            amount: numberOrDefault(cb.amount, 0),
+            submittedAt,
+          });
+        }
+      }
+    }
+
+    if (allBids.length === 0) {
+      logger.info('No chef bids submitted; skipping auction resolution.', {
+        gameId: gameRef.id, round,
+      });
+      return;
+    }
+
+    // Resolve auction using pure function.
+    const { winners, payments } = resolveChefAuction(chefPool, allBids);
+
+    // Write auction results to round doc.
+    // BE-I03: key by team slug only. Earlier code duplicated the entry under
+    // every member uid, which caused the sim aggregator to sum the cost N× for
+    // a team of N (BE-I01). Consumers read by `team.key`, which is the team
+    // slug for multi-member teams and the player uid for solo players.
+    const chefAuctionResults = {};
+    for (const [winnerKey, chefs] of winners) {
+      chefAuctionResults[winnerKey] = {
+        chefs,
+        totalPaid: payments.get(winnerKey) || 0,
+      };
+    }
+    transaction.set(roundRef, {
+      chefAuctionResults,
+      chefAuctionResolvedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    // Write winning chefs to each player's specialtyChefs and set
+    // pendingRosterAction if they exceed the cap. FieldValue.arrayUnion
+    // is idempotent on retry (no duplicates), so this is safe even if
+    // the txn body re-runs.
+    //
+    // existingCount uses the pre-txn playersSnap read — same staleness
+    // window as pre-M-16. Acceptable: the only concurrent writer to
+    // specialtyChefs is layoffChef, which runs in the roster phase
+    // AFTER this resolution.
+    for (const [winnerKey, wonChefs] of winners) {
+      const winnerGroup = teamGroups.get(winnerKey);
+      const memberDocs = winnerGroup ? winnerGroup.memberDocs : [];
+      for (const playerDoc of memberDocs) {
+        const existingCount = Array.isArray((playerDoc.data() || {}).specialtyChefs)
+          ? playerDoc.data().specialtyChefs.length
+          : 0;
+        transaction.update(playerDoc.ref, {
+          specialtyChefs: FieldValue.arrayUnion(...wonChefs),
+          pendingRosterAction: (existingCount + wonChefs.length) > specialtyChefCap,
+          updatedAt: FieldValue.serverTimestamp(),
         });
       }
     }
-  }
 
-  if (allBids.length === 0) {
-    logger.info('No chef bids submitted; skipping auction resolution.', {
-      gameId: gameRef.id, round,
-    });
-    return;
-  }
-
-  // Resolve auction using pure function.
-  const { winners, payments } = resolveChefAuction(chefPool, allBids);
-
-  // Write auction results to round doc.
-  // BE-I03: key by team slug only. Earlier code duplicated the entry under
-  // every member uid, which caused the sim aggregator to sum the cost N× for
-  // a team of N (BE-I01). Consumers read by `team.key`, which is the team
-  // slug for multi-member teams and the player uid for solo players.
-  const chefAuctionResults = {};
-  for (const [winnerKey, chefs] of winners) {
-    chefAuctionResults[winnerKey] = {
-      chefs,
-      totalPaid: payments.get(winnerKey) || 0,
-    };
-  }
-  await roundRef.set({
-    chefAuctionResults,
-    chefAuctionResolvedAt: FieldValue.serverTimestamp(),
-  }, { merge: true });
-
-  // Write winning chefs to each player's specialtyChefs and set
-  // pendingRosterAction if they exceed the cap.
-  // Uses FieldValue.arrayUnion so the write is atomic and idempotent —
-  // safe on retry without duplicating chefs (addresses PR #19 review).
-  const specialtyChefCap = numberOrDefault(config.specialtyChefCap, 3);
-  const batch = db.batch();
-  let opsCount = 0;
-
-  for (const [winnerKey, wonChefs] of winners) {
-    const winnerGroup = teamGroups.get(winnerKey);
-    const memberDocs = winnerGroup ? winnerGroup.memberDocs : [];
-    for (const playerDoc of memberDocs) {
-      const existingCount = Array.isArray((playerDoc.data() || {}).specialtyChefs)
-        ? playerDoc.data().specialtyChefs.length
-        : 0;
-
-      batch.update(playerDoc.ref, {
-        specialtyChefs: FieldValue.arrayUnion(...wonChefs),
-        pendingRosterAction: (existingCount + wonChefs.length) > specialtyChefCap,
-        updatedAt: FieldValue.serverTimestamp(),
-      });
-      opsCount++;
-    }
-  }
-
-  if (opsCount > 0) {
-    await batch.commit();
-  }
-
-  logger.info('Chef auction resolved and applied.', {
-    gameId: gameRef.id,
-    round,
-    winnersCount: winners.size,
-    totalBids: allBids.length,
+    _didResolve = true;
+    _winnersCount = winners.size;
   });
+
+  if (_didResolve) {
+    logger.info('Chef auction resolved and applied.', {
+      gameId: gameRef.id,
+      round,
+      winnersCount: _winnersCount,
+    });
+  }
 }
 
 // ===========================================================================
@@ -881,6 +1016,7 @@ async function resolveAndApplyChefAuction(gameRef, round, config) {
 // ===========================================================================
 
 exports.createGame = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request, 'Sign in before creating a game.');
   const data = request.data || {};
 
@@ -949,6 +1085,7 @@ exports.createGame = onCall(CALLABLE_OPTS, async (request) => {
 // ===========================================================================
 
 exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request, 'Sign in before joining a game.');
   const data = request.data || {};
 
@@ -970,9 +1107,10 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
   if (displayName.length < 2 || displayName.length > 40) {
     throw new HttpsError('invalid-argument', 'displayName must be 2–40 characters.');
   }
-  if (!teamNumber && !explicitTeamId) {
-    throw new HttpsError('invalid-argument', 'Provide either teamNumber (1–8) or teamId.');
-  }
+  // M-06 (2026-04-28): teamNumber/teamId is no longer required up-front. If
+  // the caller doesn't pass one, we auto-route below to a non-full team —
+  // or auto-create one — so a late-arriving student can join with no
+  // server-trip back to the FE for team selection.
   if (bakeryName.length > 60) {
     throw new HttpsError('invalid-argument', 'bakeryName must be 60 characters or fewer.');
   }
@@ -989,16 +1127,95 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
   const playerRef = gameRef.collection('players').doc(auth.uid);
   const rosterRef = gameRef.collection('roster').doc(auth.uid);
 
-  // teamId: explicit wins, else derived from teamNumber. The team doc
-  // for explicit ids must already exist (the createTeam callable writes
-  // it); we fail fast if it's missing rather than silently creating an
-  // orphan team.
-  const teamId = explicitTeamId || `team-${teamNumber}`;
+  // M-06: auto-route when the caller didn't pick a team. Find an existing
+  // team with room (memberCount < TEAM_CAP); if none has room, claim the
+  // lowest unused team-{N} slot. The query is best-effort — the M-05 cap
+  // check inside the transaction is what actually gates the slot, so a
+  // TOCTOU race here just produces a 'team full' error the FE can retry.
+  //
+  // S-04 follow-up (2026-04-29): the unused-slot search used to cap at
+  // [1..8], which made 70-student sessions impossible via auto-route
+  // (24+ teams of 3 needed). Now scales with playerCap: ceil(playerCap/
+  // TEAM_CAP) covers the worst case where every team is full and the
+  // next joiner needs a fresh slot. The +5 buffer leaves headroom for
+  // teams that happened to finish early and got recycled.
+  let autoRoutedTeamId = null;
+  if (!explicitTeamId && !teamNumber) {
+    const teamsCol = gameRef.collection('teams');
+    const candidatesSnap = await teamsCol
+      .where('memberCount', '<', TEAM_CAP)
+      .orderBy('memberCount')
+      .limit(1)
+      .get();
+    if (!candidatesSnap.empty) {
+      autoRoutedTeamId = candidatesSnap.docs[0].id;
+    } else {
+      // No team has room: claim the lowest unused team-{N} slot. .select()
+      // with no args returns doc refs only — we just need ids, not bodies.
+      const cfgSnap = await gameRef.collection('config').doc('params').get();
+      const cfg = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
+      const cap = numberOrDefault(cfg.playerCap, 20);
+      const maxSlots = Math.max(8, Math.ceil(cap / TEAM_CAP) + 5);
+
+      const allSnap = await teamsCol.select().get();
+      const used = new Set();
+      allSnap.docs.forEach((d) => {
+        const m = /^team-(\d+)$/.exec(d.id);
+        if (m) used.add(Number(m[1]));
+      });
+      let next = 1;
+      while (used.has(next) && next <= maxSlots) next += 1;
+      if (next > maxSlots) {
+        throw new HttpsError('resource-exhausted',
+          'No team has space and no available team slot remains.');
+      }
+      autoRoutedTeamId = `team-${next}`;
+    }
+  }
+
+  // teamId: explicit wins, else auto-routed (M-06), else derived from
+  // teamNumber. The team doc for explicit ids must already exist (the
+  // createTeam callable writes it); we fail fast if it's missing rather
+  // than silently creating an orphan team. Auto-routed ids may or may
+  // not exist — the txn-body auto-create path handles either case.
+  const teamId = explicitTeamId || autoRoutedTeamId || `team-${teamNumber}`;
   const teamRef = gameRef.collection('teams').doc(teamId);
 
   let playerId = auth.uid;
 
+  // P0-2 (2026-04-27): split joinGame into a per-uid transaction (validation
+  // + player + roster + team writes) and a post-txn atomic increment of the
+  // game-level `totalPlayers`. With 70 concurrent joiners, having
+  // `transaction.update(gameRef, { totalPlayers: FieldValue.increment(1) })`
+  // inside the transaction body caused 70-way pessimistic write-lock contention
+  // on the game doc — 50/70 transactions exhausted retries with
+  // `10 ABORTED: Transaction lock timeout`. Moving the increment outside the
+  // transaction lets Firestore's server-side atomic counter handle the
+  // contention; atomic field ops on a `.update()` outside a transaction don't
+  // take a transaction lock, they serialize at the doc level naturally.
+  //
+  // S-04 (2026-04-29): the team-level `memberCount` + `roleAssignments` writes
+  // used to live in the same post-txn block, but that defeated the M-05 team-
+  // size cap under concurrent joins (all racers passed the in-txn `< TEAM_CAP`
+  // check, then all bumped post-txn). They're now back inside the transaction
+  // — TEAM_CAP=3 means at most 3 racers per team, well within transaction-
+  // friendly contention. Only `totalPlayers` stays post-txn.
+  //
+  // Cap-check correctness: the read of `gSnap.get('totalPlayers')` lags by the
+  // number of in-flight joins. For a 20-cap with 25 concurrent joiners, up to
+  // 5 may slip past the cap. Acceptable for a class with cap >> realistic
+  // attendance; tighten with a sharded counter (PR #103 pattern) if exact
+  // enforcement is needed later.
+  let outcomeNewJoin = false;
+  let outcomeTeamExistedAtTxnTime = false;
+
   await db.runTransaction(async (transaction) => {
+    // P0-2: reset on every retry so a previous-attempt flag doesn't leak
+    // into a retry that may now take the rejoin path or hit a different
+    // tSnap.exists value.
+    outcomeNewJoin = false;
+    outcomeTeamExistedAtTxnTime = false;
+
     const [gSnap, pSnap, cfgSnap, rSnap, tSnap] = await Promise.all([
       transaction.get(gameRef),
       transaction.get(playerRef),
@@ -1013,14 +1230,14 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
 
     const config = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
 
-    // BE-24: new joins are only accepted during lobby and are subject to the
-    // player cap. Rejoins (same uid, existing player doc) are allowed at any
-    // phase so a student who refreshes their browser mid-game can recover
-    // without being locked out.
+    // M-06 (2026-04-28): late joiners are now allowed — a fresh student who
+    // arrives after the prof presses Start should slot into a team with
+    // room (auto-routed above when no team was specified). The previous
+    // BE-24 lobby gate that rejected non-lobby new joiners is removed.
+    // The playerCap check stays in place to prevent unbounded growth.
+    // Rejoins (same uid, existing player doc) continue to be allowed at
+    // any phase so a student who refreshes mid-game recovers cleanly.
     if (!pSnap.exists) {
-      if (gSnap.get('phase') !== 'lobby') {
-        throw new HttpsError('failed-precondition', 'This game is no longer accepting new players.');
-      }
       const playerCap = numberOrDefault(config.playerCap, 20);
       const currentTotal = numberOrDefault(gSnap.get('totalPlayers'), 0);
       if (currentTotal >= playerCap) {
@@ -1046,62 +1263,19 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
       }
     }
 
-    // BE-20 / BE-I04: auto-assign role from team's available slots.
-    //
-    // BE-I04 changes the default: teams with < 3 members get `solo` for
-    // everyone. `assertRoleAllowed`'s solo short-circuit lets any member
-    // submit anything, which is what we want when there's nobody to
-    // specialise into Operations / Finance / Advertising. When the team
-    // hits 3 members, we flip everyone onto the specialist roles in
-    // ROLES_ORDER so the classic 3-way split takes effect. Overwrites
-    // happen only for `solo` / null assignments — any specialist role a
-    // player explicitly picked via `setTeamRole` is preserved.
-    const ROLES_ORDER = ['finance', 'advertising', 'operations'];
-    const existingRoleAssignments = tSnap.exists
-      ? ((tSnap.data() || {}).roleAssignments || {})
-      : {};
-    const currentMemberCount = Object.keys(existingRoleAssignments).length;
-    const nextMemberCount = currentMemberCount + 1;
-
-    let autoRole;
-    const roleFlip = { apply: false, updates: {} };
-
-    if (nextMemberCount <= 2) {
-      autoRole = 'solo';
-    } else if (nextMemberCount === 3) {
-      // 2 → 3 transition. Preserve any specialist role a teammate
-      // already manually picked; fill the remaining slots in
-      // ROLES_ORDER. Include the joining player in the assignment so
-      // the whole team lands on specialist roles in one transaction.
-      const takenSpecialist = new Set(
-        Object.values(existingRoleAssignments).filter(
-          (r) => r && r !== 'solo',
-        ),
-      );
-      const availableSpecialist = ROLES_ORDER.filter((r) => !takenSpecialist.has(r));
-      // Assign joining player first — next in `availableSpecialist`.
-      autoRole = availableSpecialist.shift() || 'solo';
-
-      // Flip existing solo/null members onto the remaining specialist
-      // roles. Walk in a stable order (uid sort) so the flip is
-      // deterministic across Firestore retries.
-      const existingUids = Object.keys(existingRoleAssignments).sort();
-      for (const existingUid of existingUids) {
-        const existingRole = existingRoleAssignments[existingUid];
-        if (existingRole && existingRole !== 'solo') continue;
-        const nextSpecialist = availableSpecialist.shift() || 'solo';
-        roleFlip.updates[existingUid] = nextSpecialist;
-      }
-      roleFlip.apply = Object.keys(roleFlip.updates).length > 0;
-    } else {
-      // 4+ members — beyond the 3-role design. Keep `solo` as the
-      // overflow default; the role picker can still assign specialists
-      // manually if needed.
-      autoRole = 'solo';
-    }
+    // BE-20 / BE-I04 (revised Apr 25): every joiner gets `solo` as the
+    // backend role. `assertRoleAllowed`'s solo short-circuit (and the
+    // team-fallback when no teammate holds a required role) keeps every
+    // submit unlocked while the team is still picking. The 2→3 cascade
+    // that previously force-flipped everyone onto specialist roles was
+    // removed — it stole the choice away (the picker only re-enabled
+    // *after* every role was already taken, leaving nothing to pick).
+    // `setTeamRole` is now the only path onto a specialist role.
+    const autoRole = 'solo';
 
     if (pSnap.exists) {
       // Rejoin: refresh display name / bakery name but do not reset progress.
+      // No counter writes — player already counted from their original join.
       transaction.update(playerRef, {
         displayName,
         bakeryName: effectiveBakeryName,
@@ -1117,6 +1291,42 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
       return;
     }
 
+    // First join: per-uid writes only inside the transaction. The hot-doc
+    // increments (game.totalPlayers, team.memberCount) move below the txn.
+    outcomeNewJoin = true;
+    outcomeTeamExistedAtTxnTime = tSnap.exists;
+
+    // M-05 (2026-04-28): cap team size at TEAM_CAP. Only checked when the
+    // team doc already exists at txn-time — a brand-new team has
+    // memberCount baked at 1 in the auto-create branch below. For legacy
+    // team docs that pre-date the memberCount field, fall back to counting
+    // roleAssignments. The check sits inside the transaction so concurrent
+    // joiners contending for the last slot serialize correctly: the loser
+    // sees memberCount=TEAM_CAP on its retry and throws.
+    if (outcomeTeamExistedAtTxnTime) {
+      const rawMemberCount = tSnap.get('memberCount');
+      const teamMemberCount = (typeof rawMemberCount === 'number' && Number.isFinite(rawMemberCount))
+        ? rawMemberCount
+        : Object.keys(tSnap.get('roleAssignments') || {}).length;
+      if (teamMemberCount >= TEAM_CAP) {
+        throw new HttpsError('resource-exhausted', `That team is full (${TEAM_CAP} max).`);
+      }
+      // S-04 follow-up (2026-04-29): bump memberCount + register the
+      // joiner's role INSIDE the transaction. The previous post-txn
+      // increment let concurrent joiners all read memberCount=N at txn
+      // time, all pass the < TEAM_CAP check, and then all bump the
+      // counter — so a popular team observed on a stress test ended up
+      // with 30+ members despite the M-05 cap. Doing the write inside
+      // the txn means Firestore's optimistic-concurrency check rejects
+      // the loser; their txn retries, the retry sees the updated
+      // memberCount, and the cap check fires correctly.
+      transaction.update(teamRef, {
+        [`roleAssignments.${auth.uid}`]: autoRole,
+        memberCount: FieldValue.increment(1),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
+
     transaction.set(playerRef, {
       uid: auth.uid,
       playerId: auth.uid,
@@ -1129,6 +1339,9 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
       cumulativeRevenue: 0,
       specialtyChefs: [],
       sousChefCount: 0,
+      equipmentGrade: 'C',
+      cleanlinessScore: 75,
+      cleanlinessGrade: 'B',
       returningCustomersPending: 0,
       consecutiveMissedRounds: 0,                // BE-19
       disconnected: false,                       // BE-19
@@ -1139,46 +1352,6 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
       updatedAt: FieldValue.serverTimestamp(),
     });
 
-    // BE-20: create or update the team doc with this player's role assignment
-    if (!tSnap.exists) {
-      transaction.set(teamRef, {
-        name: effectiveBakeryName,
-        teamId,
-        roleAssignments: { [auth.uid]: autoRole },
-        memberCount: 1,
-        createdAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-      });
-    } else {
-      const teamUpdate = {
-        [`roleAssignments.${auth.uid}`]: autoRole,
-        memberCount: FieldValue.increment(1),
-        updatedAt: FieldValue.serverTimestamp(),
-      };
-      // BE-I04: on the 2 → 3 transition we also cascade specialist
-      // roles onto the existing solo/null members in the same
-      // transaction, and mirror those onto their player docs below.
-      if (roleFlip.apply) {
-        for (const [existingUid, nextRole] of Object.entries(roleFlip.updates)) {
-          teamUpdate[`roleAssignments.${existingUid}`] = nextRole;
-        }
-      }
-      transaction.update(teamRef, teamUpdate);
-
-      if (roleFlip.apply) {
-        // Use merge-set rather than update so an existing-but-
-        // partially-written player doc doesn't cause the whole
-        // transaction to fail.
-        for (const [existingUid, nextRole] of Object.entries(roleFlip.updates)) {
-          transaction.set(
-            gameRef.collection('players').doc(existingUid),
-            { role: nextRole, updatedAt: FieldValue.serverTimestamp() },
-            { merge: true },
-          );
-        }
-      }
-    }
-
     transaction.set(rosterRef, {
       uid: auth.uid,
       displayName,
@@ -1187,11 +1360,54 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
       updatedAt: FieldValue.serverTimestamp(),
     });
 
-    transaction.update(gameRef, {
+    // BE-20: auto-create the team doc on the legacy team-{N} path when no
+    // one has joined yet. This stays inside the transaction because team
+    // auto-create is a fresh-doc write (no contention) and we want the
+    // team doc and the player doc to land atomically — otherwise a peer
+    // joiner could read an empty team while another player has half-joined.
+    //
+    // Concurrent first-join races on the same teamId are safe: the loser's
+    // transaction observes `tSnap.exists = false` against a stale snapshot,
+    // tries to `set(teamRef, ...)`, and Firestore aborts with a contention
+    // error so the SDK retries; the retry sees `tSnap.exists = true` and
+    // takes the in-txn `transaction.update(teamRef, ...)` path above (the
+    // `if (outcomeTeamExistedAtTxnTime)` branch that bumps memberCount and
+    // registers the joiner's role).
+    if (!tSnap.exists) {
+      transaction.set(teamRef, {
+        name: effectiveBakeryName,
+        teamId,
+        // V4 (Apr 25): match createTeam — pick a random emoji on the
+        // legacy team-{N} auto-create path too, so every team has a
+        // distinct icon regardless of which entry path created it.
+        emoji: pickTeamEmoji(),
+        roleAssignments: { [auth.uid]: autoRole },
+        memberCount: 1,
+        // Apr 28 2026: every new team starts with one product per station
+        // unlocked. Locked products live in OPTIONAL_MENU and must be
+        // unlocked via `purchaseProduct` for the team to add them to the
+        // menu (see decision-validation.js).
+        unlockedProducts: [...DEFAULT_UNLOCKED_PRODUCTS],
+        unlocksPurchased: 0,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
+  });
+
+  // P0-2: post-transaction game-doc atomic increment. The team-level
+  // memberCount + roleAssignments writes used to live here too; S-04 moved
+  // them back inside the transaction so the M-05 cap check actually holds
+  // under concurrent joins (see the comment in the txn body). The game
+  // doc's totalPlayers stays out — its contention surface is N writers
+  // contending on one doc, which is what FieldValue.increment is built
+  // for, and the cap-check there is approximate by design.
+  if (outcomeNewJoin) {
+    await gameRef.update({
       totalPlayers: FieldValue.increment(1),
       updatedAt: FieldValue.serverTimestamp(),
     });
-  });
+  }
 
   return { gameId: gameRef.id, playerId };
 });
@@ -1209,6 +1425,7 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
 // Output: { gameId, playerId, teamId, teamName }
 
 exports.createTeam = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request, 'Sign in before creating a team.');
   const data = request.data || {};
 
@@ -1240,12 +1457,42 @@ exports.createTeam = onCall(CALLABLE_OPTS, async (request) => {
   const playerRef = gameRef.collection('players').doc(auth.uid);
   const rosterRef = gameRef.collection('roster').doc(auth.uid);
 
+  // S-04 follow-up (2026-04-29) — fast-path duplicate-name check, OUTSIDE
+  // the transaction. Previously this was a `.where('name', '==', teamName)`
+  // query *inside* the transaction. Firestore queries inside a transaction
+  // place a read lock on the entire query result set, so under concurrent
+  // createTeam load the lock is contended by every writer to the teams
+  // collection — a 24-team load test took ~19s wall time (avg 800ms per
+  // call) for what should be sub-second creates.
+  //
+  // Doing the dup check outside the transaction has a small TOCTOU race —
+  // two students typing the same team name at the exact same time can both
+  // pass this check. The slug-collision loop inside the txn (below) catches
+  // that case: the second team gets a suffixed slug like `bakery-bois-x9k`
+  // instead of overwriting the first. Both teams keep the same display
+  // name, which is a minor UX wart in the lobby but acceptably rare.
+  const dupSnap = await gameRef
+    .collection('teams')
+    .where('name', '==', teamName)
+    .limit(1)
+    .get();
+  if (!dupSnap.empty) {
+    throw new HttpsError('already-exists', 'A team with that name already exists in this game.');
+  }
+
   let resolvedTeamId = baseSlug;
+  // P0-2: track whether this call enrolled a brand-new player so the
+  // post-transaction totalPlayers increment only fires when it should.
+  let createTeamCreatedNewPlayer = false;
 
   await db.runTransaction(async (transaction) => {
     // Reset on every attempt so a Firestore transaction retry doesn't carry
     // a stale suffix from a previous iteration into the slug-collision loop.
     resolvedTeamId = baseSlug;
+    // P0-2: same reset rationale — if a previous attempt set this to true
+    // and then aborted (contention retry), don't carry the stale flag
+    // into a retry that may now be a no-op or a rejoin.
+    createTeamCreatedNewPlayer = false;
 
     const [gSnap, cfgSnap, pSnap] = await Promise.all([
       transaction.get(gameRef),
@@ -1275,16 +1522,10 @@ exports.createTeam = onCall(CALLABLE_OPTS, async (request) => {
       throw new HttpsError('failed-precondition', 'You already joined this game. Refresh the page to rejoin your team.');
     }
 
-    // Duplicate-name check: any existing team doc with the same name is a
-    // conflict. `name` isn't indexed in this collection so we'd need either
-    // a query-in-transaction (supported — single-doc result fine) or a
-    // deterministic id collision check. We do both: slug collision + query.
-    const dupSnap = await transaction.get(
-      gameRef.collection('teams').where('name', '==', teamName).limit(1)
-    );
-    if (!dupSnap.empty) {
-      throw new HttpsError('already-exists', 'A team with that name already exists in this game.');
-    }
+    // Duplicate-name check now lives outside the transaction (see the
+    // comment above the gameSnap query). The slug-collision loop below is
+    // still load-bearing — it's the only thing that handles a same-name
+    // race that slipped past the pre-txn dup check.
 
     // Slug-collision check: if `baseSlug` is taken by a different team,
     // append a short suffix until we find a free id.
@@ -1303,14 +1544,26 @@ exports.createTeam = onCall(CALLABLE_OPTS, async (request) => {
 
     // BE-I04: first member is `solo` — the team only has one person
     // and `assertRoleAllowed`'s solo short-circuit keeps every action
-    // unlocked. The role flips to a specialist when the 3rd member
-    // joins via `joinGame`.
+    // unlocked. Players stay `solo` until they manually pick via
+    // `setTeamRole` (the auto-cascade on the 3rd join was removed in
+    // V6/V7 — see the matching comment in `joinGame`).
+    //
+    // V4 (Apr 25): pick a random bakery emoji for this team so the team
+    // cards don't all default to the same croissant. The emoji is part
+    // of the team doc so every member sees the same icon, and joiners
+    // pick it up via `getTeamsInLobby` and the team-doc subscription.
     transaction.set(teamRef, {
       name: teamName,
       teamId: resolvedTeamId,
       createdBy: auth.uid,
+      emoji: pickTeamEmoji(),
       roleAssignments: { [auth.uid]: 'solo' },
       memberCount: 1,
+      // Apr 28 2026 — station-unlock seed (mirrors joinGame's auto-team
+      // branch). Each station starts with one product unlocked; locked
+      // products require a `purchaseProduct` call.
+      unlockedProducts: [...DEFAULT_UNLOCKED_PRODUCTS],
+      unlocksPurchased: 0,
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
@@ -1339,6 +1592,9 @@ exports.createTeam = onCall(CALLABLE_OPTS, async (request) => {
         cumulativeRevenue: 0,
         specialtyChefs: [],
         sousChefCount: 0,
+        equipmentGrade: 'C',
+        cleanlinessScore: 75,
+        cleanlinessGrade: 'B',
         returningCustomersPending: 0,
         consecutiveMissedRounds: 0,
         disconnected: false,
@@ -1355,12 +1611,26 @@ exports.createTeam = onCall(CALLABLE_OPTS, async (request) => {
         joinedAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });
-      transaction.update(gameRef, {
-        totalPlayers: FieldValue.increment(1),
-        updatedAt: FieldValue.serverTimestamp(),
-      });
+      // P0-2 (2026-04-27): totalPlayers increment moved below the txn — see
+      // the matching note in joinGame. Tracking new-join via a closure flag
+      // so the post-txn writer knows whether to fire the increment.
+      createTeamCreatedNewPlayer = true;
     }
   });
+
+  // P0-2: post-transaction atomic increment. Same rationale as joinGame —
+  // pulling FieldValue.increment(1) out of the transaction body lets the
+  // server-side counter handle parallel writers without lock contention.
+  // createTeam contention is much lower than joinGame (one team-create per
+  // team versus 9+ joins per team), but the same correctness argument
+  // applies: the increment doesn't need transactional atomicity with the
+  // per-uid player + roster + team writes.
+  if (createTeamCreatedNewPlayer) {
+    await gameRef.update({
+      totalPlayers: FieldValue.increment(1),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  }
 
   return {
     gameId: gameRef.id,
@@ -1387,6 +1657,7 @@ exports.createTeam = onCall(CALLABLE_OPTS, async (request) => {
 // callable on every keystroke.
 
 exports.getTeamsInLobby = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request, 'Sign in before browsing teams.');
   const joinCode = cleanString((request.data || {}).joinCode).toUpperCase();
   if (!/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/.test(joinCode)) {
@@ -1425,6 +1696,12 @@ exports.getTeamsInLobby = onCall(CALLABLE_OPTS, async (request) => {
       teamId: d.id,
       name: typeof data.name === 'string' ? data.name : d.id,
       memberCount: numberOrDefault(data.memberCount, Object.keys(roleAssignments).length),
+      // V4 (Apr 25): random per-team bakery emoji used as the team-card
+      // logo on the join screen. Older teams created before this field
+      // was introduced fall back to 🥐 in the FE.
+      emoji: typeof data.emoji === 'string' && data.emoji.length > 0
+        ? data.emoji
+        : null,
     };
   });
 
@@ -1436,6 +1713,7 @@ exports.getTeamsInLobby = onCall(CALLABLE_OPTS, async (request) => {
 // ===========================================================================
 
 exports.startGame = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request, 'Sign in before starting a game.');
   const gameId = cleanGameId((request.data || {}).gameId);
   const gameRef = gameDoc(gameId);
@@ -1494,6 +1772,23 @@ exports.startGame = onCall(CALLABLE_OPTS, async (request) => {
     marketEmailAt: FieldValue.serverTimestamp(),
   }, { merge: true });
 
+  // T2.4: auto-snapshot at round 1 start (kicks off the per-round
+  // checkpointing — see the matching hook in advanceGamePhase). Best-effort,
+  // fire-and-forget — never block startGame on snapshot success.
+  captureGameSnapshot(db, gameRef, { capturedBy: 'auto', capturedByUid: auth.uid })
+    .then((res) => {
+      logger.info('auto-snapshot ok (startGame)', {
+        gameId, round: 1, snapshotId: res.snapshotId,
+        totalDocs: res.totalDocs, totalBytes: res.totalBytes, elapsedMs: res.elapsedMs,
+      });
+      return pruneOldSnapshots(db, gameRef);
+    })
+    .catch((err) => {
+      logger.warn('auto-snapshot failed (startGame) — non-fatal.', {
+        gameId, error: err && err.message,
+      });
+    });
+
   return { gameId, phase: 'round_1_email', round: 1 };
 });
 
@@ -1501,7 +1796,8 @@ exports.startGame = onCall(CALLABLE_OPTS, async (request) => {
 // advanceGamePhase
 // ===========================================================================
 
-exports.advanceGamePhase = onCall(CALLABLE_OPTS, async (request) => {
+exports.advanceGamePhase = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request, 'Sign in before advancing phases.');
   const gameId = cleanGameId((request.data || {}).gameId);
   const gameRef = gameDoc(gameId);
@@ -1634,6 +1930,10 @@ exports.advanceGamePhase = onCall(CALLABLE_OPTS, async (request) => {
       // no-op since all fields are already at their join-time defaults, but
       // it's idempotent and cheap so we run it unconditionally.
       await resetPendingPlayerStateForRound(gameRef);
+      // T2.2: same reset for the per-team pending doc (the new home for
+      // team-shared transient state). Independent batch — these docs live
+      // under `teams/{id}/state/pending`, not under `players/{uid}`.
+      await resetPendingTeamStateForRound(gameRef);
 
       // Write the market-insight email for the entering round.
       const prefs = await loadRoundPreferences(gameRef, round);
@@ -1650,6 +1950,25 @@ exports.advanceGamePhase = onCall(CALLABLE_OPTS, async (request) => {
         marketEmail: insight,
         marketEmailAt: FieldValue.serverTimestamp(),
       }, { merge: true });
+
+      // T2.4: auto-snapshot at the start of every round so the professor
+      // can "restart this round" if anything goes sideways mid-round.
+      // Best-effort and fire-and-forget — a snapshot failure must not block
+      // the phase advance. Pruning is also fire-and-forget.
+      captureGameSnapshot(db, gameRef, { capturedBy: 'auto', capturedByUid: null })
+        .then((res) => {
+          logger.info('auto-snapshot ok', {
+            gameId, round, snapshotId: res.snapshotId,
+            totalDocs: res.totalDocs, totalBytes: res.totalBytes,
+            elapsedMs: res.elapsedMs,
+          });
+          return pruneOldSnapshots(db, gameRef);
+        })
+        .catch((err) => {
+          logger.warn('auto-snapshot failed — non-fatal.', {
+            gameId, round, error: err && err.message,
+          });
+        });
     }
 
     if (basePhaseName === 'bid_chef') {
@@ -1741,7 +2060,8 @@ exports.advanceGamePhase = onCall(CALLABLE_OPTS, async (request) => {
  *   - failed-precondition — game is not actually stuck (phase ≠ 'simulating',
  *                  or simulation is still running within the 60s threshold).
  */
-exports.retryStuckSimulation = onCall(CALLABLE_OPTS, async (request) => {
+exports.retryStuckSimulation = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request, 'Sign in before recovering stuck simulations.');
   const gameId = cleanGameId((request.data || {}).gameId);
   const gameRef = gameDoc(gameId);
@@ -1764,6 +2084,37 @@ exports.retryStuckSimulation = onCall(CALLABLE_OPTS, async (request) => {
 
   const roundRef = gameRef.collection('rounds').doc(`round_${round}`);
   const roundSnap = await roundRef.get();
+
+  // RECOVERY-2: recover side effects for bid_ad and bid_chef phases.
+  // If advanceGamePhase crashed after the transaction committed but before
+  // auction resolution / chef pool generation, the game is stuck with
+  // missing side effects. The idempotency guards in resolveAndApplyAdAuction
+  // and resolveAndApplyChefAuction make these safe to re-run.
+  if (phase === 'bid_ad') {
+    if (!roundSnap.exists || !roundSnap.data().adAuctionResolvedAt) {
+      await resolveAndApplyAdAuction(gameRef, round);
+      logger.info('retryStuckSimulation: recovered ad auction.', { gameId, round });
+    }
+    if (!roundSnap.exists || !roundSnap.data().chefPoolGeneratedAt) {
+      const pool = generateChefPool(round, config);
+      await roundRef.set({
+        round,
+        chefPool: pool,
+        chefPoolGeneratedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+      logger.info('retryStuckSimulation: recovered chef pool.', { gameId, round });
+    }
+    return { gameId, round, action: 'recover', reason: 'Recovered ad auction and chef pool.', phase };
+  }
+
+  if (phase === 'bid_chef') {
+    if (!roundSnap.exists || !roundSnap.data().chefAuctionResolvedAt) {
+      await resolveAndApplyChefAuction(gameRef, round, config);
+      logger.info('retryStuckSimulation: recovered chef auction.', { gameId, round });
+    }
+    return { gameId, round, action: 'recover', reason: 'Recovered chef auction.', phase };
+  }
+
   const simulationStatus = roundSnap.exists ? (roundSnap.get('simulationStatus') || null) : null;
   const startedTs = roundSnap.exists ? roundSnap.get('simulationStartedAt') : null;
   const simulationStartedAt =
@@ -1851,6 +2202,13 @@ async function runSimulationAndPersist(gameRef, round, config) {
   const roundId = `round_${round}`;
   const roundRef = gameRef.collection('rounds').doc(roundId);
 
+  // RECOVERY-1: idempotency guard — if simulation already complete, skip.
+  const roundSnap = await roundRef.get();
+  if (roundSnap.exists && roundSnap.data().simulationStatus === 'complete') {
+    logger.info('runSimulationAndPersist skipped — already complete.', { gameId: gameRef.id, round });
+    return;
+  }
+
   // -----------------------------------------------------------------------
   // Read phase
   // -----------------------------------------------------------------------
@@ -1929,7 +2287,10 @@ async function runSimulationAndPersist(gameRef, round, config) {
     const ownerDoc = team.memberDocs.find((pd) => pd.id === ownerUid) || team.memberDocs[0];
     const ownerData = (ownerDoc && ownerDoc.data()) || {};
     const ownerDecisionSnap = decisionSnapByUid.get(ownerUid);
-    const missed = !(ownerDecisionSnap && ownerDecisionSnap.exists);
+    // BUG-2 fix: require `submittedAt` (Operations marker) not just doc existence.
+    // Finance-only `submitPrices` creates the doc with `pricesSubmittedAt` but
+    // no `submittedAt`; those teams should be treated as missed submissions.
+    const missed = !(ownerDecisionSnap && ownerDecisionSnap.exists && ownerDecisionSnap.get('submittedAt'));
     const prevMissed = numberOrDefault(ownerData.consecutiveMissedRounds, 0);
     disconnectionMap.set(team.key, {
       consecutiveMissedRounds: missed ? prevMissed + 1 : 0,
@@ -1956,7 +2317,8 @@ async function runSimulationAndPersist(gameRef, round, config) {
     const decisionSnap = decisionSnapByUid.get(operationsUid);
     const financeDecisionSnap =
       decisionSnapByUid.get(financeUid) || decisionSnapByUid.get(operationsUid);
-    const missed = !(decisionSnap && decisionSnap.exists);
+    // BUG-2 fix: require `submittedAt` (Operations marker) not just doc existence.
+    const missed = !(decisionSnap && decisionSnap.exists && decisionSnap.get('submittedAt'));
     const decision = missed ? {} : (decisionSnap.data() || {});
     const financeDecision =
       financeDecisionSnap && financeDecisionSnap.exists
@@ -2034,13 +2396,18 @@ async function runSimulationAndPersist(gameRef, round, config) {
             {},
           ),
         ),
-        maintenanceTasks: Array.isArray(decision.maintenanceTasks)
-          ? decision.maintenanceTasks
-          : [],
+        equipmentUpgradePurchased: !!decision.equipmentUpgradePurchased,
       },
       specialtyChefs: Array.isArray(canonicalData.specialtyChefs) ? canonicalData.specialtyChefs : [],
       budgetCurrent: simInputBudget,
       returningCustomersPending: numberOrDefault(canonicalData.returningCustomersPending, 0),
+      // Forward equipment + cleanliness state from the canonical player doc
+      // so the simulation sees the round-end values from the prior round.
+      // Without this, every round resets to defaults regardless of upgrades
+      // or cleanliness drift persisted at the end of the previous round.
+      equipmentGrade: canonicalData.equipmentGrade || 'C',
+      cleanlinessScore: numberOrDefault(canonicalData.cleanlinessScore, 75),
+      cleanlinessGrade: canonicalData.cleanlinessGrade || 'B',
       auctionResults: aggregatedAuction,
       priorSubmittedPrices,
     };
@@ -2058,7 +2425,11 @@ async function runSimulationAndPersist(gameRef, round, config) {
   // -----------------------------------------------------------------------
   // Pure sim
   // -----------------------------------------------------------------------
-  const results = runSimulation(players, prefs, config, { gameId: gameRef.id, round });
+  // P2 (2026-04-27): runMonthlySimulation wraps runSimulation in a 30-day
+  // loop. Returns the same monthly aggregate shape as runSimulation plus a
+  // `dailyResults` array. Existing consumers (results[i].revenueNet, etc.)
+  // continue to work — those are still the monthly aggregates.
+  const results = runMonthlySimulation(players, prefs, config, { gameId: gameRef.id, round });
 
   // Per-team sim-input budget, keyed by playerId (== team.key). Used below to
   // write budgetBefore alongside budgetAfter on each player round doc, which
@@ -2107,6 +2478,9 @@ async function runSimulationAndPersist(gameRef, round, config) {
       const playerUpdate = {
         budgetCurrent: r.budgetAfter,
         returningCustomersPending: r.returningCustomersEarned,
+        equipmentGrade: r.equipmentGrade,
+        cleanlinessScore: r.cleanlinessScore,
+        cleanlinessGrade: r.cleanlinessGrade,
         sousChefCount: numberOrDefault(
           (r.csvRow && r.csvRow.sous_chef_count),
           0
@@ -2120,7 +2494,6 @@ async function runSimulationAndPersist(gameRef, round, config) {
           customerCount: r.customerCount,
           aggregateSatisfactionPct: r.aggregateSatisfactionPct,
           fillRate: aggregateFillRate(r.perProductSatisfaction),
-          chefSatisfactionScore: r.chefSatisfactionScore,
           amountBorrowed: r.amountBorrowed,
           interestCharged: r.interestCharged,
           selloutAnywhere: r.selloutAnywhere || false,
@@ -2130,8 +2503,6 @@ async function runSimulationAndPersist(gameRef, round, config) {
           chefsWon: Array.isArray(r.chefsWon) ? r.chefsWon : [],
           chefWon: Array.isArray(r.chefsWon) && r.chefsWon.length > 0 ? r.chefsWon[0].name || r.chefsWon[0].id || null : null,
           chefBidPaid: r.chefBidPaid || 0,
-          burglary: r.burglary || false,
-          burglaryAmount: r.burglaryAmount || 0,
           // POST-01 follow-up: surface submitted staff counts so the
           // frontend CSV download (RoundHeader.tsx / serializeRow) fills
           // in the per-station sous-chef + maintenance-guy columns
@@ -2142,13 +2513,102 @@ async function runSimulationAndPersist(gameRef, round, config) {
                   bakerySousChefs: r.csvRow.bakery_sous_chef_count || 0,
                   deliSousChefs: r.csvRow.deli_sous_chef_count || 0,
                   baristaSousChefs: r.csvRow.barista_sous_chef_count || 0,
-                  maintenanceGuys: r.csvRow.maintenance_guy_count || 0,
+                  maintenanceGuys: r.csvRow.maintenance_staff_count || 0,
                 }
               : null)
             || objectOrDefault(
               (memberData.pendingDecision && memberData.pendingDecision.staffCounts) || {},
               {},
             ),
+          // P1 (2026-04-27): surface decision inputs so the student CSV can
+          // emit them. Without these the frontend CSV is outcome-only and
+          // students can't fit y ~ X for in-game re-training.
+          productPrices:
+            r.csvRow && typeof r.csvRow === 'object'
+              ? {
+                  croissant: numberOrDefault(r.csvRow.price_croissant, null),
+                  cookie: numberOrDefault(r.csvRow.price_cookie, null),
+                  bagel: numberOrDefault(r.csvRow.price_bagel, null),
+                  sandwich: numberOrDefault(r.csvRow.price_sandwich, null),
+                  coffee: numberOrDefault(r.csvRow.price_coffee, null),
+                  matcha: numberOrDefault(r.csvRow.price_matcha, null),
+                }
+              : null,
+          quantitiesStocked:
+            r.csvRow && typeof r.csvRow === 'object'
+              ? {
+                  croissant: numberOrDefault(r.csvRow.croissant_qty_stocked, 0),
+                  cookie: numberOrDefault(r.csvRow.cookie_qty_stocked, 0),
+                  bagel: numberOrDefault(r.csvRow.bagel_qty_stocked, 0),
+                  sandwich: numberOrDefault(r.csvRow.sandwich_qty_stocked, 0),
+                  coffee: numberOrDefault(r.csvRow.coffee_qty_stocked, 0),
+                  matcha: numberOrDefault(r.csvRow.matcha_qty_stocked, 0),
+                }
+              : null,
+          numProducts: numberOrDefault(r.csvRow && r.csvRow.num_products, 0),
+          // P2 (2026-04-27): lightweight per-day summary so the frontend
+          // CSV download can emit one row per day per round. Decision
+          // inputs (constant across the round) are read from the
+          // round-level fields above; daily values just fill in the
+          // outcome columns that vary day to day.
+          dailyBreakdown: Array.isArray(r.dailyResults)
+            ? r.dailyResults.map((d) => ({
+                day: d.day,
+                revenueGross: d.revenueGross,
+                revenueNet: d.revenueNet,
+                amountBorrowed: d.amountBorrowed || 0,
+                interestCharged: d.interestCharged || 0,
+                customerCount: d.customerCount,
+                aggregateSatisfactionPct: d.aggregateSatisfactionPct,
+              }))
+            : [],
+          // M-21 (2026-04-28): "what hurt this round" signals grouped on
+          // one object so the FE (Barlava — B-07) can render a single
+          // panel of indicators. The first four are pure passthrough; the
+          // last is computed in multi-day-simulation.js
+          // (priceCompetitivenessPctFromPrices). Satisfaction in this
+          // game is fill-rate-driven; price affects DEMAND not
+          // satisfaction; cleanliness affects FOOT TRAFFIC not
+          // satisfaction — see M-21 investigation in tasks-april-28.md
+          // for the full rationale on why these are sibling signals
+          // rather than "components of satisfaction".
+          roundSignals: {
+            satisfactionPct: r.aggregateSatisfactionPct,
+            // Map to { [product]: number } to match the FE type
+            // (Partial<Record<ProductKey, number>>) — r.perProductSatisfaction
+            // values are objects { satisfactionPct, qtySold, qtyStocked, ... }.
+            perProductSatisfaction: Object.fromEntries(
+              Object.entries(r.perProductSatisfaction || {})
+                .map(([product, pps]) => [
+                  product,
+                  numberOrDefault(pps && pps.satisfactionPct, 0),
+                ]),
+            ),
+            cleanlinessGrade: r.cleanlinessGrade,
+            cleanlinessScore: r.cleanlinessScore,
+            priceCompetitivenessPct: numberOrDefault(r.priceCompetitivenessPct, 100),
+          },
+          // Round-level kitchen + financial state surfaced for the student
+          // CSV download. equipmentGrade / cleanlinessGrade reproduce the
+          // same A–F grades shown in the StatusTab. totalSpent is round
+          // costs (sous chefs + maintenance + equipment + bids — already
+          // aggregated by the simulation wrapper at multi-day-simulation.js).
+          // specialtyChefCount is length of the team's specialty roster at
+          // end-of-round. cumulativeRevenueAfter is the running total
+          // post-revenueNet: when the increment is being applied this round
+          // we add it ourselves; when alreadyPersisted (rerun),
+          // memberData.cumulativeRevenue already holds the post-round value
+          // from the first run.
+          totalSpent: numberOrDefault(r.totalSpent, 0),
+          equipmentGrade: r.equipmentGrade || 'C',
+          cleanlinessGrade: r.cleanlinessGrade || 'B',
+          specialtyChefCount: Array.isArray(memberData.specialtyChefs)
+            ? memberData.specialtyChefs.length
+            : 0,
+          cumulativeRevenueAfter: alreadyPersisted
+            ? numberOrDefault(memberData.cumulativeRevenue, 0)
+            : numberOrDefault(memberData.cumulativeRevenue, 0)
+              + numberOrDefault(r.revenueNet, 0),
         },
         updatedAt: FieldValue.serverTimestamp(),
       };
@@ -2186,7 +2646,6 @@ async function runSimulationAndPersist(gameRef, round, config) {
         customerCount: r.customerCount,
         perProductCustomers: r.perProductCustomers,
         aggregateSatisfactionPct: r.aggregateSatisfactionPct,
-        chefSatisfactionScore: r.chefSatisfactionScore,
         perProductSatisfaction: r.perProductSatisfaction,
         perProductSold,
         selloutFlags,
@@ -2196,8 +2655,6 @@ async function runSimulationAndPersist(gameRef, round, config) {
         adPaid: r.adBidPaid || 0,
         chefsWon: Array.isArray(r.chefsWon) ? r.chefsWon : [],
         chefBidPaid: r.chefBidPaid || 0,
-        burglary: r.burglary || false,
-        burglaryAmount: r.burglaryAmount || 0,
         computedAt: FieldValue.serverTimestamp(),
       });
 
@@ -2214,6 +2671,17 @@ async function runSimulationAndPersist(gameRef, round, config) {
       });
 
       opsInBatch += OPS_PER_PLAYER;
+
+      // P2 (2026-04-27): per-day breakdown lives on lastRoundResult
+      // (`dailyBreakdown` field) — the frontend reads it from there and
+      // emits one CSV row per day from in-memory state. We do NOT persist
+      // separate per-day csvRow Firestore docs because no consumer reads
+      // them (CsvInboxModal pulls from GameContext.roundResults; the
+      // professor CSV reads only the monthly csvRow doc above). Persisting
+      // 30 extra docs per player per round (16x write amplification)
+      // would burn quota for unread data. If a future feature (e.g.,
+      // cross-team CSV pool, P3) needs the daily docs, add the writes
+      // back then.
     }
   }
 
@@ -2222,7 +2690,19 @@ async function runSimulationAndPersist(gameRef, round, config) {
   // writes land.
   const rankings = results
     .slice()
-    .sort((a, b) => b.revenueNet - a.revenueNet || b.budgetAfter - a.budgetAfter)
+    .map((r) => {
+      const memberDoc = playerDocs.find((m) => m.id === r.playerId);
+      const memberData = (memberDoc && memberDoc.data()) || {};
+      return {
+        ...r,
+        cumulativeRevenue:
+          numberOrDefault(memberData.cumulativeRevenue, 0) + r.revenueNet,
+      };
+    })
+    .sort(
+      (a, b) =>
+        b.cumulativeRevenue - a.cumulativeRevenue || b.budgetAfter - a.budgetAfter,
+    )
     .map((r, i) => ({
       rank: i + 1,
       playerId: r.playerId,
@@ -2232,6 +2712,8 @@ async function runSimulationAndPersist(gameRef, round, config) {
       revenueGross: r.revenueGross,
       customerCount: r.customerCount,
       budgetAfter: r.budgetAfter,
+      amountBorrowed: r.amountBorrowed || 0,
+      cumulativeRevenue: r.cumulativeRevenue,
     }));
 
   const revenues = results.map((r) => r.revenueNet);
@@ -2346,6 +2828,7 @@ async function persistConclusion(gameRef, totalRounds, config) {
 // ===========================================================================
 
 exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request, 'Sign in before submitting decisions.');
   const data = request.data || {};
   const gameId = cleanGameId(data.gameId);
@@ -2356,9 +2839,26 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
   let roundId = null;
   let _submitDecision_role = null;
   let _submitDecision_displayName = '';
+  // P0-2 follow-up: capture the team pending fields inside the txn body so
+  // the post-txn writer can mirror the draft outside the transaction's lock
+  // domain. Inside the txn, the per-team `teams/{teamId}/state/pending` doc
+  // was the next contention bottleneck: ~9 teammates submitting decisions
+  // concurrently all wrote to the same pending doc, which caused another
+  // wave of `ABORTED: Transaction lock timeout` failures even after the
+  // joinGame fix. The pending doc is purely a UI mirror; eventual
+  // consistency on it is fine — `set({ merge: true })` outside the txn
+  // handles per-key merges (pricesSubmitted from submitPrices vs.
+  // decisionDraft.* from submitDecision) correctly without lock contention.
+  let _submitDecision_teamId = null;
+  let _submitDecision_draftFields = null;
 
   try {
     await db.runTransaction(async (transaction) => {
+      // P0-2: reset on retry so a stale prior-iteration capture doesn't leak
+      // into the post-txn writer if the transaction body re-runs.
+      _submitDecision_teamId = null;
+      _submitDecision_draftFields = null;
+
       const [gSnap, pSnap, cfgSnap] = await Promise.all([
         transaction.get(gameRef),
         transaction.get(playerRef),
@@ -2376,8 +2876,25 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
       _submitDecision_displayName = pSnap.get('displayName') || '';
 
       const game = gSnap.data();
+      if (game.paused === true) {
+        throw new HttpsError('failed-precondition', 'Game is paused. Submissions are temporarily disabled.');
+      }
       if (!canSubmitDecision(game.phase)) {
         throw new HttpsError('failed-precondition', 'Decisions can only be submitted during the decide phase.');
+      }
+
+      // S-04 (2026-04-29): defense-in-depth phase gate, mirroring submitBids
+      // line ~3293. The FE may pass `expectedFromPhase` so a submission
+      // that landed AFTER an auto-advance (slow client, large network blip)
+      // gets a precise "stale phase" diagnostic instead of the generic
+      // canSubmitDecision rejection. Optional — pre-existing callers that
+      // don't pass it fall back to the canSubmitDecision check above.
+      const expectedFromPhase = cleanString(data.expectedFromPhase);
+      if (expectedFromPhase && game.phase !== expectedFromPhase) {
+        throw new HttpsError(
+          'failed-precondition',
+          `Phase has already advanced. Current: ${game.phase}, expected: ${expectedFromPhase}. Decision rejected as stale.`,
+        );
       }
 
       const currentRound = numberOrDefault(game.currentRound || game.round, 1);
@@ -2390,45 +2907,99 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
       // direct callable invocation) can't bypass it. Skipped for solo
       // players and teams with no Finance seat — those paths submit prices
       // implicitly via `submitPrices`'s solo / fallback handling.
-      let teamRoleAssignmentsForGate = null;
-      if (teamId) {
-        const teamSnap = await transaction.get(gameRef.collection('teams').doc(teamId));
-        if (teamSnap.exists) {
-          teamRoleAssignmentsForGate = (teamSnap.data() || {}).roleAssignments || null;
-        }
-      }
-      const teamHasFinance = teamRoleAssignmentsForGate
-        && Object.values(teamRoleAssignmentsForGate).some((r) => r === 'finance');
-      if (
-        teamHasFinance
+      //
+      // T2.2 follow-up: read `pricesSubmitted` from the per-team pending
+      // doc rather than the caller's own player doc — `submitPrices` no
+      // longer cascades that flag onto teammates' player docs, so
+      // Operations' own doc never sees it.
+      //
+      // P0-2 follow-up (2026-04-27): the gate ONLY applies to non-solo,
+      // non-finance roles. Solo players take the early-out below without
+      // any team-doc reads — eliminating ~9-way contention on the team +
+      // team-pending docs in the all-solo stress test, and eliminating
+      // unnecessary reads in mixed teams where most members are solo.
+      // The gate is preserved for ops/advertising via the same reads.
+      const needsPriceGate = teamId
         && _submitDecision_role !== 'solo'
-        && _submitDecision_role !== 'finance'
-      ) {
-        const pending = pSnap.get('pendingDecision') || {};
-        if (pending.pricesSubmitted !== true) {
-          throw new HttpsError(
-            'failed-precondition',
-            'Waiting for your Finance teammate to submit prices for this round.',
-          );
+        && _submitDecision_role !== 'finance';
+      // Hoisted so the unlockedProducts read below reuses the snap when the
+      // price-gate block already fetched it (PR #119 contention work).
+      let teamSnap = null;
+      if (needsPriceGate) {
+        let teamPendingSnap;
+        [teamSnap, teamPendingSnap] = await Promise.all([
+          transaction.get(gameRef.collection('teams').doc(teamId)),
+          transaction.get(teamPendingDocRef(gameRef, teamId)),
+        ]);
+        const teamRoleAssignmentsForGate = teamSnap.exists
+          ? ((teamSnap.data() || {}).roleAssignments || null)
+          : null;
+        const teamPendingDraftForGate = teamPendingSnap.exists
+          ? ((teamPendingSnap.data() || {}).decisionDraft || null)
+          : null;
+        const teamHasFinance = teamRoleAssignmentsForGate
+          && Object.values(teamRoleAssignmentsForGate).some((r) => r === 'finance');
+        if (teamHasFinance) {
+          const teamPricesSubmitted = teamPendingDraftForGate
+            && teamPendingDraftForGate.pricesSubmitted === true;
+          if (!teamPricesSubmitted) {
+            throw new HttpsError(
+              'failed-precondition',
+              'Waiting for your Finance teammate to submit prices for this round.',
+            );
+          }
         }
       }
 
-      const teamPlayerDocs = teamId
-        ? (await transaction.get(gameRef.collection('players').where('teamId', '==', teamId))).docs
-        : [pSnap];
+      // T2.2: dropped the `players where teamId == X` read that previously
+      // backed a cascade write across teammates' player docs. The submitter's
+      // own player doc still gets the full `pendingDecision.*` write below
+      // (no behaviour change for the submitter); the team-shared draft is
+      // mirrored once to `teams/{teamId}/state/pending` so other teammates
+      // can subscribe without contending on each other's player docs.
+
+      // Apr 28 2026 — read the team's `unlockedProducts` so the validator can
+      // reject menu items the team hasn't paid to unlock. We only do this read
+      // when the player is on a team (every game post BE-20 should be); solo
+      // players outside a team fall back to BASE_MENU only via the validator's
+      // default. Missing team doc → starter set, matching joinGame's seed.
+      let unlockedProducts = [...DEFAULT_UNLOCKED_PRODUCTS];
+      if (teamId) {
+        if (!teamSnap) {
+          teamSnap = await transaction.get(gameRef.collection('teams').doc(teamId));
+        }
+        if (teamSnap.exists) {
+          const raw = teamSnap.get('unlockedProducts');
+          if (Array.isArray(raw) && raw.length > 0) {
+            unlockedProducts = raw.filter((p) => typeof p === 'string');
+          }
+        }
+      }
 
       // Validate using the decision-validation module (pure).
-      // ValidationError is a plain JS error — convert to HttpsError so the
-      // Firebase Functions runtime surfaces the right code to the client.
+      // M-17 (2026-04-28): Operations no longer owns quantities — Finance
+      // does, via submitPrices. Strip data.quantities BEFORE validation so
+      // a stale Operations FE that still includes quantities (during the
+      // K-10 transition window) can't trip the menu-vs-quantities cross
+      // check. We then delete validated.quantities after validation so
+      // it never overwrites Finance's quantity write on the decision doc.
+      const opsInput = { ...data, quantities: {} };
       let validated;
       try {
-        validated = decisionValidation.validateDecision(data, currentRound, config);
+        validated = decisionValidation.validateDecision(opsInput, currentRound, config, {
+          unlockedProducts,
+        });
       } catch (vErr) {
         if (ValidationError && vErr instanceof ValidationError) {
           throw new HttpsError(vErr.code || 'invalid-argument', vErr.message);
         }
         throw vErr;
       }
+      // M-17: drop quantities from Operations' validated output entirely.
+      // The decisionRef set-merge below uses ...validated, so removing the
+      // field here means Finance's quantities (written by submitPrices)
+      // survive untouched.
+      delete validated.quantities;
 
       roundId = `round_${currentRound}`;
       const decisionRef = playerRef.collection('decisions').doc(roundId);
@@ -2440,19 +3011,16 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
         throw new HttpsError('already-exists', 'Decision already submitted for this round.');
       }
 
-      // Merge so an existing Finance-written `productPrices` survives.
-      // POST-01 follow-up: persist `staffCounts` + `maintenanceTasks` on the
-      // decision doc so the simulation (and the professor CSV export) can
-      // read them — validateDecision doesn't touch these fields today, so we
-      // pass them through defensively here instead of inside the validator.
+      // Merge so an existing Finance-written `productPrices` + `quantities`
+      // survive. POST-01 follow-up: `staffCounts` (including the
+      // maintenanceGuys default of 0 — Barlava follow-up flipped from 2)
+      // is included in `validated` and flows through the spread — do not
+      // re-assign it from raw `data.staffCounts`, which would discard the
+      // validator's defaulting.
       const decisionPatch = {
         round: currentRound,
         submittedAt: FieldValue.serverTimestamp(),
         ...validated,
-        staffCounts: objectOrDefault(data.staffCounts, {}),
-        maintenanceTasks: Array.isArray(data.maintenanceTasks)
-          ? data.maintenanceTasks
-          : [],
       };
       transaction.set(decisionRef, decisionPatch, { merge: true });
 
@@ -2461,31 +3029,55 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
       // Timestamp.now() for the nested submittedAt.
       //
       // POST-01: use dot-paths rather than replacing the whole `pendingDecision`
-      // so Finance's `pendingDecision.productPrices` (written by submitPrices)
-      // isn't clobbered when Operations submits after Finance.
-      for (const teamPlayerDoc of teamPlayerDocs) {
-        transaction.update(teamPlayerDoc.ref, {
-          'pendingDecision.submitted': true,
-          'pendingDecision.submittedAt': Timestamp.now(),
-          'pendingDecision.round': currentRound,
-          'pendingDecision.menu': validated.menu || {},
-          'pendingDecision.quantities': validated.quantities || {},
-          'pendingDecision.sousChefCount': validated.sousChefCount || 0,
-          'pendingDecision.sousChefAssignments': validated.sousChefAssignments || {},
-          'pendingDecision.staffCounts': objectOrDefault(data.staffCounts, {}),
-          'pendingDecision.maintenanceTasks': Array.isArray(data.maintenanceTasks)
-            ? data.maintenanceTasks
-            : [],
-          consecutiveMissedRounds: 0,
-          disconnected: false,
-          updatedAt: FieldValue.serverTimestamp(),
-        });
-      }
-
-      transaction.update(gameRef, {
-        submittedCount: FieldValue.increment(1),
+      // so Finance's `pendingDecision.productPrices` + `pendingDecision.quantities`
+      // (written by submitPrices) aren't clobbered when Operations submits
+      // after Finance.
+      // M-17 (2026-04-28): pendingDecision.quantities is intentionally NOT
+      // written here — Finance owns that field via submitPrices.
+      const submittedAtTs = Timestamp.now();
+      const draftFields = {
+        submitted: true,
+        submittedAt: submittedAtTs,
+        round: currentRound,
+        menu: validated.menu || {},
+        sousChefCount: validated.sousChefCount || 0,
+        sousChefAssignments: validated.sousChefAssignments || {},
+        staffCounts: objectOrDefault(data.staffCounts, {}),
+      };
+      transaction.update(playerRef, {
+        'pendingDecision.submitted': draftFields.submitted,
+        'pendingDecision.submittedAt': draftFields.submittedAt,
+        'pendingDecision.round': draftFields.round,
+        'pendingDecision.menu': draftFields.menu,
+        'pendingDecision.sousChefCount': draftFields.sousChefCount,
+        'pendingDecision.sousChefAssignments': draftFields.sousChefAssignments,
+        'pendingDecision.staffCounts': draftFields.staffCounts,
+        consecutiveMissedRounds: 0,
+        disconnected: false,
         updatedAt: FieldValue.serverTimestamp(),
       });
+
+      // P0-2 follow-up: capture the team pending fields the post-txn writer
+      // will use. The actual write moves below the transaction — see the
+      // detailed rationale at the end of this function.
+      _submitDecision_teamId = teamId || null;
+      _submitDecision_draftFields = draftFields;
+
+      // T3.3: submittedCount is no longer incremented here. The single-doc
+      // FieldValue.increment(1) was the next contention point at 25–70 students;
+      // it's been replaced by per-uid shard writes after the transaction
+      // (writeUidToSubmittedCountShard below) plus an aggregator trigger
+      // (onSubmittedCountShardWritten) that recomputes game.submittedCount.
+      //
+      // P0-2 follow-up (2026-04-27): the leftover `transaction.update(gameRef,
+      // { updatedAt: ... })` here re-introduced 70-way write-lock contention
+      // that the T3.3 sharding was designed to eliminate. The 70-player
+      // stress test was hitting `60/70 deadline-exceeded` on this single
+      // line. game.updatedAt isn't read by anything that matters (FE
+      // listeners watch phase/round/submittedCount, not updatedAt), so the
+      // write is removed entirely. If a future feature needs a "game last
+      // touched" timestamp, derive it from the `players/{uid}.updatedAt`
+      // we already write or add a sharded equivalent.
     });
   } catch (err) {
     // Re-raise HttpsError untouched so Firebase Functions surfaces the
@@ -2501,6 +3093,42 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
       stack: err && err.stack,
     });
     throw new HttpsError('internal', `submitDecision failed: ${err && err.message ? err.message : err}`);
+  }
+
+  // P0-2 follow-up: mirror the team draft to the per-team pending doc
+  // OUTSIDE the transaction. Same rationale as the joinGame post-txn
+  // increments — `set({ merge: true })` outside a transaction does not
+  // take a pessimistic write lock, so 9 teammates submitting concurrently
+  // (worst case, one team) merge cleanly via field-level updates instead
+  // of contending on the same doc. Best-effort: a failure here doesn't
+  // roll back the player's decision (the transaction above committed
+  // their personal player + decision docs); the team UI mirror just lags.
+  if (_submitDecision_teamId && _submitDecision_draftFields) {
+    try {
+      await teamPendingDocRef(gameRef, _submitDecision_teamId).set({
+        decisionDraft: _submitDecision_draftFields,
+        updatedByUid: uid,
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+    } catch (mirrorErr) {
+      logger.warn('submitDecision team-pending mirror failed — non-fatal.', {
+        gameId, uid, teamId: _submitDecision_teamId, error: mirrorErr && mirrorErr.message,
+      });
+    }
+  }
+
+  // T3.3: bump the sharded submission counter. The aggregator trigger
+  // recomputes game.submittedCount from these shards. Best-effort: if this
+  // fails the player's decision is still saved (the transaction above
+  // already committed); the count just lags briefly until the next submit.
+  if (roundId) {
+    try {
+      await writeUidToSubmittedCountShard(gameRef, roundId, uid);
+    } catch (shardErr) {
+      logger.warn('writeUidToSubmittedCountShard failed — non-fatal.', {
+        gameId, uid, roundId, error: shardErr && shardErr.message,
+      });
+    }
   }
 
   // BE-22: mirror submission state for professor dashboard
@@ -2525,6 +3153,7 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
 // Multiple submits during a single Decide phase are allowed — latest wins.
 
 exports.submitPrices = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request, 'Sign in before submitting prices.');
   const data = request.data || {};
   const gameId = cleanGameId(data.gameId);
@@ -2554,26 +3183,47 @@ exports.submitPrices = onCall(CALLABLE_OPTS, async (request) => {
     _submitPrices_displayName = pSnap.get('displayName') || '';
 
     const game = gSnap.data();
+    if (game.paused === true) {
+      throw new HttpsError('failed-precondition', 'Game is paused. Submissions are temporarily disabled.');
+    }
     if (!canSubmitDecision(game.phase)) {
       throw new HttpsError('failed-precondition', 'Prices can only be submitted during the decide phase.');
     }
 
+    // S-04 (2026-04-29): defense-in-depth phase gate — see matching block
+    // in submitDecision and submitBids. Lets the FE distinguish "stale
+    // phase" from "wrong phase" in error UX.
+    const expectedFromPhase = cleanString(data.expectedFromPhase);
+    if (expectedFromPhase && game.phase !== expectedFromPhase) {
+      throw new HttpsError(
+        'failed-precondition',
+        `Phase has already advanced. Current: ${game.phase}, expected: ${expectedFromPhase}. Prices rejected as stale.`,
+      );
+    }
+
     const currentRound = numberOrDefault(game.currentRound || game.round, 1);
     const teamId = getPlayerTeamId(pSnap.data());
-    const teamPlayerDocs = teamId
-      ? (await transaction.get(gameRef.collection('players').where('teamId', '==', teamId))).docs
-      : [pSnap];
+    // T2.2 follow-up: dropped the `players where teamId == X` cascade read.
+    // The submitter's own player doc still gets the same `pendingDecision.*`
+    // writes (so the submitter's UI is unchanged); the team-shared signals
+    // are mirrored once to the per-team pending doc instead of fanning out
+    // to every teammate's player doc.
     // Note: cfgSnap is read for parity with submitDecision even though the
     // price validator doesn't need it today. Future work may apply per-game
     // zone overrides from config.
     void mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
 
-    // Validate + snap + clamp
+    // Validate + snap + clamp.
+    // M-17 (2026-04-28): submitPrices also accepts `quantities` now —
+    // Finance owns prices AND quantities per the Q6 role split. Operations'
+    // submitDecision strips quantities so the two writes don't race.
     // ValidationError is a plain JS error — convert to HttpsError so the
     // Firebase Functions runtime surfaces the right code to the client.
     let validated;
+    let validatedQuantities;
     try {
       validated = decisionValidation.validateProductPrices(data.productPrices);
+      validatedQuantities = decisionValidation.validateQuantitiesPayload(data.quantities);
     } catch (vErr) {
       if (ValidationError && vErr instanceof ValidationError) {
         throw new HttpsError(vErr.code || 'invalid-argument', vErr.message);
@@ -2589,6 +3239,7 @@ exports.submitPrices = onCall(CALLABLE_OPTS, async (request) => {
     transaction.set(decisionRef, {
       round: currentRound,
       productPrices: validated,
+      quantities: validatedQuantities,
       pricesSubmittedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
 
@@ -2597,18 +3248,43 @@ exports.submitPrices = onCall(CALLABLE_OPTS, async (request) => {
     // true and need no propagation; we only sync optional products.
     const OPTIONAL = ['sandwich', 'coffee', 'matcha'];
     const rawMenu = objectOrDefault(data.menu, {});
-    const menuUpdate = {};
+    const optionalMenuPatch = {};
     for (const p of OPTIONAL) {
-      menuUpdate[`pendingDecision.menu.${p}`] = rawMenu[p] === true;
+      optionalMenuPatch[p] = rawMenu[p] === true;
+    }
+    const playerMenuUpdate = {};
+    for (const p of OPTIONAL) {
+      playerMenuUpdate[`pendingDecision.menu.${p}`] = optionalMenuPatch[p];
     }
 
-    for (const teamPlayerDoc of teamPlayerDocs) {
-      transaction.update(teamPlayerDoc.ref, {
-        'pendingDecision.productPrices': validated,
-        'pendingDecision.pricesSubmitted': true,
-        ...menuUpdate,
+    transaction.update(playerRef, {
+      'pendingDecision.productPrices': validated,
+      'pendingDecision.quantities': validatedQuantities,
+      'pendingDecision.pricesSubmitted': true,
+      ...playerMenuUpdate,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    // T2.2 follow-up: mirror the team-shared price/menu signals to the
+    // per-team pending doc. The deep-merge semantics of `set` with
+    // `merge: true` work cleanly for these top-level keys under
+    // `decisionDraft` — we're either creating new fields or replacing
+    // leaf values (productPrices is a flat map of price scalars,
+    // pricesSubmitted is a boolean, menu.* are booleans). An Operations
+    // submit that lands later writes the full `menu` map and the deep
+    // merge correctly overlays the optional keys we wrote here.
+    if (teamId) {
+      const teamDraftPatch = {
+        productPrices: validated,
+        quantities: validatedQuantities,
+        pricesSubmitted: true,
+        menu: optionalMenuPatch,
+      };
+      transaction.set(teamPendingDocRef(gameRef, teamId), {
+        decisionDraft: teamDraftPatch,
+        updatedByUid: uid,
         updatedAt: FieldValue.serverTimestamp(),
-      });
+      }, { merge: true });
     }
   });
 
@@ -2628,6 +3304,7 @@ exports.submitPrices = onCall(CALLABLE_OPTS, async (request) => {
 // ===========================================================================
 
 exports.submitBids = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request, 'Sign in before bidding.');
   const data = request.data || {};
   const gameId = cleanGameId(data.gameId);
@@ -2644,6 +3321,7 @@ exports.submitBids = onCall(CALLABLE_OPTS, async (request) => {
   let _submitBids_validated = null;
   let _submitBids_role = null;
   let _submitBids_displayName = '';
+  let _submitBids_teamKey = null;
 
   await db.runTransaction(async (transaction) => {
     const [gSnap, pSnap, cfgSnap] = await Promise.all([
@@ -2654,19 +3332,40 @@ exports.submitBids = onCall(CALLABLE_OPTS, async (request) => {
     if (!gSnap.exists) throw new HttpsError('not-found', 'Game not found.');
     if (!pSnap.exists) throw new HttpsError('failed-precondition', 'Join the game before bidding.');
 
-    // BE-21 / FE-I15: advertising (ad bids) / finance (chef bids) —
-    // or solo, or any teammate when that role is unfilled.
+    // BE-21 / FE-I15 / M-18 (2026-04-28): both ad bids AND chef bids are now
+    // owned by the advertising role (renamed to "Analyst" on the FE per the
+    // Q6 role split). Solo always passes; any teammate may submit when the
+    // advertising role is unfilled.
     if (bidType === 'ad') {
       await assertRoleAllowedWithTeam(transaction, gameRef, pSnap, ['advertising']);
     } else {
-      await assertRoleAllowedWithTeam(transaction, gameRef, pSnap, ['finance']);
+      await assertRoleAllowedWithTeam(transaction, gameRef, pSnap, ['advertising']);
     }
     _submitBids_role = pSnap.get('role') || null;
     _submitBids_displayName = pSnap.get('displayName') || '';
+    _submitBids_teamKey = getPlayerTeamKey(pSnap);
 
     const game = gSnap.data();
+    if (game.paused === true) {
+      throw new HttpsError('failed-precondition', 'Game is paused. Bids are temporarily disabled.');
+    }
     if (!canSubmitBids(game.phase, bidType)) {
       throw new HttpsError('failed-precondition', `Current phase ${game.phase} does not accept ${bidType} bids.`);
+    }
+
+    // M-16 (2026-04-28): defense-in-depth phase gate. The FE passes the
+    // phase it THINKS it's submitting for; if the read-time phase has
+    // moved on (auto-advance fired between FE click and backend read),
+    // reject the bid as a stale submission rather than letting it slip
+    // into the next phase's resolution. Mirrors the pattern in
+    // advanceGamePhase's CRIT-02 fix. Optional — pre-M-16 callers that
+    // don't pass it fall back to the existing canSubmitBids gate above.
+    const expectedFromPhase = cleanString(data.expectedFromPhase);
+    if (expectedFromPhase && game.phase !== expectedFromPhase) {
+      throw new HttpsError(
+        'failed-precondition',
+        `Phase has already advanced. Current: ${game.phase}, expected: ${expectedFromPhase}. Bid rejected as stale.`,
+      );
     }
 
     // BE-N04: server-side timer enforcement — reject bids after the phase timer expires.
@@ -2682,9 +3381,10 @@ exports.submitBids = onCall(CALLABLE_OPTS, async (request) => {
     _submitBids_round = round;
     const config = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
     const teamId = getPlayerTeamId(pSnap.data());
-    const teamPlayerDocs = teamId
-      ? (await transaction.get(gameRef.collection('players').where('teamId', '==', teamId))).docs
-      : [pSnap];
+    // T2.2: dropped the `players where teamId == X` cascade read — the
+    // submitter still gets their own `pendingBids.${bidType}` write below
+    // (no behaviour change for the submitter); other teammates subscribe
+    // to the team pending doc instead of having it cascaded onto theirs.
 
     let validated;
     try {
@@ -2706,45 +3406,41 @@ exports.submitBids = onCall(CALLABLE_OPTS, async (request) => {
     }
     _submitBids_validated = validated;
 
-    const roundRef = gameRef.collection('rounds').doc(`round_${round}`);
     const bidsRef = playerRef.collection('bids').doc(`round_${round}`);
     const existing = await transaction.get(bidsRef);
-    const roundSnap = await transaction.get(roundRef);
     const merged = existing.exists ? existing.data() : { round };
-    const topBids = objectOrDefault((roundSnap.exists && roundSnap.data().topBids) || {}, {});
+    const myTeamKey = getPlayerTeamKey(pSnap);
+
+    // S-04 follow-up (2026-04-29): the previous "you already hold the top
+    // bid, cannot change it until outbid" check read `rounds/{N}.topBidsLeader`
+    // — a CACHED aggregate updated asynchronously by `onTopBidsShardWritten`.
+    // Under load that cache lags by 50–500 ms, so a team that just won could
+    // immediately re-submit a lower bid and bypass the lock entirely. I
+    // confirmed this against the emulator: A places $500 on TV (becomes
+    // leader), 44 ms later A submits $50 on TV → ACCEPTED. After 1.5 s
+    // (cache settled), A's $25 attempt is correctly rejected.
+    //
+    // The lock was a UX guard against bid-chickening, not a correctness
+    // requirement: auction RESOLUTION at end of phase reads each player's
+    // own `bids/{round}` doc directly (the source of truth — see
+    // sharded-top-bids.js comment), and the chef shard's design comment
+    // explicitly notes "If a team replaces an earlier chef bid with a
+    // smaller one, that's their explicit intent and the shard records the
+    // latest amount." Removing the lock makes the runtime behaviour match
+    // the documented design and eliminates the cache-lag exploit.
+    //
+    // The FE submit button locks after a successful submit (so accidental
+    // double-clicks won't fire), and the live top-bid display reflects the
+    // last-aggregated state for everyone — no UI invariant relies on the
+    // backend lock.
 
     if (bidType === 'ad') {
-      const existingAd = objectOrDefault(merged.ad, {});
-      const currentTopAd = objectOrDefault(topBids.ad, {});
-      for (const adType of AD_TYPES) {
-        const existingAmount = numberOrDefault(existingAd[adType], 0);
-        const currentTop = numberOrDefault(currentTopAd[adType], 0);
-        const nextAmount = numberOrDefault(validated[adType], 0);
-        if (existingAmount > 0 && existingAmount === currentTop && nextAmount !== existingAmount) {
-          throw new HttpsError(
-            'failed-precondition',
-            `You already hold the top bid for ${adType} and cannot change it until another team outbids you.`
-          );
-        }
-      }
       merged.ad = validated;
     } else {
       const existingChefBids = Array.isArray(merged.chef) ? merged.chef : [];
       const existingChefMap = {};
       for (const bid of existingChefBids) {
         if (bid && bid.chefId) existingChefMap[bid.chefId] = numberOrDefault(bid.amount, 0);
-      }
-      const currentTopChef = objectOrDefault(topBids.chef, {});
-      for (const bid of validated) {
-        if (!bid || !bid.chefId) continue;
-        const existingAmount = numberOrDefault(existingChefMap[bid.chefId], 0);
-        const currentTop = numberOrDefault(currentTopChef[bid.chefId], 0);
-        if (existingAmount > 0 && existingAmount === currentTop && numberOrDefault(bid.amount, 0) !== existingAmount) {
-          throw new HttpsError(
-            'failed-precondition',
-            'You already hold the top bid for that chef and cannot change it until another team outbids you.'
-          );
-        }
       }
 
       const mergedChefMap = { ...existingChefMap };
@@ -2760,17 +3456,54 @@ exports.submitBids = onCall(CALLABLE_OPTS, async (request) => {
     merged[`${bidType}SubmittedAt`] = FieldValue.serverTimestamp();
 
     transaction.set(bidsRef, merged, { merge: true });
-    for (const teamPlayerDoc of teamPlayerDocs) {
-      transaction.update(teamPlayerDoc.ref, {
-        [`pendingBids.${bidType}`]: validated,
+    // T2.2: write submitter's own player doc (preserves the existing
+    // contract — submitter's UI continues to read pendingBids from their
+    // own player doc) and mirror to the per-team pending doc once. Solo
+    // players (no teamId) skip the team mirror.
+    transaction.update(playerRef, {
+      [`pendingBids.${bidType}`]: validated,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    if (teamId) {
+      transaction.set(teamPendingDocRef(gameRef, teamId), {
+        [bidType]: validated,
+        updatedByUid: uid,
         updatedAt: FieldValue.serverTimestamp(),
-      });
+      }, { merge: true });
     }
   });
 
-  // BE-25: update topBids on the round doc after transaction (non-fatal)
-  if (_submitBids_round !== null && _submitBids_validated !== null) {
-    await updateTopBids(gameRef, _submitBids_round, bidType);
+  // BE-25 + perf: write the team's bid into their assigned shard so the FE
+  // can compute live top bids by aggregating across shards. Replaces the
+  // legacy `updateTopBids` single-doc transaction that hot-spotted the round
+  // doc and corrupted state at >10 concurrent bidders. Non-fatal: a failed
+  // shard write only delays the live UI for this team's bid until they
+  // re-submit; the source-of-truth `players/{uid}/bids/{round}` doc is
+  // already committed by the transaction above.
+  if (
+    _submitBids_round !== null
+    && _submitBids_validated !== null
+    && _submitBids_teamKey
+  ) {
+    try {
+      if (bidType === 'ad') {
+        await writeAdBidsToShard(
+          gameRef, _submitBids_round, _submitBids_teamKey, _submitBids_validated,
+        );
+      } else {
+        await writeChefBidsToShard(
+          gameRef, _submitBids_round, _submitBids_teamKey, _submitBids_validated,
+        );
+      }
+    } catch (err) {
+      logger.warn('writeBidsToShard side-effect failed — non-fatal.', {
+        gameId: gameRef.id,
+        round: _submitBids_round,
+        bidType,
+        teamKey: _submitBids_teamKey,
+        error: err && err.message,
+      });
+    }
   }
 
   // BE-22: mirror submission state for professor dashboard
@@ -2790,6 +3523,7 @@ exports.submitBids = onCall(CALLABLE_OPTS, async (request) => {
 // ===========================================================================
 
 exports.layoffChef = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request);
   const data = request.data || {};
   const gameId = cleanGameId(data.gameId);
@@ -2815,6 +3549,9 @@ exports.layoffChef = onCall(CALLABLE_OPTS, async (request) => {
     await assertRoleAllowedWithTeam(transaction, gameRef, pSnap, ['operations']);
 
     const game = gSnap.data();
+    if (game.paused === true) {
+      throw new HttpsError('failed-precondition', 'Game is paused. Roster changes are temporarily disabled.');
+    }
     const { phase } = parsePhase(game.phase, game.currentRound || game.round);
     if (phase !== 'roster') {
       throw new HttpsError('failed-precondition', 'Chefs can only be laid off during the roster phase.');
@@ -2862,10 +3599,645 @@ exports.layoffChef = onCall(CALLABLE_OPTS, async (request) => {
 });
 
 // ===========================================================================
+// layoffChefs (M-13)
+// ===========================================================================
+//
+// Batch lay-off variant of layoffChef. Accepts an array of chefIds and writes
+// every chef to the chefReturnPool + the team's specialtyChefs update inside
+// a single transaction so concurrent layoffs by teammates can't drift the
+// roster between reads and writes. Mirrors the auth + phase + cap rules of
+// the single-chef callable. Scott consumes this from the FE for the new
+// "Lay offs" panel UX (S-05).
+
+exports.layoffChefs = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
+  const auth = requireAuth(request);
+  const data = request.data || {};
+  const gameId = cleanGameId(data.gameId);
+  const rawChefIds = Array.isArray(data.chefIds) ? data.chefIds : null;
+  if (!rawChefIds || rawChefIds.length === 0) {
+    throw new HttpsError('invalid-argument', 'chefIds must be a non-empty array.');
+  }
+  const chefIds = [];
+  const seen = new Set();
+  for (const c of rawChefIds) {
+    const id = cleanString(c);
+    if (!id) {
+      throw new HttpsError('invalid-argument', 'chefIds entries must be non-empty strings.');
+    }
+    if (!seen.has(id)) {
+      seen.add(id);
+      chefIds.push(id);
+    }
+  }
+
+  const uid = auth.uid;
+  const gameRef = gameDoc(gameId);
+  const playerRef = gameRef.collection('players').doc(uid);
+
+  let _laidOffCount = 0;
+
+  await db.runTransaction(async (transaction) => {
+    const [gSnap, pSnap, cfgSnap] = await Promise.all([
+      transaction.get(gameRef),
+      transaction.get(playerRef),
+      transaction.get(gameRef.collection('config').doc('params')),
+    ]);
+    if (!gSnap.exists) throw new HttpsError('not-found', 'Game not found.');
+    if (!pSnap.exists) throw new HttpsError('failed-precondition', 'Player not in this game.');
+
+    await assertRoleAllowedWithTeam(transaction, gameRef, pSnap, ['operations']);
+
+    const game = gSnap.data();
+    if (game.paused === true) {
+      throw new HttpsError('failed-precondition', 'Game is paused. Roster changes are temporarily disabled.');
+    }
+    const { phase } = parsePhase(game.phase, game.currentRound || game.round);
+    if (phase !== 'roster') {
+      throw new HttpsError('failed-precondition', 'Chefs can only be laid off during the roster phase.');
+    }
+
+    const config = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
+    const specialtyChefCap = numberOrDefault(config.specialtyChefCap, 3);
+    const player = pSnap.data();
+    const teamId = getPlayerTeamId(player);
+    const teamPlayerDocs = teamId
+      ? (await transaction.get(gameRef.collection('players').where('teamId', '==', teamId))).docs
+      : [pSnap];
+    const specialtyChefs = Array.isArray(player.specialtyChefs) ? player.specialtyChefs : [];
+    const round = numberOrDefault(game.currentRound || game.round, 1);
+
+    // All-or-nothing: validate every requested chef before any writes so
+    // partial failures can't leave the roster in an unexpected state.
+    const removed = [];
+    for (const chefId of chefIds) {
+      const chef = specialtyChefs.find((c) => c && c.id === chefId);
+      if (!chef) {
+        throw new HttpsError('not-found', `Chef ${chefId} not on your roster.`);
+      }
+      removed.push(chef);
+    }
+    const removedIds = new Set(chefIds);
+    const remaining = specialtyChefs.filter(
+      (c) => !c || !removedIds.has(c.id),
+    );
+
+    for (const chef of removed) {
+      const returnPoolRef = gameRef
+        .collection('rounds')
+        .doc(`round_${round}`)
+        .collection('chefReturnPool')
+        .doc(chef.id);
+      transaction.set(returnPoolRef, {
+        ...chef,
+        returnedByPlayerId: uid,
+        returnedAt: FieldValue.serverTimestamp(),
+      });
+    }
+
+    for (const teamPlayerDoc of teamPlayerDocs) {
+      transaction.update(teamPlayerDoc.ref, {
+        specialtyChefs: remaining,
+        pendingRosterAction: remaining.length > specialtyChefCap,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
+
+    _laidOffCount = removed.length;
+  });
+
+  return { gameId, chefIds, laidOffCount: _laidOffCount };
+});
+
+// ===========================================================================
+// reclaimTeammateRole (M-10)
+// ===========================================================================
+//
+// Allows any teammate to clear `roleAssignments[targetUid]` on the team doc
+// when the target's presence has gone stale or their player doc is flagged
+// disconnected. Without this, a closed-tab teammate's specialist role
+// stays locked on the team forever and the remaining teammates can't take
+// over the corresponding submit button.
+
+const PRESENCE_STALE_MS = 60_000;
+
+exports.reclaimTeammateRole = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
+  const auth = requireAuth(request, 'Sign in to reclaim a teammate role.');
+  const data = request.data || {};
+  const gameId = cleanGameId(data.gameId);
+  const teamId = cleanString(data.teamId);
+  const targetUid = cleanString(data.targetUid);
+  if (!teamId) throw new HttpsError('invalid-argument', 'teamId is required.');
+  if (!targetUid) throw new HttpsError('invalid-argument', 'targetUid is required.');
+  if (targetUid === auth.uid) {
+    throw new HttpsError('invalid-argument', 'Cannot reclaim your own role — clear it via setTeamRole.');
+  }
+
+  const uid = auth.uid;
+  const gameRef = gameDoc(gameId);
+  const teamRef = gameRef.collection('teams').doc(teamId);
+  const callerRef = gameRef.collection('players').doc(uid);
+  const targetPlayerRef = gameRef.collection('players').doc(targetUid);
+  const targetPresenceRef = gameRef.collection('presence').doc(targetUid);
+
+  await db.runTransaction(async (transaction) => {
+    const [gSnap, callerSnap, teamSnap, targetSnap, presenceSnap] = await Promise.all([
+      transaction.get(gameRef),
+      transaction.get(callerRef),
+      transaction.get(teamRef),
+      transaction.get(targetPlayerRef),
+      transaction.get(targetPresenceRef),
+    ]);
+
+    if (!gSnap.exists) throw new HttpsError('not-found', 'Game not found.');
+    if (!callerSnap.exists) {
+      throw new HttpsError('failed-precondition', 'Join the game before reclaiming a role.');
+    }
+    if (!teamSnap.exists) {
+      throw new HttpsError('not-found', 'Team not found.');
+    }
+    const callerTeamId = getPlayerTeamId(callerSnap.data());
+    if (callerTeamId !== teamId) {
+      throw new HttpsError('permission-denied', 'You can only reclaim a role on your own team.');
+    }
+
+    // Eligibility: presence stale OR disconnected flag set on the target's
+    // player doc. The disconnected flag is set by the simulation when a
+    // player misses two consecutive rounds (BE-19); presence is set when
+    // their tab closes / backgrounds for > 60s.
+    const lastSeenAt = presenceSnap.exists ? presenceSnap.get('lastSeenAt') : null;
+    const lastSeenMs = lastSeenAt && typeof lastSeenAt.toMillis === 'function'
+      ? lastSeenAt.toMillis()
+      : 0;
+    const presenceStale = lastSeenMs > 0
+      ? (Timestamp.now().toMillis() - lastSeenMs) > PRESENCE_STALE_MS
+      : true; // no presence doc → treat as stale (never connected this session)
+    const targetDisconnected = targetSnap.exists
+      && targetSnap.get('disconnected') === true;
+
+    if (!presenceStale && !targetDisconnected) {
+      throw new HttpsError(
+        'failed-precondition',
+        'That teammate is still connected. Wait 60s after they leave before reclaiming.',
+      );
+    }
+
+    const teamData = teamSnap.data() || {};
+    const roleAssignments = teamData.roleAssignments || {};
+    if (roleAssignments[targetUid] === undefined || roleAssignments[targetUid] === null) {
+      // Idempotent — no role to clear, return success rather than error.
+      return;
+    }
+
+    transaction.update(teamRef, {
+      [`roleAssignments.${targetUid}`]: null,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    // Mirror `setTeamRole`'s clear path: drop the target's mirrored role
+    // on the player doc too. `assertRoleAllowedWithTeam` short-circuits
+    // on `playerRole === 'solo' || allowedRoles.includes(playerRole)`
+    // (without consulting the team doc), so leaving a stale role on the
+    // player doc would let the reclaimed teammate keep passing role gates
+    // even after their team-doc assignment is null — meaning two players
+    // could simultaneously submit as `operations` (or any role) after a
+    // reclaim. `solo` is the safe post-clear default, matching
+    // `setTeamRole`.
+    if (targetSnap.exists) {
+      transaction.update(targetPlayerRef, { role: 'solo' });
+    }
+  });
+
+  return { gameId, teamId, targetUid, reclaimed: true };
+});
+
+// ===========================================================================
+// saveDecisionDraft (K-02 / K-03)
+// ===========================================================================
+//
+// Lightweight team-shared draft sync. Fired by the FE on a debounced timer
+// (~500ms) whenever `pendingDecision` changes locally. Writes a merge to
+// `teams/{teamId}/state/pending.decisionDraft` so the team-pending listener
+// picks it up on every other teammate's tab and hydrates their context.
+//
+// This is the "draft" side of the same doc that `submitDecision` and
+// `submitPrices` write to — the canonical validation lives there. Here we
+// only need to:
+//   • Verify the caller is on the team they claim (auth scope).
+//   • Coerce/clamp the incoming draft fields to defensive shapes so a
+//     buggy client can't poison the team doc.
+//   • Skip when the player is solo (no team).
+//
+// Returns `{ ok: true }` on success, or `{ ok: true, skipped: true }` for
+// solo players where there's no team doc to write to.
+//
+// Pairs with K-02 (decisionDraft fields) and K-03 (miscSpent on the draft).
+// Submission flags (`submitted`, `pricesSubmitted`) are NOT touched here —
+// only the actual submit callables can flip those.
+
+const DRAFT_NUMERIC_KEYS = ['miscSpent'];
+const DRAFT_PRODUCT_NUMERIC_MAPS = ['quantities', 'sousChefAssignments', 'productPrices'];
+const DRAFT_PRODUCT_BOOL_MAPS = ['menu'];
+
+function sanitizeProductNumberMap(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const out = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (typeof k !== 'string' || k.length === 0) continue;
+    if (typeof v !== 'number' || !Number.isFinite(v)) continue;
+    // Cap defensively at 1e7 to keep a runaway client from writing a
+    // huge integer (the actual ceilings are enforced at submit time).
+    out[k] = Math.max(0, Math.min(v, 10_000_000));
+  }
+  return out;
+}
+
+function sanitizeProductBoolMap(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const out = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (typeof k !== 'string' || k.length === 0) continue;
+    if (typeof v !== 'boolean') continue;
+    out[k] = v;
+  }
+  return out;
+}
+
+function sanitizeStaffCounts(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const out = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (typeof k !== 'string' || k.length === 0) continue;
+    if (typeof v !== 'number' || !Number.isFinite(v)) continue;
+    out[k] = Math.max(0, Math.min(Math.round(v), 999));
+  }
+  return out;
+}
+
+exports.saveDecisionDraft = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
+  const auth = requireAuth(request, 'Sign in before continuing.');
+  const data = request.data || {};
+  const gameId = cleanGameId(data.gameId);
+  const draft = data.draft;
+  if (!draft || typeof draft !== 'object' || Array.isArray(draft)) {
+    throw new HttpsError('invalid-argument', 'draft must be an object.');
+  }
+
+  const uid = auth.uid;
+  const gameRef = gameDoc(gameId);
+  const playerRef = gameRef.collection('players').doc(uid);
+
+  // Read the player doc once (no transaction — this is a high-frequency
+  // hot path and the worst-case race is "draft from a teammate writes
+  // 500ms before mine"; canonical validation happens at submit).
+  const pSnap = await playerRef.get();
+  if (!pSnap.exists) {
+    throw new HttpsError('failed-precondition', 'Join the game before saving a draft.');
+  }
+  const teamId = getPlayerTeamId(pSnap.data());
+  if (!teamId) {
+    // Solo players: their player doc IS the source of truth, no team
+    // doc to mirror to. Return a skipped success so the FE doesn't
+    // surface an error chip.
+    return { ok: true, skipped: true, reason: 'solo' };
+  }
+
+  // Build the sanitized patch — only include fields the caller actually
+  // sent so we don't blow away other teammates' more recent merges
+  // (e.g. Operations' staffCounts that landed 200ms ago) by writing
+  // empty/default scaffolds for keys the caller didn't touch.
+  const patch = {};
+  for (const k of DRAFT_PRODUCT_BOOL_MAPS) {
+    if (k in draft) {
+      const v = sanitizeProductBoolMap(draft[k]);
+      if (v) patch[k] = v;
+    }
+  }
+  for (const k of DRAFT_PRODUCT_NUMERIC_MAPS) {
+    if (k in draft) {
+      const v = sanitizeProductNumberMap(draft[k]);
+      if (v) patch[k] = v;
+    }
+  }
+  if ('staffCounts' in draft) {
+    const v = sanitizeStaffCounts(draft.staffCounts);
+    if (v) patch.staffCounts = v;
+  }
+  for (const k of DRAFT_NUMERIC_KEYS) {
+    if (k in draft) {
+      const v = draft[k];
+      if (typeof v === 'number' && Number.isFinite(v)) {
+        patch[k] = Math.max(0, Math.min(v, 10_000_000));
+      }
+    }
+  }
+  if ('equipmentUpgradePurchased' in draft) {
+    if (typeof draft.equipmentUpgradePurchased === 'boolean') {
+      patch.equipmentUpgradePurchased = draft.equipmentUpgradePurchased;
+    }
+  }
+
+  if (Object.keys(patch).length === 0) {
+    // No actionable fields — refuse rather than no-op-write so a bug
+    // in the caller (e.g. sending all-undefined keys) surfaces clearly
+    // rather than churning empty writes.
+    throw new HttpsError('invalid-argument', 'draft has no recognized fields.');
+  }
+
+  await teamPendingDocRef(gameRef, teamId).set({
+    decisionDraft: patch,
+    updatedByUid: uid,
+    updatedAt: FieldValue.serverTimestamp(),
+  }, { merge: true });
+
+  return { ok: true, gameId, teamId };
+});
+
+// ===========================================================================
+// rehireChef (S-05)
+// ===========================================================================
+//
+// Counterpart to layoffChef. Pulls a chef back out of the current round's
+// chefReturnPool and re-adds them to the player's specialtyChefs IF:
+//   1. The chef's pool entry exists for the CURRENT round (you can only
+//      rehire someone YOU just laid off, not historical departures).
+//   2. The player's roster has space (specialtyChefs.length < cap).
+//   3. We're still in the roster phase (commit happens on phase advance).
+//
+// Same auth rules as layoffChef — operations / solo or any teammate when
+// nobody on the team holds operations.
+//
+// Pairs with S-05's "Lay offs" panel UX: instant lay-off via layoffChef,
+// re-hire button next to each laid-off chef calls back into here.
+
+exports.rehireChef = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
+  const auth = requireAuth(request);
+  const data = request.data || {};
+  const gameId = cleanGameId(data.gameId);
+  const chefId = cleanString(data.chefId);
+  if (!chefId) throw new HttpsError('invalid-argument', 'chefId is required.');
+
+  const uid = auth.uid;
+  const gameRef = gameDoc(gameId);
+  const playerRef = gameRef.collection('players').doc(uid);
+
+  await db.runTransaction(async (transaction) => {
+    const [gSnap, pSnap, cfgSnap] = await Promise.all([
+      transaction.get(gameRef),
+      transaction.get(playerRef),
+      transaction.get(gameRef.collection('config').doc('params')),
+    ]);
+    if (!gSnap.exists) throw new HttpsError('not-found', 'Game not found.');
+    if (!pSnap.exists) throw new HttpsError('failed-precondition', 'Player not in this game.');
+
+    // Mirror layoffChef's role gate so the same Operations / Solo /
+    // vacant-role fallback applies.
+    await assertRoleAllowedWithTeam(transaction, gameRef, pSnap, ['operations']);
+
+    const game = gSnap.data();
+    if (game.paused === true) {
+      throw new HttpsError('failed-precondition', 'Game is paused. Roster changes are temporarily disabled.');
+    }
+    const { phase } = parsePhase(game.phase, game.currentRound || game.round);
+    if (phase !== 'roster') {
+      throw new HttpsError(
+        'failed-precondition',
+        'Chefs can only be re-hired during the roster phase.',
+      );
+    }
+
+    const config = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
+    const specialtyChefCap = numberOrDefault(config.specialtyChefCap, 3);
+    const player = pSnap.data();
+    const teamId = getPlayerTeamId(player);
+    const teamPlayerDocs = teamId
+      ? (await transaction.get(gameRef.collection('players').where('teamId', '==', teamId))).docs
+      : [pSnap];
+
+    const round = numberOrDefault(game.currentRound || game.round, 1);
+    const returnPoolRef = gameRef
+      .collection('rounds')
+      .doc(`round_${round}`)
+      .collection('chefReturnPool')
+      .doc(chefId);
+    const poolSnap = await transaction.get(returnPoolRef);
+    if (!poolSnap.exists) {
+      // Chef wasn't laid off this round (or was already rehired). Idempotent
+      // success: the FE renders re-hire only for chefs in the panel, but a
+      // racing teammate could have rehired the same chef in another tab.
+      throw new HttpsError(
+        'failed-precondition',
+        'That chef is no longer in the lay-off pool.',
+      );
+    }
+
+    const specialtyChefs = Array.isArray(player.specialtyChefs) ? player.specialtyChefs : [];
+    if (specialtyChefs.length >= specialtyChefCap) {
+      throw new HttpsError(
+        'failed-precondition',
+        `Roster is full (${specialtyChefCap} max). Lay off another chef first.`,
+      );
+    }
+
+    // Reconstruct the chef object from the pool entry. The lay-off path
+    // wrote the original chef shape plus return-tracking metadata; strip
+    // those before adding back to the roster.
+    const poolData = poolSnap.data() || {};
+    const { returnedByPlayerId, returnedAt, ...chefFields } = poolData;
+    void returnedByPlayerId;
+    void returnedAt;
+    const restoredChef = { ...chefFields, id: chefId };
+    const nextRoster = [...specialtyChefs, restoredChef];
+
+    transaction.delete(returnPoolRef);
+    for (const teamPlayerDoc of teamPlayerDocs) {
+      transaction.update(teamPlayerDoc.ref, {
+        specialtyChefs: nextRoster,
+        pendingRosterAction: nextRoster.length > specialtyChefCap,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
+  });
+
+  return { ok: true, gameId, chefId, rehired: true };
+});
+
+// ===========================================================================
+// markStalePlayersDisconnected (M-22)
+// ===========================================================================
+//
+// M-10's `reclaimTeammateRole` is the manual single-uid path (Scott's S-06
+// "Take over" button). M-22 is the automatic, team-wide layer above it:
+// any teammate's tab can call this every ~60s, and the server scans every
+// presence doc in the game, flips `players/{uid}.disconnected = true` on
+// stale uids, and clears their role claim if they hold one. After the
+// clear, FE-I15's vacant-role fallback lets remaining teammates submit on
+// the disconnected player's behalf without prof intervention.
+//
+// Callable rather than scheduled because:
+//   • adding Cloud Scheduler infra mid-week before the playtest is risky
+//   • the prof tab + every active player tab can fan out the work
+//     naturally — at least one tab will hit the staleness window
+//   • makes the work scoped to `gameId` (no global cron per-project)
+//
+// Defensive: requires the caller to be in the game (player or prof). The
+// state changes (set disconnected, clear roleAssignments[uid]) are
+// idempotent so multiple concurrent tabs firing the same tick converge.
+
+const M22_STALE_MS = 90_000; // 90s per spec
+const M22_OWNED_PHASES = new Set(['bid_ad', 'bid_chef', 'roster', 'decide']);
+
+exports.markStalePlayersDisconnected = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
+  const auth = requireAuth(request, 'Sign in before scanning presence.');
+  const data = request.data || {};
+  const gameId = cleanGameId(data.gameId);
+  const uid = auth.uid;
+  const gameRef = gameDoc(gameId);
+
+  // Authorize: caller must be a player in this game OR the professor.
+  // Defensive — without this any signed-in user could mass-disconnect
+  // players in any game.
+  const [gameSnap, callerSnap] = await Promise.all([
+    gameRef.get(),
+    gameRef.collection('players').doc(uid).get(),
+  ]);
+  if (!gameSnap.exists) throw new HttpsError('not-found', 'Game not found.');
+  const isPlayer = callerSnap.exists;
+  const isProf = !!(request.auth && request.auth.token && request.auth.token.professor === true);
+  if (!isPlayer && !isProf) {
+    throw new HttpsError('permission-denied', 'Not a player or professor in this game.');
+  }
+
+  // Read presence + players + teams collections OUTSIDE the txn (collection
+  // queries can't run inside Firestore transactions). The subsequent
+  // per-uid update writes are safe under merge — concurrent ticks across
+  // multiple tabs converge to the same end-state.
+  const [presenceSnap, playersSnap, teamsSnap] = await Promise.all([
+    gameRef.collection('presence').get(),
+    gameRef.collection('players').get(),
+    gameRef.collection('teams').get(),
+  ]);
+
+  const nowMs = Timestamp.now().toMillis();
+  const presenceByUid = new Map();
+  for (const d of presenceSnap.docs) {
+    const lastSeenAt = d.get('lastSeenAt');
+    const ms = lastSeenAt && typeof lastSeenAt.toMillis === 'function'
+      ? lastSeenAt.toMillis()
+      : 0;
+    presenceByUid.set(d.id, ms);
+  }
+
+  // Compute the per-team role-assignment map so we can look up "what role
+  // does this stale uid currently hold?" without re-reading.
+  const teamRolesByTeamId = new Map();
+  for (const td of teamsSnap.docs) {
+    teamRolesByTeamId.set(td.id, (td.data() || {}).roleAssignments || {});
+  }
+
+  // The current phase determines whether we should clear role claims.
+  // Per the spec, only auto-clear during phases the role would own —
+  // outside of those (e.g. simulating, results_ready), staleness still
+  // marks `disconnected: true` but leaves the role claim alone so the
+  // team's role assignments stay intact through the simulation phase
+  // (no FE submit gate to unblock there).
+  //
+  // `parsePhase` throws a raw Error on a missing/non-string phase string,
+  // which would surface as `internal` to the FE caller after we've already
+  // burned three Firestore reads above. Guard explicitly so an in-between
+  // game doc state (no `phase` field yet) returns a clean no-op rather
+  // than a 500 — the next tick will re-check once the game has phased in.
+  const rawPhase = gameSnap.get('phase');
+  if (typeof rawPhase !== 'string' || rawPhase.length === 0) {
+    return {
+      gameId, staleCount: 0, rolesCleared: 0, scannedAt: nowMs, phase: null,
+    };
+  }
+  const { phase: currentBasePhase } = parsePhase(
+    rawPhase,
+    gameSnap.get('currentRound') || gameSnap.get('round'),
+  );
+  const shouldClearRoles = M22_OWNED_PHASES.has(currentBasePhase);
+
+  let staleCount = 0;
+  let rolesCleared = 0;
+  // Use a single WriteBatch so the role-clear pair (team-doc null + player-
+  // doc 'solo') commits atomically per-call. PR #144 fixed exactly this
+  // dual-role race in `reclaimTeammateRole` by wrapping its two writes in a
+  // transaction; if we issued them as separate `Promise.all` updates here,
+  // a partial failure (transient 503, function timeout mid-flight) could
+  // commit the team-doc clear without the player-doc 'solo' — leaving
+  // `playerDoc.role` stale and letting `assertRoleAllowedWithTeam`'s
+  // short-circuit keep passing the disconnected player through role gates.
+  // The `disconnected: true` writes ride along in the same batch — also
+  // idempotent, no harm in atomicity. Batch limit is 500 ops; for our class
+  // sizes (≤80 players) we're nowhere near that ceiling.
+  const batch = db.batch();
+  let opCount = 0;
+
+  for (const playerDoc of playersSnap.docs) {
+    const targetUid = playerDoc.id;
+    const playerData = playerDoc.data() || {};
+    const lastSeenMs = presenceByUid.get(targetUid) || 0;
+    // No presence doc OR last seen > 90s ago → considered stale.
+    const isStale = lastSeenMs === 0
+      ? false // skip uids with no presence record (joined but never pinged — pre-game)
+      : (nowMs - lastSeenMs) > M22_STALE_MS;
+    if (!isStale) continue;
+    staleCount += 1;
+
+    // Mark disconnected on the player doc. Idempotent under merge.
+    if (playerData.disconnected !== true) {
+      batch.update(playerDoc.ref, {
+        disconnected: true,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      opCount += 1;
+    }
+
+    // Clear role claim if the team has one for this uid AND we're in a
+    // submission phase. Outside submission phases the claim is harmless.
+    if (!shouldClearRoles) continue;
+    const teamId = getPlayerTeamId(playerData);
+    if (!teamId) continue;
+    const roleMap = teamRolesByTeamId.get(teamId) || {};
+    const targetRole = roleMap[targetUid];
+    if (targetRole == null) continue;
+    rolesCleared += 1;
+    batch.update(gameRef.collection('teams').doc(teamId), {
+      [`roleAssignments.${targetUid}`]: null,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    // Reset the player doc's role to 'solo' so assertRoleAllowedWithTeam's
+    // short-circuit (which doesn't consult the team doc) can't keep passing
+    // them through after the team-doc clear. Mirrors M-10/PR #144's
+    // defensive write — and now lands atomically with the team-doc clear.
+    batch.update(playerDoc.ref, { role: 'solo' });
+    opCount += 2;
+  }
+
+  if (opCount > 0) {
+    await batch.commit();
+  }
+
+  return {
+    gameId,
+    staleCount,
+    rolesCleared,
+    scannedAt: nowMs,
+    phase: currentBasePhase,
+  };
+});
+
+// ===========================================================================
 // continueFromRoster
 // ===========================================================================
 
 exports.continueFromRoster = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request);
   const data = request.data || {};
   const gameId = cleanGameId(data.gameId);
@@ -2894,6 +4266,9 @@ exports.continueFromRoster = onCall(CALLABLE_OPTS, async (request) => {
     await assertRoleAllowedWithTeam(transaction, gameRef, pSnap, ['operations']);
 
     const game = gSnap.data();
+    if (game.paused === true) {
+      throw new HttpsError('failed-precondition', 'Game is paused. Roster actions are temporarily disabled.');
+    }
     const { phase } = parsePhase(game.phase, game.currentRound || game.round);
     if (phase !== 'roster') {
       throw new HttpsError('failed-precondition', 'Roster actions are only allowed during the roster phase.');
@@ -2981,14 +4356,21 @@ async function setPausedFlag(request, paused) {
   return { gameId, paused };
 }
 
-exports.pauseGame  = onCall(CALLABLE_OPTS, async (request) => setPausedFlag(request, true));
-exports.resumeGame = onCall(CALLABLE_OPTS, async (request) => setPausedFlag(request, false));
+exports.pauseGame  = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
+  return setPausedFlag(request, true);
+});
+exports.resumeGame = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
+  return setPausedFlag(request, false);
+});
 
 // ===========================================================================
 // endGame — force transition to game_over
 // ===========================================================================
 
-exports.endGame = onCall(CALLABLE_OPTS, async (request) => {
+exports.endGame = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request);
   const gameId = cleanGameId((request.data || {}).gameId);
   const gameRef = gameDoc(gameId);
@@ -3047,6 +4429,7 @@ exports.endGame = onCall(CALLABLE_OPTS, async (request) => {
 // ===========================================================================
 
 exports.getConclusion = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request, 'Sign in to view game results.');
   const gameId = cleanGameId((request.data || {}).gameId);
   const gameRef = gameDoc(gameId);
@@ -3075,7 +4458,8 @@ exports.getConclusion = onCall(CALLABLE_OPTS, async (request) => {
 // exportPlayerCsv — player downloads their own round-by-round CSV
 // ===========================================================================
 
-exports.exportPlayerCsv = onCall(CALLABLE_OPTS, async (request) => {
+exports.exportPlayerCsv = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request, 'Sign in to export your data.');
   const gameId = cleanGameId((request.data || {}).gameId);
   const gameRef = gameDoc(gameId);
@@ -3113,7 +4497,8 @@ exports.exportPlayerCsv = onCall(CALLABLE_OPTS, async (request) => {
 // exportProfessorCsv — professor downloads class-wide CSV with player names
 // ===========================================================================
 
-exports.exportProfessorCsv = onCall(CALLABLE_OPTS, async (request) => {
+exports.exportProfessorCsv = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request, 'Sign in to export class data.');
   const gameId = cleanGameId((request.data || {}).gameId);
   const gameRef = gameDoc(gameId);
@@ -3181,14 +4566,15 @@ exports.exportProfessorCsv = onCall(CALLABLE_OPTS, async (request) => {
 // ===========================================================================
 
 /**
- * Observational trigger: when a player's decision is written, log whether
- * every player has now submitted. The actual simulation is triggered by the
- * professor advancing through the phase state machine.
+ * Observational trigger: when a player's decision is written, log that the
+ * submission landed. The actual simulation is triggered by the professor
+ * advancing through the phase state machine.
  *
- * CRIT-01 / MED-12 / HIGH-08 fix: this trigger no longer writes
- * submittedCount to the game doc. `submitDecision`'s transactional
- * `FieldValue.increment(1)` is the sole authoritative writer, which is
- * race-safe for concurrent submissions. The trigger is purely observational.
+ * CRIT-01 / MED-12 / HIGH-08 fix: this trigger does not write
+ * `submittedCount` to the game doc — only `onSubmittedCountShardWritten`
+ * does, by aggregating sharded uid intake docs. Concurrent submissions
+ * stay race-safe because each shard write is keyed by uid (idempotent)
+ * and the aggregator is gated on the round from the shard's path.
  */
 exports.onDecisionSubmitted = onDocumentCreated(
   'games/{gameId}/players/{playerId}/decisions/{roundId}',
@@ -3218,16 +4604,15 @@ exports.onDecisionSubmitted = onDocumentCreated(
         return;
       }
 
-      // Read the game doc's submittedCount (set by submitDecision's increment).
-      const submittedCount = numberOrDefault(game.submittedCount, 0);
-
+      // `game.submittedCount` is now eventually-consistent via
+      // `onSubmittedCountShardWritten`, so we don't compute `allSubmitted`
+      // here — it would be off-by-N depending on trigger ordering. The
+      // aggregator is the source of truth for the count.
       logger.info('Decision submitted.', {
         gameId,
         playerId,
         round,
-        submittedCount,
         totalPlayers: playersSnap.size,
-        allSubmitted: submittedCount >= playersSnap.size,
       });
     } catch (err) {
       logger.error('onDecisionSubmitted failure.', {
@@ -3238,13 +4623,102 @@ exports.onDecisionSubmitted = onDocumentCreated(
 );
 
 // ---------------------------------------------------------------------------
+// onTopBidsShardWritten — aggregate sharded bids into rounds/{round}.topBids
+//
+// Each `submitBids` call writes to one shard under
+// `rounds/{round}/topBidsShards/{idx}`. This trigger watches those shard
+// writes and recomputes the public top-bids aggregate that the FE listens
+// to. Running with `concurrency: 1` (single instance, single in-flight
+// invocation) serialises the round-doc writes so they don't pile up under
+// the per-document write throttle when 25 teams bid in the same window.
+// `recomputeAndCacheTopBids` skips the write when the aggregate is
+// unchanged, so a burst of N shard writes resolves to ≤N round-doc writes
+// (and usually far fewer once the leader stabilises).
+// ---------------------------------------------------------------------------
+exports.onTopBidsShardWritten = onDocumentWritten(
+  {
+    document: 'games/{gameId}/rounds/{roundId}/topBidsShards/{shardIdx}',
+    concurrency: 1,
+  },
+  async (event) => {
+    const { gameId, roundId } = event.params;
+    const match = /^round_(\d+)$/.exec(roundId);
+    if (!match) return;
+    const round = Number(match[1]);
+    const gameRef = gameDoc(gameId);
+    try {
+      await recomputeAndCacheTopBids(gameRef, round);
+    } catch (err) {
+      logger.warn('onTopBidsShardWritten aggregation failed — non-fatal.', {
+        gameId, round, error: err && err.message,
+      });
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
+// onSubmissionShardWritten — aggregate sharded submission records into the
+// public `submissions/{docId}` + `submissionCounts/{docId}` docs that the FE
+// (SubmissionLock) and professor dashboard already listen to. Same `concurrency: 1`
+// + skip-no-op pattern as `onTopBidsShardWritten`. See `modules/sharded-submissions.js`.
+// ---------------------------------------------------------------------------
+exports.onSubmissionShardWritten = onDocumentWritten(
+  {
+    document: 'games/{gameId}/submissions/{submissionDocId}/shards/{shardIdx}',
+    concurrency: 1,
+  },
+  async (event) => {
+    const { gameId, submissionDocId } = event.params;
+    const gameRef = gameDoc(gameId);
+    try {
+      await recomputeAndCacheSubmissions(gameRef, submissionDocId);
+    } catch (err) {
+      logger.warn('onSubmissionShardWritten aggregation failed — non-fatal.', {
+        gameId, submissionDocId, error: err && err.message,
+      });
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
+// onSubmittedCountShardWritten — aggregate sharded uid sets into the game
+// doc's `submittedCount` field. Each `submitDecision` writes to one shard
+// under `submittedCountShards/round_{N}/shards/{idx}`; this trigger recounts
+// THAT round's shards (parsed from the path, not the live game doc) and
+// writes to `game.submittedCount` only if the game is still on that round.
+// Same `concurrency: 1` + skip-no-op pattern as `onTopBidsShardWritten`.
+// See `modules/sharded-counter.js`.
+// ---------------------------------------------------------------------------
+exports.onSubmittedCountShardWritten = onDocumentWritten(
+  {
+    document: 'games/{gameId}/submittedCountShards/{roundDocId}/shards/{shardIdx}',
+    concurrency: 1,
+  },
+  async (event) => {
+    const { gameId, roundDocId } = event.params;
+    const match = /^round_(\d+)$/.exec(roundDocId);
+    if (!match) return;
+    const round = Number(match[1]);
+    const gameRef = gameDoc(gameId);
+    try {
+      await recomputeAndCacheSubmittedCount(gameRef, round);
+    } catch (err) {
+      logger.warn('onSubmittedCountShardWritten aggregation failed — non-fatal.', {
+        gameId, round, error: err && err.message,
+      });
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
 // updateTeamName — any team member may rename their team.
 // ---------------------------------------------------------------------------
 exports.updateTeamName = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = request.auth;
   if (!auth) throw new HttpsError('unauthenticated', 'Must be signed in.');
 
-  const gameId   = cleanString(request.data && request.data.gameId);
+  const gameId   = cleanGameId(request.data && request.data.gameId);
   const teamId   = cleanString(request.data && request.data.teamId);
   const name     = cleanString(request.data && request.data.name);
 
@@ -3287,10 +4761,11 @@ exports.updateTeamName = onCall(CALLABLE_OPTS, async (request) => {
 //     keep working without reading the teams collection.
 // ---------------------------------------------------------------------------
 exports.setTeamRole = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = request.auth;
   if (!auth) throw new HttpsError('unauthenticated', 'Must be signed in.');
 
-  const gameId = cleanString(request.data && request.data.gameId);
+  const gameId = cleanGameId(request.data && request.data.gameId);
   const teamId = cleanString(request.data && request.data.teamId);
   // BE-I13: accept null / "" / "unassigned" as an explicit clear signal.
   // The FE's "× Clear" button sends `role: null`; `cleanString(null)`
@@ -3358,18 +4833,29 @@ exports.setTeamRole = onCall(CALLABLE_OPTS, async (request) => {
 // extendPhase — BE-N02: professor extends the active phase timer
 // ===========================================================================
 
-exports.extendPhase = onCall(async (request) => {
+exports.extendPhase = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
-  const { gameId, extraSeconds } = request.data || {};
+  const data = request.data || {};
+  const gameId = cleanGameId(data.gameId);
+  const extraSeconds = data.extraSeconds;
   if (!gameId || typeof extraSeconds !== "number") {
     throw new HttpsError("invalid-argument", "gameId and extraSeconds are required.");
   }
+  if (!Number.isFinite(extraSeconds) || extraSeconds <= 0) {
+    throw new HttpsError("invalid-argument", "extraSeconds must be a positive number.");
+  }
   const cappedExtra = Math.min(extraSeconds, 300);
-  const gameRef = db.collection("games").doc(gameId);
+  const gameRef = gameDoc(gameId);
   const gameSnap = await gameRef.get();
   if (!gameSnap.exists) throw new HttpsError("not-found", "Game not found.");
   const game = gameSnap.data();
-  const isProfessor = request.auth.uid === game.professorUid ||
+  // Mirror assertCallerIsProfessor / endGame / setPausedFlag: check both
+  // professorUid and the legacy professorId alias. The custom claim
+  // remains a global override path for admin tooling.
+  const isProfessor =
+    request.auth.uid === game.professorUid ||
+    request.auth.uid === game.professorId ||
     (request.auth.token && request.auth.token.professor === true);
   if (!isProfessor) throw new HttpsError("permission-denied", "Professors only.");
   const terminalPhases = ["lobby", "game_over", "simulating"];
@@ -3387,28 +4873,44 @@ exports.extendPhase = onCall(async (request) => {
 // purchaseCompetitorInsight — BE-N03: player purchases competitor decisions CSV
 // ===========================================================================
 
-exports.purchaseCompetitorInsight = onCall(async (request) => {
+exports.purchaseCompetitorInsight = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
-  const { gameId, round } = request.data || {};
+  const data = request.data || {};
+  const gameId = cleanGameId(data.gameId);
+  const round = data.round;
   if (!gameId || typeof round !== "number") {
     throw new HttpsError("invalid-argument", "gameId and round are required.");
   }
   const uid = request.auth.uid;
-  const gameRef = db.collection("games").doc(gameId);
+  const gameRef = gameDoc(gameId);
   const gameSnap = await gameRef.get();
   if (!gameSnap.exists) throw new HttpsError("not-found", "Game not found.");
   const game = gameSnap.data();
-  const currentPhase = typeof game.phase === "string" ? game.phase : "";
-  if (!currentPhase.includes("decide")) {
-    throw new HttpsError("failed-precondition", "Competitor insight only available during Decisions phase.");
+  if (game.paused === true) {
+    throw new HttpsError("failed-precondition", "Game is paused. Purchases are temporarily disabled.");
   }
-  if (round < 1 || round >= (game.currentRound || 1)) {
+  const currentPhase = typeof game.phase === "string" ? game.phase : "";
+  // B-05 (2026-04-29): the FE moved the buy buttons from the DECIDE-phase
+  // sidebar onto the Results screen. During `results_ready` the round
+  // whose results are showing IS `game.currentRound` (not currentRound-1),
+  // so the upper-bound check below also flips. DECIDE keeps the original
+  // strict `round < currentRound` rule — you still can't buy intel on a
+  // round you haven't played yet.
+  const isDecide = currentPhase.includes("decide");
+  const isResultsReady = currentPhase.includes("results_ready");
+  if (!isDecide && !isResultsReady) {
+    throw new HttpsError("failed-precondition", "Competitor insight only available during Decisions or Results phase.");
+  }
+  const currentRoundNumber = game.currentRound || 1;
+  const maxBuyableRound = isResultsReady ? currentRoundNumber : currentRoundNumber - 1;
+  if (round < 1 || round > maxBuyableRound) {
     throw new HttpsError("invalid-argument", "Can only purchase insight for a completed round.");
   }
 
   const configSnap = await gameRef.collection("config").doc("params").get();
   const config = configSnap.exists ? configSnap.data() : {};
-  const insightCost = (config.competitorInsightCost) || 5000;
+  const insightCost = numberOrDefault(config.competitorInsightCost, 100);
 
   await db.runTransaction(async (tx) => {
     const playerRef = gameRef.collection("players").doc(uid);
@@ -3452,38 +4954,50 @@ exports.purchaseCompetitorInsight = onCall(async (request) => {
 // ===========================================================================
 // purchaseChefData — Tier 1 / Tier 2 chef data CSVs
 //
-// Tier 1 ($2,500): static nationality → specialty-product map. Reveals which
-// cuisines lift which products — always the same payload, independent of
-// the current round's generated pool.
+// Tier 1 (chefDataTier1Cost, default $50): static nationality → specialty-
+// product map. Reveals which cuisines lift which products — always the same
+// payload, independent of the current round's generated pool.
 //
-// Tier 2 ($7,500): full per-chef dump for the current round's chef pool
-// (name, nationality, gender, skill tier, specialties, min bid floor) so a
-// team can evaluate every candidate before the chef auction resolves.
+// Tier 2 (chefDataTier2Cost, default $150): full per-chef dump for the
+// current round's chef pool (name, nationality, gender, skill tier,
+// specialties, min bid floor) so a team can evaluate every candidate
+// before the chef auction resolves.
 //
 // Purchases are recorded at `players/{uid}/purchases/chef_tier{1|2}` and
 // the transaction rejects re-buying the same tier, so the total cost is
 // bounded even if the UI re-enables the button.
 // ===========================================================================
-exports.purchaseChefData = onCall(async (request) => {
+exports.purchaseChefData = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
-  const { gameId, tier } = request.data || {};
+  const data = request.data || {};
+  const gameId = cleanGameId(data.gameId);
+  const tier = data.tier;
   if (!gameId || (tier !== 1 && tier !== 2)) {
     throw new HttpsError("invalid-argument", "gameId and tier (1 or 2) are required.");
   }
   const uid = request.auth.uid;
-  const gameRef = db.collection("games").doc(gameId);
+  const gameRef = gameDoc(gameId);
   const gameSnap = await gameRef.get();
   if (!gameSnap.exists) throw new HttpsError("not-found", "Game not found.");
   const game = gameSnap.data();
+  if (game.paused === true) {
+    throw new HttpsError("failed-precondition", "Game is paused. Purchases are temporarily disabled.");
+  }
   const currentPhase = typeof game.phase === "string" ? game.phase : "";
-  if (!currentPhase.includes("decide")) {
-    throw new HttpsError("failed-precondition", "Chef data only available during Decisions phase.");
+  // B-05 (2026-04-29): also allowed during `results_ready` — the FE moved
+  // these buttons out of the DECIDE-phase sidebar onto the Results screen,
+  // and the data is round-agnostic (Tier 1 is a static nationality table;
+  // Tier 2 dumps the current round's chef pool, which is still the most
+  // recent generated pool while results are showing).
+  if (!currentPhase.includes("decide") && !currentPhase.includes("results_ready")) {
+    throw new HttpsError("failed-precondition", "Chef data only available during Decisions or Results phase.");
   }
 
   const configSnap = await gameRef.collection("config").doc("params").get();
   const config = configSnap.exists ? configSnap.data() : {};
-  const tier1Cost = numberOrDefault(config.chefDataTier1Cost, 2500);
-  const tier2Cost = numberOrDefault(config.chefDataTier2Cost, 7500);
+  const tier1Cost = numberOrDefault(config.chefDataTier1Cost, 50);
+  const tier2Cost = numberOrDefault(config.chefDataTier2Cost, 150);
   const cost = tier === 1 ? tier1Cost : tier2Cost;
 
   await db.runTransaction(async (tx) => {
@@ -3541,21 +5055,145 @@ exports.purchaseChefData = onCall(async (request) => {
   return { csv: rows.join("\n"), costDeducted: cost, tier };
 });
 
+// ===========================================================================
+// purchaseProduct — Apr 28 2026
+//
+// Each station starts with one product unlocked (BASE_MENU). The other
+// product per station lives in OPTIONAL_MENU and must be purchased before
+// the team can put it on their menu. Every unlock costs the same flat
+// amount — see `productUnlockCost` in config.js (default $500).
+//
+// Storage:
+//   - team doc gains `unlockedProducts: string[]` and `unlocksPurchased: number`.
+//     The team doc is readable by any signed-in user (firestore.rules), so
+//     teammates and opponents can see who has the full menu unlocked.
+//   - cost is deducted from the *caller's* `budgetCurrent` (mirrors the
+//     existing `purchaseCompetitorInsight` / `purchaseChefData` model).
+//
+// Authorization: any teammate may unlock — the menu is shared across the
+// team, so locking this to a specific role would just create a coordination
+// problem (Operations needs Finance to unlock a product before they can
+// stock it). The Finance/Operations gate applies to submitting decisions /
+// prices, not to spending on shared inventory.
+// ===========================================================================
+exports.purchaseProduct = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required.');
+  const { gameId: rawGameId, product } = request.data || {};
+  const gameId = cleanGameId(rawGameId);
+  if (typeof product !== 'string' || !OPTIONAL_MENU.includes(product)) {
+    throw new HttpsError(
+      'invalid-argument',
+      `product must be one of: ${OPTIONAL_MENU.join(', ')}`,
+    );
+  }
+  const uid = request.auth.uid;
+  const gameRef = gameDoc(gameId);
+
+  let costDeducted = 0;
+  let nextUnlocked = null;
+  let nextUnlocksPurchased = 0;
+
+  await db.runTransaction(async (tx) => {
+    const playerRef = gameRef.collection('players').doc(uid);
+    const cfgRef = gameRef.collection('config').doc('params');
+    const [playerSnap, cfgSnap, gameSnap] = await Promise.all([
+      tx.get(playerRef),
+      tx.get(cfgRef),
+      tx.get(gameRef),
+    ]);
+    if (!gameSnap.exists) throw new HttpsError('not-found', 'Game not found.');
+    if (!playerSnap.exists) throw new HttpsError('failed-precondition', 'Join the game before purchasing unlocks.');
+    if (gameSnap.get('paused') === true) {
+      throw new HttpsError('failed-precondition', 'Game is paused. Purchases are temporarily disabled.');
+    }
+    const currentPhase = typeof gameSnap.get('phase') === 'string' ? gameSnap.get('phase') : '';
+    if (!currentPhase.includes('decide')) {
+      throw new HttpsError('failed-precondition', 'Product unlocks only available during Decisions phase.');
+    }
+
+    const player = playerSnap.data();
+    const teamId = getPlayerTeamId(player);
+    if (!teamId) {
+      throw new HttpsError('failed-precondition', 'You must be on a team to unlock products.');
+    }
+    const teamRef = gameRef.collection('teams').doc(teamId);
+    const teamSnap = await tx.get(teamRef);
+    if (!teamSnap.exists) {
+      throw new HttpsError('not-found', 'Team not found.');
+    }
+
+    const team = teamSnap.data() || {};
+    const currentUnlocked = Array.isArray(team.unlockedProducts) && team.unlockedProducts.length > 0
+      ? team.unlockedProducts.filter((p) => typeof p === 'string')
+      : [...DEFAULT_UNLOCKED_PRODUCTS];
+
+    if (currentUnlocked.includes(product)) {
+      throw new HttpsError('already-exists', `Your team already has "${product}" unlocked.`);
+    }
+
+    const unlocksPurchased = numberOrDefault(team.unlocksPurchased, 0);
+    const config = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
+    const cost = numberOrDefault(config.productUnlockCost, 500);
+
+    const budget = numberOrDefault(player.budgetCurrent, 0);
+    if (budget < cost) {
+      throw new HttpsError(
+        'failed-precondition',
+        `Insufficient budget — unlocking "${product}" costs $${cost.toLocaleString()} but you only have $${budget.toLocaleString()}.`,
+      );
+    }
+
+    nextUnlocked = [...currentUnlocked, product];
+    nextUnlocksPurchased = unlocksPurchased + 1;
+    costDeducted = cost;
+
+    tx.update(playerRef, {
+      budgetCurrent: FieldValue.increment(-cost),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    tx.update(teamRef, {
+      unlockedProducts: nextUnlocked,
+      unlocksPurchased: nextUnlocksPurchased,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    tx.set(
+      playerRef.collection('purchases').doc(`unlock_${product}`),
+      {
+        kind: 'product-unlock',
+        product,
+        costDeducted: cost,
+        unlocksPurchasedBefore: unlocksPurchased,
+        purchasedAt: FieldValue.serverTimestamp(),
+      },
+    );
+  });
+
+  return {
+    product,
+    costDeducted,
+    unlockedProducts: nextUnlocked,
+    unlocksPurchased: nextUnlocksPurchased,
+  };
+});
+
 // ---------------------------------------------------------------------------
 // resetGame — professor-only. Wipes round/sim/leaderboard/conclusion data
 // and resets each player to lobby defaults so a class can replay without
 // rebuilding the roster. Authorization checks both `professorUid` (canonical)
 // and `professorId` (legacy alias) to match createGame's write pattern.
 // ---------------------------------------------------------------------------
-exports.resetGame = onCall(CALLABLE_OPTS, async (request) => {
+exports.resetGame = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
   const auth = requireAuth(request);
   const gameId = cleanGameId((request.data || {}).gameId);
   const gameRef = gameDoc(gameId);
 
-  const [gameSnap, cfgSnap, playersSnap] = await Promise.all([
+  const [gameSnap, cfgSnap, playersSnap, teamsSnap] = await Promise.all([
     gameRef.get(),
     gameRef.collection('config').doc('params').get(),
     gameRef.collection('players').get(),
+    gameRef.collection('teams').get(),
   ]);
 
   if (!gameSnap.exists) throw new HttpsError('not-found', 'Game not found.');
@@ -3573,23 +5211,38 @@ exports.resetGame = onCall(CALLABLE_OPTS, async (request) => {
   );
 
   const playerDocs = playersSnap.docs;
+  const teamDocs = teamsSnap.docs;
 
   // Wipe game-level + per-player subcollections in parallel. deleteCollectionDocs
-  // chunks at BATCH_OP_LIMIT internally.
+  // chunks at BATCH_OP_LIMIT internally. `rounds`, `submissions`, and
+  // `submittedCountShards` use recursiveDelete because they own shard
+  // subcollections (`topBidsShards`, `shards`) that would otherwise survive
+  // the reset and pollute the next game's aggregate writes. Each team's
+  // `state` subcollection holds the T2.2 per-team pending draft and must
+  // also be cleared, otherwise stale `decisionDraft.submitted: true` would
+  // surface to teammates' UIs in the next game.
   await Promise.all([
-    deleteCollectionDocs(gameRef.collection('rounds')),
-    deleteCollectionDocs(gameRef.collection('submissions')),
+    db.recursiveDelete(gameRef.collection('rounds')),
+    db.recursiveDelete(gameRef.collection('submissions')),
+    db.recursiveDelete(gameRef.collection('submittedCountShards')),
+    deleteCollectionDocs(gameRef.collection('submissionCounts')),
     deleteCollectionDocs(gameRef.collection('marketInsights')),
     deleteCollectionDocs(gameRef.collection('leaderboard')),
     deleteCollectionDocs(gameRef.collection('conclusion')),
     ...playerDocs.map((pd) => deleteCollectionDocs(pd.ref.collection('decisions'))),
     ...playerDocs.map((pd) => deleteCollectionDocs(pd.ref.collection('rounds'))),
-    ...playerDocs.map((pd) => deleteCollectionDocs(pd.ref.collection('emails'))),
+    ...playerDocs.map((pd) => deleteCollectionDocs(pd.ref.collection('bids'))),
+    ...playerDocs.map((pd) => deleteCollectionDocs(pd.ref.collection('purchases'))),
+    // S-04 (2026-04-29): the per-player `emails` subcollection (CSV-attachment
+    // queue from the original mail-merge flow) was retired when in-app
+    // market insights replaced it. Nothing writes it any more, so the reset
+    // cleanup is a no-op cycle. Removed for clarity.
     ...playerDocs.map((pd) =>
       deleteCollectionDocs(
         gameRef.collection('csvRows').doc(pd.id).collection('rounds'),
       ),
     ),
+    ...teamDocs.map((td) => db.recursiveDelete(td.ref.collection('state'))),
   ]);
 
   // Reset the game doc + each player to lobby defaults in chunked batches.
@@ -3628,16 +5281,25 @@ exports.resetGame = onCall(CALLABLE_OPTS, async (request) => {
       pendingRosterAction: false,
       rosterCompleted: false,
       returningCustomersPending: 0,
-      chefSatisfactionScores: {},
-      maintenanceBars: {
-        cleanliness: 100,
-        ovenHealth: 100,
-        slicerHealth: 100,
-        espressoHealth: 100,
-      },
       lastRoundResult: FieldValue.delete(),
       consecutiveMissedRounds: 0,
       disconnected: false,
+      equipmentGrade: 'C',
+      cleanlinessScore: 75,
+      cleanlinessGrade: 'B',
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    ops += 1;
+    if (ops >= BATCH_OP_LIMIT) await commitBatch();
+  }
+
+  // Apr 28 2026 — restore each team back to the starter unlock set so a
+  // replay starts the unlock economy from scratch instead of carrying over
+  // products purchased in the prior playthrough.
+  for (const td of teamDocs) {
+    batch.update(td.ref, {
+      unlockedProducts: [...DEFAULT_UNLOCKED_PRODUCTS],
+      unlocksPurchased: 0,
       updatedAt: FieldValue.serverTimestamp(),
     });
     ops += 1;
@@ -3646,4 +5308,541 @@ exports.resetGame = onCall(CALLABLE_OPTS, async (request) => {
   await commitBatch();
 
   return { gameId, phase: 'lobby' };
+});
+
+// ===========================================================================
+// createBotPlayer — inject an AI opponent into a game lobby
+// ===========================================================================
+
+exports.createBotPlayer = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
+  const auth = requireAuth(request, 'Sign in before adding a bot.');
+  const data = request.data || {};
+  const gameId = cleanGameId(data.gameId);
+  if (!gameId) {
+    throw new HttpsError('invalid-argument', 'gameId is required.');
+  }
+
+  const gameRef = gameDoc(gameId);
+  const gameSnap = await gameRef.get();
+  if (!gameSnap.exists) {
+    throw new HttpsError('not-found', 'Game not found.');
+  }
+  if (
+    gameSnap.get('professorUid') !== auth.uid &&
+    gameSnap.get('professorId') !== auth.uid
+  ) {
+    throw new HttpsError('permission-denied', 'Only the professor can add bots.');
+  }
+  if (gameSnap.get('phase') !== 'lobby') {
+    throw new HttpsError('failed-precondition', 'Bots can only be added during the lobby phase.');
+  }
+
+  // Resolve preset or manual difficulty + personality
+  const presetKey = data.preset;
+  const preset = PRESETS[presetKey];
+
+  let difficulty;
+  let personality;
+  let botName;
+
+  if (presetKey) {
+    if (!preset) {
+      throw new HttpsError('invalid-argument', `Unknown preset "${presetKey}". Valid presets: ${Object.keys(PRESETS).join(', ')}`);
+    }
+    ({ difficulty, personality, name: botName } = preset);
+  } else {
+    const validDifficulties = ['novice', 'easy', 'medium', 'hard', 'perfect'];
+    difficulty = validDifficulties.includes(data.difficulty) ? data.difficulty : 'medium';
+    const validPersonalities = ['balanced', 'aggressive', 'conservative', 'random', 'chef_focused', 'ad_focused', 'volume', 'margin'];
+    personality = validPersonalities.includes(data.personality) ? data.personality : 'balanced';
+    botName = data.name || `Bot ${difficulty.charAt(0).toUpperCase() + difficulty.slice(1)}`;
+  }
+
+  const cfgSnap = await gameRef.collection('config').doc('params').get();
+  const config = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
+
+  // Bots count toward totalPlayers, so apply the same cap as joinGame to keep
+  // them from squeezing real students out of the roster.
+  const playerCap = numberOrDefault(config.playerCap, 20);
+  const currentTotal = numberOrDefault(gameSnap.get('totalPlayers'), 0);
+  if (currentTotal >= playerCap) {
+    throw new HttpsError('resource-exhausted', 'This game is full.');
+  }
+
+  const startingBudget = numberOrDefault(
+    config.startingBudget,
+    DEFAULT_GAME_CONFIG.startingBudget,
+  );
+
+  // Generate a synthetic UID for the bot
+  const botUid = `bot_${difficulty}_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+
+  await gameRef.collection('players').doc(botUid).set({
+    uid: botUid,
+    displayName: botName,
+    bakeryName: `${botName}'s Bakery`,
+    role: 'solo',
+    budgetCurrent: startingBudget,
+    cumulativeRevenue: 0,
+    specialtyChefs: [],
+    sousChefCount: 0,
+    equipmentGrade: 'C',
+    cleanlinessScore: 75,
+    cleanlinessGrade: 'B',
+    consecutiveMissedRounds: 0,
+    disconnected: false,
+    isBot: true,
+    botDifficulty: difficulty,
+    botPersonality: personality,
+    botPreset: presetKey || null,
+    createdAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+
+  // Increment totalPlayers
+  await gameRef.update({
+    totalPlayers: FieldValue.increment(1),
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+
+  // Add to roster
+  await gameRef.collection('roster').doc(botUid).set({
+    uid: botUid,
+    displayName: botName,
+    bakeryName: `${botName}'s Bakery`,
+    isBot: true,
+    difficulty: difficulty || null,
+    personality: personality || null,
+    joinedAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+
+  logger.info('createBotPlayer ok', { gameId, botUid, difficulty, personality, preset: presetKey });
+  return { gameId, botUid, difficulty, personality, preset: presetKey || null, displayName: botName };
+});
+
+// ===========================================================================
+// loadHistoricalBids — reads all previous rounds' bid docs for opponent
+// modeling by perfect-tier bots. Returns { [playerId]: [{ round, ad, chef }] }
+// ===========================================================================
+
+async function loadHistoricalBids(gameRef, bots, opponents, currentRound) {
+  const historicalBids = {};
+  const allPlayers = [...bots, ...opponents.map((o) => ({ id: o.uid || o.playerId }))];
+
+  for (const player of allPlayers) {
+    const pid = player.id || (player.data && player.id);
+    if (!pid) continue;
+    const bids = [];
+    for (let r = 1; r < currentRound; r++) {
+      try {
+        const bidSnap = await gameRef.collection('players').doc(pid).collection('bids').doc(`round_${r}`).get();
+        if (bidSnap.exists) {
+          const d = bidSnap.data();
+          bids.push({
+            round: r,
+            ad: d.ad || {},
+            chef: Array.isArray(d.chef) ? d.chef.map((c) => ({
+              chefId: c.chefId,
+              amount: c.amount,
+              chefTier: c.chefTier,
+            })) : [],
+          });
+        }
+      } catch (e) {
+        // Non-fatal: missing bid doc is fine
+      }
+    }
+    if (bids.length > 0) {
+      historicalBids[pid] = bids;
+    }
+  }
+
+  return historicalBids;
+}
+
+// ===========================================================================
+// onBotPhaseChange — Firestore trigger that invokes bot decisions when
+// the game phase changes. Listens to the game doc; when phase transitions
+// to a decision phase (bid_ad, bid_chef, roster, decide), the trigger
+// reads all bots and submits their decisions via the same callable flow.
+// ===========================================================================
+
+exports.onBotPhaseChange = onDocumentWritten(
+  {
+    document: 'games/{gameId}',
+    concurrency: 1,
+    timeoutSeconds: 120,
+  },
+  async (event) => {
+    const { gameId } = event.params;
+    const after = event.data && event.data.after ? event.data.after.data() : null;
+    const before = event.data && event.data.before ? event.data.before.data() : null;
+    if (!after) return;
+
+    const newPhase = after.phase;
+    const oldPhase = before ? before.phase : null;
+    if (newPhase === oldPhase) return; // no phase change
+
+    const botPhases = ['bid_ad', 'bid_chef', 'roster', 'decide'];
+    const parsed = parsePhase(newPhase, after.currentRound || after.round || 0);
+    if (!botPhases.includes(parsed.phase)) return;
+
+    const gameRef = gameDoc(gameId);
+
+    // Find all bots
+    const playersSnap = await gameRef.collection('players').get();
+    const bots = playersSnap.docs.filter((d) => d.get('isBot') === true);
+    if (bots.length === 0) return;
+
+    const cfgSnap = await gameRef.collection('config').doc('params').get();
+    const config = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
+
+    const round = numberOrDefault(after.currentRound || after.round, 0);
+    const roundRef = gameRef.collection('rounds').doc(`round_${round}`);
+
+    // RACE FIX: advanceGamePhase commits the phase change inside its
+    // transaction but writes the post-phase side effects (chef pool for
+    // bid_chef, chef auction results for roster) AFTER the commit. This
+    // trigger fires on the same game-doc write, so without polling it can
+    // read the round doc before those side effects land — bots then bid
+    // on an empty chef pool or skip layoffs because chefAuctionResults is
+    // missing. Wait up to 5s for the relevant timestamp before proceeding.
+    let roundSnap = await roundRef.get();
+    let roundData = roundSnap.exists ? roundSnap.data() : {};
+
+    const requiredField =
+      parsed.phase === 'bid_chef' ? 'chefPoolGeneratedAt'
+        : parsed.phase === 'roster' ? 'chefAuctionResolvedAt'
+        : null;
+    if (requiredField && !roundData[requiredField]) {
+      const deadline = Date.now() + 5000;
+      let backoffMs = 100;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
+        roundSnap = await roundRef.get();
+        roundData = roundSnap.exists ? roundSnap.data() : {};
+        if (roundData[requiredField]) break;
+        backoffMs = Math.min(backoffMs * 2, 1000);
+      }
+      if (!roundData[requiredField]) {
+        logger.warn('onBotPhaseChange: post-transaction side effect missing — bots may skip this phase.', {
+          gameId, round, phase: parsed.phase, missing: requiredField,
+        });
+      }
+    }
+
+    // Load opponents (human players) for opponent modeling
+    const opponents = playersSnap.docs
+      .filter((d) => !d.get('isBot'))
+      .map((d) => d.data());
+
+    // Eagerly load historical bids if any perfect bots exist
+    const hasPerfectBot = bots.some((b) => (b.data().botDifficulty || 'medium') === 'perfect');
+    let historicalBids = null;
+    if (hasPerfectBot && round > 1) {
+      historicalBids = await loadHistoricalBids(gameRef, bots, opponents, round);
+    }
+
+    // Load auction results if available (for perfect bot shadow sim)
+    const auctionResults = roundData.auctionResults || {};
+    const adAuctionResults = roundData.adAuctionResults || {};
+    const chefAuctionResults = roundData.chefAuctionResults || {};
+    const roundPreferences = roundData.preferences || { modifiers: {} };
+
+    for (const botDoc of bots) {
+      const botData = botDoc.data();
+      const difficulty = botData.botDifficulty || 'medium';
+      const personality = botData.botPersonality || 'balanced';
+
+      // Resolve this bot's auction wins for shadow sim
+      const botAuctionKey = botDoc.id; // solo bots use their own id
+      const botAdAuction = adAuctionResults[botAuctionKey] || {};
+      const botChefAuction = chefAuctionResults[botAuctionKey] || {};
+      const adWins = Array.isArray(botAdAuction.adTypes) ? botAdAuction.adTypes : [];
+      const chefsWon = Array.isArray(botChefAuction.chefs) ? botChefAuction.chefs : [];
+
+      // Apr 28 2026 — read the bot's team unlocks so the bot doesn't menu
+      // locked optional products (validateDecision rejects locked items
+      // with `failed-precondition`). Bots created via createBotPlayer have
+      // no teamId and can't call purchaseProduct, so they fall back to the
+      // starter set. If a future change wires bots to teams, this branch
+      // already mirrors the submitDecision path.
+      const botTeamId = getPlayerTeamId(botData);
+      let unlockedProducts = [...DEFAULT_UNLOCKED_PRODUCTS];
+      if (botTeamId) {
+        try {
+          const teamSnap = await gameRef.collection('teams').doc(botTeamId).get();
+          if (teamSnap.exists) {
+            const raw = teamSnap.get('unlockedProducts');
+            if (Array.isArray(raw) && raw.length > 0) {
+              unlockedProducts = raw.filter((p) => typeof p === 'string');
+            }
+          }
+        } catch (err) {
+          logger.warn('onBotPhaseChange: failed to read team unlocks; using default', {
+            gameId,
+            botId: botDoc.id,
+            teamId: botTeamId,
+            error: err && err.message,
+          });
+        }
+      }
+
+      const botState = {
+        budgetCurrent: botData.budgetCurrent,
+        specialtyChefs: botData.specialtyChefs || [],
+        chefPool: roundData.chefPool || [],
+        unlockedProducts,
+        playerId: botDoc.id,
+        round,
+        gameId,
+        adWins,
+        chefsWon,
+        auctionResults,
+        roundPreferences,
+        priorSubmittedPrices: botData.priorSubmittedPrices || [],
+      };
+
+      try {
+        // Deterministic seed for idempotent retries (BUG-3 class fix)
+        const seed = `${gameId}:${round}:${parsed.phase}:${botDoc.id}`;
+        const decisions = generateBotDecisions(
+          botState,
+          parsed.phase,
+          config,
+          opponents,
+          difficulty,
+          personality,
+          historicalBids,
+          seed,
+        );
+
+        const botDisplayName = botData.displayName || 'Bot';
+
+        if (parsed.phase === 'bid_ad') {
+          const bidsRef = botDoc.ref.collection('bids').doc(`round_${round}`);
+          await bidsRef.set({
+            round,
+            ad: decisions.adBids || {},
+            adSubmittedAt: FieldValue.serverTimestamp(),
+          }, { merge: true });
+          await recordSubmission(
+            gameRef, `round_${round}_bid_ad`, botDoc.id,
+            botDisplayName, 'solo'
+          );
+        }
+
+        if (parsed.phase === 'bid_chef') {
+          const bidsRef = botDoc.ref.collection('bids').doc(`round_${round}`);
+          await bidsRef.set({
+            round,
+            chef: decisions.chefBids || [],
+            chefSubmittedAt: FieldValue.serverTimestamp(),
+          }, { merge: true });
+          await recordSubmission(
+            gameRef, `round_${round}_bid_chef`, botDoc.id,
+            botDisplayName, 'solo'
+          );
+        }
+
+        if (parsed.phase === 'roster') {
+          const hasLayoffs = decisions.layoffs && decisions.layoffs.length > 0;
+          if (hasLayoffs) {
+            const layoffIds = new Set(decisions.layoffs);
+            const remaining = (botData.specialtyChefs || []).filter((c) => !layoffIds.has(c.id));
+            const chefCap = numberOrDefault(config.specialtyChefCap, 3);
+            const rosterUpdate = {
+              specialtyChefs: remaining,
+              pendingRosterAction: remaining.length > chefCap,
+            };
+            if (remaining.length <= chefCap) {
+              rosterUpdate.rosterCompleted = true;
+            }
+            await botDoc.ref.update(rosterUpdate);
+          } else {
+            await botDoc.ref.update({
+              pendingRosterAction: false,
+              rosterCompleted: true,
+            });
+          }
+          await recordSubmission(
+            gameRef, `round_${round}_roster`, botDoc.id,
+            botDisplayName, 'solo'
+          );
+        }
+
+        if (parsed.phase === 'decide') {
+          const decisionRef = botDoc.ref.collection('decisions').doc(`round_${round}`);
+          await decisionRef.set({
+            round,
+            menu: decisions.menu || {},
+            quantities: decisions.quantities || {},
+            productPrices: decisions.productPrices || {},
+            sousChefCount: decisions.sousChefCount || 0,
+            sousChefAssignments: decisions.sousChefAssignments || {},
+            staffCounts: decisions.staffCounts || {},
+            submittedAt: FieldValue.serverTimestamp(),
+          }, { merge: true });
+
+          // Also update pendingDecision for FE visibility
+          await botDoc.ref.update({
+            pendingDecision: {
+              submitted: true,
+              submittedAt: Timestamp.now(),
+              round,
+              menu: decisions.menu || {},
+              quantities: decisions.quantities || {},
+              sousChefCount: decisions.sousChefCount || 0,
+              sousChefAssignments: decisions.sousChefAssignments || {},
+              productPrices: decisions.productPrices || {},
+            },
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+
+          // Write to submittedCount shard
+          await writeUidToSubmittedCountShard(gameRef, `round_${round}`, botDoc.id);
+          await recordSubmission(
+            gameRef, `round_${round}_decide`, botDoc.id,
+            botDisplayName, 'solo'
+          );
+        }
+
+        logger.info('onBotPhaseChange: bot decision submitted.', {
+          gameId,
+          botId: botDoc.id,
+          phase: parsed.phase,
+          difficulty,
+          personality,
+        });
+      } catch (err) {
+        logger.error('onBotPhaseChange: bot decision failed.', {
+          gameId,
+          botId: botDoc.id,
+          phase: parsed.phase,
+          error: err && err.message,
+        });
+      }
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
+// T2.4 — Save / restore from the professor UI
+// ---------------------------------------------------------------------------
+
+/**
+ * Verify the caller is the professor for this game. Mirrors the
+ * `professorUid` / `professorId` check used by `resetGame`. Throws
+ * permission-denied on mismatch.
+ */
+async function assertCallerIsProfessor(gameRef, authUid) {
+  const gameSnap = await gameRef.get();
+  if (!gameSnap.exists) {
+    throw new HttpsError('not-found', 'Game not found.');
+  }
+  if (
+    gameSnap.get('professorUid') !== authUid &&
+    gameSnap.get('professorId') !== authUid
+  ) {
+    throw new HttpsError('permission-denied', 'Only the professor can do that.');
+  }
+}
+
+/**
+ * createSnapshot — manual checkpoint button on the professor page. Captures
+ * the entire game state into `games/{gameId}/snapshots/{snapshotId}` (chunked
+ * across the `chunks` subcollection) and prunes old snapshots on the way out.
+ *
+ * Returns: { snapshotId, totalChunks, totalBytes, totalDocs, round, phase, elapsedMs }
+ */
+exports.createSnapshot = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
+  const auth = requireAuth(request, 'Sign in before saving a snapshot.');
+  const gameId = cleanGameId((request.data || {}).gameId);
+  const gameRef = gameDoc(gameId);
+
+  await assertCallerIsProfessor(gameRef, auth.uid);
+
+  const result = await captureGameSnapshot(db, gameRef, {
+    capturedByUid: auth.uid,
+    capturedBy: 'manual',
+  });
+
+  // Best-effort retention sweep — never block the caller on this.
+  pruneOldSnapshots(db, gameRef).catch((err) => {
+    logger.warn('createSnapshot prune failed — non-fatal.', {
+      gameId, error: err && err.message,
+    });
+  });
+
+  logger.info('createSnapshot ok', {
+    gameId,
+    capturedByUid: auth.uid,
+    snapshotId: result.snapshotId,
+    round: result.round,
+    phase: result.phase,
+    totalDocs: result.totalDocs,
+    totalBytes: result.totalBytes,
+    elapsedMs: result.elapsedMs,
+  });
+
+  return result;
+});
+
+/**
+ * restoreSnapshot — destructive. Pauses the game, deletes drift docs not in
+ * the snapshot, then writes every doc from the snapshot back. Players need
+ * to refresh after this lands; their anonymous Firebase Auth UIDs persist
+ * so the player docs they restore into still match.
+ *
+ * Always logs to Cloud Logging with the calling uid for audit.
+ *
+ * Args: { gameId, snapshotId }
+ * Returns: { written, deleted, snapshotId, round, phase }
+ */
+exports.restoreSnapshot = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
+  const auth = requireAuth(request, 'Sign in before restoring a snapshot.');
+  const data = request.data || {};
+  const gameId = cleanGameId(data.gameId);
+  const snapshotId = cleanString(data.snapshotId);
+  if (!/^snap_[A-Za-z0-9_]+$/.test(snapshotId)) {
+    throw new HttpsError('invalid-argument', 'snapshotId is required.');
+  }
+
+  const gameRef = gameDoc(gameId);
+  await assertCallerIsProfessor(gameRef, auth.uid);
+
+  const startedAt = Date.now();
+  const result = await restoreGameSnapshot(db, gameRef, snapshotId);
+
+  // S-05: team `state/` subcollections are excluded from snapshot capture
+  // (NON_SNAPSHOTTED_SUBCOLLECTIONS) so they survive the restore's orphan
+  // cleanup. Delete them explicitly so stale `decisionDraft.submitted`
+  // flags from a later round don't resurface on teammates' UIs.
+  const teamsSnap = await gameRef.collection('teams').get();
+  if (!teamsSnap.empty) {
+    await Promise.all(
+      teamsSnap.docs.map((td) => db.recursiveDelete(td.ref.collection('state'))),
+    );
+  }
+
+  const elapsedMs = Date.now() - startedAt;
+
+  // Audit trail — every restore is logged with the calling uid, the
+  // snapshot id, and the round/phase that was restored.
+  logger.info('restoreSnapshot ok', {
+    gameId,
+    restoredByUid: auth.uid,
+    snapshotId,
+    round: result.round,
+    phase: result.phase,
+    written: result.written,
+    deleted: result.deleted,
+    elapsedMs,
+  });
+
+  return { ...result, elapsedMs };
 });

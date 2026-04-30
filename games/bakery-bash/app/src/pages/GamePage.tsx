@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  collection,
   doc,
   onSnapshot,
   type DocumentData,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
-import { useGame, useGameDispatch } from "../contexts/GameContext";
+import {
+  useGame,
+  useGameDispatch,
+  useGameDraftSync,
+} from "../contexts/GameContext";
+import { useGameRoster } from "../hooks/useGameRoster";
 import { PixelBakeryScene } from "../components/bakery-scene/PixelBakeryScene";
 import { SceneErrorBoundary } from "../components/bakery-scene/SceneErrorBoundary";
 import "../styles/pixel-scene.css";
@@ -24,7 +28,6 @@ import { SimulatePhase } from "./phases/SimulatePhase";
 import { ResultsPhase } from "./phases/ResultsPhase";
 import { db, functions } from "../lib/firebase";
 import { humanizeFunctionError } from "../lib/errors";
-import { computeDecisionCost, formatMoney } from "../lib/cost";
 import {
   PRODUCT_KEYS,
   PRODUCT_STATION,
@@ -34,8 +37,6 @@ import {
   roleOwnsPricing,
   totalSousChefs,
   type GameConfigParams,
-  type MaintenanceBars,
-  type MaintenanceTask,
   type PendingDecisionDraft,
   type ProductKey,
   type StaffCounts,
@@ -113,6 +114,7 @@ export function GamePage() {
     gameId,
     playerId,
     teamId,
+    teamName,
     phase,
     currentRound,
     pendingDecision,
@@ -120,32 +122,30 @@ export function GamePage() {
     pricesSubmitted,
     role,
     teamRoleAssignments,
-    config,
-    teamName,
   } = useGame();
-  // BE-I03: auction result docs are keyed by team slug; fall back to the
-  // player uid for solo teams, whose `team.key` on the backend is the uid.
-  const auctionResultKey = teamId || playerId;
   const dispatch = useGameDispatch();
+  const { markDraftAppliedFromRemote } = useGameDraftSync();
   const navigate = useNavigate();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [submittingPrices, setSubmittingPrices] = useState(false);
-  const [wonAuctionCosts, setWonAuctionCosts] = useState({ ad: 0, chef: 0 });
 
   // FE-11 — previous round's ad winners, rendered at the top of Decide.
   // The aggregate `rounds/round_{N}` doc writes
   // `auctionResults.ads.{TV|Billboard|Radio|Newspaper}.{winnerId, winningBid}`
   // (see firestore-schema.js). We resolve each `winnerId` to a bakery name
-  // via the public roster subcollection so the banner shows "Bakery — $X"
-  // rather than a raw uid. Rendering falls back to the empty state when
-  // any part of the chain is missing.
-  const [adWinners, setAdWinners] = useState<
-    Partial<Record<AdWinnerEntry["adType"], AdWinnerEntry>> | null
+  // via the roster hook so the banner shows "Bakery — $X" rather than a raw
+  // uid. Rendering falls back to the empty state when any part of the chain
+  // is missing.
+  //
+  // Listener-audit fix: the roster data is now read from `useGameRoster`
+  // (shared with RoundHeader) instead of a local onSnapshot — eliminates a
+  // duplicate roster collection listener. Name resolution is a pure useMemo
+  // over the raw auction data + roster, so a roster change no longer tears
+  // down and re-subscribes the rounds-doc listener.
+  const rosterByUid = useGameRoster(gameId);
+  const [rawAdAuction, setRawAdAuction] = useState<
+    Record<string, { winnerId: string; winningBid: number }> | null
   >(null);
-  const [rosterByUid, setRosterByUid] = useState<
-    Record<string, { displayName?: string; bakeryName?: string }>
-  >({});
 
   // --- Listener: /games/{gameId} — drives phase + round + phaseEndsAt. ---
   useEffect(() => {
@@ -210,12 +210,9 @@ export function GamePage() {
     return unsubscribe;
   }, [gameId, dispatch]);
 
-  // --- Listener: /games/{gameId}/players/{playerId} — maintenance/chef stats + budget. ---
-  // Cloud Functions write `maintenanceBars`, `chefSatisfactionScores`, and
-  // `budgetCurrent` onto the player doc as they evolve. We mirror them into
-  // GameContext so the sidebar status bars, results-phase warnings, and
-  // budget summary stay live. The maintenance/satisfaction fields are absent
-  // until BE-1..BE-10 ship; `budgetCurrent` is initialized at join time.
+  // --- Listener: /games/{gameId}/players/{playerId} — budget + player state. ---
+  // Cloud Functions write `budgetCurrent` and other player state onto the player
+  // doc as they evolve. We mirror them into GameContext so the budget summary stays live.
   useEffect(() => {
     if (!gameId || !playerId) return;
     const playerRef = doc(db, "games", gameId, "players", playerId);
@@ -224,26 +221,6 @@ export function GamePage() {
       (snap) => {
         if (!snap.exists()) return;
         const data = snap.data() as DocumentData;
-        const bars = data.maintenanceBars as Partial<MaintenanceBars> | undefined;
-        if (
-          bars &&
-          typeof bars.cleanliness === "number" &&
-          typeof bars.ovenHealth === "number" &&
-          typeof bars.slicerHealth === "number" &&
-          typeof bars.espressoHealth === "number"
-        ) {
-          dispatch({
-            type: "SET_MAINTENANCE_BARS",
-            payload: bars as MaintenanceBars,
-          });
-        }
-        const scores = data.chefSatisfactionScores;
-        if (scores && typeof scores === "object") {
-          dispatch({
-            type: "SET_CHEF_SATISFACTION",
-            payload: scores as Record<string, number>,
-          });
-        }
         if (typeof data.budgetCurrent === "number") {
           dispatch({ type: "SET_BUDGET", payload: data.budgetCurrent });
         } else {
@@ -282,7 +259,6 @@ export function GamePage() {
             menu?: Partial<Record<ProductKey, boolean>>;
             quantities?: Partial<Record<ProductKey, number>>;
             staffCounts?: Partial<StaffCounts>;
-            maintenanceTasks?: MaintenanceTask[];
             productPrices?: Partial<Record<ProductKey, number>>;
           } = {};
 
@@ -294,9 +270,6 @@ export function GamePage() {
           }
           if (incomingPending.staffCounts && typeof incomingPending.staffCounts === "object") {
             update.staffCounts = incomingPending.staffCounts as Partial<StaffCounts>;
-          }
-          if (Array.isArray(incomingPending.maintenanceTasks)) {
-            update.maintenanceTasks = incomingPending.maintenanceTasks as MaintenanceTask[];
           }
 
           if (incomingPending.productPrices && typeof incomingPending.productPrices === "object") {
@@ -363,18 +336,6 @@ export function GamePage() {
                   : typeof lrr.customerSatisfaction === "number"
                     ? lrr.customerSatisfaction
                     : 0,
-              chefSatisfactionScore:
-                typeof lrr.chefSatisfactionScore === "number"
-                  ? lrr.chefSatisfactionScore
-                  : undefined,
-              chefSatisfactionScores:
-                lrr.chefSatisfactionScores &&
-                typeof lrr.chefSatisfactionScores === "object"
-                  ? (lrr.chefSatisfactionScores as Record<string, number>)
-                  : undefined,
-              chefDepartures: Array.isArray(lrr.chefDepartures)
-                ? (lrr.chefDepartures as string[])
-                : undefined,
               chefDepartureNames: Array.isArray(lrr.chefDepartureNames)
                 ? (lrr.chefDepartureNames as string[])
                 : undefined,
@@ -384,6 +345,12 @@ export function GamePage() {
                   : undefined,
               adWon: lrr.adWon ?? null,
               adPaid: typeof lrr.adPaid === "number" ? lrr.adPaid : undefined,
+              // Barlava follow-up: chefBidPaid is written by the backend
+              // simulation onto `lastRoundResult` but the FE was dropping
+              // it on the floor here, so Results couldn't render the chef-
+              // bid spend line.
+              chefBidPaid:
+                typeof lrr.chefBidPaid === "number" ? lrr.chefBidPaid : undefined,
               auctionResults: {
                 adWon: lrr.adWon ?? null,
                 chefWon:
@@ -391,13 +358,33 @@ export function GamePage() {
                     ? lrr.chefWon
                     : lrr.chefWon ?? null,
               },
-              maintenanceBars:
-                lrr.maintenanceBars && typeof lrr.maintenanceBars === "object"
-                  ? lrr.maintenanceBars
-                  : undefined,
               staffCounts:
                 lrr.staffCounts && typeof lrr.staffCounts === "object"
                   ? lrr.staffCounts
+                  : undefined,
+              dailyBreakdown: Array.isArray(lrr.dailyBreakdown)
+                ? lrr.dailyBreakdown
+                : undefined,
+              // Round-level kitchen + financial state — surfaced for the
+              // student CSV download. Backend writes these alongside the
+              // existing fields on lastRoundResult.
+              totalSpent:
+                typeof lrr.totalSpent === "number" ? lrr.totalSpent : undefined,
+              equipmentGrade:
+                typeof lrr.equipmentGrade === "string"
+                  ? lrr.equipmentGrade
+                  : undefined,
+              cleanlinessGrade:
+                typeof lrr.cleanlinessGrade === "string"
+                  ? lrr.cleanlinessGrade
+                  : undefined,
+              specialtyChefCount:
+                typeof lrr.specialtyChefCount === "number"
+                  ? lrr.specialtyChefCount
+                  : undefined,
+              cumulativeRevenueAfter:
+                typeof lrr.cumulativeRevenueAfter === "number"
+                  ? lrr.cumulativeRevenueAfter
                   : undefined,
             },
           });
@@ -414,93 +401,146 @@ export function GamePage() {
     return unsubscribe;
   }, [gameId, playerId, dispatch]);
 
-  const parsed = parseGamePhase(phase, currentRound);
-  const basePhase = parsed.base;
-
-  // Subscribe to the roster so we can map `winnerId` → bakeryName/display.
-  // Rules allow everyone to read the roster subcollection, so this works
-  // without professor custom claims.
+  // --- Listener: /games/{gameId}/teams/{teamId}/state/pending — T2.2. ---
+  // Per-team transient round state. `submitBids` / `submitDecision` write
+  // here once instead of cascading the same content into every teammate's
+  // player doc, so 3+ player teams no longer contend on each other's docs.
+  // The submitter's own player doc still gets the same writes (handled by
+  // the listener above) — this listener catches what OTHER teammates
+  // submitted, gated by `updatedByUid !== playerId` to avoid double-
+  // dispatching the submitter's own write through both listeners. Solo
+  // players (no teamId) skip this entirely; their player doc is the only
+  // source of truth.
+  //
+  // Only `decisionDraft` needs to flow into context — `pendingBids` is
+  // never read by the FE (the AuctionPage tracks bids in local React
+  // state and reads the public top-bids aggregate from `rounds/{roundId}`).
   useEffect(() => {
-    if (!gameId) return;
-    const rosterRef = collection(db, "games", gameId, "roster");
+    if (!gameId || !teamId || !playerId) return;
+    const teamPendingRef = doc(
+      db,
+      "games",
+      gameId,
+      "teams",
+      teamId,
+      "state",
+      "pending",
+    );
     const unsubscribe = onSnapshot(
-      rosterRef,
+      teamPendingRef,
       (snap) => {
-        const map: Record<
-          string,
-          { displayName?: string; bakeryName?: string }
-        > = {};
-        snap.docs.forEach((d) => {
-          const data = d.data() as DocumentData;
-          map[d.id] = {
-            displayName:
-              typeof data.displayName === "string" ? data.displayName : undefined,
-            bakeryName:
-              typeof data.bakeryName === "string" ? data.bakeryName : undefined,
-          };
-        });
-        setRosterByUid(map);
+        if (!snap.exists()) return;
+        const data = snap.data() as DocumentData;
+        if (data.updatedByUid === playerId) return;
+        const draft = data.decisionDraft;
+        if (!draft || typeof draft !== "object") return;
+        const incoming = draft as Record<string, unknown>;
+        const update: {
+          menu?: Partial<Record<ProductKey, boolean>>;
+          quantities?: Partial<Record<ProductKey, number>>;
+          sousChefAssignments?: Partial<Record<ProductKey, number>>;
+          staffCounts?: Partial<StaffCounts>;
+          productPrices?: Partial<Record<ProductKey, number>>;
+          miscSpent?: number;
+        } = {};
+        if (incoming.menu && typeof incoming.menu === "object") {
+          update.menu = incoming.menu as Partial<Record<ProductKey, boolean>>;
+        }
+        if (incoming.quantities && typeof incoming.quantities === "object") {
+          update.quantities = incoming.quantities as Partial<Record<ProductKey, number>>;
+        }
+        if (
+          incoming.sousChefAssignments
+          && typeof incoming.sousChefAssignments === "object"
+        ) {
+          update.sousChefAssignments =
+            incoming.sousChefAssignments as Partial<Record<ProductKey, number>>;
+        }
+        if (incoming.staffCounts && typeof incoming.staffCounts === "object") {
+          update.staffCounts = incoming.staffCounts as Partial<StaffCounts>;
+        }
+        // T2.2 follow-up: `submitPrices` writes the team-shared price + menu
+        // signals here too (productPrices, pricesSubmitted, optional menu
+        // picks) so non-Finance teammates see Finance's submission without
+        // us needing to cascade those writes onto every teammate's player
+        // doc. Same hydration pattern as the player-doc listener above —
+        // skip non-finite numbers defensively so a partial write can't
+        // crater the form.
+        if (
+          incoming.productPrices
+          && typeof incoming.productPrices === "object"
+          && !Array.isArray(incoming.productPrices)
+        ) {
+          const rawPrices = incoming.productPrices as Record<string, unknown>;
+          const hydratedPrices: Partial<Record<ProductKey, number>> = {};
+          for (const key of PRODUCT_KEYS) {
+            const v = rawPrices[key];
+            if (typeof v === "number" && Number.isFinite(v)) {
+              hydratedPrices[key] = v;
+            }
+          }
+          if (Object.keys(hydratedPrices).length > 0) {
+            update.productPrices = hydratedPrices;
+          }
+        }
+        // K-03 (2026-04-29): mirror miscSpent from the team-shared draft
+        // so a teammate's purchase tally appears on every other tab.
+        // The reducer treats `miscSpent` as an absolute set (not delta) —
+        // see UPDATE_PENDING_DECISION action type comment.
+        if (
+          typeof incoming.miscSpent === "number" &&
+          Number.isFinite(incoming.miscSpent)
+        ) {
+          update.miscSpent = Math.max(0, incoming.miscSpent);
+        }
+        if (Object.keys(update).length > 0) {
+          // Tell the auto-save effect (in GameContext) to skip its next
+          // firing — local state is about to mirror the team doc, so a
+          // re-emission would be a redundant write that can also clobber
+          // a teammate's in-flight edits when their listener applies it.
+          // See PR #166 review.
+          markDraftAppliedFromRemote();
+          dispatch({ type: "UPDATE_PENDING_DECISION", payload: update });
+        }
+        if (typeof incoming.submitted === "boolean") {
+          dispatch({
+            type: "SET_DECISION_SUBMITTED",
+            payload: incoming.submitted === true,
+          });
+        }
+        if (typeof incoming.pricesSubmitted === "boolean") {
+          dispatch({
+            type: "SET_PRICES_SUBMITTED",
+            payload: incoming.pricesSubmitted === true,
+          });
+        }
       },
       (err) => {
-        console.error("game roster listener error:", { gameId, err });
+        console.error("games/teams/state/pending listener error", {
+          gameId,
+          teamId,
+          err,
+        });
       },
     );
     return unsubscribe;
-  }, [gameId]);
+  }, [gameId, teamId, playerId, dispatch, markDraftAppliedFromRemote]);
+
+  const parsed = parseGamePhase(phase, currentRound);
+  const basePhase = parsed.base;
 
   // FE-11 — read this round's ad winners for the banner on the decide screen.
   // Ad bidding now happens BEFORE decisions in the same round, so we read
   // `rounds/round_{N}.auctionResults.ads` (not the previous round's doc).
   // `hideWhenEmpty` on the banner hides it gracefully on round 1 before
   // any bids have been placed.
+  //
+  // Listener-audit: the rounds-doc listener stores raw {winnerId, winningBid}
+  // pairs. Name resolution happens in the useMemo below so a roster change
+  // never tears down / re-subscribes this Firestore listener.
   useEffect(() => {
     if (!gameId || !currentRound) {
-      setAdWinners(null);
-      return;
-    }
-    const prevRoundRef = doc(db, "games", gameId, "rounds", `round_${currentRound}`);
-    const unsubscribe = onSnapshot(
-      prevRoundRef,
-      (snap) => {
-        if (!snap.exists()) {
-          setAdWinners(null);
-          return;
-        }
-        const data = snap.data() as DocumentData;
-        const auction = data.auctionResults as DocumentData | undefined;
-        const adsRaw = (auction?.ads ?? null) as DocumentData | null;
-        if (!adsRaw || typeof adsRaw !== "object") {
-          setAdWinners(null);
-          return;
-        }
-        const out: Partial<Record<AdWinnerEntry["adType"], AdWinnerEntry>> = {};
-        (["TV", "Billboard", "Radio", "Newspaper"] as const).forEach((t) => {
-          const entry = adsRaw[t];
-          if (!entry || typeof entry !== "object") return;
-          const winnerId =
-            typeof entry.winnerId === "string" ? entry.winnerId : null;
-          const winningBid =
-            typeof entry.winningBid === "number" ? entry.winningBid : undefined;
-          if (!winnerId || !winningBid) return; // no bids landed for this surface
-          out[t] = {
-            adType: t,
-            amount: winningBid,
-            bakeryName: rosterByUid[winnerId]?.bakeryName,
-            displayName: rosterByUid[winnerId]?.displayName,
-          };
-        });
-        setAdWinners(Object.keys(out).length > 0 ? out : null);
-      },
-      (err) => {
-        console.error("game current-round ad-winner listener error:", { gameId, currentRound, err });
-      },
-    );
-    return unsubscribe;
-  }, [gameId, currentRound, rosterByUid]);
-
-  useEffect(() => {
-    if (!gameId || !auctionResultKey || !currentRound) {
-      setWonAuctionCosts({ ad: 0, chef: 0 });
+      setRawAdAuction(null);
       return;
     }
     const roundRef = doc(db, "games", gameId, "rounds", `round_${currentRound}`);
@@ -508,28 +548,50 @@ export function GamePage() {
       roundRef,
       (snap) => {
         if (!snap.exists()) {
-          setWonAuctionCosts({ ad: 0, chef: 0 });
+          setRawAdAuction(null);
           return;
         }
         const data = snap.data() as DocumentData;
-        const adEntry = (data.adAuctionResults?.[auctionResultKey] ?? null) as DocumentData | null;
-        const ad =
-          adEntry && typeof adEntry.totalPaid === "number"
-            ? adEntry.totalPaid
-            : 0;
-        const chefEntry = (data.chefAuctionResults?.[auctionResultKey] ?? null) as DocumentData | null;
-        const chef =
-          chefEntry && typeof chefEntry.totalPaid === "number"
-            ? chefEntry.totalPaid
-            : 0;
-        setWonAuctionCosts({ ad, chef });
+        const auction = data.auctionResults as DocumentData | undefined;
+        const adsRaw = (auction?.ads ?? null) as DocumentData | null;
+        if (!adsRaw || typeof adsRaw !== "object") {
+          setRawAdAuction(null);
+          return;
+        }
+        const out: Record<string, { winnerId: string; winningBid: number }> = {};
+        (["TV", "Billboard", "Radio", "Newspaper"] as const).forEach((t) => {
+          const entry = adsRaw[t];
+          if (!entry || typeof entry !== "object") return;
+          const winnerId =
+            typeof entry.winnerId === "string" ? entry.winnerId : null;
+          const winningBid =
+            typeof entry.winningBid === "number" ? entry.winningBid : undefined;
+          if (!winnerId || !winningBid) return;
+          out[t] = { winnerId, winningBid };
+        });
+        setRawAdAuction(Object.keys(out).length > 0 ? out : null);
       },
-      () => {
-        setWonAuctionCosts({ ad: 0, chef: 0 });
+      (err) => {
+        console.error("game current-round ad-winner listener error:", { gameId, currentRound, err });
       },
     );
     return unsubscribe;
-  }, [gameId, auctionResultKey, currentRound]);
+  }, [gameId, currentRound]);
+
+  const adWinners = useMemo(() => {
+    if (!rawAdAuction) return null;
+    const out: Partial<Record<AdWinnerEntry["adType"], AdWinnerEntry>> = {};
+    for (const [t, { winnerId, winningBid }] of Object.entries(rawAdAuction)) {
+      const adType = t as AdWinnerEntry["adType"];
+      out[adType] = {
+        adType,
+        amount: winningBid,
+        bakeryName: rosterByUid[winnerId]?.bakeryName,
+        displayName: rosterByUid[winnerId]?.displayName,
+      };
+    }
+    return Object.keys(out).length > 0 ? out : null;
+  }, [rawAdAuction, rosterByUid]);
 
   // Redirect into the dedicated phase page when backend says so. This is
   // phase-driven (not a manual navigation after submit).
@@ -546,7 +608,18 @@ export function GamePage() {
     }
   }, [basePhase, navigate]);
 
-  const handleSubmit = useCallback(async () => {
+  // K-10 / K-11 (2026-04-29) — single role-aware Decide submit. Replaces
+  // the previous two-button "Submit Prices" + "Submit Decisions" pattern:
+  //   • Finance / Solo: `submitPrices` carries prices + menu + quantities
+  //     (M-17 widened the backend callable to accept quantities).
+  //   • Operations / Solo / vacant-ops fallback: `submitDecision` carries
+  //     staff + sous-chef + equipment.
+  //   • Solo runs both, sequentially, so a single click finalizes the
+  //     round end-to-end.
+  // The "Update Prices" friction button is gone — once a role's responsi-
+  // bility is committed it stays committed, matching every other submit
+  // in the game (chef bids, ad bids).
+  const handleSubmitDecide = useCallback(async () => {
     if (!gameId) {
       setSubmitError("Not connected to a game yet.");
       return;
@@ -555,65 +628,90 @@ export function GamePage() {
       setSubmitError("Decisions can only be submitted during the decide phase.");
       return;
     }
+    const ownsPricing = roleOwnsPricing(role, teamRoleAssignments);
+    const ownsDecide = roleOwnsDecide(role, teamRoleAssignments);
+    if (!ownsPricing && !ownsDecide) return;
 
     setSubmitError(null);
     setSubmitting(true);
     try {
-      // The callable accepts both the legacy `sousChef*` fields (read today)
-      // and the new `staffCounts`/`maintenanceTasks` fields (which the
-      // validator ignores until BE-1..BE-10 ship). Shipping both means the
-      // backend can cut over with no coordinated frontend release.
-      type SubmitPayload = { gameId: string } & PendingDecisionDraft;
-      const submitDecision = httpsCallable<SubmitPayload, SubmitDecisionResponse>(
-        functions,
-        "submitDecision",
-      );
+      // Finance side first — Operations gates on `pricesSubmitted`, so for
+      // a solo player running both sides, do prices before decision so the
+      // server's wait-for-finance check passes by the time submitDecision
+      // hits the validator.
+      // S-04 (2026-04-29): pass `expectedFromPhase` so a submission that
+      // races an auto-advance gets a precise "stale phase" diagnostic
+      // instead of the generic canSubmitDecision rejection. The backend
+      // gate is unchanged when this field is absent — pre-existing
+      // callers stay compatible.
+      const expectedFromPhase = phase ?? undefined;
 
-      // Derive the legacy shape from the station-based counts so the current
-      // backend validator accepts our submission. Sous-chef totals sum across
-      // the 3 stations (maintenance guys are their own role, not sous chefs).
-      const sousChefCount = totalSousChefs(pendingDecision.staffCounts);
-      const sanitizedAssignments = deriveSousChefAssignments(
-        pendingDecision.staffCounts,
-        pendingDecision.menu,
-      );
-      const assignedSum = Object.values(sanitizedAssignments).reduce(
-        (s, n) => s + n,
-        0,
-      );
-      if (sousChefCount > 0 && assignedSum !== sousChefCount) {
-        // Safety net — shouldn't happen, but `deriveSousChefAssignments`
-        // preserves the total so the validator's equality check passes.
-        console.warn(
-          "Derived sousChefAssignments sum (%d) ≠ sousChefCount (%d); falling back to croissant.",
-          assignedSum,
-          sousChefCount,
-        );
-        sanitizedAssignments.croissant =
-          (sanitizedAssignments.croissant ?? 0) + (sousChefCount - assignedSum);
+      if (ownsPricing && !pricesSubmitted) {
+        const submitPrices = httpsCallable<
+          {
+            gameId: string;
+            productPrices: Record<ProductKey, number>;
+            menu: Record<ProductKey, boolean>;
+            quantities: Record<ProductKey, number>;
+            expectedFromPhase?: string;
+          },
+          { submitted: boolean }
+        >(functions, "submitPrices");
+        await submitPrices({
+          gameId,
+          productPrices: pendingDecision.productPrices,
+          menu: pendingDecision.menu,
+          quantities: pendingDecision.quantities,
+          expectedFromPhase,
+        });
+        dispatch({ type: "SET_PRICES_SUBMITTED", payload: true });
       }
 
-      // Trim maintenance tasks to the current maintenance-guy count; the
-      // StaffTab keeps them in sync, but a mid-edit state could produce a
-      // mismatch, so clamp defensively.
-      const maintenanceTasks: MaintenanceTask[] =
-        pendingDecision.maintenanceTasks.slice(
-          0,
-          pendingDecision.staffCounts.maintenanceGuys,
-        );
+      if (ownsDecide && !decisionSubmitted) {
+        // `miscSpent` is a UI-only running tally for the receipt — never
+        // sent to the backend (server-authoritative budget owns the
+        // ledger). `quantities` rides on submitPrices now (K-10).
+        type SubmitPayload = { gameId: string; expectedFromPhase?: string } & Omit<
+          PendingDecisionDraft,
+          "miscSpent" | "quantities"
+        >;
+        const submitDecision = httpsCallable<
+          SubmitPayload,
+          SubmitDecisionResponse
+        >(functions, "submitDecision");
 
-      await submitDecision({
-        gameId,
-        menu: pendingDecision.menu,
-        quantities: pendingDecision.quantities,
-        sousChefCount,
-        sousChefAssignments:
-          sanitizedAssignments as PendingDecisionDraft["sousChefAssignments"],
-        staffCounts: pendingDecision.staffCounts,
-        maintenanceTasks,
-        productPrices: pendingDecision.productPrices,
-      });
-      dispatch({ type: "SET_DECISION_SUBMITTED", payload: true });
+        const sousChefCount = totalSousChefs(pendingDecision.staffCounts);
+        const sanitizedAssignments = deriveSousChefAssignments(
+          pendingDecision.staffCounts,
+          pendingDecision.menu,
+        );
+        const assignedSum = Object.values(sanitizedAssignments).reduce(
+          (s, n) => s + n,
+          0,
+        );
+        if (sousChefCount > 0 && assignedSum !== sousChefCount) {
+          console.warn(
+            "Derived sousChefAssignments sum (%d) ≠ sousChefCount (%d); falling back to croissant.",
+            assignedSum,
+            sousChefCount,
+          );
+          sanitizedAssignments.croissant =
+            (sanitizedAssignments.croissant ?? 0) +
+            (sousChefCount - assignedSum);
+        }
+
+        await submitDecision({
+          gameId,
+          menu: pendingDecision.menu,
+          sousChefCount,
+          sousChefAssignments:
+            sanitizedAssignments as PendingDecisionDraft["sousChefAssignments"],
+          staffCounts: pendingDecision.staffCounts,
+          productPrices: pendingDecision.productPrices,
+          expectedFromPhase,
+        });
+        dispatch({ type: "SET_DECISION_SUBMITTED", payload: true });
+      }
       // Do NOT dispatch SET_PHASE — the backend phase listener owns transitions.
     } catch (err) {
       setSubmitError(
@@ -625,41 +723,20 @@ export function GamePage() {
     } finally {
       setSubmitting(false);
     }
-  }, [gameId, basePhase, pendingDecision, dispatch]);
-
-  const handleSubmitPrices = useCallback(async () => {
-    if (!gameId) {
-      setSubmitError("Not connected to a game yet.");
-      return;
-    }
-    if (basePhase !== "decide") {
-      setSubmitError("Prices can only be submitted during the decide phase.");
-      return;
-    }
-    setSubmitError(null);
-    setSubmittingPrices(true);
-    try {
-      const callable = httpsCallable<
-        { gameId: string; productPrices: Record<ProductKey, number>; menu: Record<ProductKey, boolean> },
-        { submitted: boolean }
-      >(functions, "submitPrices");
-      await callable({ gameId, productPrices: pendingDecision.productPrices, menu: pendingDecision.menu });
-      dispatch({ type: "SET_PRICES_SUBMITTED", payload: true });
-    } catch (err) {
-      setSubmitError(
-        humanizeFunctionError(err, "Could not submit prices. Please try again."),
-      );
-    } finally {
-      setSubmittingPrices(false);
-    }
-  }, [gameId, basePhase, pendingDecision.productPrices, dispatch]);
+  }, [
+    gameId,
+    basePhase,
+    phase,
+    role,
+    teamRoleAssignments,
+    pricesSubmitted,
+    decisionSubmitted,
+    pendingDecision,
+    dispatch,
+  ]);
 
   const isDecisionPhase = basePhase === "decide";
   const isSimulating = basePhase === "simulating";
-  const decisionCost = useMemo(
-    () => computeDecisionCost(pendingDecision, config, wonAuctionCosts),
-    [pendingDecision, config, wonAuctionCosts],
-  );
 
   // FE-I12: the backend can sail through `simulating → results_ready` in
   // ~2 seconds when conditions are favourable, which means players never
@@ -667,6 +744,17 @@ export function GamePage() {
   // for a minimum wall-clock window after we first observe `simulating`,
   // even if the Firestore phase has already moved on. Acts as a one-way
   // latch — once we commit to showing the screen, we wait out the timer.
+  //
+  // Apr 25 V4: tightened from 20_000 → 4_000ms.
+  // V9 (Apr 26): bumped to 10_000ms — playtesters reported the simulate
+  // screen flashing by too quickly to read the bakery animation; 10s
+  // gives the chefs/customers a few clear cycles before we cut to the
+  // results screen.
+  // K-09 (2026-04-29): bumped 10_000 → 20_000ms to align with Massaro's
+  // M-15 backend bump on `phaseDurations.simulating` (default 25s in
+  // `backend/functions/modules/config.js`). The latch stays comfortably
+  // under the backend duration so the screen still cedes to results
+  // rather than being yanked mid-animation.
   const SIMULATE_MIN_DISPLAY_MS = 20_000;
   const [simHoldUntilMs, setSimHoldUntilMs] = useState<number | null>(null);
   const [simHoldExpired, setSimHoldExpired] = useState(false);
@@ -713,24 +801,36 @@ export function GamePage() {
     );
   }
 
-  // DEC-21 / FE-I15: only the Operations role (or solo) may submit
-  // Decide — unless the team has nobody on operations, in which case
-  // any teammate can submit.
-  const canSubmit = roleOwnsDecide(role, teamRoleAssignments);
+  // K-10 / K-11 (2026-04-29) — single submit per role. Finance owns the
+  // pricing+quantity submission, Operations owns staff+sous-chef, Solo
+  // runs both. The submit button gates / labels reflect whichever side(s)
+  // the current player still owes.
+  const ownsPricing = roleOwnsPricing(role, teamRoleAssignments);
+  const ownsDecide = roleOwnsDecide(role, teamRoleAssignments);
+  const canSubmit = ownsPricing || ownsDecide;
   const ownerLabel = ownerOfDecide();
-  // Gate operations on finance price submission. Only applies when someone
-  // on the team actually holds the finance role (solo players self-submit).
+  // Operations-only (NOT solo, NOT finance-also) waits for Finance to
+  // commit prices first — keeps the server's submit-order invariant
+  // (`submitDecision` checks `pricesSubmitted` before accepting).
   const teamHasFinance = Object.values(teamRoleAssignments).includes("finance");
-  const waitingForPrices = canSubmit && role !== "solo" && teamHasFinance && !pricesSubmitted;
+  const operationsWaitingForFinance =
+    ownsDecide && !ownsPricing && teamHasFinance && !pricesSubmitted;
+  const allSubmitted =
+    (ownsPricing ? pricesSubmitted : true) &&
+    (ownsDecide ? decisionSubmitted : true);
   const submitDisabled =
-    submitting || decisionSubmitted || !gameId || !canSubmit || waitingForPrices;
+    submitting ||
+    allSubmitted ||
+    !gameId ||
+    !canSubmit ||
+    operationsWaitingForFinance;
   const submitLabel = !canSubmit
     ? `Your ${ownerLabel} teammate submits`
-    : waitingForPrices
+    : operationsWaitingForFinance
       ? "Waiting for Finance prices…"
       : submitting
         ? "Submitting…"
-        : decisionSubmitted
+        : allSubmitted
           ? "✓ Submitted"
           : "Submit Decisions";
 
@@ -748,10 +848,18 @@ export function GamePage() {
         />
       )}
 
-      {/* Decide-phase layout — scene on the left, decision dashboard on
-          the right. Tuned for laptop (≥ 1280 px). */}
-      <div className="decide-phase__layout">
-        <div className="decide-phase__scene-panel">
+      {/* V8 (Apr 25): pixel bakery preview moved ABOVE the choices so
+          desktop players see their kitchen first, larger scale (1.5x)
+          since this is desktop-only. Updates live as staffing changes. */}
+      <section
+        className="decide-phase__bakery-preview"
+        aria-label="Live bakery preview"
+      >
+        <header className="decide-phase__bakery-preview-header">
+          <span className="decide-phase__bakery-preview-eyebrow">Live Preview</span>
+          <h3 className="decide-phase__bakery-preview-title">Your Bakery</h3>
+        </header>
+        <div className="decide-phase__bakery-preview-stage">
           <SceneErrorBoundary teamName={teamName ?? ""}>
             <PixelBakeryScene
               mode="decide"
@@ -768,25 +876,18 @@ export function GamePage() {
             />
           </SceneErrorBoundary>
         </div>
-
-        {/* FE-9 — lock the menu + Hire tab once the player has submitted. */}
-        <div className="game-page__dashboard">
-          <BakeryView readOnly={decisionSubmitted} />
-          <GameSidebar readOnly={decisionSubmitted} />
-        </div>
-      </div>
-      <section className="game-page__round-cost" aria-label="Total cost this round">
-        <div className="game-page__round-cost-label">Total Cost This Round</div>
-        <div className="game-page__round-cost-total">
-          {formatMoney(decisionCost.total)}
-        </div>
-        <div className="game-page__round-cost-breakdown">
-          <span>Staff {formatMoney(decisionCost.staff)}</span>
-          <span>Products {formatMoney(decisionCost.product)}</span>
-          <span>Ads {formatMoney(decisionCost.ad)}</span>
-          <span>Chef {formatMoney(decisionCost.chef)}</span>
-        </div>
       </section>
+
+      {/* FE-9 — lock the menu + Hire tab once the player has submitted.
+          V9 (Apr 26): the standalone "Total Cost This Round" row was
+          duplicating the per-bucket totals already shown in the BakeryView
+          and StaffTab. Players asked us to drop it; the new "Total
+          Committed This Round" row inside BakeryView shows the bakery /
+          staff split below. */}
+      <div className="game-page__dashboard">
+        <BakeryView readOnly={decisionSubmitted} />
+        <GameSidebar readOnly={decisionSubmitted} />
+      </div>
       {submitError && (
         <p className="game-page__submit-error" role="alert">
           {submitError}
@@ -794,45 +895,32 @@ export function GamePage() {
       )}
 
       {/* FE-17 — timer + live submission counter + role-gated submit. */}
+      {/* K-11 (2026-04-29): collapsed to a single button. Finance / Operations
+          / Solo all click the same control; `handleSubmitDecide` runs the
+          right callable(s). The "Update Prices" friction button is gone. */}
       <SubmissionLock
         phase="decide"
-        submitted={decisionSubmitted}
+        submitted={allSubmitted}
         hint={
           !canSubmit
             ? `Your ${ownerLabel} teammate submits this decision.`
-            : waitingForPrices
+            : operationsWaitingForFinance
               ? "Waiting for your Finance teammate to submit prices first."
               : undefined
         }
         action={
-          <>
-            {roleOwnsPricing(role, teamRoleAssignments) && (
-              <button
-                className="btn btn--secondary game-page__submit"
-                type="button"
-                onClick={handleSubmitPrices}
-                disabled={submittingPrices || !gameId}
-              >
-                {submittingPrices
-                  ? "Submitting…"
-                  : pricesSubmitted
-                    ? "✓ Update Prices"
-                    : "Submit Prices"}
-              </button>
-            )}
-            <button
-              className="btn btn--primary game-page__submit"
-              onClick={handleSubmit}
-              disabled={submitDisabled}
-              title={
-                !canSubmit
-                  ? `Your ${ownerLabel} teammate submits this decision.`
-                  : undefined
-              }
-            >
-              {submitLabel}
-            </button>
-          </>
+          <button
+            className="btn btn--primary game-page__submit"
+            onClick={handleSubmitDecide}
+            disabled={submitDisabled}
+            title={
+              !canSubmit
+                ? `Your ${ownerLabel} teammate submits this decision.`
+                : undefined
+            }
+          >
+            {submitLabel}
+          </button>
         }
       />
     </PageShell>

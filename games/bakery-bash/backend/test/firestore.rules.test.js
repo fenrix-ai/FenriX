@@ -22,46 +22,54 @@ const PLAYER_B = "uid_player_b";
 
 let testEnv;
 
+// Mirror production canonical shapes from `resetPendingPlayerStateForRound` /
+// `joinGame` (backend/functions/index.js) and `PendingDecisionDraft` /
+// `StaffCounts` (app/src/types/game.ts). These fixtures are seeded through
+// `withSecurityRulesDisabled` so the rules don't actually enforce inner
+// shape — but keeping them in sync with production avoids confusing the
+// next person who reads this file looking for the canonical schema.
 const pendingDecision = {
   submitted: false,
   submittedAt: null,
-  staffCount: 3,
-  adSpend: 0,
+  round: null,
   menu: {
+    coffee: false,
     croissant: true,
-    cookie: true,
     bagel: true,
+    cookie: true,
     sandwich: false,
-    latte: false,
-    matchaLatte: false,
-  },
-  productPrices: {
-    croissant: 0,
-    cookie: 0,
-    bagel: 0,
-    sandwich: 0,
-    latte: 0,
-    matchaLatte: 0,
+    matcha: false,
   },
   quantities: {
+    coffee: 0,
     croissant: 0,
-    cookie: 0,
     bagel: 0,
+    cookie: 0,
     sandwich: 0,
-    latte: 0,
-    matchaLatte: 0,
+    matcha: 0,
   },
+  sousChefCount: 0,
+  sousChefAssignments: {},
+  staffCounts: {
+    bakerySousChefs: 0,
+    deliSousChefs: 0,
+    baristaSousChefs: 0,
+    maintenanceGuys: 0,
+  },
+  productPrices: {
+    coffee: 0,
+    croissant: 0,
+    bagel: 0,
+    cookie: 0,
+    sandwich: 0,
+    matcha: 0,
+  },
+  pricesSubmitted: false,
 };
 
 const pendingBids = {
-  adBid: {
-    adType: null,
-    amount: 0,
-  },
-  chefBid: {
-    skillLevel: 0,
-    amount: 0,
-  },
+  ad: null,
+  chef: null,
 };
 
 function playerDocument(uid, displayName) {
@@ -74,22 +82,7 @@ function playerDocument(uid, displayName) {
     cumulativeRevenue: 0,
     pendingDecision,
     pendingBids,
-    lastRoundResult: {
-      round: 0,
-      revenue: 0,
-      customerCount: 0,
-      customerSatisfaction: 0,
-      headchefSkill: 0,
-      adTypeWon: null,
-      productsSold: {
-        croissant: 0,
-        cookie: 0,
-        bagel: 0,
-        sandwich: 0,
-        latte: 0,
-        matchaLatte: 0,
-      },
-    },
+    lastRoundResult: null,
   };
 }
 
@@ -146,39 +139,11 @@ async function seedBaseGame() {
       revenue: 610,
     });
 
-    await setDoc(doc(db, "games", GAME_ID, "players", PLAYER_A, "emails", "round_2_data"), {
-      type: "round_data_csv",
-      round: 2,
-      availableAfterRound: 1,
-      recipientPlayerId: PLAYER_A,
-      subject: "Round 1 data is ready",
-      sender: "Bakery Bash Analytics",
-      body: "Use this CSV before Round 2 to update your model.",
-      read: false,
-      createdAt: null,
-      attachments: [
-        {
-          filename: "bakery-bash-through-round-1.csv",
-          contentType: "text/csv",
-          csvText: "day,revenue\n1,650",
-          rowCount: 1,
-          includedThroughRound: 1,
-        },
-      ],
-    });
-
-    await setDoc(doc(db, "games", GAME_ID, "players", PLAYER_B, "emails", "round_2_data"), {
-      type: "round_data_csv",
-      round: 2,
-      availableAfterRound: 1,
-      recipientPlayerId: PLAYER_B,
-      subject: "Round 1 data is ready",
-      sender: "Bakery Bash Analytics",
-      body: "Use this CSV before Round 2 to update your model.",
-      read: false,
-      createdAt: null,
-      attachments: [],
-    });
+    // S-04 (2026-04-29): the per-player emails subcollection seed data
+    // used to live here (PLAYER_A + PLAYER_B "round_2_data" docs) but
+    // the underlying mail-merge feature was retired in favor of in-app
+    // market insights. Both the rule and the assertions that exercised
+    // it were dropped together.
 
     await setDoc(doc(db, "games", GAME_ID, "csvRows", PLAYER_A, "rounds", "round_1"), {
       playerId: PLAYER_A,
@@ -226,8 +191,16 @@ async function seedBaseGame() {
   });
 }
 
-describe("Bakery Bash Firestore security rules", () => {
-  before(async () => {
+describe("Bakery Bash Firestore security rules", function () {
+  before(async function () {
+    // `firebase emulators:exec` (used by `npm run test:rules`) sets
+    // FIRESTORE_EMULATOR_HOST so @firebase/rules-unit-testing can
+    // auto-discover the emulator. Plain `npm test` runs without an
+    // emulator — skip the suite there rather than fail.
+    if (!process.env.FIRESTORE_EMULATOR_HOST) {
+      this.skip();
+      return;
+    }
     const rules = fs.readFileSync(
       path.resolve(__dirname, "../firestore.rules"),
       "utf8"
@@ -282,12 +255,6 @@ describe("Bakery Bash Firestore security rules", () => {
     await assertFails(
       getDoc(doc(db, "games", GAME_ID, "csvRows", PLAYER_B, "rounds", "round_1"))
     );
-    await assertSucceeds(
-      getDoc(doc(db, "games", GAME_ID, "players", PLAYER_A, "emails", "round_2_data"))
-    );
-    await assertFails(
-      getDoc(doc(db, "games", GAME_ID, "players", PLAYER_B, "emails", "round_2_data"))
-    );
   });
 
   it("does not let clients create initial player documents", async () => {
@@ -305,10 +272,24 @@ describe("Bakery Bash Firestore security rules", () => {
     const db = authedDb(PLAYER_A);
     const playerRef = doc(db, "games", GAME_ID, "players", PLAYER_A);
 
+    // The player-doc update rule (firestore.rules:83-86) restricts client-
+    // side writes to `displayName` ONLY. Decision drafts (pendingDecision /
+    // pendingBids) flow through the `saveDecisionDraft`, `submitDecision`,
+    // `submitPrices`, and `submitBids` callables — clients never update
+    // those fields directly. The earlier version of this test asserted
+    // success on `pendingDecision` updates against an older permissive
+    // rule; that rule was tightened (a "nested-map poisoning" security
+    // fix) but this test wasn't updated to match.
     await assertSucceeds(updateDoc(playerRef, { displayName: "Crumb Club" }));
-    await assertSucceeds(updateDoc(playerRef, { pendingDecision: {
+
+    // Direct client writes to backend-owned fields (financial state,
+    // submitted draft state) are all rejected.
+    await assertFails(updateDoc(playerRef, { pendingDecision: {
       ...pendingDecision,
-      staffCount: 4,
+      staffCounts: {
+        ...pendingDecision.staffCounts,
+        bakerySousChefs: 1,
+      },
     } }));
     await assertFails(updateDoc(playerRef, { budgetCurrent: 999999 }));
     await assertFails(updateDoc(playerRef, { creditBalance: 999999 }));
@@ -326,12 +307,6 @@ describe("Bakery Bash Firestore security rules", () => {
       updateDoc(doc(db, "games", GAME_ID, "rounds", "round_1"), {
         "classStats.avgRevenue": 999999,
       })
-    );
-    await assertFails(
-      updateDoc(
-        doc(db, "games", GAME_ID, "players", PLAYER_A, "emails", "round_2_data"),
-        { read: true }
-      )
     );
   });
 
@@ -378,11 +353,19 @@ describe("Bakery Bash Firestore security rules", () => {
       setDoc(decisionRef, {
         round: 1,
         submittedAt: null,
-        staffCount: 3,
-        adSpend: 0,
+        staffCounts: {
+          bakerySousChefs: 1,
+          deliSousChefs: 0,
+          baristaSousChefs: 0,
+          maintenanceGuys: 0,
+        },
       })
     );
-    await assertFails(updateDoc(decisionRef, { staffCount: 99 }));
+    await assertFails(
+      updateDoc(decisionRef, {
+        "staffCounts.bakerySousChefs": 99,
+      })
+    );
     await assertFails(deleteDoc(decisionRef));
 
     // POST-01: productPrices written by submitPrices (Admin SDK) — client
@@ -408,6 +391,10 @@ describe("Bakery Bash Firestore security rules", () => {
           phase: "decide",
           submittedCount: 2,
         });
+        await setDoc(
+          doc(db, "games", GAME_ID, "submissionCounts", "round_1_decide"),
+          { count: 2 }
+        );
       });
     });
 
@@ -420,6 +407,23 @@ describe("Bakery Bash Firestore security rules", () => {
     it("non-professor signed-in user cannot read submissions", async () => {
       await assertFails(
         getDoc(doc(authedDb(OTHER_UID), "games", GAME_ID, "submissions", "round_1_decide"))
+      );
+    });
+
+    it("any signed-in user can read submissionCounts", async () => {
+      await assertSucceeds(
+        getDoc(
+          doc(authedDb(OTHER_UID), "games", GAME_ID, "submissionCounts", "round_1_decide")
+        )
+      );
+    });
+
+    it("clients cannot write submissionCounts", async () => {
+      await assertFails(
+        setDoc(
+          doc(authedDb(PLAYER_A), "games", GAME_ID, "submissionCounts", "round_1_decide"),
+          { count: 99 }
+        )
       );
     });
 

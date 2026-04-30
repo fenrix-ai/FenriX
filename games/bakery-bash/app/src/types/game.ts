@@ -120,8 +120,30 @@ export const PRODUCT_KEYS: ProductKey[] = [
   "matcha",
 ];
 
-export const BASE_MENU: ProductKey[] = ["croissant", "cookie", "bagel"];
-export const OPTIONAL_MENU: ProductKey[] = ["sandwich", "coffee", "matcha"];
+// Apr 28 2026 — station-unlock economy. BASE_MENU = the three "starter"
+// products (one per station, free at game start, can't be removed).
+// OPTIONAL_MENU = the three locked products that must be unlocked via
+// `purchaseProduct` before they can be added to the menu.
+//   bakery  → croissant (starter), cookie   (locked)
+//   deli    → bagel    (starter), sandwich (locked)
+//   barista → coffee   (starter), matcha   (locked)
+export const BASE_MENU: ProductKey[] = ["croissant", "bagel", "coffee"];
+export const OPTIONAL_MENU: ProductKey[] = ["cookie", "sandwich", "matcha"];
+
+/** Default starter set every team begins with — mirrors backend config. */
+export const DEFAULT_UNLOCKED_PRODUCTS: ProductKey[] = [
+  "croissant",
+  "bagel",
+  "coffee",
+];
+
+/**
+ * Default flat cost (USD) per OPTIONAL_MENU unlock. Mirrors
+ * `productUnlockCost` in backend `config.js`. Used as a fallback only —
+ * the canonical value comes through the `/games/{gameId}/config/params`
+ * listener.
+ */
+export const DEFAULT_PRODUCT_UNLOCK_COST = 500;
 
 // ---------------------------------------------------------------------------
 // Stations + maintenance (game-design-proposal integration)
@@ -147,35 +169,6 @@ export const PRODUCT_STATION: Record<ProductKey, StationId> = {
   matcha: "barista",
 };
 
-/**
- * Assignable tasks for a Maintenance Guy. `clean` restores cleanliness; the
- * three `repair_*` options restore the machine attached to the named station.
- * Array length in `PendingDecisionDraft.maintenanceTasks` must equal
- * `staffCounts.maintenanceGuys`.
- */
-export type MaintenanceTask =
-  | "clean"
-  | "repair_oven"
-  | "repair_slicer"
-  | "repair_espresso";
-
-export const MAINTENANCE_TASKS: MaintenanceTask[] = [
-  "clean",
-  "repair_oven",
-  "repair_slicer",
-  "repair_espresso",
-];
-
-/**
- * All four maintenance bars, each 0–100. Cloud Functions own these writes;
- * the client only reads / renders them.
- */
-export interface MaintenanceBars {
-  cleanliness: number;
-  ovenHealth: number;
-  slicerHealth: number;
-  espressoHealth: number;
-}
 
 /**
  * Per-station sous chef counts + one maintenance guy bucket. This replaces
@@ -233,6 +226,8 @@ export interface ChefListing {
 
 /** Real skill tier written by the backend in `rounds/{N}.chefPool`. */
 export type ChefSkillTier = "novel" | "intermediate" | "advanced";
+
+export type EquipmentGrade = 'F' | 'E' | 'D' | 'C' | 'B' | 'A';
 
 /**
  * Backend shape of a chef in `rounds/round_{N}.chefPool`. Mirrors
@@ -307,9 +302,6 @@ export interface ProductPriceConfig {
  *
  * Dual-write note: the backend validator (pre BE-1..BE-10) only reads
  * `sousChefCount` + `sousChefAssignments` and silently drops unknown keys.
- * We also send `staffCounts` + `maintenanceTasks` so the backend can start
- * consuming them the moment the maintenance overhaul lands, with no
- * coordinated frontend release required.
  */
 export interface PendingDecisionDraft {
   menu: Record<ProductKey, boolean>;
@@ -320,10 +312,20 @@ export interface PendingDecisionDraft {
   sousChefAssignments: Record<ProductKey, number>;
   /** Station-based sous chef counts + maintenance guys. */
   staffCounts: StaffCounts;
-  /** One task per maintenance guy; length must equal `staffCounts.maintenanceGuys`. */
-  maintenanceTasks: MaintenanceTask[];
+  /** When true, simulation will deduct tierUpgradeCost(currentGrade) and bump grade. */
+  equipmentUpgradePurchased?: boolean;
   /** POST-01: Finance-owned per-product prices. */
   productPrices: Record<ProductKey, number>;
+  /**
+   * Apr 28 2026 — running tally of immediate-charge purchases made during
+   * this round's decide phase (product unlocks, competitor intel, chef-data
+   * tiers). Surfaces these on the "Total Committed This Round" receipt as a
+   * "Miscellaneous" line so players see the spend line up with the budget
+   * deduction. Reset to 0 on round transition (see SET_ROUND in
+   * GameContext); never sent to the backend (server-authoritative budget
+   * deductions own the actual ledger).
+   */
+  miscSpent: number;
 }
 
 /** Shape passed as `adBids` to `submitBids({ bidType: "ad" })`. */
@@ -345,10 +347,30 @@ export interface GameConfigParams {
   sousChefBaseCost?: number;
   /** Per-hire base cost for Maintenance Guys. Defaults to the sous chef cost. */
   maintenanceBaseCost?: number;
+  /** Flat per-round cost per maintenance staffer. Defaults to 20. */
+  maintenanceStaffCost?: number;
   startingBudget?: number;
   unitCostPerProduct?: number;
   phaseDurations?: Record<string, number>;
   adBonuses?: Partial<Record<AdType, number>>;
+  adBidMinimums?: Partial<Record<AdType, number>>;
+  /** Cost to purchase last round's competitor decisions CSV. */
+  competitorInsightCost?: number;
+  /** Cost to purchase the static nationality → specialty CSV. */
+  chefDataTier1Cost?: number;
+  /** Cost to purchase the full per-chef profile dump for the current round. */
+  chefDataTier2Cost?: number;
+  /**
+   * Apr 28 2026 — flat cost (USD) per product unlock. Falls back to
+   * DEFAULT_PRODUCT_UNLOCK_COST when missing.
+   */
+  productUnlockCost?: number;
+  /**
+   * Roster cap for specialty chefs (PR #108 added the consumer in
+   * RosterPhasePage but missed declaring the field — restoring it here
+   * unblocks `tsc -b`). Defaults to 3 when missing.
+   */
+  specialtyChefCap?: number;
   // Legacy (pre-rewrite seed doc). Kept so UI can fall back if the canonical
   // field is not yet present in Firestore.
   costPerStaffPerRound?: number;
@@ -369,15 +391,7 @@ export interface RoundResult {
     adWon: AdType | null;
     chefWon: string | null;
   };
-  /** Aggregate chef-satisfaction 0–100 (average across specialty chefs). */
-  chefSatisfactionScore?: number;
-  /** Per-chef satisfaction map `{ chefId: 0-100 }`. */
-  chefSatisfactionScores?: Record<string, number>;
-  /** Maintenance bar snapshot at the end of this round. */
-  maintenanceBars?: MaintenanceBars;
-  /** Chef ids that voluntarily left this round (satisfaction ≤ 30%). */
-  chefDepartures?: string[];
-  /** Optional display names matched to `chefDepartures` ids, in order. */
+  /** Optional display names matched to departed chef ids, in order. */
   chefDepartureNames?: string[];
   /** Station-based staff counts the player submitted for this round. */
   staffCounts?: StaffCounts;
@@ -393,6 +407,34 @@ export interface RoundResult {
   selloutAnywhere?: boolean;
   /** Per-product unit-sold breakdown, used for the Results breakdown table. */
   productBreakdown?: Partial<Record<ProductKey, number>>;
+  /**
+   * P1 (2026-04-27): decision inputs surfaced from the backend so the CSV
+   * export can include them. Required for in-game model re-training —
+   * without these the CSV is outcome-only.
+   */
+  /** Resolved per-product prices the team submitted this round (POST-01). */
+  productPrices?: Partial<Record<ProductKey, number | null>>;
+  /** Per-product quantities the team stocked this round (decision input). */
+  quantitiesStocked?: Partial<Record<ProductKey, number>>;
+  /** Number of products the team offered (3–6, base menu always on). */
+  numProducts?: number;
+  /**
+   * P2 (2026-04-27): per-day outcome breakdown. A round = 1 month = 30
+   * simulated days; each entry here is a single day's outcome with the
+   * decision inputs constant across the round (read from the round-level
+   * fields above). Empty array on legacy round docs that pre-date P2.
+   */
+  dailyBreakdown?: Array<{
+    day: number;
+    revenueGross: number;
+    revenueNet: number;
+    /** Apportioned share of the monthly loan-shark borrow (sum across days = monthly). */
+    amountBorrowed?: number;
+    /** Apportioned share of the monthly loan-shark interest (sum across days = monthly). */
+    interestCharged?: number;
+    customerCount: number;
+    aggregateSatisfactionPct: number;
+  }>;
   /** Ad surface the player won this round, with paid amount. */
   adWon?: AdType | null;
   adWins?: AdType[];
@@ -400,31 +442,61 @@ export interface RoundResult {
   chefsWon?: Array<{ id?: string; name?: string }>;
   chefBidPaid?: number;
   /**
-   * Legacy burglary fields written by pre-RoundEvent simulation paths.
-   * Kept optional because newer simulations emit burglaries via RoundEvent
-   * instead. The Results screen reads these as a fallback when no event
-   * data is available.
-   */
-  burglary?: boolean;
-  burglaryAmount?: number;
-  burglaryDays?: number[];
-  /**
    * Curveball events that landed on this team during the round. Optional
    * because not every round will have one, and older round docs might
    * predate the event system entirely. The frontend renders these as
    * cards in the Events section of the Results screen.
    */
   events?: RoundEvent[];
+  /**
+   * M-21 (2026-04-28): "What hurt this round?" signals grouped onto one
+   * object so the FE (B-07) can render the Results-screen panel without
+   * cherry-picking five separate fields. Satisfaction is fill-rate-driven
+   * here; price affects demand not satisfaction; cleanliness affects foot
+   * traffic not satisfaction — see M-21 investigation in tasks-april-28.md
+   * for the full rationale on why these are sibling signals rather than
+   * "components of satisfaction".
+   */
+  roundSignals?: {
+    /** Aggregate fill-rate satisfaction, 0–100. */
+    satisfactionPct: number;
+    /** Per-product fill-rate satisfaction (subset of products on the menu). */
+    perProductSatisfaction: Partial<Record<ProductKey, number>>;
+    /** Equipment cleanliness letter grade (A–F). */
+    cleanlinessGrade: string;
+    /** Numeric cleanliness score, 0–100. */
+    cleanlinessScore: number;
+    /**
+     * Average of `min(priceDemandMultiplier, 1.0) × 100` across products on
+     * the menu. 100 = demand-optimal pricing. < 100 means premium prices
+     * cost the team some demand share.
+     */
+    priceCompetitivenessPct: number;
+  };
+  /**
+   * Round-level kitchen + financial state surfaced for the student CSV
+   * download (RoundHeader.tsx serializeRow). Top-level so the CSV writer
+   * doesn't need to dig into roundSignals for each column.
+   */
+  /** Total round costs (sous chefs + maintenance + equipment + bids). */
+  totalSpent?: number;
+  /** Equipment letter grade (A–F) at end-of-round. */
+  equipmentGrade?: string;
+  /** Cleanliness letter grade (A–F) at end-of-round. Mirrors roundSignals.cleanlinessGrade. */
+  cleanlinessGrade?: string;
+  /** Number of specialty chefs on the team's roster at end-of-round. */
+  specialtyChefCount?: number;
+  /** Cumulative net profit through end-of-this-round (priorCumulative + revenueNet). */
+  cumulativeRevenueAfter?: number;
 }
 
 /** One row of the curveball-events feed shown on the Results screen. */
-export type RoundEventKind = "burglary" | "food-safety-inspection";
+export type RoundEventKind = "food-safety-inspection";
 
 export interface RoundEvent {
   kind: RoundEventKind;
   /** Day-of-month numbers (1–31) when the event occurred this round. */
   days?: number[];
-  /** Dollars stolen across all burglaries in `days` (burglary only). */
   amount?: number;
   /** Inspection cleanliness reading 0–100 (inspection only). */
   cleanlinessPct?: number;
@@ -437,8 +509,10 @@ export interface RoundEvent {
  *
  * - `operations` owns the Decide-phase submit (quantities, sous chefs,
  *   maintenance guys).
- * - `advertising` owns the ad-auction submit.
- * - `finance` owns the chef-auction submit + roster (layoff / continue).
+ * - `advertising` owns the ad-auction submit AND the chef-auction submit
+ *   (M-18, 2026-04-28: chef bids moved here under the Q6 role split; the
+ *   FE label is "Analyst" — see S-03).
+ * - `finance` owns the roster (layoff / continue).
  * - `solo` is the fallback when a player joins without teammates: all three
  *   buttons are enabled on their device. Also the default during the
  *   transition window before BE-20 / BE-21 ship per-team schema + role
@@ -449,9 +523,16 @@ export interface RoundEvent {
  */
 export type PlayerRole = "operations" | "advertising" | "finance" | "solo";
 
+/**
+ * S-03 (2026-04-29): the role formerly called "Bidder" / "Advertising"
+ * is now "Analyst" — owns ad bids, chef bids (M-18), data purchases (B-05),
+ * and the monthly CSV download (S-07). The backend role string stays
+ * `advertising` for compatibility (changing it would invalidate every
+ * in-flight game doc). Only the player-facing label moves.
+ */
 export const PLAYER_ROLE_LABELS: Record<PlayerRole, string> = {
   operations: "Operations",
-  advertising: "Bidder",
+  advertising: "Analyst",
   finance: "Finance",
   solo: "Solo (all roles)",
 };
@@ -505,10 +586,27 @@ export function roleOwnsChefBids(
   role: PlayerRole,
   teamRoleAssignments?: Record<string, PlayerRole | null> | null,
 ): boolean {
+  // M-18 (2026-04-28): chef bid ownership moved from Finance to the renamed
+  // Analyst role (backend role string stays "advertising" for compatibility;
+  // only the FE label changes — see S-03). Analyst now owns BOTH ad bids
+  // and chef bids per the Q6 role split.
+  if (role === "advertising" || role === "solo") return true;
+  return teamRoleIsVacant(teamRoleAssignments ?? null, ["advertising"]);
+}
+export function roleOwnsPricing(
+  role: PlayerRole,
+  teamRoleAssignments?: Record<string, PlayerRole | null> | null,
+): boolean {
   if (role === "finance" || role === "solo") return true;
   return teamRoleIsVacant(teamRoleAssignments ?? null, ["finance"]);
 }
-export function roleOwnsPricing(
+/**
+ * M-17 (2026-04-28): quantities ownership moved from Operations to Finance.
+ * Mirror semantics to `roleOwnsPricing` since the same role submits both
+ * fields via the unified `submitPrices` callable. K-10/K-01 use this helper
+ * to gate the quantity steppers in BakeryView per the new role split.
+ */
+export function roleOwnsQuantities(
   role: PlayerRole,
   teamRoleAssignments?: Record<string, PlayerRole | null> | null,
 ): boolean {
@@ -533,7 +631,7 @@ export function roleOwnsRoster(
 /**
  * Human-readable owner copy used in the disabled-button tooltip.
  * Always delegates to `PLAYER_ROLE_LABELS` so the copy here stays in lockstep
- * with the role-picker and the How-to-Play page (e.g. `advertising → "Bidder"`).
+ * with the role-picker and the How-to-Play page (post S-03: `advertising → "Analyst"`).
  */
 export function ownerOfDecide(): string {
   return PLAYER_ROLE_LABELS.operations;
@@ -542,7 +640,7 @@ export function ownerOfAdBids(): string {
   return PLAYER_ROLE_LABELS.advertising;
 }
 export function ownerOfChefBids(): string {
-  return PLAYER_ROLE_LABELS.finance;
+  return PLAYER_ROLE_LABELS.advertising;
 }
 export function ownerOfRoster(): string {
   return PLAYER_ROLE_LABELS.operations;
@@ -583,16 +681,12 @@ export interface GameState {
   adBidsSubmitted: boolean;
   /** Local flag — true after a successful `submitBids` (chef) this round. */
   chefBidsSubmitted: boolean;
-  /**
-   * Live maintenance bars — owned by Cloud Functions, mirrored here via a
-   * Firestore listener. Defaults to 100% for all bars before the first round.
-   */
-  maintenanceBars: MaintenanceBars;
-  /**
-   * Per-specialty-chef satisfaction 0–100. Written by Cloud Functions during
-   * simulation; renders the low-satisfaction warnings on the results screen.
-   */
-  chefSatisfactionScores: Record<string, number>;
+  /** Equipment grade A-F. Default C; bumps one tier per round when upgraded. */
+  equipmentGrade: EquipmentGrade;
+  /** Cleanliness internal score 0-100. Drifts each round. */
+  cleanlinessScore: number;
+  /** Cleanliness grade derived from cleanlinessScore — cached for UI. */
+  cleanlinessGrade: EquipmentGrade;
   /**
    * Live remaining budget for the player, mirrored from
    * `/games/{gameId}/players/{uid}.budgetCurrent`. `null` until the listener
@@ -630,6 +724,20 @@ export interface GameState {
    * before the listener has read the doc (strict gate until then).
    */
   teamRoleAssignments: Record<string, PlayerRole | null>;
+  /**
+   * Apr 28 2026 — products the team has unlocked (always includes the
+   * three BASE_MENU starters). Mirrored from
+   * `/games/{gameId}/teams/{teamId}.unlockedProducts`. The Bakery view
+   * disables the "Add" affordance for any OPTIONAL_MENU product not in
+   * this list and shows an "Unlock for $X" button instead.
+   */
+  unlockedProducts: ProductKey[];
+  /**
+   * Apr 28 2026 — total number of locked products the team has paid to
+   * unlock this game. Drives the cost ladder lookup for the *next*
+   * unlock. Mirrored from `/games/{gameId}/teams/{teamId}.unlocksPurchased`.
+   */
+  unlocksPurchased: number;
   /**
    * Server-driven phase end Timestamp (epoch ms) mirrored from
    * `/games/{gameId}.phaseEndsAt`. `null` while the game is paused or
@@ -703,17 +811,19 @@ export interface LeaderboardRanking {
   lastRoundRevenue?: number;
   /** Positive = moved up; negative = moved down; 0 = no change. */
   rankChange?: number;
+  /** Budget after this round (used for tie-break in conclusion). */
+  budgetAfter?: number;
 }
 
-/** Default maintenance bars (all 100%) used on game start / context reset. */
-export const DEFAULT_MAINTENANCE_BARS: MaintenanceBars = {
-  cleanliness: 100,
-  ovenHealth: 100,
-  slicerHealth: 100,
-  espressoHealth: 100,
-};
-
-/** Default per-station staff counts (all zero). */
+/**
+ * Default per-station staff counts (all zero).
+ *
+ * Barlava follow-up: maintenanceGuys flipped from 2 → 0. The two free
+ * maintenance hires were a leftover starter-budget assumption from an
+ * earlier balance pass; players reported the "ghost spend" was confusing
+ * since the receipt didn't otherwise account for them. Backend
+ * `decision-validation.js` was bumped to match.
+ */
 export const DEFAULT_STAFF_COUNTS: StaffCounts = {
   bakerySousChefs: 0,
   deliSousChefs: 0,

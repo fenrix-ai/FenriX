@@ -3,7 +3,8 @@ import { doc, onSnapshot, type DocumentData } from "firebase/firestore";
 import { useGame } from "../../contexts/GameContext";
 import { LoanSharkCallout } from "../../components/game/LoanSharkCallout";
 import { downloadResultsCsv } from "../../components/game/RoundHeader";
-import type { MaintenanceBars, ProductKey, RoundEvent } from "../../types/game";
+import { DataPurchaseSection } from "../../components/game/DataPurchaseSection";
+import type { ProductKey, RoundEvent, RoundResult } from "../../types/game";
 import { formatDaysInRound } from "../../lib/dateSystem";
 import { db } from "../../lib/firebase";
 
@@ -20,8 +21,6 @@ import { db } from "../../lib/firebase";
  *
  * Budget is intentionally NOT shown (Hard UI Rule #1).
  */
-const LOW_SATISFACTION_THRESHOLD = 40;
-
 const PRODUCT_LABELS: Record<ProductKey, string> = {
   croissant: "Croissants",
   cookie: "Cookies",
@@ -31,31 +30,9 @@ const PRODUCT_LABELS: Record<ProductKey, string> = {
   matcha: "Matchas",
 };
 
-/**
- * FE-4 — end-of-round maintenance bar labels. Matches the labels used in
- * `StatusTab`, minus the warning icon/tier lines since we're rendering a
- * retrospective snapshot rather than a live health indicator.
- */
-const MAINTENANCE_BAR_LABELS: Array<{
-  key: keyof MaintenanceBars;
-  label: string;
-}> = [
-  { key: "cleanliness", label: "Cleanliness" },
-  { key: "ovenHealth", label: "Oven" },
-  { key: "slicerHealth", label: "Meat Slicer" },
-  { key: "espressoHealth", label: "Espresso Machine" },
-];
-
 function formatMoney(n: number | null | undefined): string {
   if (typeof n !== "number" || Number.isNaN(n)) return "—";
   return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-}
-
-function barColor(pct: number): string {
-  if (pct >= 85) return "var(--sage)";
-  if (pct >= 60) return "var(--lime)";
-  if (pct > 30) return "var(--honey)";
-  return "var(--berry)";
 }
 
 function looksLikeInternalChefId(value: string | null | undefined): boolean {
@@ -71,14 +48,12 @@ function presentChefName(
   return typeof fallbackIndex === "number" ? `Chef ${fallbackIndex + 1}` : "Chef";
 }
 
-const BURGLAR_ASSET = "/assets/events/burglar.svg";
 const INSPECTOR_ASSET = "/assets/events/food-inspector.svg";
 
 /**
- * Curveball event card. One card per event. Burglary cards show the
- * burglar asset + the date(s) + amount lost; food-safety inspection
- * cards show the inspector asset + date(s) + cleanliness reading +
- * rating tier (Poor / Sufficient / Good / Excellent).
+ * Curveball event card. One card per event. Food-safety inspection cards
+ * show the inspector asset + date(s) + cleanliness reading + rating tier
+ * (Poor / Sufficient / Good / Excellent).
  */
 function EventCard({
   event,
@@ -87,42 +62,6 @@ function EventCard({
   event: RoundEvent;
   round: number | null;
 }) {
-  if (event.kind === "burglary") {
-    const daysLabel = formatDaysInRound(round, event.days ?? []);
-    return (
-      <article
-        className="event-card event-card--burglary"
-        aria-label="Burglary event"
-      >
-        <img
-          src={BURGLAR_ASSET}
-          alt=""
-          aria-hidden
-          className="event-card__asset"
-          onError={(e) => {
-            (e.currentTarget as HTMLImageElement).style.display = "none";
-          }}
-        />
-        <div className="event-card__body">
-          <h4 className="event-card__title">🔓 Burglary</h4>
-          {daysLabel && (
-            <p className="event-card__meta">
-              <strong>When:</strong> {daysLabel}
-            </p>
-          )}
-          {typeof event.amount === "number" && event.amount > 0 && (
-            <p className="event-card__meta event-card__meta--loss">
-              <strong>Stolen:</strong> ${event.amount.toLocaleString()}
-            </p>
-          )}
-          <p className="event-card__hint">
-            Keep maintenance crews busy to deter thieves next round.
-          </p>
-        </div>
-      </article>
-    );
-  }
-
   const daysLabel = formatDaysInRound(round, event.days ?? []);
   const rating = event.rating ?? null;
   const pct =
@@ -168,16 +107,104 @@ function EventCard({
   );
 }
 
+/**
+ * B-07 — sibling-signal panel that answers the player's question
+ * "what hurt my round?". Per the M-21 investigation, the three signals
+ * surfaced here are NOT components of satisfaction — they're separate
+ * model knobs the player controls. We render them as a small list with
+ * red/yellow/green health pills so the worst lever pops out first.
+ */
+type SignalSeverity = "red" | "yellow" | "green";
+
+function severityFromPct(pct: number): SignalSeverity {
+  if (pct < 60) return "red";
+  if (pct < 80) return "yellow";
+  return "green";
+}
+
+function severityFromGrade(grade: string): SignalSeverity {
+  const letter = grade?.[0]?.toUpperCase() ?? "";
+  if (letter === "A" || letter === "B") return "green";
+  if (letter === "C") return "yellow";
+  return "red";
+}
+
+interface WhatHurtPanelProps {
+  signals: NonNullable<RoundResult["roundSignals"]>;
+}
+
+function WhatHurtPanel({ signals }: WhatHurtPanelProps) {
+  // Find the lowest-satisfaction product (the "what to fix first" lever).
+  // `perProductSatisfaction` is a Partial<Record<ProductKey, number>> —
+  // products that weren't on the menu won't appear, so we only sort
+  // entries that actually have a numeric satisfaction value.
+  const perProduct = signals.perProductSatisfaction ?? {};
+  const entries = Object.entries(perProduct).filter(
+    ([, pct]) => typeof pct === "number",
+  ) as Array<[ProductKey, number]>;
+  entries.sort(([, a], [, b]) => a - b);
+  const worst = entries[0] ?? null;
+
+  const fillSeverity: SignalSeverity = worst
+    ? severityFromPct(worst[1])
+    : severityFromPct(signals.satisfactionPct);
+  const priceSeverity = severityFromPct(signals.priceCompetitivenessPct);
+  const cleanSeverity = severityFromGrade(signals.cleanlinessGrade);
+
+  return (
+    <section
+      className="results-phase__signals"
+      aria-label="What hurt this round"
+    >
+      <h3 className="results-phase__section-title">What hurt this round?</h3>
+      <ul className="results-phase__signal-list">
+        <li
+          className={`results-phase__signal-row results-phase__signal-row--${fillSeverity}`}
+        >
+          <span className="results-phase__signal-label">Fill rate</span>
+          <strong className="results-phase__signal-value">
+            {worst
+              ? `${PRODUCT_LABELS[worst[0]]}: ${Math.round(worst[1])}%`
+              : `${Math.round(signals.satisfactionPct)}%`}
+          </strong>
+        </li>
+        <li
+          className={`results-phase__signal-row results-phase__signal-row--${priceSeverity}`}
+        >
+          <span className="results-phase__signal-label">
+            Price competitiveness
+          </span>
+          <strong className="results-phase__signal-value">
+            {Math.round(signals.priceCompetitivenessPct)}%
+          </strong>
+        </li>
+        <li
+          className={`results-phase__signal-row results-phase__signal-row--${cleanSeverity}`}
+        >
+          <span className="results-phase__signal-label">Cleanliness</span>
+          <strong className="results-phase__signal-value">
+            {signals.cleanlinessGrade} ({Math.round(signals.cleanlinessScore)})
+          </strong>
+        </li>
+      </ul>
+    </section>
+  );
+}
+
 export function ResultsPhase() {
   const {
     roundResults,
     currentRound,
-    chefSatisfactionScores,
     leaderboard,
     gameId,
     playerId,
     teamId,
+    role,
   } = useGame();
+  // S-07 (2026-04-29): the monthly CSV is the Analyst's responsibility
+  // post-Q6. Solo keeps it as the catch-all when teams have ≤2 members.
+  // Backend role string is still `advertising` (label changed in S-03).
+  const canDownloadCsv = role === "advertising" || role === "solo";
   // BE-I03: auction result docs are keyed by team slug (or the player uid for
   // solo players, which is also `team.key` on the backend).
   const auctionResultKey = teamId || playerId;
@@ -232,18 +259,6 @@ export function ResultsPhase() {
     return unsubscribe;
   }, [gameId, auctionResultKey, currentRound]);
 
-  const scores: Record<string, number> =
-    latest?.chefSatisfactionScores ?? chefSatisfactionScores;
-  const lowChefs = Object.entries(scores).filter(
-    ([, score]) =>
-      typeof score === "number" && score <= LOW_SATISFACTION_THRESHOLD,
-  );
-
-  const departures = latest?.chefDepartures ?? [];
-  const departureNames = latest?.chefDepartureNames ?? [];
-  const chefLabel = (_id: string, index: number) =>
-    presentChefName(departureNames[index], index);
-
   const productEntries = latest?.productBreakdown
     ? (Object.entries(latest.productBreakdown) as Array<[ProductKey, number]>).filter(
         ([, n]) => typeof n === "number" && n > 0,
@@ -284,32 +299,8 @@ export function ResultsPhase() {
         ? latest.chefBidPaid
         : null;
 
-  // FE-4 — end-of-round maintenance snapshot. Prefer the per-round
-  // snapshot on the result; fall back to live context state for the
-  // pre-BE-1..BE-10 rollout where results docs may not include it.
-  const endBars: MaintenanceBars | null =
-    latest?.maintenanceBars ?? null;
-
-  // Events derived from the result payload. Future backend work may write
-  // these explicitly as `events: RoundEvent[]`; today the backend still
-  // writes the flat `burglary` / `burglaryAmount` / `burglaryDays` fields,
-  // so we synthesize a burglary RoundEvent from those when no explicit
-  // events array is present.
-  const events: RoundEvent[] = (() => {
-    if (Array.isArray(latest?.events) && latest!.events!.length > 0) {
-      return latest!.events!;
-    }
-    if (latest?.burglary) {
-      return [
-        {
-          kind: "burglary",
-          amount: latest.burglaryAmount,
-          days: latest.burglaryDays,
-        },
-      ];
-    }
-    return [];
-  })();
+  // Events derived from the result payload.
+  const events: RoundEvent[] = Array.isArray(latest?.events) ? latest!.events! : [];
 
   return (
     <section className="results-phase">
@@ -317,17 +308,24 @@ export function ResultsPhase() {
         <h2 className="results-phase__title">
           Round {currentRound} Results
         </h2>
-        {roundResults.length > 0 && (
+        {roundResults.length > 0 && canDownloadCsv && (
           <button
             type="button"
             className="btn btn--ghost results-phase__download"
             onClick={() => downloadResultsCsv(roundResults)}
-            aria-label="Download round history as CSV"
+            aria-label="Download your monthly data as CSV"
+            title="Download every round you've played as a CSV (one row per day)."
           >
-            ⬇ Download CSV
+            ⬇ Download your monthly data
           </button>
         )}
       </header>
+
+      {/* B-05 (2026-04-29): data purchases now live on Results, gated to
+          Analyst / Solo, scoped to the current round. The component
+          self-hides for non-Analyst roles and during the very first
+          render (before currentRound is set). */}
+      <DataPurchaseSection />
 
       {latest ? (
         <>
@@ -351,6 +349,19 @@ export function ResultsPhase() {
             </div>
           </div>
 
+          {/* B-07 (2026-04-29) — "What hurt this round?" panel. Surfaces the
+              three sibling signals from M-21's `roundSignals` so the team
+              can quickly see which lever (fill rate / pricing / cleanliness)
+              cost them. The user's mental model treated these as
+              "components of satisfaction"; the math in `satisfaction.js`
+              keeps them separate (satisfaction = fill-rate only; price
+              affects demand; cleanliness affects foot traffic). The panel
+              renders them as siblings with red/yellow/green health colors
+              so a player can instantly see the worst lever. */}
+          {latest?.roundSignals && (
+            <WhatHurtPanel signals={latest.roundSignals} />
+          )}
+
           {events.length > 0 && (
             <section
               className="results-phase__events"
@@ -370,26 +381,15 @@ export function ResultsPhase() {
           )}
 
           {/* FE-I20: Net revenue / Customers / Customer satisfaction
-              already render in the metric cards above; only the values that
-              don't appear there (Chef satisfaction, Gross revenue when a
-              loan was taken out) live here. */}
-          {(typeof latest.chefSatisfactionScore === "number" ||
-            (typeof latest.amountBorrowed === "number" &&
-              latest.amountBorrowed > 0)) && (
+              already render in the metric cards above; Gross revenue only
+              shows when a loan was taken out. */}
+          {typeof latest.amountBorrowed === "number" &&
+            latest.amountBorrowed > 0 && (
             <div className="results-phase__kpis">
-              {typeof latest.chefSatisfactionScore === "number" && (
-                <Kpi
-                  label="Chef satisfaction"
-                  value={`${Math.round(latest.chefSatisfactionScore)}/100`}
-                />
-              )}
-              {typeof latest.amountBorrowed === "number" &&
-                latest.amountBorrowed > 0 && (
-                  <Kpi
-                    label="Gross revenue"
-                    value={formatMoney(latest.revenueGross)}
-                  />
-                )}
+              <Kpi
+                label="Gross revenue"
+                value={formatMoney(latest.revenueGross)}
+              />
             </div>
           )}
 
@@ -449,57 +449,6 @@ export function ResultsPhase() {
             </ul>
           </section>
 
-          {/* FE-4 — maintenance bar snapshot at the end of this round.
-              Helps the player diagnose which bar drained them before they
-              plan next round's maintenance guys. Hidden for legacy
-              results docs that didn't include the snapshot. */}
-          {endBars && (
-            <section
-              className="results-phase__maintenance"
-              aria-label="Maintenance at end of round"
-            >
-              <h3 className="results-phase__section-title">
-                Kitchen Status — End of Round
-              </h3>
-              <ul className="results-phase__maintenance-list">
-                {MAINTENANCE_BAR_LABELS.map(({ key, label }) => {
-                  const rawValue = endBars[key];
-                  const value =
-                    typeof rawValue === "number" ? rawValue : 100;
-                  const clamped = Math.max(0, Math.min(100, value));
-                  const color = barColor(clamped);
-                  return (
-                    <li
-                      key={key}
-                      className="results-phase__maintenance-row"
-                    >
-                      <div className="results-phase__maintenance-header">
-                        <span className="results-phase__maintenance-label">
-                          {label}
-                        </span>
-                        <span
-                          className="results-phase__maintenance-pct"
-                          style={{ color }}
-                        >
-                          {Math.round(clamped)}%
-                        </span>
-                      </div>
-                      <div
-                        className="results-phase__maintenance-track"
-                        aria-hidden
-                      >
-                        <div
-                          className="results-phase__maintenance-fill"
-                          style={{ width: `${clamped}%`, background: color }}
-                        />
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-          )}
-
           {productEntries.length > 0 && (
             <section className="results-phase__breakdown">
               <h3 className="results-phase__breakdown-title">
@@ -534,42 +483,6 @@ export function ResultsPhase() {
         <p className="results-phase__placeholder">
           Results will appear here once the round is simulated.
         </p>
-      )}
-
-      {lowChefs.length > 0 && (
-        <div
-          className="results-phase__satisfaction-warnings"
-          role="alert"
-          aria-label="Chef satisfaction warnings"
-        >
-          {lowChefs.map(([chefId, score]) => (
-            <div key={chefId} className="results-phase__warning-card">
-              <span className="results-phase__warning-icon" aria-hidden>
-                ⚠
-              </span>
-              <p className="results-phase__warning-text">
-                <strong>{presentChefName(undefined, lowChefs.findIndex(([id]) => id === chefId))}</strong>'s satisfaction is low (
-                {Math.round(score)}%). Keep your kitchen clean and machines
-                maintained to retain them.
-              </p>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {departures.length > 0 && (
-        <div
-          className="results-phase__departures"
-          role="status"
-          aria-label="Chef departures"
-        >
-          {departures.map((chefId, i) => (
-            <p key={chefId} className="results-phase__departure">
-              <strong>{chefLabel(chefId, i)}</strong> has left the kitchen and
-              re-entered the auction pool.
-            </p>
-          ))}
-        </div>
       )}
 
       <p className="results-phase__waiting">

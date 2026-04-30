@@ -12,7 +12,6 @@ import { db, functions } from "../lib/firebase";
 import { humanizeFunctionError } from "../lib/errors";
 import { useGame, useGameDispatch } from "../contexts/GameContext";
 import { PageShell } from "../components/ui/PageShell";
-import { PixelAvatar } from "../components/ui/PixelAvatar";
 import {
   PLAYER_ROLE_LABELS,
   type GamePhaseString,
@@ -43,6 +42,12 @@ interface TeamDoc {
    * canonical team roster — there is no separate `memberUids` field.
    */
   roleAssignments: Record<string, PlayerRole | null>;
+  /**
+   * V4 (Apr 25): per-team bakery emoji written on createTeam / joinGame.
+   * `null` for legacy teams created before this field existed; FE falls
+   * back to 🥐 in that case.
+   */
+  emoji: string | null;
 }
 
 const TEAM_NAME_MAX = 40;
@@ -55,22 +60,25 @@ const TEAM_NAME_MIN = 2;
 const PICKABLE_ROLES: PlayerRole[] = ["operations", "advertising", "finance"];
 
 /**
- * What each role owns, per GAME_DESIGN_PROPOSAL.md (DEC-21) /
- * FRONTEND.md (Hard UI Rule #6). Everyone sees every screen; only the
- * role-owner can press the corresponding Submit button.
+ * What each role owns, per the post-playtest role split (Q6, 2026-04-28):
+ * quantities → Finance (M-17), chef bids → Analyst (M-18), data
+ * purchases + CSV download → Analyst (S-07/B-05). Backend role strings
+ * stay (`advertising` is still the Analyst id) for game-doc compatibility.
+ * Everyone sees every screen; only the role-owner can press the
+ * corresponding Submit button.
  */
 const ROLE_DESCRIPTIONS: Record<PlayerRole, string> = {
   operations:
-    "Submits the Decide screen — menu, quantities, sous chef hires, maintenance.",
+    "Submits sous chefs, maintenance, and equipment upgrades in Decide. Manages the chef roster (lay-offs).",
   advertising:
-    "The Bidder places ad-auction bids — TV, billboard, radio, newspaper.",
+    "Submits ad bids and chef bids in the auctions. Buys data sets in Results. Downloads the team's monthly data.",
   finance:
-    "Submits the Chef Bid screen + roster decisions — specialty chef hires & layoffs.",
-  solo: "All three buttons enabled — used automatically when you're playing alone.",
+    "Submits prices and quantities in Decide. Owns the team's pricing strategy.",
+  solo: "All three roles' buttons enabled — used automatically when you're playing alone.",
 };
 
 export function TeamPage() {
-  const { gameId, playerId, player, teamId, role, phase } = useGame();
+  const { gameId, playerId, player, teamId, phase } = useGame();
   const dispatch = useGameDispatch();
   const navigate = useNavigate();
   const location = useLocation();
@@ -175,6 +183,10 @@ export function TeamPage() {
             data.roleAssignments && typeof data.roleAssignments === "object"
               ? sanitizeRoleAssignments(data.roleAssignments)
               : {},
+          emoji:
+            typeof data.emoji === "string" && data.emoji.length > 0
+              ? data.emoji
+              : null,
         };
         setTeam(next);
         dispatch({ type: "SET_TEAM_NAME", payload: next.name });
@@ -346,15 +358,23 @@ export function TeamPage() {
 
   const waitingForAssignment = !teamId || !teamReady || !team;
   const memberCount = team ? Object.keys(team.roleAssignments).length : 0;
-  // "Solo" for UX purposes is "fewer than 3 members on the team" — while
-  // both 1- and 2-member teams carry the `solo` backend role, the role
-  // cards should only unlock once the cascade (2→3) flips specialists.
-  const isSolo = !!team && memberCount <= 2;
+  // Lock pickers only on a 1-person team (truly solo). With 2+ members
+  // each player picks explicitly — there is no longer a 2→3 auto-cascade
+  // (it stole the choice from the team), so the picker is the only way
+  // to land specialist roles.
+  const isSolo = !!team && memberCount <= 1;
 
   return (
     <PageShell className="team-page">
       <div className="team-page__card">
-        <h1 className="team-page__title">Your Team</h1>
+        <h1 className="team-page__title">
+          {team?.emoji && (
+            <span className="team-page__emoji" aria-hidden="true">
+              {team.emoji}
+            </span>
+          )}
+          Your Team
+        </h1>
 
         {player && (
           <p className="team-page__hello">
@@ -429,22 +449,20 @@ export function TeamPage() {
                       m.isYou ? " team-page__member--you" : ""
                     }`}
                   >
-                    <PixelAvatar
-                      uid={m.uid}
-                      displayName={m.displayName}
-                      className="team-page__member-avatar"
-                    />
-                    <span className="team-page__member-body">
-                      <span className="team-page__member-name">
-                        {m.displayName}
-                        {m.isYou && " (you)"}
-                      </span>
-                      {m.role && (
-                        <span className={`role-badge role-badge--${m.role}`}>
-                          {PLAYER_ROLE_LABELS[m.role]}
-                        </span>
-                      )}
+                    <span className="team-page__member-name">
+                      {m.displayName}
+                      {m.isYou && " (you)"}
                     </span>
+                    {/* Hide the placeholder "Solo" badge — it lives on the
+                        player doc only so role-gated submits stay open while
+                        the team is still picking. Surfacing it on each row
+                        misled players into thinking the latest joiner had a
+                        special "solo" role. Specialist badges still render. */}
+                    {m.role && m.role !== "solo" && (
+                      <span className={`role-badge role-badge--${m.role}`}>
+                        {PLAYER_ROLE_LABELS[m.role]}
+                      </span>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -461,22 +479,21 @@ export function TeamPage() {
               {memberCount === 1 && (
                 <p className="team-page__roles-status team-page__roles-status--solo">
                   You're the first on your team — you have all three
-                  roles until teammates join. Grab the role you want;
-                  you'll keep it once teammates arrive.
+                  roles until teammates join.
                 </p>
               )}
               {memberCount === 2 && (
                 <p className="team-page__roles-status team-page__roles-status--pair">
-                  Both of you share all three roles right now. When a
-                  third teammate joins, the roles will split
-                  automatically so each of you has one.
+                  You and your teammate both control everything right
+                  now. Pick a role to split responsibilities, or share
+                  control until you do.
                 </p>
               )}
               {memberCount >= 3 && (
                 <p className="team-page__roles-status team-page__roles-status--full">
-                  Your team is full. Each teammate now owns one role —
-                  the teammate who picked a role is the only one who
-                  can press Submit on that screen.
+                  Your team is full. Each of you should pick a role —
+                  whoever claims a role is the only one who can press
+                  Submit on that screen.
                 </p>
               )}
 
@@ -551,14 +568,18 @@ export function TeamPage() {
               </ul>
 
               <div className="team-page__roles-status" aria-live="polite">
-                {!isSolo && !myClaimedRole && (
+                {/* `myClaimedRole === 'solo'` is the placeholder backend
+                    role assigned on join — treat it as "not yet picked"
+                    so the bottom hint nudges the player to claim a real
+                    specialist instead of declaring them "set as Solo". */}
+                {!isSolo && (!myClaimedRole || myClaimedRole === "solo") && (
                   <span className="team-page__roles-warn">
-                    Pick a role to unlock your team's controls.
+                    Pick a role to lock in your part of the team.
                   </span>
                 )}
-                {!isSolo && myClaimedRole && (
+                {!isSolo && myClaimedRole && myClaimedRole !== "solo" && (
                   <span className="team-page__roles-ok">
-                    You're set as <strong>{PLAYER_ROLE_LABELS[role]}</strong>.
+                    You're set as <strong>{PLAYER_ROLE_LABELS[myClaimedRole]}</strong>.
                   </span>
                 )}
                 {roleError && (

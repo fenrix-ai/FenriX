@@ -30,8 +30,6 @@ const {
 
 const {
   calculateTotalProductOutput,
-  calculateChefSatisfactionScore,
-  calculateEffectiveOutput,
 } = require('./chef-system');
 
 const {
@@ -59,9 +57,38 @@ const {
   buildCsvRow,
 } = require('./csv-export');
 
+const {
+  equipmentFactorCapacity,
+  equipmentFactorSatisfaction,
+  cleanlinessFactor,
+  gradeFromScore,
+  cleanlinessDriftDelta,
+  nextEquipmentGrade,
+  tierUpgradeCost,
+} = require('./equipment-cleanliness');
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// Deterministic seeded PRNG (Mulberry32) for reproducible noise seeds.
+function _hashStringToInt(s) {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h >>> 0;
+}
+function _mulberry32(a) {
+  return function () {
+    a |= 0;
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 /**
  * Safely pull a numeric modifier for a product from the round preferences.
@@ -140,7 +167,6 @@ function getChefsWon(player) {
  * Returns:
  *   {
  *     offeredProducts: string[],
- *     chefSatisfactionScore: number,
  *     perProduct: {
  *       [product]: {
  *         totalOutput, effectiveOutput,
@@ -158,7 +184,8 @@ function computePlayerOutputAndSatisfaction(player, roundPreferences, config) {
     ? decision.sousChefCount
     : Number(player.sousChefCount) || 0;
 
-  const chefSatisfactionScore = calculateChefSatisfactionScore(sousChefCount, config);
+  const equipmentGrade = player.equipmentGrade || 'C';
+  const cleanlinessGrade = gradeFromScore(player.cleanlinessScore);
 
   const offeredProducts = getOfferedProducts(decision);
   const perProduct = {};
@@ -171,8 +198,8 @@ function computePlayerOutputAndSatisfaction(player, roundPreferences, config) {
     const qtyStocked = getQuantity(decision, product);
     const supplyCapped = Math.min(totalOutput, qtyStocked);
 
-    // Step 3: chef-satisfaction multiplier on throughput
-    const effectiveOutput = calculateEffectiveOutput(supplyCapped, chefSatisfactionScore);
+    // Step 3: equipment factor on throughput
+    const effectiveOutput = supplyCapped * equipmentFactorCapacity(equipmentGrade);
 
     // Step 4: fill rate uses round-modified base demand (trending boosts demand)
     const baseDemand = (PRODUCT_CATALOG[product] && PRODUCT_CATALOG[product].baseDemand) || 0;
@@ -180,7 +207,10 @@ function computePlayerOutputAndSatisfaction(player, roundPreferences, config) {
     const demand = Math.max(1, baseDemand * roundModifier);
 
     const fillRate = effectiveOutput / demand;
-    const satisfactionPct = fillRateToSatisfactionPct(fillRate);
+    const rawSat = fillRateToSatisfactionPct(fillRate);
+    const satisfactionPct = Math.max(0, Math.min(100,
+      rawSat * cleanlinessFactor(cleanlinessGrade) * equipmentFactorSatisfaction(equipmentGrade)
+    ));
     const tier = tierForSatisfaction(satisfactionPct);
 
     perProduct[product] = {
@@ -193,7 +223,7 @@ function computePlayerOutputAndSatisfaction(player, roundPreferences, config) {
     };
   }
 
-  return { offeredProducts, chefSatisfactionScore, perProduct };
+  return { offeredProducts, perProduct, equipmentGrade, cleanlinessGrade };
 }
 
 // ---------------------------------------------------------------------------
@@ -217,7 +247,10 @@ function applySelloutCap(perProductStats, product) {
   // Pass 1 data that may be referenced later.
   const cloned = { ...stats };
   cloned.satisfactionPct = Math.min(stats.satisfactionPct, SELLOUT_SAT_CAP);
-  cloned.tier = 'poor';
+  // Recompute tier from the capped satisfaction so it stays consistent.
+  // Was hardcoded to 'poor' which produced sat=8 / tier='poor' inconsistencies
+  // when the cap didn't change the underlying sat (because it was already low).
+  cloned.tier = tierForSatisfaction(cloned.satisfactionPct);
   perProductStats[product] = cloned;
   return { sellout: true };
 }
@@ -258,7 +291,7 @@ function computeReturningCustomersEarned(aggregateSatPct, customerCount, config)
  * @param {object}        config            merged game config
  * @returns {Array<object>} per-player results
  */
-function runSimulation(players, roundPreferences, config, { gameId = 'game', round = 0 } = {}) {
+function runSimulation(players, roundPreferences, config, { gameId = 'game', round = 0, day = 0, skipCostAccounting = false } = {}) {
   const safePlayers = Array.isArray(players) ? players : [];
 
   // Numeric sanitizer: coerces value to a finite number, defaulting to 0.
@@ -268,7 +301,7 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
   // Pass 1 — per-player output, chef-sat score, per-product satisfaction
   // ---------------------------------------------------------------------
   const perPlayer = safePlayers.map((player) => {
-    const { offeredProducts, chefSatisfactionScore, perProduct } =
+    const { offeredProducts, perProduct, equipmentGrade, cleanlinessGrade } =
       computePlayerOutputAndSatisfaction(player, roundPreferences, config);
 
     // Aggregate satisfaction (weighted) across this player's offered products.
@@ -278,9 +311,10 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
     return {
       player,
       offeredProducts,
-      chefSatisfactionScore,
       perProduct,
       aggregateSatisfactionPct,
+      equipmentGrade,
+      cleanlinessGrade,
     };
   });
 
@@ -321,12 +355,16 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
     const sousChefCount = Number.isFinite(decision.sousChefCount)
       ? decision.sousChefCount
       : Number(p.sousChefCount) || 0;
+    // Balance pass 1: ad wins now contribute foot-traffic, not just cash.
+    const adWins = getAdWins(p);
     // Compute foot traffic modifier using the full signature
     const footTrafficMod = getFootTrafficModifier(
       pp.aggregateSatisfactionPct,
       pp.perProduct,
       pp.offeredProducts.length,
-      sousChefCount
+      sousChefCount,
+      adWins,
+      config
     );
 
     return {
@@ -338,6 +376,12 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
       footTrafficMultiplier: 1 + footTrafficMod,
       sousChefCount,
       numProductsOffered: pp.offeredProducts.length,
+      // M-02 (2026-04-28): pass specialty chef count through so the
+      // per-product allocator can apply the chef-as-bonus weight
+      // (+25% per chef on top of sat × priceMult).
+      specialtyChefCount: Array.isArray(p.specialtyChefs)
+        ? p.specialtyChefs.length
+        : 0,
     };
   });
 
@@ -349,6 +393,9 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
   const results = [];
 
   for (const pp of perPlayer) {
+    let nextRoundEquipmentGrade = pp.equipmentGrade || 'C';
+    let equipmentUpgradeApplied = false;
+
     const p = pp.player;
     const decision = p.decision || {};
     const allocEntry = allocation.get ? allocation.get(p.playerId) : allocation[p.playerId];
@@ -365,9 +412,9 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
     let selloutAnywhere = false;
 
     for (const product of pp.offeredProducts) {
-      const stats = pp.perProduct[product];
+      const preStats = pp.perProduct[product];
       const allocatedCustomers = Math.max(0, Math.floor(Number(allocPerProduct[product]) || 0));
-      const qtyStocked = stats.qtyStocked;
+      const qtyStocked = preStats.qtyStocked;
 
       let sellout = false;
       if (allocatedCustomers > qtyStocked) {
@@ -376,6 +423,10 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
         selloutAnywhere = selloutAnywhere || sellout;
       }
 
+      // Read stats AFTER the potential cap so the output reflects the cap.
+      // applySelloutCap reassigns pp.perProduct[product] to a cloned entry —
+      // capturing stats before the call would surface pre-cap values.
+      const stats = pp.perProduct[product];
       const qtySold = Math.min(allocatedCustomers, qtyStocked);
 
       perProductCustomers[product] = allocatedCustomers;
@@ -434,35 +485,97 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
       adSpend: adBidPaid,
       numProducts: pp.offeredProducts.length,
       totalProductRevenue,
-      noiseSeed: `${gameId || 'game'}:${round}:${p.playerId}`,
+      noiseSeed: `${gameId || 'game'}:${round}:${day}:${p.playerId}`,
     }, config);
     revenueGross += adWinnerBonus;
 
-    // --- Round costs (excluding loan shark) ---
-    const costDecision = {
-      perProductQtyStocked: decision.quantities || {},
-      sousChefCount,
-    };
-    const costAuction = {
-      adAuctionWinningBid: adBidPaid,
-      chefAuctionWinningBid: chefBidPaid,
-    };
-    const roundCosts = calculateRoundCosts(costDecision, costAuction, config);
-    const totalSpent = roundCosts.totalSpent;
+    // V9 (Apr 26): if the player wasn't really "open", `computeGrossRevenue`
+    // would still hand them the $500 base + noise floor (foot-traffic
+    // baseline), which confused playtesters seeing "$527 profit / 0
+    // customers" on the results screen. Zero out the formula's floor in
+    // that case so an empty bakery shows as $0 (plus any ad-winner bonus
+    // they earned).
+    //
+    // M-02 (2026-04-28): the original V9 condition was "0 customers AND 0
+    // sales", which doubled as a kill-switch for no-specialty-chef teams
+    // (their satisfaction tanked, they got rounded to 0 in allocation, and
+    // this branch then killed the floor revenue). The BASE_CHEF_CUSTOMERS
+    // floor in customer-allocation.js now protects no-chef teams that are
+    // actually open for business — but it only fires when at least one
+    // product has positive satisfaction (i.e. stock somewhere). So we
+    // tighten the kill-switch to "no menu OR no stock anywhere" — both
+    // signals of a genuinely-not-open bakery — which keeps the V9 fix for
+    // the menu-open-but-no-stock case without re-killing no-chef teams.
+    if (pp.offeredProducts.length === 0 || !stockedAnything) {
+      revenueGross = adWinnerBonus;
+    }
 
-    // --- Loan shark ---
+    // --- Round costs (excluding loan shark) ---
+    // P2 (2026-04-27): when skipCostAccounting=true (multi-day inner calls),
+    // zero out costs and loan-shark — the multi-day wrapper computes them
+    // ONCE per month using monthly aggregates. Otherwise (single-round mode,
+    // default) behave as before. Without this flag a 30-day month would charge
+    // stock cost 30× and loan-shark interest 30× for any team that overspends.
     const budgetCurrent = _num(p.budgetCurrent);
-    const loanResult = calculateLoanShark(totalSpent, budgetCurrent, config);
-    const amountBorrowed = loanResult.borrowed;
-    const interestCharged = loanResult.interest;
-    const loanSharkDeduction = loanResult.loanSharkDeduction;
+    let totalSpent = 0;
+    let amountBorrowed = 0;
+    let interestCharged = 0;
+    let loanSharkDeduction = 0;
+    if (!skipCostAccounting) {
+      const costDecision = {
+        perProductQtyStocked: decision.quantities || {},
+        sousChefCount,
+      };
+      const costAuction = {
+        adAuctionWinningBid: adBidPaid,
+        chefAuctionWinningBid: chefBidPaid,
+      };
+      const roundCosts = calculateRoundCosts(costDecision, costAuction, config);
+      totalSpent = roundCosts.totalSpent;
+
+      // Maintenance staff cost — flat per-head, deducted alongside other staff.
+      // Must be added BEFORE the upgrade affordability check so a player whose
+      // remaining budget exactly spans both costs is not approved for an
+      // upgrade they cannot actually afford.
+      const maintenanceStaffCount = (decision.staffCounts && Number(decision.staffCounts.maintenanceGuys)) || 0;
+      const maintenanceCost = Math.max(0, maintenanceStaffCount) *
+        ((config && config.MAINTENANCE_STAFF_COST) || 20);
+      totalSpent += maintenanceCost;
+
+      // Equipment upgrade — deduct cost if requested and the player has cash + room to upgrade.
+      // Returns the new grade for the result; original `equipmentGrade` (pp.equipmentGrade)
+      // is unchanged for the rest of THIS round's compute. The bump applies to NEXT round.
+      const upgradeRequested = !!decision.equipmentUpgradePurchased;
+      const _eqGradeForRound = pp.equipmentGrade || 'C';
+      const _nextGrade = nextEquipmentGrade(_eqGradeForRound);
+      const _upgradeCost = tierUpgradeCost(_eqGradeForRound);
+      if (upgradeRequested && _nextGrade && _upgradeCost && (budgetCurrent - totalSpent) >= _upgradeCost) {
+        totalSpent += _upgradeCost;
+        nextRoundEquipmentGrade = _nextGrade;
+        equipmentUpgradeApplied = true;
+      }
+
+      const loanResult = calculateLoanShark(totalSpent, budgetCurrent, config);
+      amountBorrowed = loanResult.borrowed;
+      interestCharged = loanResult.interest;
+      loanSharkDeduction = loanResult.loanSharkDeduction;
+    }
     const revenueNet = revenueGross - loanSharkDeduction;
+
+    // Cleanliness drift for next round.
+    const _maintenanceStaffCount = (decision.staffCounts && Number(decision.staffCounts.maintenanceGuys)) || 0;
+    const _currentScore = Number.isFinite(p.cleanlinessScore) ? p.cleanlinessScore : 75;
+    const _delta = cleanlinessDriftDelta(_maintenanceStaffCount, customerCount);
+    const cleanlinessScoreNext = Math.round(Math.max(0, Math.min(100, _currentScore + _delta)));
+    const cleanlinessGradeNext = gradeFromScore(cleanlinessScoreNext);
 
     // HIGH-07 fix: use the canonical updateBudget formula from loan-shark.js.
     // Spec says budgets CAN go negative — do NOT clamp at zero.
-    const budgetAfter = Math.round(
-      updateBudget(budgetCurrent, revenueNet, totalSpent)
-    );
+    // P2: when skipCostAccounting=true, just pass budgetCurrent through
+    // unchanged (the wrapper computes the real budgetAfter once per month).
+    const budgetAfter = skipCostAccounting
+      ? budgetCurrent
+      : Math.round(updateBudget(budgetCurrent, revenueNet, totalSpent));
 
     // --- Returning customers earned (for NEXT round) ---
     const returningCustomersEarned = computeReturningCustomersEarned(
@@ -482,29 +595,19 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
       amountBorrowed,
       interestCharged,
       aggregateSatisfactionPct: postSelloutAggregate,
-      chefSatisfactionScore: pp.chefSatisfactionScore,
+      // Equipment + cleanliness (from C2/C3):
+      equipmentGrade: pp.equipmentGrade,
+      cleanlinessScore: cleanlinessScoreNext,
+      cleanlinessGrade: cleanlinessGradeNext,
+      equipmentUpgradePurchased: equipmentUpgradeApplied,
       // POST-01: per-product resolved prices (snapped, clamped, carry-over)
       // flow into the `price_<product>` CSV columns via csv-export.js.
       productPrices: resolvedPricesPerPlayer[p.playerId] || {},
-      // For professor export
+      // Professor export:
       playerId: p.playerId,
       displayName: p.displayName,
       bakeryName: p.bakeryName,
     });
-
-    // --- Burglar curveball (BE-N06) — fires when cleanliness is critically low ---
-    const burglaryThreshold = (config && config.curveballs && config.curveballs.burglaryThreshold) || 40;
-    const burglaryChance = (config && config.curveballs && config.curveballs.burglaryChance) || 0.25;
-    const burglaryAmount = (config && config.curveballs && config.curveballs.burglaryAmount) || 10000;
-    const cleanlinessPct = typeof p.cleanliness_pct === 'number' ? p.cleanliness_pct : undefined;
-    let burglary = false;
-    let actualBurglaryAmount = 0;
-    let budgetAfterBurglary = budgetAfter;
-    if (cleanlinessPct != null && cleanlinessPct < burglaryThreshold && Math.random() < burglaryChance) {
-      burglary = true;
-      actualBurglaryAmount = burglaryAmount;
-      budgetAfterBurglary = Math.max(0, budgetAfter - burglaryAmount);
-    }
 
     results.push({
       playerId: p.playerId,
@@ -515,11 +618,15 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
       amountBorrowed,
       interestCharged,
       totalSpent,
-      budgetAfter: budgetAfterBurglary,
+      budgetAfter,
       customerCount,
       perProductCustomers,
       aggregateSatisfactionPct: postSelloutAggregate,
-      chefSatisfactionScore: pp.chefSatisfactionScore,
+      // Equipment + cleanliness state for next round persistence:
+      equipmentGrade: nextRoundEquipmentGrade,
+      cleanlinessScore: cleanlinessScoreNext,
+      cleanlinessGrade: cleanlinessGradeNext,
+      equipmentUpgradeApplied,
       perProductSatisfaction,
       returningCustomersEarned,
       selloutAnywhere,
@@ -531,8 +638,6 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
       csvRow,
       productPrices: resolvedPricesPerPlayer[p.playerId] || {},
       revenueBreakdown,
-      burglary,
-      burglaryAmount: burglary ? actualBurglaryAmount : 0,
     });
   }
 

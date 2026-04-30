@@ -1,27 +1,31 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
+  useMemo,
   useReducer,
+  useRef,
   type ReactNode,
   type Dispatch,
 } from "react";
+import { httpsCallable } from "firebase/functions";
 import {
   PRODUCT_KEYS,
   BASE_MENU,
   AD_TYPES,
-  DEFAULT_MAINTENANCE_BARS,
   DEFAULT_STAFF_COUNTS,
+  DEFAULT_UNLOCKED_PRODUCTS,
+  parseGamePhase,
   totalSousChefs,
   type AcquiredCsv,
   type AdType,
   type AuctionTab,
+  type EquipmentGrade,
   type GameConfigParams,
   type GamePhaseString,
   type GameState,
   type LeaderboardRanking,
-  type MaintenanceBars,
-  type MaintenanceTask,
   type PendingAdBidsDraft,
   type PendingChefBidsDraft,
   type PendingDecisionDraft,
@@ -32,6 +36,7 @@ import {
   type StaffCounts,
 } from "../types/game";
 import { DEFAULT_PRICES } from "../lib/pricing";
+import { functions } from "../lib/firebase";
 
 function buildDefaultDecisionDraft(): PendingDecisionDraft {
   const menu = PRODUCT_KEYS.reduce((acc, p) => {
@@ -63,8 +68,8 @@ function buildDefaultDecisionDraft(): PendingDecisionDraft {
     sousChefCount: totalSousChefs(DEFAULT_STAFF_COUNTS),
     sousChefAssignments,
     staffCounts: { ...DEFAULT_STAFF_COUNTS },
-    maintenanceTasks: [],
     productPrices,
+    miscSpent: 0,
   };
 }
 
@@ -98,8 +103,9 @@ const initialState: GameState = {
   pricesSubmitted: false,
   adBidsSubmitted: false,
   chefBidsSubmitted: false,
-  maintenanceBars: { ...DEFAULT_MAINTENANCE_BARS },
-  chefSatisfactionScores: {},
+  equipmentGrade: 'C',
+  cleanlinessGrade: 'B',
+  cleanlinessScore: 75,
   budgetCurrent: null,
   // DEC-21 default: solo / all-roles. The real role + team assignment is
   // written by the backend onto the player doc and the team doc; the
@@ -110,6 +116,11 @@ const initialState: GameState = {
   teamId: null,
   teamName: null,
   teamRoleAssignments: {},
+  // Apr 28 2026 — start every team at the starter set (one product per
+  // station). The team-doc listener overwrites this once it reads the
+  // canonical `unlockedProducts` from Firestore.
+  unlockedProducts: [...DEFAULT_UNLOCKED_PRODUCTS],
+  unlocksPurchased: 0,
   phaseEndsAtMs: null,
   leaderboard: [],
   leaderboardError: null,
@@ -148,8 +159,14 @@ type GameAction =
         quantities?: Partial<Record<ProductKey, number>>;
         sousChefAssignments?: Partial<Record<ProductKey, number>>;
         staffCounts?: Partial<StaffCounts>;
-        maintenanceTasks?: MaintenanceTask[];
         productPrices?: Partial<Record<ProductKey, number>>;
+        equipmentUpgradePurchased?: boolean;
+        // K-03 (2026-04-29): teammates' miscSpent is mirrored via the
+        // team-pending listener. Setting an absolute value (not delta)
+        // is correct here — the team doc holds the canonical running
+        // total, and `ADD_MISC_SPEND` (incremental) is reserved for the
+        // local tab that actually fired the purchase.
+        miscSpent?: number;
       };
     }
   | {
@@ -165,12 +182,23 @@ type GameAction =
   | { type: "SET_PRICES_SUBMITTED"; payload: boolean }
   | { type: "SET_AD_BIDS_SUBMITTED"; payload: boolean }
   | { type: "SET_CHEF_BIDS_SUBMITTED"; payload: boolean }
-  | { type: "SET_MAINTENANCE_BARS"; payload: MaintenanceBars }
-  | { type: "SET_CHEF_SATISFACTION"; payload: Record<string, number> }
   | { type: "SET_BUDGET"; payload: number | null }
+  | {
+      type: "UPDATE_PLAYER_GRADES";
+      payload: {
+        equipmentGrade: EquipmentGrade;
+        cleanlinessGrade: EquipmentGrade;
+        cleanlinessScore: number;
+      };
+    }
   | { type: "SET_LEADERBOARD"; payload: LeaderboardRanking[] }
   | { type: "SET_LEADERBOARD_ERROR"; payload: string | null }
   | { type: "ADD_ACQUIRED_CSV"; payload: AcquiredCsv }
+  | { type: "ADD_MISC_SPEND"; payload: { amount: number } }
+  | {
+      type: "SET_TEAM_UNLOCKS";
+      payload: { unlockedProducts: ProductKey[]; unlocksPurchased: number };
+    }
   | { type: "RESET" };
 
 function gameReducer(state: GameState, action: GameAction): GameState {
@@ -242,6 +270,17 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       // transition before the player-doc listener re-hydrates them.
       const nextDecisionDraft = buildDefaultDecisionDraft();
       nextDecisionDraft.productPrices = { ...state.pendingDecision.productPrices };
+      // K-05 (2026-04-29): carry the team's unlocked-product menu toggles
+      // forward into the next round so a product unlocked in round N is
+      // still ON at the start of round N+1. Without this the OPTIONAL_MENU
+      // items snap back to `false` and the player has to re-toggle every
+      // station they bought. `state.unlockedProducts` is the canonical set
+      // (mirrored from the team doc by GamePage's listener); we OR it onto
+      // the BASE_MENU defaults rather than replacing them so a freshly
+      // joining teammate still gets the starter menu.
+      for (const product of state.unlockedProducts) {
+        nextDecisionDraft.menu[product] = true;
+      }
       return {
         ...state,
         currentRound: action.payload,
@@ -273,15 +312,6 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       return {
         ...state,
         roundResults: nextResults,
-        // Mirror maintenance bars / chef satisfaction from the result payload
-        // when the backend includes them. Leave existing state in place if the
-        // fields are absent (pre-BE-1..BE-10 rollout).
-        maintenanceBars: result.maintenanceBars
-          ? { ...result.maintenanceBars }
-          : state.maintenanceBars,
-        chefSatisfactionScores: result.chefSatisfactionScores
-          ? { ...result.chefSatisfactionScores }
-          : state.chefSatisfactionScores,
       };
     }
 
@@ -325,13 +355,19 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             }
           : state.pendingDecision.sousChefAssignments,
         staffCounts: nextStaffCounts,
-        maintenanceTasks:
-          action.payload.maintenanceTasks !== undefined
-            ? action.payload.maintenanceTasks
-            : state.pendingDecision.maintenanceTasks,
         productPrices: action.payload.productPrices
           ? { ...state.pendingDecision.productPrices, ...action.payload.productPrices }
           : state.pendingDecision.productPrices,
+        equipmentUpgradePurchased:
+          action.payload.equipmentUpgradePurchased !== undefined
+            ? action.payload.equipmentUpgradePurchased
+            : state.pendingDecision.equipmentUpgradePurchased,
+        // K-03: absolute set, not delta — see action type comment.
+        miscSpent:
+          typeof action.payload.miscSpent === "number" &&
+          Number.isFinite(action.payload.miscSpent)
+            ? Math.max(0, action.payload.miscSpent)
+            : state.pendingDecision.miscSpent,
       };
       return { ...state, pendingDecision: next };
     }
@@ -378,15 +414,21 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     case "SET_CHEF_BIDS_SUBMITTED":
       return { ...state, chefBidsSubmitted: action.payload };
 
-    case "SET_MAINTENANCE_BARS":
-      return { ...state, maintenanceBars: { ...action.payload } };
-
-    case "SET_CHEF_SATISFACTION":
-      return { ...state, chefSatisfactionScores: { ...action.payload } };
-
     case "SET_BUDGET": {
       if (state.budgetCurrent === action.payload) return state;
       return { ...state, budgetCurrent: action.payload };
+    }
+
+    case "UPDATE_PLAYER_GRADES": {
+      const { equipmentGrade, cleanlinessGrade, cleanlinessScore } = action.payload;
+      if (
+        state.equipmentGrade === equipmentGrade &&
+        state.cleanlinessGrade === cleanlinessGrade &&
+        state.cleanlinessScore === cleanlinessScore
+      ) {
+        return state;
+      }
+      return { ...state, equipmentGrade, cleanlinessGrade, cleanlinessScore };
     }
 
     case "SET_LEADERBOARD":
@@ -414,8 +456,93 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       return { ...state, acquiredCsvs: next };
     }
 
+    case "ADD_MISC_SPEND": {
+      const delta = Number.isFinite(action.payload.amount)
+        ? Math.max(0, action.payload.amount)
+        : 0;
+      if (delta === 0) return state;
+      return {
+        ...state,
+        pendingDecision: {
+          ...state.pendingDecision,
+          miscSpent: state.pendingDecision.miscSpent + delta,
+        },
+      };
+    }
+
+    case "SET_TEAM_UNLOCKS": {
+      const { unlockedProducts, unlocksPurchased } = action.payload;
+      // Skip the render if nothing actually changed — the team-doc listener
+      // re-fires on any team-doc write (name change, role assignment, etc.)
+      // so most snapshots leave the unlock fields untouched.
+      const sameCount =
+        state.unlockedProducts.length === unlockedProducts.length;
+      const sameMembers =
+        sameCount &&
+        unlockedProducts.every((p) => state.unlockedProducts.includes(p));
+      if (sameMembers && state.unlocksPurchased === unlocksPurchased) {
+        return state;
+      }
+      // K-04 (2026-04-29) — auto-enable newly unlocked products on the
+      // menu. Previously the BakeryView rendered a separate "+ Add" step
+      // after unlock; user feedback flagged that as redundant friction.
+      // Now: unlock IS the toggle-on. Quantity steppers handle "I don't
+      // actually want to bake any" — set qty=0 instead of toggling off.
+      // Conversely, if a product slips out of the unlocked set (shouldn't
+      // happen post-purchase, but defensive against admin/reset paths),
+      // remove it from the pending menu and zero its quantity.
+      const newlyUnlocked = unlockedProducts.filter(
+        (p) =>
+          !BASE_MENU.includes(p) &&
+          !state.unlockedProducts.includes(p) &&
+          !state.pendingDecision.menu[p],
+      );
+      const newlyLocked = (Object.keys(state.pendingDecision.menu) as ProductKey[])
+        .filter(
+          (p) =>
+            state.pendingDecision.menu[p] &&
+            !BASE_MENU.includes(p) &&
+            !unlockedProducts.includes(p),
+        );
+      const nextDecision = newlyUnlocked.length || newlyLocked.length
+        ? {
+            ...state.pendingDecision,
+            menu: { ...state.pendingDecision.menu },
+            quantities: { ...state.pendingDecision.quantities },
+          }
+        : state.pendingDecision;
+      for (const p of newlyUnlocked) {
+        nextDecision.menu[p] = true;
+      }
+      for (const p of newlyLocked) {
+        nextDecision.menu[p] = false;
+        nextDecision.quantities[p] = 0;
+      }
+      return {
+        ...state,
+        unlockedProducts: [...unlockedProducts],
+        unlocksPurchased,
+        pendingDecision: nextDecision,
+      };
+    }
+
     case "RESET":
-      return initialState;
+      // Barlava follow-up: hard reset of per-game state used when the
+      // professor reverts a game back to the lobby (fired from
+      // `useGameListener` when `phase` flips to "lobby"). We preserve
+      // the CONNECTION identity (gameId / playerId / gameCode / player)
+      // so the existing Firestore listeners keep firing — without this,
+      // RESET would null gameId, every dependent useEffect would tear
+      // down its listener, and the player would silently lose live
+      // updates until they refreshed. Per-round drafts, submission
+      // flags, round results, etc. all clear.
+      return {
+        ...initialState,
+        gameId: state.gameId,
+        playerId: state.playerId,
+        gameCode: state.gameCode,
+        player: state.player,
+      };
 
     default:
       return state;
@@ -425,12 +552,38 @@ function gameReducer(state: GameState, action: GameAction): GameState {
 const GameContext = createContext<GameState>(initialState);
 const GameDispatchContext = createContext<Dispatch<GameAction>>(() => {});
 
+// K-02 / K-03 follow-up — coordination signal between the team-pending
+// Firestore listener (in `GamePage`) and the debounced auto-save effect
+// (below). When the listener applies a teammate's draft to local state,
+// it calls `markDraftAppliedFromRemote()` so the auto-save effect skips
+// the next firing instead of echoing the just-received state back to
+// the team doc. Without this, two teammates can ping-pong stale values:
+// A's older miscSpent gets mirrored to B, B's auto-save echoes it back
+// as a fresh write, and A's listener applies it on top of A's local
+// increment — clobbering A's in-progress edit. See PR #166 review.
+type GameDraftSyncValue = { markDraftAppliedFromRemote: () => void };
+const GameDraftSyncContext = createContext<GameDraftSyncValue>({
+  markDraftAppliedFromRemote: () => {},
+});
+
 // Survives tab refresh during a live game. AuthProvider restores the Firebase
-// UID via Firebase's own IndexedDB persistence, so the only thing we need to
-// carry across reloads is the game/player linkage — once `gameId` is seeded,
+// UID via Firebase's own persistence layer (IndexedDB in prod, sessionStorage
+// in dev — see `lib/firebase.ts`); the only thing we need to carry across
+// reloads is the game/player linkage — once `gameId` is seeded,
 // `useGameListener` reattaches and Firestore re-hydrates phase/round/etc.
-// localStorage (not sessionStorage) so a closed-and-reopened tab still rejoins.
+//
+// Storage choice mirrors the auth persistence:
+//   • prod → localStorage so a closed-and-reopened tab still rejoins
+//   • dev  → sessionStorage so multi-tab playtesting in one browser keeps
+//     each tab's player linkage independent (otherwise tab 2 inherits
+//     tab 1's playerId from localStorage and the player-doc Firestore
+//     read fails owner-only auth).
 const PERSISTED_SESSION_KEY = "bakery-bash:game-session";
+
+function persistedSessionStorage(): Storage | null {
+  if (typeof window === "undefined") return null;
+  return import.meta.env.DEV ? window.sessionStorage : window.localStorage;
+}
 
 type PersistedSession = {
   gameId: string;
@@ -438,11 +591,17 @@ type PersistedSession = {
   gameCode: string;
   role: PlayerRole;
   teamId: string | null;
+  // M-08: track the round on the session so a refresh during decide
+  // can scope the persisted draft to the correct round before the
+  // Firestore listener catches up.
+  currentRound: number;
 };
 
 function readPersistedSession(): PersistedSession | null {
   try {
-    const raw = window.localStorage.getItem(PERSISTED_SESSION_KEY);
+    const storage = persistedSessionStorage();
+    if (!storage) return null;
+    const raw = storage.getItem(PERSISTED_SESSION_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<PersistedSession>;
     if (
@@ -465,6 +624,10 @@ function readPersistedSession(): PersistedSession | null {
       gameCode: parsed.gameCode,
       role,
       teamId: typeof parsed.teamId === "string" ? parsed.teamId : null,
+      currentRound:
+        typeof parsed.currentRound === "number" && parsed.currentRound >= 0
+          ? parsed.currentRound
+          : 0,
     };
   } catch {
     return null;
@@ -473,20 +636,112 @@ function readPersistedSession(): PersistedSession | null {
 
 function writePersistedSession(payload: PersistedSession | null): void {
   try {
+    const storage = persistedSessionStorage();
+    if (!storage) return;
     if (!payload) {
-      window.localStorage.removeItem(PERSISTED_SESSION_KEY);
+      storage.removeItem(PERSISTED_SESSION_KEY);
       return;
     }
-    window.localStorage.setItem(PERSISTED_SESSION_KEY, JSON.stringify(payload));
+    storage.setItem(PERSISTED_SESSION_KEY, JSON.stringify(payload));
   } catch {
     // Private mode / quota: acceptable to no-op; a refresh will still sign in,
     // just without the game linkage shortcut.
   }
 }
 
+// ---------------------------------------------------------------------------
+// M-08 (2026-04-28) — Decide-phase draft persistence
+//
+// Refresh during decide previously wiped the in-progress decision because
+// `pendingDecision` / `pendingAdBids` / `pendingChefBids` lived only in the
+// reducer (Firestore only sees them post-submit). Persist them under a
+// sibling storage key, scoped by (gameId, playerId, currentRound) so:
+//   • a stale draft from a previous round can't bleed into round N+1, and
+//   • a different uid signing into the same browser can't see another
+//     player's draft.
+// Storage choice mirrors PERSISTED_SESSION_KEY (sessionStorage in dev so
+// multi-tab playtesting stays independent; localStorage in prod).
+// ---------------------------------------------------------------------------
+const PERSISTED_DRAFT_KEY = "bakery-bash:pending-draft";
+
+type PersistedDraft = {
+  gameId: string;
+  playerId: string;
+  round: number;
+  pendingDecision: PendingDecisionDraft;
+  pendingAdBids: PendingAdBidsDraft;
+  pendingChefBids: PendingChefBidsDraft;
+};
+
+function readPersistedDraft(scope: {
+  gameId: string;
+  playerId: string;
+  round: number;
+}): PersistedDraft | null {
+  try {
+    const storage = persistedSessionStorage();
+    if (!storage) return null;
+    const raw = storage.getItem(PERSISTED_DRAFT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<PersistedDraft> | null;
+    if (
+      !parsed ||
+      parsed.gameId !== scope.gameId ||
+      parsed.playerId !== scope.playerId ||
+      parsed.round !== scope.round
+    ) {
+      return null;
+    }
+    if (
+      !parsed.pendingDecision ||
+      !parsed.pendingAdBids ||
+      !parsed.pendingChefBids
+    ) {
+      return null;
+    }
+    // PR #126 contract: `miscSpent` is a UI-only running tally that resets
+    // on refresh — the server owns the budget, and the field is `Omit`'d
+    // from SubmitPayload. Strip it from the rehydrated draft so refresh
+    // restores menu/quantities/prices/bids without resurrecting the local
+    // tally. Also defends `BakeryView`'s unguarded `miscSpent.toFixed(2)`
+    // against a draft persisted before `miscSpent` (or any future field)
+    // existed — the spread guarantees the field is always a number.
+    return {
+      ...parsed,
+      pendingDecision: { ...parsed.pendingDecision, miscSpent: 0 },
+    } as PersistedDraft;
+  } catch {
+    return null;
+  }
+}
+
+function writePersistedDraft(payload: PersistedDraft | null): void {
+  try {
+    const storage = persistedSessionStorage();
+    if (!storage) return;
+    if (!payload) {
+      storage.removeItem(PERSISTED_DRAFT_KEY);
+      return;
+    }
+    storage.setItem(PERSISTED_DRAFT_KEY, JSON.stringify(payload));
+  } catch {
+    // Quota / private mode: acceptable to no-op; refresh just loses the draft.
+  }
+}
+
 function buildInitialState(): GameState {
   const persisted = readPersistedSession();
   if (!persisted) return initialState;
+  // M-08: rehydrate the in-progress draft if it matches the persisted
+  // session's (gameId, playerId, currentRound). On round advance the
+  // post-state-change effect detects the round mismatch and clears the
+  // draft via writePersistedDraft(null), so a stale draft can't bleed
+  // into round N+1.
+  const draft = readPersistedDraft({
+    gameId: persisted.gameId,
+    playerId: persisted.playerId,
+    round: persisted.currentRound,
+  });
   return {
     ...initialState,
     gameId: persisted.gameId,
@@ -494,6 +749,14 @@ function buildInitialState(): GameState {
     gameCode: persisted.gameCode,
     role: persisted.role,
     teamId: persisted.teamId,
+    currentRound: persisted.currentRound,
+    ...(draft
+      ? {
+          pendingDecision: draft.pendingDecision,
+          pendingAdBids: draft.pendingAdBids,
+          pendingChefBids: draft.pendingChefBids,
+        }
+      : {}),
   };
 }
 
@@ -504,7 +767,18 @@ export function GameProvider({ children }: { children: ReactNode }) {
     buildInitialState,
   );
 
-  const { gameId, playerId, gameCode, role, teamId, phase } = state;
+  const {
+    gameId,
+    playerId,
+    gameCode,
+    role,
+    teamId,
+    phase,
+    currentRound,
+    pendingDecision,
+    pendingAdBids,
+    pendingChefBids,
+  } = state;
   useEffect(() => {
     // Clear on game_over so a reopened tab lands on the landing page instead
     // of being re-routed into the finished game's conclusion screen.
@@ -512,13 +786,132 @@ export function GameProvider({ children }: { children: ReactNode }) {
       writePersistedSession(null);
       return;
     }
-    writePersistedSession({ gameId, playerId, gameCode, role, teamId });
-  }, [gameId, playerId, gameCode, role, teamId, phase]);
+    writePersistedSession({
+      gameId,
+      playerId,
+      gameCode,
+      role,
+      teamId,
+      currentRound,
+    });
+  }, [gameId, playerId, gameCode, role, teamId, phase, currentRound]);
+
+  // K-02 / K-03 (2026-04-29) — debounced team-shared draft sync. Whenever
+  // `pendingDecision` changes (Operations adjusting staffCounts, Finance
+  // changing prices/quantities, Analyst running up miscSpent), we fire
+  // `saveDecisionDraft` after a 500ms quiet period so other teammates'
+  // tabs see the live mutation without us paying a write per keystroke.
+  //
+  // Skipped for: solo players (server returns `skipped: true` anyway,
+  // but bail before the call to save the round-trip), non-decide phases
+  // (the draft only makes sense during decide), and the very first mount
+  // before `pendingDecision` differs from `DEFAULT_PENDING_DECISION` —
+  // a fresh JOIN_GAME shouldn't write a default-shaped draft over a
+  // teammate's already-saved progress.
+  const lastSentDraftRef = useRef<string | null>(null);
+  // Set true by `markDraftAppliedFromRemote` (called from the team-pending
+  // listener) so the next auto-save firing recognizes the change came from
+  // a teammate's write — and skips re-emitting the same data back to the
+  // team doc. Without this skip, B's listener applies A's write, B's
+  // pendingDecision changes, B's auto-save fires, and B re-writes the
+  // same payload tagged with B's uid — which then arrives on A's listener
+  // (different uid → not filtered) and can clobber A's in-flight local
+  // edits. See PR #166 review.
+  const skipNextDraftAutoSaveRef = useRef(false);
+  const markDraftAppliedFromRemote = useCallback(() => {
+    skipNextDraftAutoSaveRef.current = true;
+  }, []);
+  const draftSyncValue = useMemo(
+    () => ({ markDraftAppliedFromRemote }),
+    [markDraftAppliedFromRemote],
+  );
+  useEffect(() => {
+    if (!gameId || !playerId || !teamId) return;
+    const parsed = parseGamePhase(phase ?? "lobby", currentRound ?? 1);
+    if (parsed.base !== "decide") return;
+    const draftPatch = {
+      menu: pendingDecision.menu,
+      quantities: pendingDecision.quantities,
+      sousChefAssignments: pendingDecision.sousChefAssignments,
+      staffCounts: pendingDecision.staffCounts,
+      productPrices: pendingDecision.productPrices,
+      miscSpent: pendingDecision.miscSpent,
+      equipmentUpgradePurchased: pendingDecision.equipmentUpgradePurchased,
+    };
+    const serialized = JSON.stringify(draftPatch);
+    // Listener-driven update — local state now mirrors what the team doc
+    // already holds, so re-writing would be both redundant and racy.
+    // Park `serialized` on `lastSentDraftRef` too: a subsequent local edit
+    // will produce a different fingerprint and fall through to the write.
+    if (skipNextDraftAutoSaveRef.current) {
+      skipNextDraftAutoSaveRef.current = false;
+      lastSentDraftRef.current = serialized;
+      return;
+    }
+    if (serialized === lastSentDraftRef.current) return;
+    const timer = window.setTimeout(() => {
+      lastSentDraftRef.current = serialized;
+      const save = httpsCallable<
+        { gameId: string; draft: typeof draftPatch },
+        { ok?: boolean; skipped?: boolean }
+      >(functions, "saveDecisionDraft");
+      save({ gameId, draft: draftPatch }).catch((err) => {
+        // Swallow — auto-save is best-effort. Surface to console.debug
+        // so a flaky network doesn't paint a red error bar mid-decide.
+        console.debug("saveDecisionDraft failed", err);
+        // Reset the dedup ref so the next change retries the write
+        // rather than skipping it as "already sent".
+        lastSentDraftRef.current = null;
+      });
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [gameId, playerId, teamId, phase, currentRound, pendingDecision]);
+
+  // M-08: persist the in-progress draft on every mutation. Scoped by
+  // (gameId, playerId, round) so a refresh restores only when all three
+  // match — and SET_ROUND resets all three drafts on round advance, so
+  // cross-round bleed is impossible. Cleared on game_over only.
+  //
+  // Why no `decisionSubmitted` guard: in team mode the team-pending
+  // listener flips `decisionSubmitted=true` for every team member the
+  // moment Operations submits (GamePage.tsx). If we cleared storage on
+  // that flag, Advertising/Finance's `pendingAdBids`/`pendingChefBids`
+  // would never get persisted during the auction phases — a refresh
+  // mid-bid would lose the typed amounts (no Firestore hydration path
+  // exists for `pendingBids`; see GamePage.tsx ~L377 comment). On a
+  // post-submit refresh BakeryView re-renders with the persisted draft,
+  // becomes read-only as soon as the listener re-fires
+  // SET_DECISION_SUBMITTED:true (~100ms), and the draft is cleared on
+  // the next round advance.
+  useEffect(() => {
+    if (!gameId || !playerId || phase === "game_over") {
+      writePersistedDraft(null);
+      return;
+    }
+    writePersistedDraft({
+      gameId,
+      playerId,
+      round: currentRound,
+      pendingDecision,
+      pendingAdBids,
+      pendingChefBids,
+    });
+  }, [
+    gameId,
+    playerId,
+    currentRound,
+    phase,
+    pendingDecision,
+    pendingAdBids,
+    pendingChefBids,
+  ]);
 
   return (
     <GameContext.Provider value={state}>
       <GameDispatchContext.Provider value={dispatch}>
-        {children}
+        <GameDraftSyncContext.Provider value={draftSyncValue}>
+          {children}
+        </GameDraftSyncContext.Provider>
       </GameDispatchContext.Provider>
     </GameContext.Provider>
   );
@@ -536,4 +929,9 @@ export function useGame() {
 // eslint-disable-next-line react-refresh/only-export-components
 export function useGameDispatch() {
   return useContext(GameDispatchContext);
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function useGameDraftSync() {
+  return useContext(GameDraftSyncContext);
 }

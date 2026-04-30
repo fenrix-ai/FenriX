@@ -63,19 +63,11 @@ async function seedGame(db, professorId) {
   });
 
   await db.doc(`games/${GAME_ID}/config/params`).set({
-    startingBudget: 500000,
-    sousChefBaseCost: 12500,
     unitCostPerProduct: 1,
     specialtyChefCap: 3,
-    revenueCoefficients: {
-      base: 500,
-      sousChefCoeff: 12,
-      satisfactionCoeff: 8,
-      adSpendCoeff: 0.8,
-      numProductsCoeff: 50,
-      noiseMin: 0,
-      noiseMax: 0,
-    },
+    // Force-zero noise so the simulation is deterministic across reruns;
+    // other coefficients fall back to DEFAULT_GAME_CONFIG.
+    revenueCoefficients: { noiseMin: 0, noiseMax: 0 },
   });
 
   for (const [uid, name] of [[PLAYER_A, "Rolling Scone"], [PLAYER_B, "Bagel Bros"]]) {
@@ -85,7 +77,7 @@ async function seedGame(db, professorId) {
       displayName: name,
       bakeryName: `${name} Bakery`,
       role: "solo",
-      budgetCurrent: 500000,
+      budgetCurrent: 10000,
       cumulativeRevenue: 0,
       specialtyChefs: [],
       sousChefCount: 0,
@@ -130,10 +122,14 @@ async function main() {
 
   const advanceGamePhase = httpsCallable(functions, "advanceGamePhase");
 
-  // Advance from round_1_roster → simulating (triggers simulation synchronously)
-  const result = await advanceGamePhase({ gameId: GAME_ID });
+  // Advance through the canonical phase flow: roster → decide → simulating → results_ready
+  let result = await advanceGamePhase({ gameId: GAME_ID });
+  assertEqual(result.data.phase, "round_1_decide", "Phase after roster should be decide.");
+  console.log("  ✓ advanceGamePhase: round_1_roster → round_1_decide");
+
+  result = await advanceGamePhase({ gameId: GAME_ID });
   assertEqual(result.data.phase, "results_ready", "Phase after simulation should be results_ready.");
-  console.log("  ✓ advanceGamePhase: round_1_roster → simulating → results_ready");
+  console.log("  ✓ advanceGamePhase: round_1_decide → simulating → results_ready");
 
   const [
     playerASnap,

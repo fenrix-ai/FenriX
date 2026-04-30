@@ -95,8 +95,8 @@ describe('config.js', () => {
   const cfg = config.mergeConfig({});
 
   it('has correct defaults', () => {
-    eq(cfg.startingBudget, 500000);
-    eq(cfg.sousChefBaseCost, 12500);
+    eq(cfg.startingBudget, 10000);
+    eq(cfg.sousChefBaseCost, 10);
     eq(cfg.loanSharkInterestRate, 0.10);
     eq(cfg.totalRounds, 5);
   });
@@ -122,18 +122,18 @@ describe('config.js', () => {
   it('mergeConfig applies overrides', () => {
     const c2 = config.mergeConfig({ startingBudget: 5000 });
     eq(c2.startingBudget, 5000);
-    eq(c2.sousChefBaseCost, 12500); // unchanged
+    eq(c2.sousChefBaseCost, 10); // unchanged
   });
 
   it('mergeConfig rejects bad types', () => {
     const c3 = config.mergeConfig({ startingBudget: 'garbage' });
-    eq(c3.startingBudget, 500000); // falls back to default
+    eq(c3.startingBudget, 10000); // falls back to default
   });
 
   it('adBonuses partial override', () => {
     const c4 = config.mergeConfig({ adBonuses: { TV: 999 } });
     eq(c4.adBonuses.TV, 999);
-    eq(c4.adBonuses.Radio, 25000); // untouched (spec-scaled default)
+    eq(c4.adBonuses.Radio, 150); // untouched (balance-tuned default)
   });
 
   it('CHEF_SPAWN_RATES sums to 1.0 per round', () => {
@@ -193,39 +193,44 @@ describe('pricing.js — classifyZone', () => {
 
 describe('pricing.js — calculatePriceDemandMultiplier', () => {
   const { PRICE_ZONES } = require('../config');
-  const coffee = PRICE_ZONES.coffee;   // high elasticity (e=1.5), competitiveMid = (3+4.5)/2 = 3.75
-  const matcha = PRICE_ZONES.matcha;   // low elasticity (e=0.6), competitiveMid = (5.5+7)/2 = 6.25
+  // M-14 (2026-04-28): high-tier elasticity coefficient softened 1.5 → 1.2.
+  // Off-mid expected values recomputed; mid-of-competitive cases (delta=0)
+  // are unaffected. Coffee at ceiling no longer hits MULTIPLIER_FLOOR
+  // (formerly `floored at 0.05` because 1 - 1.5 * 0.7333 = -0.10 < 0.05;
+  // now 1 - 1.2 * 0.7333 = 0.12, well above floor).
+  const coffee = PRICE_ZONES.coffee;   // high elasticity (e=1.2), competitiveMid = (3+4.5)/2 = 3.75
+  const matcha = PRICE_ZONES.matcha;   // high elasticity (e=1.2), competitiveMid = (3.5+5.5)/2 = 4.5 (pass 6 rescale)
   const croissant = PRICE_ZONES.croissant; // medium elasticity (e=1.0)
 
-  it('coffee at floor $2.00 → 1.85 (floor bonus + elasticity bump)', () => {
-    near(pricing.calculatePriceDemandMultiplier(2.00, coffee), 1.85, 0.01);
+  it('coffee at floor $2.00 → 1.71 (floor bonus + elasticity bump)', () => {
+    near(pricing.calculatePriceDemandMultiplier(2.00, coffee), 1.71, 0.01);
   });
-  it('coffee at $2.75 still in floor zone → 1.55', () => {
-    near(pricing.calculatePriceDemandMultiplier(2.75, coffee), 1.55, 0.01);
+  it('coffee at $2.75 still in floor zone → 1.47', () => {
+    near(pricing.calculatePriceDemandMultiplier(2.75, coffee), 1.47, 0.01);
   });
-  it('coffee at $3.00 (competitive) → 1.30 (step-down, no floor bonus)', () => {
-    near(pricing.calculatePriceDemandMultiplier(3.00, coffee), 1.30, 0.01);
+  it('coffee at $3.00 (competitive) → 1.24 (step-down, no floor bonus)', () => {
+    near(pricing.calculatePriceDemandMultiplier(3.00, coffee), 1.24, 0.01);
   });
   it('coffee at competitiveMid $3.75 → 1.00', () => {
     near(pricing.calculatePriceDemandMultiplier(3.75, coffee), 1.00, 0.01);
   });
-  it('coffee at $4.50 → 0.70', () => {
-    near(pricing.calculatePriceDemandMultiplier(4.50, coffee), 0.70, 0.01);
+  it('coffee at $4.50 → 0.76', () => {
+    near(pricing.calculatePriceDemandMultiplier(4.50, coffee), 0.76, 0.01);
   });
-  it('coffee at $5.00 (premium) → 0.50', () => {
-    near(pricing.calculatePriceDemandMultiplier(5.00, coffee), 0.50, 0.01);
+  it('coffee at $5.00 (premium) → 0.60', () => {
+    near(pricing.calculatePriceDemandMultiplier(5.00, coffee), 0.60, 0.01);
   });
-  it('coffee at ceiling $6.50 → floored at 0.10', () => {
-    near(pricing.calculatePriceDemandMultiplier(6.50, coffee), 0.10, 0.01);
+  it('coffee at ceiling $6.50 → 0.12 (high elasticity premium penalty, above floor under e=1.2)', () => {
+    near(pricing.calculatePriceDemandMultiplier(6.50, coffee), 0.12, 0.01);
   });
-  it('matcha at floor $3.50 → 1.414 (low elasticity so bump is smaller)', () => {
-    near(pricing.calculatePriceDemandMultiplier(3.50, matcha), 1.414, 0.01);
+  it('matcha at floor $2.50 → ~1.68 (high elasticity bump after pass 6 rescale)', () => {
+    near(pricing.calculatePriceDemandMultiplier(2.50, matcha), 1.68, 0.01);
   });
-  it('matcha at competitiveMid $6.25 → 1.00', () => {
-    near(pricing.calculatePriceDemandMultiplier(6.25, matcha), 1.00, 0.01);
+  it('matcha at competitiveMid $4.50 → 1.00', () => {
+    near(pricing.calculatePriceDemandMultiplier(4.50, matcha), 1.00, 0.01);
   });
-  it('matcha at ceiling $10.00 → 0.64 (low-elasticity premium still viable)', () => {
-    near(pricing.calculatePriceDemandMultiplier(10.00, matcha), 0.64, 0.01);
+  it('matcha at ceiling $7.00 → ~0.33 (high elasticity premium penalty)', () => {
+    near(pricing.calculatePriceDemandMultiplier(7.00, matcha), 0.33, 0.01);
   });
   it('croissant at competitiveMid $4.75 → 1.00', () => {
     near(pricing.calculatePriceDemandMultiplier(4.75, croissant), 1.00, 0.01);
@@ -336,12 +341,12 @@ describe('chef-system.js', () => {
 
   it('getChefOutputForProduct — advanced with specialty', () => {
     const chef = { skillTier: 'advanced', specialties: ['croissant', 'coffee'] };
-    eq(chefSys.getChefOutputForProduct(chef, 'croissant'), 30 * 2.2);
+    eq(chefSys.getChefOutputForProduct(chef, 'croissant'), 30 * 3.0);
   });
 
   it('getChefOutputForProduct — advanced without specialty', () => {
     const chef = { skillTier: 'advanced', specialties: ['croissant', 'coffee'] };
-    eq(chefSys.getChefOutputForProduct(chef, 'bagel'), 30 * 1.6);
+    eq(chefSys.getChefOutputForProduct(chef, 'bagel'), 30 * 1.8);
   });
 
   it('getChefOutputForProduct — base chef', () => {
@@ -357,47 +362,30 @@ describe('chef-system.js', () => {
   it('calculateTotalProductOutput with sous chef', () => {
     const chefs = [{ skillTier: 'advanced', specialties: ['croissant', 'coffee'] }];
     const total = chefSys.calculateTotalProductOutput('croissant', chefs, { croissant: 1 });
-    // base(30) + advanced specialty(66) + sous(0.5 × 66 = 33) = 129
-    near(total, 129, 0.01, 'total output');
+    // base(30) + advanced specialty(90) + sous(0.5 × 90 = 45) = 165
+    near(total, 165, 0.01, 'total output');
   });
 
   it('calculateTotalProductOutput without sous', () => {
     const chefs = [{ skillTier: 'advanced', specialties: ['croissant', 'coffee'] }];
     const total = chefSys.calculateTotalProductOutput('croissant', chefs, {});
-    // base(30) + advanced specialty(66) = 96
-    near(total, 96, 0.01, 'total output no sous');
-  });
-
-  it('calculateChefSatisfactionScore — 4 or fewer chefs = 100', () => {
-    eq(chefSys.calculateChefSatisfactionScore(0, cfg), 100);
-    eq(chefSys.calculateChefSatisfactionScore(4, cfg), 100);
-  });
-
-  it('calculateChefSatisfactionScore — diminishes above 4', () => {
-    eq(chefSys.calculateChefSatisfactionScore(5, cfg), 84);
-    eq(chefSys.calculateChefSatisfactionScore(8, cfg), 36);
-  });
-
-  it('calculateChefSatisfactionScore — floor at 35', () => {
-    eq(chefSys.calculateChefSatisfactionScore(9, cfg), 35);
-    eq(chefSys.calculateChefSatisfactionScore(100, cfg), 35);
-  });
-
-  it('calculateEffectiveOutput applies chef satisfaction', () => {
-    eq(chefSys.calculateEffectiveOutput(200, 50), 100);
-    eq(chefSys.calculateEffectiveOutput(100, 100), 100);
-    eq(chefSys.calculateEffectiveOutput(100, 0), 0);
+    // base(30) + advanced specialty(90) = 120
+    near(total, 120, 0.01, 'total output no sous');
   });
 
   it('getSousChefCost escalation', () => {
-    eq(chefSys.getSousChefCost(0, cfg), 12500);    // 1.0 × 12500
-    eq(chefSys.getSousChefCost(1, cfg), 18750);    // 1.5 × 12500
-    eq(chefSys.getSousChefCost(2, cfg), 28125);    // 2.25 × 12500
-    eq(chefSys.getSousChefCost(3, cfg), 37500);    // 3.0 × 12500
+    // Multipliers are derived from cfg.sousChefBaseCost so the assertions
+    // hold across future economy rescales.
+    const base = cfg.sousChefBaseCost;
+    near(chefSys.getSousChefCost(0, cfg), 1.0  * base, 1e-6);
+    near(chefSys.getSousChefCost(1, cfg), 1.5  * base, 1e-6);
+    near(chefSys.getSousChefCost(2, cfg), 2.25 * base, 1e-6);
+    near(chefSys.getSousChefCost(3, cfg), 3.0  * base, 1e-6);
   });
 
   it('getTotalSousChefHireCost sums correctly', () => {
-    near(chefSys.getTotalSousChefHireCost(4, cfg), 12500 + 18750 + 28125 + 37500, 0.01);
+    const base = cfg.sousChefBaseCost;
+    near(chefSys.getTotalSousChefHireCost(4, cfg), (1.0 + 1.5 + 2.25 + 3.0) * base, 0.01);
   });
 
   it('resolveChefAuction — highest bid wins', () => {
@@ -454,7 +442,7 @@ describe('satisfaction.js', () => {
 
   it('fillRateToSatisfactionPct — boundaries', () => {
     eq(sat.fillRateToSatisfactionPct(0), 0);
-    eq(sat.fillRateToSatisfactionPct(1.0), 86); // start of excellent
+    eq(sat.fillRateToSatisfactionPct(1.0), 100); // saturated → top of excellent (PR #97 fix)
     ok(sat.fillRateToSatisfactionPct(0.5) <= 21, 'border of critical/poor');
   });
 
@@ -478,9 +466,10 @@ describe('satisfaction.js', () => {
   });
 
   it('calculatePerProductSatisfaction — multiple products', () => {
+    // Outputs scaled to baseDemand=240 so croissant fills demand and lands 'excellent'.
     const state = {
       menu: { croissant: true, coffee: true, cookie: true, bagel: false, sandwich: false, matcha: false },
-      effectiveOutputs: { croissant: 60, coffee: 42, cookie: 50 },
+      effectiveOutputs: { croissant: 240, coffee: 42, cookie: 50 },
     };
     const pps = sat.calculatePerProductSatisfaction(state);
     eq(pps.croissant.tier, 'excellent');
@@ -1042,7 +1031,6 @@ describe('csv-export.js', () => {
     interestCharged: 10,
     customerCount: 87,
     aggregateSatisfactionPct: 78.4,
-    chefSatisfactionScore: 100,
     perProductSatisfaction: { croissant: 85, cookie: 60, bagel: 70, sandwich: 55 },
     perProductSold: { croissant: 40, cookie: 28, bagel: 18, sandwich: 10 },
     selloutFlags: { croissant: true, cookie: false, bagel: false, sandwich: false },
@@ -1141,7 +1129,6 @@ describe('csv-export.js — price columns (POST-01)', () => {
       amountBorrowed: 0,
       interestCharged: 0,
       aggregateSatisfactionPct: 0,
-      chefSatisfactionScore: 0,
     };
     const row = csvExport.buildCsvRow(roundResult);
     eq(row.price_coffee, 5.25);
@@ -1169,7 +1156,6 @@ describe('csv-export.js — price columns (POST-01)', () => {
       amountBorrowed: 0,
       interestCharged: 0,
       aggregateSatisfactionPct: 0,
-      chefSatisfactionScore: 0,
     };
     const row = csvExport.buildCsvRow(roundResult);
     eq(row.price_coffee, null);
@@ -1245,21 +1231,26 @@ describe('conclusion.js', () => {
 // ============================================================================
 describe('decision-validation.js', () => {
   const cfg = config.mergeConfig({});
+  // Balance pass 11 (Apr 28 2026): cookie moved BASE → OPTIONAL and
+  // coffee moved OPTIONAL → BASE. Tests that put cookie or sandwich on
+  // the menu must now pass `opts.unlockedProducts` so the locked-product
+  // gate doesn't fire before the test's actual assertion.
+  const allUnlocked = { unlockedProducts: ['cookie', 'sandwich', 'matcha'] };
 
   it('validateDecision — valid input', () => {
     const result = validation.validateDecision({
-      menu: { croissant: true, cookie: true, bagel: true, sandwich: true, coffee: false, matcha: false },
-      quantities: { croissant: 30, cookie: 20, bagel: 15, sandwich: 10 },
+      menu: { croissant: true, cookie: true, bagel: true, sandwich: true, coffee: true, matcha: false },
+      quantities: { croissant: 30, cookie: 20, bagel: 15, sandwich: 10, coffee: 5 },
       sousChefCount: 3,
       sousChefAssignments: { croissant: 2, sandwich: 1 },
-    }, 2, cfg);
-    eq(result.numProducts, 4);
+    }, 2, cfg, allUnlocked);
+    eq(result.numProducts, 5);
     eq(result.sousChefCount, 3);
   });
 
   it('validateDecision — base product can\'t be disabled', () => {
     throws(() => validation.validateDecision({
-      menu: { croissant: false, cookie: true, bagel: true },
+      menu: { croissant: false, bagel: true, coffee: true },
     }, 1, cfg), /Base product/);
   });
 
@@ -1269,7 +1260,7 @@ describe('decision-validation.js', () => {
       quantities: { croissant: 10, cookie: 10, bagel: 10 },
       sousChefCount: 3,
       sousChefAssignments: { croissant: 1 },
-    }, 1, cfg), /sousChefAssignments sum/);
+    }, 1, cfg, allUnlocked), /sousChefAssignments sum/);
   });
 
   it('validateDecision — can\'t assign sous to off-menu product', () => {
@@ -1278,7 +1269,7 @@ describe('decision-validation.js', () => {
       quantities: {},
       sousChefCount: 1,
       sousChefAssignments: { sandwich: 1 },
-    }, 1, cfg), /not on the menu/);
+    }, 1, cfg, allUnlocked), /not on the menu/);
   });
 
   it('validateAdBids — fills missing with 0', () => {
@@ -1396,6 +1387,35 @@ describe('decision-validation.js', () => {
 // ============================================================================
 describe('simulation.js — Integration', () => {
   const cfg = config.mergeConfig({});
+
+  it('runSimulation — empty bakery (no menu, no customers) earns $0', () => {
+    // V9 regression — players with no menu items used to bank ~$500 in
+    // gross revenue from `computeGrossRevenue`'s base + noise floor, which
+    // surfaced as "$527 profit / 0 customers" on the results screen and
+    // confused playtesters. An empty bakery should now earn $0 (plus any
+    // ad-winner bonus, if applicable).
+    const players = [{
+      playerId: 'p_empty',
+      displayName: 'Empty',
+      bakeryName: 'Empty Bakery',
+      budgetCurrent: 10000,
+      sousChefCount: 0,
+      specialtyChefs: [],
+      returningCustomersPending: 0,
+      decision: {
+        menu: { croissant: false, cookie: false, bagel: false, sandwich: false, coffee: false, matcha: false },
+        quantities: {},
+        sousChefCount: 0,
+        sousChefAssignments: {},
+      },
+      auctionResults: { adWon: null, adBidPaid: 0, chefBidPaid: 0 },
+    }];
+    const prefs = { modifiers: { croissant: 1.0, cookie: 1.0, bagel: 1.0, sandwich: 1.0, coffee: 1.0, matcha: 1.0 } };
+    const results = simulation.runSimulation(players, prefs, cfg);
+    eq(results[0].customerCount, 0);
+    eq(results[0].revenueGross, 0);
+    eq(results[0].revenueNet, 0);
+  });
 
   it('runSimulation — single player produces valid result', () => {
     const players = [{
@@ -1527,7 +1547,6 @@ describe('simulation.js — Integration', () => {
     ok(result.offeredProducts.includes('croissant'));
     ok(result.offeredProducts.includes('cookie'));
     ok(!result.offeredProducts.includes('bagel'));
-    ok(result.chefSatisfactionScore > 0);
     ok(result.perProduct.croissant.effectiveOutput > 0);
   });
 
@@ -1559,7 +1578,7 @@ describe('simulation.js — Integration', () => {
       playerId: 'p1',
       displayName: 'Solo',
       bakeryName: 'Solo Bakery',
-      budgetCurrent: 500000,
+      budgetCurrent: 10000,
       sousChefCount: 0,
       specialtyChefs: [],
       returningCustomersPending: 0,
@@ -1582,7 +1601,7 @@ describe('simulation.js — Integration', () => {
   it('runSimulation — Billboard winner gets $37.5k flat bonus (DEC-04)', () => {
     const makePlayer = (adWon) => ({
       playerId: 'p1', displayName: 'Solo', bakeryName: 'Solo Bakery',
-      budgetCurrent: 500000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
+      budgetCurrent: 10000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
       decision: {
         menu: { croissant: true }, quantities: { croissant: 10 },
         sousChefCount: 0, sousChefAssignments: {},
@@ -1592,13 +1611,13 @@ describe('simulation.js — Integration', () => {
     const ctx = { gameId: 'ad-bonus-bb', round: 1 };
     const winR = simulation.runSimulation([makePlayer('Billboard')], {}, cfg, ctx);
     const noWinR = simulation.runSimulation([makePlayer(null)], {}, cfg, ctx);
-    eq(winR[0].revenueGross - noWinR[0].revenueGross, cfg.adBonuses.Billboard, 'Billboard bonus');
+    near(winR[0].revenueGross - noWinR[0].revenueGross, cfg.adBonuses.Billboard, 1e-6, 'Billboard bonus');
   });
 
   it('runSimulation — no ad won → no flat bonus applied', () => {
     const player = {
       playerId: 'p1', displayName: 'Solo', bakeryName: 'Solo Bakery',
-      budgetCurrent: 500000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
+      budgetCurrent: 10000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
       decision: {
         menu: { croissant: true }, quantities: { croissant: 10 },
         sousChefCount: 0, sousChefAssignments: {},
@@ -1613,10 +1632,10 @@ describe('simulation.js — Integration', () => {
     ok(r[0].revenueGross < 10000, 'no ad bonus → revenueGross stays in expected range');
   });
 
-  it('runSimulation — Radio winner gets $25k flat bonus (DEC-04)', () => {
+  it('runSimulation — Radio winner gets flat bonus (DEC-04)', () => {
     const makePlayer = (adWon) => ({
       playerId: 'p1', displayName: 'Solo', bakeryName: 'Solo Bakery',
-      budgetCurrent: 500000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
+      budgetCurrent: 10000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
       decision: {
         menu: { croissant: true }, quantities: { croissant: 10 },
         sousChefCount: 0, sousChefAssignments: {},
@@ -1626,13 +1645,13 @@ describe('simulation.js — Integration', () => {
     const ctx = { gameId: 'ad-bonus-radio', round: 1 };
     const winR = simulation.runSimulation([makePlayer('Radio')], {}, cfg, ctx);
     const noWinR = simulation.runSimulation([makePlayer(null)], {}, cfg, ctx);
-    eq(winR[0].revenueGross - noWinR[0].revenueGross, cfg.adBonuses.Radio, 'Radio bonus');
+    near(winR[0].revenueGross - noWinR[0].revenueGross, cfg.adBonuses.Radio, 0.01, 'Radio bonus');
   });
 
-  it('runSimulation — Newspaper winner gets $18.75k flat bonus (DEC-04)', () => {
+  it('runSimulation — Newspaper winner gets flat bonus (DEC-04)', () => {
     const makePlayer = (adWon) => ({
       playerId: 'p1', displayName: 'Solo', bakeryName: 'Solo Bakery',
-      budgetCurrent: 500000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
+      budgetCurrent: 10000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
       decision: {
         menu: { croissant: true }, quantities: { croissant: 10 },
         sousChefCount: 0, sousChefAssignments: {},
@@ -1642,7 +1661,7 @@ describe('simulation.js — Integration', () => {
     const ctx = { gameId: 'ad-bonus-news', round: 1 };
     const winR = simulation.runSimulation([makePlayer('Newspaper')], {}, cfg, ctx);
     const noWinR = simulation.runSimulation([makePlayer(null)], {}, cfg, ctx);
-    eq(winR[0].revenueGross - noWinR[0].revenueGross, cfg.adBonuses.Newspaper, 'Newspaper bonus');
+    near(winR[0].revenueGross - noWinR[0].revenueGross, cfg.adBonuses.Newspaper, 0.01, 'Newspaper bonus');
   });
 
   // Defensive: if bad data lands in auctionResults.adWon (e.g. a legacy ad type
@@ -1651,7 +1670,7 @@ describe('simulation.js — Integration', () => {
   it('runSimulation — unknown adWon string contributes no bonus', () => {
     const player = {
       playerId: 'p1', displayName: 'Solo', bakeryName: 'Solo Bakery',
-      budgetCurrent: 500000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
+      budgetCurrent: 10000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
       decision: {
         menu: { croissant: true }, quantities: { croissant: 10 },
         sousChefCount: 0, sousChefAssignments: {},
@@ -1672,7 +1691,7 @@ describe('simulation.js — Integration', () => {
   it('runSimulation — flat ad bonus stacks with adSpend coefficient', () => {
     const makePlayer = (adWon, adBidPaid) => ({
       playerId: 'p1', displayName: 'Solo', bakeryName: 'Solo Bakery',
-      budgetCurrent: 500000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
+      budgetCurrent: 10000, sousChefCount: 0, specialtyChefs: [], returningCustomersPending: 0,
       decision: {
         menu: { croissant: true }, quantities: { croissant: 10 },
         sousChefCount: 0, sousChefAssignments: {},
@@ -1715,7 +1734,7 @@ describe('simulation.js — Integration', () => {
     ok(noWinR[0].amountBorrowed > 0, 'non-winner also overspends → borrows');
     // Same expenses on both sides → identical loanSharkDeduction.
     // Diff in revenueNet should equal the full TV bonus.
-    eq(winR[0].revenueNet - noWinR[0].revenueNet, cfg.adBonuses.TV,
+    near(winR[0].revenueNet - noWinR[0].revenueNet, cfg.adBonuses.TV, 1e-6,
        'TV bonus flows through to revenueNet even under loan-shark');
   });
 });
@@ -1827,7 +1846,6 @@ describe('Regression Tests', () => {
       revenueGross: 500,
       customerCount: 20,
       aggregateSatisfactionPct: 50,
-      chefSatisfactionScore: 100,
       perProductSatisfaction: {},
       selloutFlags: {},
     });
@@ -2001,7 +2019,7 @@ describe('simulation.js — productPrices wiring (POST-01)', () => {
           productPrices: { coffee: 5.00 }, // above catalog default of $4.00
         },
         specialtyChefs: [],
-        budgetCurrent: 500000,
+        budgetCurrent: 10000,
         returningCustomersPending: 0,
         priorSubmittedPrices: [],
         auctionResults: {},
@@ -2032,7 +2050,7 @@ describe('simulation.js — productPrices wiring (POST-01)', () => {
           // no productPrices this round — should carry over from priors
         },
         specialtyChefs: [],
-        budgetCurrent: 500000,
+        budgetCurrent: 10000,
         returningCustomersPending: 0,
         priorSubmittedPrices: [{ coffee: 4.50 }, { coffee: 3.75 }], // most recent last
         auctionResults: {},
@@ -2061,7 +2079,7 @@ describe('simulation.js — floor vs ceiling smoke test (POST-01)', () => {
     playerId: id,
     displayName: id,
     bakeryName: `${id} Bakery`,
-    budgetCurrent: 500000,
+    budgetCurrent: 10000,
     specialtyChefs: [],
     returningCustomersPending: 0,
     priorSubmittedPrices: [],

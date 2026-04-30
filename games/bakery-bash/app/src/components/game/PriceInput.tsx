@@ -10,7 +10,7 @@ interface Props {
 }
 
 const ZONE_LABEL: Record<PriceZone, string> = {
-  floor: 'Floor +15%',
+  floor: 'Cheap',
   competitive: 'Competitive',
   premium: 'Premium',
 };

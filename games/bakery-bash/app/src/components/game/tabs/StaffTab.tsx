@@ -1,9 +1,8 @@
 import { useMemo } from "react";
 import { useGame, useGameDispatch } from "../../../contexts/GameContext";
 import {
-  MAINTENANCE_TASKS,
-  totalSousChefs,
-  type MaintenanceTask,
+  PLAYER_ROLE_LABELS,
+  roleOwnsDecide,
   type StaffCounts,
 } from "../../../types/game";
 import {
@@ -12,16 +11,12 @@ import {
   totalRoleCost,
   totalStaffCost,
 } from "../../../lib/cost";
+import { nextEquipmentGrade, tierUpgradeCost } from "../../../lib/equipment";
 
-const OVERCROWDING_THRESHOLD = 4;
-const MAX_PER_ROLE = 20;
-
-const MAINTENANCE_TASK_LABELS: Record<MaintenanceTask, string> = {
-  clean: "Clean Store",
-  repair_oven: "Repair Oven (Bakery)",
-  repair_slicer: "Repair Meat Slicer (Deli)",
-  repair_espresso: "Repair Espresso Machine (Barista)",
-};
+// B-02 (2026-04-29): bumped from 20 → 99 per Q17. The button-disable
+// gate at MAX_PER_ROLE doubles as the cap; we don't render a separate
+// red error chip on the steppers because the +button just stops working.
+const MAX_PER_ROLE = 99;
 
 interface StepperProps {
   title: string;
@@ -113,62 +108,57 @@ export interface StaffTabProps {
 }
 
 export function StaffTab({ readOnly = false }: StaffTabProps) {
-  const { config, pendingDecision } = useGame();
+  const {
+    config,
+    pendingDecision,
+    equipmentGrade,
+    budgetCurrent,
+    role,
+    teamRoleAssignments,
+  } = useGame();
   const dispatch = useGameDispatch();
+  // K-01 (2026-04-29): only Operations / Solo (or any teammate when no
+  // one holds operations) can edit staff + equipment. The visual lock
+  // mirrors `readOnly` — the role-owner tooltip names the gate, since
+  // the existing `readOnly` lock copy ("Locked in for this round.")
+  // describes a different state.
+  const canEditStaff = roleOwnsDecide(role, teamRoleAssignments);
+  const staffOwnerLabel = PLAYER_ROLE_LABELS.operations;
+  const staffLocked = readOnly || !canEditStaff;
+  const staffOwnerHint = canEditStaff
+    ? undefined
+    : `Your ${staffOwnerLabel} teammate submits staff.`;
 
   const { sousBase, maintBase } = resolveBaseCosts(config);
 
   const staffCounts = pendingDecision.staffCounts;
-  const maintenanceTasks = pendingDecision.maintenanceTasks;
 
   const setCount = (role: keyof StaffCounts, next: number) => {
-    if (readOnly) return;
+    if (staffLocked) return;
     const clamped = Math.max(0, Math.min(MAX_PER_ROLE, Math.floor(next) || 0));
     const prev = staffCounts[role];
     if (clamped === prev) return;
-
-    // If maintenance guy count changed, keep `maintenanceTasks` length in sync.
-    let tasks = maintenanceTasks;
-    if (role === "maintenanceGuys") {
-      if (clamped > prev) {
-        tasks = [
-          ...maintenanceTasks,
-          ...Array<MaintenanceTask>(clamped - prev).fill("clean"),
-        ];
-      } else {
-        tasks = maintenanceTasks.slice(0, clamped);
-      }
-    }
 
     dispatch({
       type: "UPDATE_PENDING_DECISION",
       payload: {
         staffCounts: { [role]: clamped } as Partial<StaffCounts>,
-        maintenanceTasks: tasks,
       },
     });
   };
 
-  const setTask = (index: number, task: MaintenanceTask) => {
-    if (readOnly) return;
-    const next = maintenanceTasks.slice();
-    next[index] = task;
-    dispatch({
-      type: "UPDATE_PENDING_DECISION",
-      payload: { maintenanceTasks: next },
-    });
-  };
-
-  const grandTotal = useMemo(
-    () => totalStaffCost(staffCounts, config),
-    [staffCounts, config],
-  );
-
-  const sousChefTotal = totalSousChefs(staffCounts);
-  const overcrowded = sousChefTotal > OVERCROWDING_THRESHOLD;
+  // Grand total = staff cost + equipment upgrade cost (if toggled).
+  const grandTotal = useMemo(() => {
+    const staffOnly = totalStaffCost(staffCounts, config);
+    const grade = equipmentGrade ?? 'C';
+    const upgradeCost = pendingDecision.equipmentUpgradePurchased
+      ? (tierUpgradeCost(grade) ?? 0)
+      : 0;
+    return staffOnly + upgradeCost;
+  }, [staffCounts, config, equipmentGrade, pendingDecision.equipmentUpgradePurchased]);
 
   return (
-    <div className={`staff-tab${readOnly ? " staff-tab--readonly" : ""}`}>
+    <div className={`staff-tab${staffLocked ? " staff-tab--readonly" : ""}`}>
       <div className="staff-tab__header">
         <h3 className="sidebar-tab__title">Hire Staff</h3>
         {readOnly && (
@@ -180,20 +170,24 @@ export function StaffTab({ readOnly = false }: StaffTabProps) {
           </span>
         )}
       </div>
-      <p className="sidebar-tab__hint">
-        {readOnly
-          ? "Your decisions are locked in for this round. Waiting on the rest of the class…"
-          : "Hire sous chefs per station and maintenance guys to keep the kitchen running. Crowded kitchens slow production — watch your head chef for signs of strain. Check the Status tab for machine health."}
-      </p>
+      {readOnly ? (
+        <p className="sidebar-tab__hint">
+          Locked in for this round.
+        </p>
+      ) : staffOwnerHint ? (
+        <p className="sidebar-tab__hint">
+          {staffOwnerHint}
+        </p>
+      ) : null}
 
-      {/* Sous Chef Hires */}
-      <h3 className="staff-tab__section-heading">Sous Chef Hires</h3>
-      <p className="staff-tab__section-sub">
-        One sous chef per station boosts that station's throughput.
-      </p>
+      {/* V9 (Apr 26): trimmed the section intros and the redundant
+          "Sous Chef — Bakery (Croissant · Cookie)" / "Croissant · Cookie"
+          subtitle pair. Each row now reads as just "Bakery / Croissant ·
+          Cookie" so the panel breathes on a desktop sidebar. */}
+      <h3 className="staff-tab__section-heading">Sous Chefs</h3>
       <div className="staff-tab__stations">
         <RoleStepper
-          title="Sous Chef — Bakery (Croissant · Cookie)"
+          title="Bakery"
           subtitle="Croissant · Cookie"
           count={staffCounts.bakerySousChefs}
           nextCost={getHireCost(sousBase, staffCounts.bakerySousChefs)}
@@ -204,10 +198,10 @@ export function StaffTab({ readOnly = false }: StaffTabProps) {
           onIncrement={() =>
             setCount("bakerySousChefs", staffCounts.bakerySousChefs + 1)
           }
-          readOnly={readOnly}
+          readOnly={staffLocked}
         />
         <RoleStepper
-          title="Sous Chef — Deli (Bagel · Sandwich)"
+          title="Deli"
           subtitle="Bagel · Sandwich"
           count={staffCounts.deliSousChefs}
           nextCost={getHireCost(sousBase, staffCounts.deliSousChefs)}
@@ -218,10 +212,10 @@ export function StaffTab({ readOnly = false }: StaffTabProps) {
           onIncrement={() =>
             setCount("deliSousChefs", staffCounts.deliSousChefs + 1)
           }
-          readOnly={readOnly}
+          readOnly={staffLocked}
         />
         <RoleStepper
-          title="Sous Chef — Barista (Coffee · Matcha)"
+          title="Barista"
           subtitle="Coffee · Matcha"
           count={staffCounts.baristaSousChefs}
           nextCost={getHireCost(sousBase, staffCounts.baristaSousChefs)}
@@ -232,22 +226,12 @@ export function StaffTab({ readOnly = false }: StaffTabProps) {
           onIncrement={() =>
             setCount("baristaSousChefs", staffCounts.baristaSousChefs + 1)
           }
-          readOnly={readOnly}
+          readOnly={staffLocked}
         />
       </div>
 
-      {overcrowded && !readOnly && (
-        <p className="staff-tab__warning" role="alert">
-          ⚠ Too many cooks in the kitchen — your head chef looks stressed.
-        </p>
-      )}
-
       <hr className="staff-tab__maintenance-divider" />
-      <h3 className="staff-tab__section-heading">Maintenance Crew</h3>
-      <p className="staff-tab__section-sub">
-        Maintenance guys clean the store and repair station equipment.
-      </p>
-      {/* Maintenance Guy stepper + per-guy task assignment */}
+      <h3 className="staff-tab__section-heading">Maintenance</h3>
       <div className="staff-tab__maintenance">
         <RoleStepper
           title="Maintenance Guy"
@@ -261,42 +245,87 @@ export function StaffTab({ readOnly = false }: StaffTabProps) {
           onIncrement={() =>
             setCount("maintenanceGuys", staffCounts.maintenanceGuys + 1)
           }
-          readOnly={readOnly}
+          readOnly={staffLocked}
         />
+      </div>
 
-        {staffCounts.maintenanceGuys > 0 && (
-          <ul className="staff-tab__tasks">
-            {maintenanceTasks.map((task, i) => (
-              <li key={i} className="staff-tab__task-row">
-                {readOnly ? (
-                  <span className="staff-tab__task-label staff-tab__task-label--readonly">
-                    Guy #{i + 1}
-                    <strong className="staff-tab__task-static">
-                      {MAINTENANCE_TASK_LABELS[task]}
-                    </strong>
+      {/* Equipment upgrade toggle */}
+      <hr className="staff-tab__maintenance-divider" />
+      <h3 className="staff-tab__section-heading">Equipment</h3>
+      <div className="staff-tab__equipment">
+        {(() => {
+          const grade = equipmentGrade ?? 'C';
+          const next = nextEquipmentGrade(grade);
+          const upgradeCost = tierUpgradeCost(grade);
+          const purchased = !!pendingDecision.equipmentUpgradePurchased;
+          if (!next || upgradeCost === null) {
+            return (
+              <p className="staff-tab__equipment-maxed">
+                Equipment at A — max grade.
+              </p>
+            );
+          }
+
+          // Affordability check: use grandTotal (which includes upgrade cost when
+          // toggled) to determine how much budget remains for the upgrade.
+          // If the upgrade is already toggled, grandTotal already includes its cost.
+          // Back it out to get the base cost without the upgrade for the check.
+          const baseCostWithoutUpgrade = purchased
+            ? grandTotal - upgradeCost
+            : grandTotal;
+          const available = budgetCurrent !== null
+            ? budgetCurrent - baseCostWithoutUpgrade
+            : null;
+          const canAffordUpgrade = available !== null && available >= upgradeCost;
+
+          // Button is disabled when: player can't afford it (and it's not already toggled on)
+          const upgradeButtonDisabled = !canAffordUpgrade && !purchased;
+
+          return (
+            <div className="staff-tab__equipment-row">
+              <div className="staff-tab__station-header">
+                <span className="staff-tab__station-label">Upgrade Equipment</span>
+                <span className="staff-tab__station-sublabel">
+                  {grade} → {next}
+                </span>
+              </div>
+              {staffLocked ? (
+                <div className="staff-tab__stepper staff-tab__stepper--readonly">
+                  <span
+                    className="staff-tab__stepper-value staff-tab__stepper-value--static"
+                    aria-label="Equipment upgrade"
+                  >
+                    {purchased ? 'Purchased' : 'Not purchased'}
                   </span>
-                ) : (
-                  <label className="staff-tab__task-label">
-                    Guy #{i + 1}
-                    <select
-                      className="staff-tab__task-select"
-                      value={task}
-                      onChange={(e) =>
-                        setTask(i, e.target.value as MaintenanceTask)
-                      }
-                    >
-                      {MAINTENANCE_TASKS.map((t) => (
-                        <option key={t} value={t}>
-                          {MAINTENANCE_TASK_LABELS[t]}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className={`staff-tab__equipment-btn${purchased ? ' staff-tab__equipment-btn--active' : ''}${upgradeButtonDisabled ? ' staff-tab__equipment-btn--disabled' : ''}`}
+                  onClick={() => {
+                    if (upgradeButtonDisabled) return;
+                    dispatch({
+                      type: "UPDATE_PENDING_DECISION",
+                      payload: { equipmentUpgradePurchased: !purchased },
+                    });
+                  }}
+                  disabled={upgradeButtonDisabled}
+                  aria-pressed={purchased}
+                  title={
+                    upgradeButtonDisabled && available !== null
+                      ? "Not enough budget for this upgrade after your other costs."
+                      : undefined
+                  }
+                >
+                  {purchased ? '✓ Upgrade booked' : `Upgrade to ${next} ($${upgradeCost.toLocaleString()})`}
+                </button>
+              )}
+              <div className="staff-tab__station-cost">
+                Cost: <strong>${upgradeCost.toLocaleString()}</strong>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Grand total */}

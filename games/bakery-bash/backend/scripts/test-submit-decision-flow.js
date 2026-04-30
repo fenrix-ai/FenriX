@@ -66,14 +66,11 @@ async function seedGame(db, soloUid, operationsUid, financeUid) {
   });
 
   await db.doc(`games/${GAME_ID}/config/params`).set({
-    startingBudget: 500000,
-    sousChefBaseCost: 12500,
     unitCostPerProduct: 1,
     specialtyChefCap: 3,
-    revenueCoefficients: {
-      base: 500, sousChefCoeff: 12, satisfactionCoeff: 8,
-      adSpendCoeff: 0.8, numProductsCoeff: 50, noiseMin: 0, noiseMax: 0,
-    },
+    // Force-zero noise so the simulation is deterministic across reruns.
+    // Other revenueCoefficients fall back to DEFAULT_GAME_CONFIG.
+    revenueCoefficients: { noiseMin: 0, noiseMax: 0 },
   });
 
   // solo player — bypasses all role checks
@@ -81,7 +78,7 @@ async function seedGame(db, soloUid, operationsUid, financeUid) {
     uid: soloUid, playerId: soloUid,
     displayName: "Solo Baker", bakeryName: "Solo Bakery",
     role: "solo",
-    budgetCurrent: 500000, cumulativeRevenue: 0,
+    budgetCurrent: 10000, cumulativeRevenue: 0,
     specialtyChefs: [], sousChefCount: 0,
     consecutiveMissedRounds: 0, disconnected: false,
   });
@@ -91,7 +88,7 @@ async function seedGame(db, soloUid, operationsUid, financeUid) {
     uid: operationsUid, playerId: operationsUid,
     displayName: "Ops Baker", bakeryName: "Ops Bakery",
     role: "operations",
-    budgetCurrent: 500000, cumulativeRevenue: 0,
+    budgetCurrent: 10000, cumulativeRevenue: 0,
     specialtyChefs: [], sousChefCount: 0,
     consecutiveMissedRounds: 0, disconnected: false,
   });
@@ -101,7 +98,7 @@ async function seedGame(db, soloUid, operationsUid, financeUid) {
     uid: financeUid, playerId: financeUid,
     displayName: "Finance Baker", bakeryName: "Finance Bakery",
     role: "finance",
-    budgetCurrent: 500000, cumulativeRevenue: 0,
+    budgetCurrent: 10000, cumulativeRevenue: 0,
     specialtyChefs: [], sousChefCount: 0,
     consecutiveMissedRounds: 0, disconnected: false,
   });
@@ -121,9 +118,12 @@ async function main() {
   initializeAdminApp({ projectId: PROJECT_ID });
   const adminDb = getFirestore();
 
-  // Three app instances for three distinct anonymous users
-  const [app1, app2, app3] = ["app1", "app2", "app3"].map(makeApp);
-  for (const app of [app1, app2, app3]) {
+  // Four app instances. app1-3 cover the three game roles (solo / ops / fin);
+  // app4 is a fresh user reserved for the BE-24 "game not in lobby" check —
+  // joinGame allows rejoins (existing player doc) at any phase, so the lobby
+  // gate only fires for a uid that hasn't joined yet.
+  const [app1, app2, app3, app4] = ["app1", "app2", "app3", "app4"].map(makeApp);
+  for (const app of [app1, app2, app3, app4]) {
     connectAuthEmulator(
       getAuth(app),
       `http://${process.env.FIREBASE_AUTH_EMULATOR_HOST}`,
@@ -136,6 +136,7 @@ async function main() {
     signInAnonymously(getAuth(app1)),
     signInAnonymously(getAuth(app2)),
     signInAnonymously(getAuth(app3)),
+    signInAnonymously(getAuth(app4)),
   ]);
 
   await seedGame(adminDb, solo.uid, ops.uid, fin.uid);
@@ -223,15 +224,17 @@ async function main() {
     "display name too short",
   );
   await expectError(
-    () => joinGame1({ joinCode: "ZZZZZZ", displayName: "Valid Name" }),
+    () => joinGame1({ joinCode: "ZZZZZZ", displayName: "Valid Name", teamNumber: 1 }),
     "not-found",
     "non-existent join code",
   );
 
-  // Game not in lobby → failed-precondition
+  // Game not in lobby → failed-precondition. Use app4 (fresh uid) because
+  // joinGame allows rejoins from existing player docs in any phase.
+  const joinGame4 = httpsCallable(getFunctions(app4), "joinGame");
   await adminDb.doc(`games/${GAME_ID}`).update({ phase: "round_1_decide" });
   await expectError(
-    () => joinGame1({ joinCode: "SUBMT2", displayName: "Late Joiner" }),
+    () => joinGame4({ joinCode: "SUBMT2", displayName: "Late Joiner", teamNumber: 1 }),
     "failed-precondition",
     "game not in lobby",
   );

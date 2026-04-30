@@ -1,15 +1,26 @@
+import { useState } from "react";
+import { httpsCallable } from "firebase/functions";
 import { useGame, useGameDispatch } from "../../contexts/GameContext";
 import {
   BASE_MENU,
+  DEFAULT_PRODUCT_UNLOCK_COST,
+  PLAYER_ROLE_LABELS,
   roleOwnsPricing,
+  roleOwnsQuantities,
   type ProductKey,
   type StationId,
 } from "../../types/game";
 
+import { functions } from "../../lib/firebase";
 import { PRICE_ZONES } from "../../lib/pricing";
 import { PriceInput } from "./PriceInput";
+import { totalStaffCost, totalProductCost } from "../../lib/cost";
+import { tierUpgradeCost } from "../../lib/equipment";
 
-const UNIT_COST = 0.5;
+// B-02 (2026-04-29): hard cap on per-product quantity. Q17 confirmed the
+// 9,999-unit ceiling per row. Backend enforces its own server-side
+// production caps separately; this is the FE typo guard.
+const BAKERY_QTY_MAX = 9_999;
 
 /**
  * Product display metadata — prices are fixed per FRONTEND.md rule #2.
@@ -109,11 +120,26 @@ interface ProductTileProps {
   price: number;
   isOnMenu: boolean;
   isBase: boolean;
+  /** Apr 28 2026 — true when the team has paid to unlock this product. */
+  isUnlocked: boolean;
+  /** Cost (USD) to unlock this product right now. 0 when already unlocked. */
+  unlockCost: number;
+  /** True when this product can't be unlocked yet (insufficient budget). */
+  cannotAfford: boolean;
+  /** True while a purchase callable is in flight (disables all unlock buttons). */
+  unlockPending: boolean;
+  /** Trigger the purchaseProduct callable for this product. */
+  onUnlock: () => void;
+  unitCost: number;
   onQtyChange: (next: number) => void;
   onPriceChange: (next: number) => void;
-  onToggle: (next: boolean) => void;
   /** FE-9 — lock quantity + menu toggle once the round is submitted. */
   readOnly?: boolean;
+  /** K-01 (2026-04-29) — disable the quantity stepper when the viewer
+      is not Finance / Solo (the role that owns quantities post M-17). */
+  quantityDisabled: boolean;
+  /** Role-owner copy for the quantity tooltip when disabled. */
+  quantityOwnerLabel: string;
   /** POST-01 — disable the price stepper when the viewer is not Finance. */
   priceDisabled: boolean;
 }
@@ -123,16 +149,30 @@ function ProductTile({
   price,
   isOnMenu,
   isBase,
+  isUnlocked,
+  unlockCost,
+  cannotAfford,
+  unlockPending,
+  onUnlock,
+  unitCost,
   onQtyChange,
   onPriceChange,
-  onToggle,
   readOnly = false,
   priceDisabled,
+  quantityDisabled,
+  quantityOwnerLabel,
 }: ProductTileProps) {
   const d = PRODUCT_DISPLAY[product];
+  // Two states for a non-base tile (K-04 collapsed the old "+ Add"
+  // intermediate step — unlock now auto-enables the product on the menu):
+  //   1. unlocked → full controls (qty stepper, price)
+  //   2. locked   → "Unlock for $X" button (purchase first)
+  const showLockedState = !isBase && !isUnlocked;
   return (
     <div
-      className={`product-tile${!isOnMenu ? " product-tile--locked" : ""}${
+      className={`product-tile${
+        !isOnMenu ? " product-tile--locked" : ""
+      }${showLockedState ? " product-tile--paywall" : ""}${
         readOnly ? " product-tile--readonly" : ""
       }`}
     >
@@ -159,68 +199,91 @@ function ProductTile({
               className="product-tile__stepper"
               role="group"
               aria-label={`${d.name} quantity`}
+              title={
+                quantityDisabled
+                  ? `Your ${quantityOwnerLabel} teammate submits quantities.`
+                  : undefined
+              }
             >
               <button
                 type="button"
                 className="product-tile__step-btn"
                 onClick={() => onQtyChange(Math.max(0, qty - 1))}
-                disabled={qty <= 0}
+                disabled={quantityDisabled || qty <= 0}
                 aria-label={`Decrease ${d.name}`}
               >
                 −
               </button>
+              {/* B-02 (2026-04-29): cap product quantity at 9,999 per Q17.
+                  Red error class flips on at the cap; the + button still
+                  hard-stops at the max so a typed-in value over-cap is
+                  what triggers the error chip. */}
               <input
                 type="number"
-                className="product-tile__step-value"
+                className={`product-tile__step-value${
+                  qty > BAKERY_QTY_MAX
+                    ? " product-tile__step-value--error"
+                    : ""
+                }`}
                 min={0}
+                max={BAKERY_QTY_MAX}
                 step={1}
                 value={qty}
                 onChange={(e) =>
                   onQtyChange(parseInt(e.target.value, 10) || 0)
                 }
+                disabled={quantityDisabled}
+                aria-invalid={qty > BAKERY_QTY_MAX ? "true" : undefined}
                 aria-label={`${d.name} quantity`}
               />
               <button
                 type="button"
                 className="product-tile__step-btn"
                 onClick={() => onQtyChange(qty + 1)}
+                disabled={quantityDisabled || qty >= BAKERY_QTY_MAX}
                 aria-label={`Increase ${d.name}`}
               >
                 +
               </button>
             </div>
           )}
-          <span className="product-tile__unit-cost">Cost: ${UNIT_COST.toFixed(2)} / unit</span>
+          {qty > BAKERY_QTY_MAX && (
+            <p className="product-tile__qty-error" role="alert">
+              Max 9,999 units per product.
+            </p>
+          )}
+          <span className="product-tile__unit-cost">Cost: ${unitCost.toFixed(2)} / unit</span>
           <PriceInput
             value={price}
             onChange={onPriceChange}
             cfg={PRICE_ZONES[product]}
             disabled={readOnly || priceDisabled}
           />
-          {!isBase && !readOnly && (
-            <button
-              type="button"
-              className="product-tile__remove"
-              onClick={() => onToggle(false)}
-              aria-label={`Remove ${d.name} from menu`}
-              title={`Remove ${d.name} from menu`}
-            >
-              ✕
-            </button>
-          )}
+          {/* K-04 (2026-04-29): once unlocked, products stay on menu. The
+              "Remove" (✕) and "+ Add" affordances were removed alongside
+              the SET_TEAM_UNLOCKS auto-enable in GameContext. Users dial
+              quantity to 0 to skip a product instead of toggling it off.*/}
         </div>
       ) : readOnly ? (
-        <span className="product-tile__muted">Off menu</span>
-      ) : (
+        <span className="product-tile__muted">
+          {showLockedState ? "🔒 Locked" : "Off menu"}
+        </span>
+      ) : showLockedState ? (
         <button
           type="button"
-          className="product-tile__add"
-          onClick={() => onToggle(true)}
-          disabled={isBase}
+          className="product-tile__unlock"
+          onClick={onUnlock}
+          disabled={unlockPending || cannotAfford}
+          title={
+            cannotAfford
+              ? `Need $${unlockCost.toLocaleString()} to unlock ${d.name}.`
+              : `Unlock ${d.name} for your team for $${unlockCost.toLocaleString()}.`
+          }
+          aria-label={`Unlock ${d.name} for $${unlockCost}`}
         >
-          + Add
+          🔒 Unlock — ${unlockCost.toLocaleString()}
         </button>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -243,11 +306,51 @@ export function BakeryView({ readOnly = false }: BakeryViewProps) {
     pendingDecision,
     role,
     teamRoleAssignments,
+    config,
+    gameId,
+    unlockedProducts,
+    budgetCurrent,
+    equipmentGrade,
   } = useGame();
   const dispatch = useGameDispatch();
   // FE-I15: let any teammate edit prices when no one on the team
   // holds finance.
   const canEditPrices = roleOwnsPricing(role, teamRoleAssignments);
+  // K-01 (2026-04-29): per-input role gate. Quantities now belong to
+  // Finance / Solo (M-17 + K-10). Operations / Marketing / Analyst see
+  // the steppers disabled with a tooltip pointing at the role-owner.
+  const canEditQuantities = roleOwnsQuantities(role, teamRoleAssignments);
+  const quantityOwnerLabel = PLAYER_ROLE_LABELS.finance;
+
+  // Apr 28 2026 — station-unlock state. Flat cost per unlock, sourced from
+  // `/games/{gameId}/config/params.productUnlockCost` with a static fallback
+  // until the config-doc listener has hydrated.
+  const unlockCost = config?.productUnlockCost ?? DEFAULT_PRODUCT_UNLOCK_COST;
+  const [unlockPending, setUnlockPending] = useState<ProductKey | null>(null);
+  const [unlockError, setUnlockError] = useState<string | null>(null);
+
+  const purchaseUnlock = async (product: ProductKey) => {
+    if (!gameId || readOnly || unlockPending) return;
+    setUnlockPending(product);
+    setUnlockError(null);
+    try {
+      const fn = httpsCallable(functions, "purchaseProduct");
+      await fn({ gameId, product });
+      // The team-doc listener picks up the new unlockedProducts /
+      // unlocksPurchased and SET_TEAM_UNLOCKS handles the menu/quantity
+      // normalization. We additionally tally the spend on the local
+      // receipt so the player sees "Miscellaneous" jump by $unlockCost
+      // — `unlocksPurchased` is game-cumulative, so we can't derive a
+      // round-scoped total from it.
+      dispatch({ type: "ADD_MISC_SPEND", payload: { amount: unlockCost } });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Could not unlock product.";
+      setUnlockError(message);
+    } finally {
+      setUnlockPending(null);
+    }
+  };
 
   const { staffCounts } = pendingDecision;
   const chefCountForStation = (s: StationId): number => {
@@ -272,22 +375,25 @@ export function BakeryView({ readOnly = false }: BakeryViewProps) {
     });
   };
 
-  const toggleMenu = (product: ProductKey, checked: boolean) => {
-    if (readOnly) return;
-    if (BASE_MENU.includes(product)) return;
-    dispatch({
-      type: "UPDATE_PENDING_DECISION",
-      payload: {
-        menu: { [product]: checked },
-        ...(checked ? {} : { quantities: { [product]: 0 } }),
-      },
-    });
-  };
-
-  const allProducts = STATIONS.flatMap((s) => s.products);
-  const totalCommitted = allProducts
-    .filter((item) => pendingDecision.menu[item])
-    .reduce((sum, item) => sum + (pendingDecision.quantities[item] ?? 0) * UNIT_COST, 0);
+  const bakeryCost = totalProductCost(
+    pendingDecision.menu,
+    pendingDecision.quantities,
+    config,
+  );
+  const staffCost = totalStaffCost(pendingDecision.staffCounts, config);
+  const miscSpent = pendingDecision.miscSpent;
+  // Include equipment upgrade cost in the committed total when toggled,
+  // so the grand total matches what the backend will deduct.
+  const equipmentUpgradeCost =
+    pendingDecision.equipmentUpgradePurchased && equipmentGrade
+      ? (tierUpgradeCost(equipmentGrade) ?? 0)
+      : 0;
+  const totalCommitted = bakeryCost + staffCost + miscSpent + equipmentUpgradeCost;
+  const unitCost = config?.unitCostPerProduct ?? 1;
+  const cannotAfford = budgetCurrent !== null && budgetCurrent < unlockCost;
+  const lockedRemaining = STATIONS.flatMap((s) => s.products).filter(
+    (p) => !BASE_MENU.includes(p) && !unlockedProducts.includes(p),
+  );
 
   return (
     <div className={`bakery-view${readOnly ? " bakery-view--readonly" : ""}`}>
@@ -332,29 +438,100 @@ export function BakeryView({ readOnly = false }: BakeryViewProps) {
               </header>
 
               <div className="station-card__products">
-                {station.products.map((product) => (
-                  <ProductTile
-                    key={product}
-                    product={product}
-                    qty={pendingDecision.quantities[product] ?? 0}
-                    price={pendingDecision.productPrices[product] ?? 0}
-                    isOnMenu={pendingDecision.menu[product]}
-                    isBase={BASE_MENU.includes(product)}
-                    onQtyChange={(n) => setQty(product, n)}
-                    onPriceChange={(n) => setPrice(product, n)}
-                    onToggle={(next) => toggleMenu(product, next)}
-                    readOnly={readOnly}
-                    priceDisabled={!canEditPrices}
-                  />
-                ))}
+                {station.products.map((product) => {
+                  const isBase = BASE_MENU.includes(product);
+                  const isUnlocked =
+                    isBase || unlockedProducts.includes(product);
+                  return (
+                    <ProductTile
+                      key={product}
+                      product={product}
+                      qty={pendingDecision.quantities[product] ?? 0}
+                      price={pendingDecision.productPrices[product] ?? 0}
+                      isOnMenu={pendingDecision.menu[product]}
+                      isBase={isBase}
+                      isUnlocked={isUnlocked}
+                      unlockCost={unlockCost}
+                      cannotAfford={cannotAfford}
+                      unlockPending={unlockPending !== null}
+                      onUnlock={() => void purchaseUnlock(product)}
+                      unitCost={unitCost}
+                      onQtyChange={(n) => setQty(product, n)}
+                      onPriceChange={(n) => setPrice(product, n)}
+                      readOnly={readOnly}
+                      priceDisabled={!canEditPrices}
+                      quantityDisabled={!canEditQuantities}
+                      quantityOwnerLabel={quantityOwnerLabel}
+                    />
+                  );
+                })}
               </div>
             </section>
           );
         })}
       </div>
 
+      {!readOnly && lockedRemaining.length > 0 && (
+        <div className="bakery-view__unlock-banner" role="status">
+          <span className="bakery-view__unlock-banner-icon" aria-hidden>
+            🔒
+          </span>
+          <div className="bakery-view__unlock-banner-text">
+            <strong>
+              {lockedRemaining.length} product
+              {lockedRemaining.length === 1 ? "" : "s"} still locked.
+            </strong>{" "}
+            Each unlock costs <strong>${unlockCost.toLocaleString()}</strong>.
+          </div>
+        </div>
+      )}
+      {unlockError && (
+        <p className="bakery-view__unlock-error" role="alert">
+          {unlockError}
+        </p>
+      )}
+
       <div className="bakery-view__total-committed">
-        Total Committed This Round: <strong>${totalCommitted.toFixed(2)}</strong>
+        <div className="bakery-view__total-committed-row bakery-view__total-committed-row--total">
+          <span>Total Committed This Round</span>
+          <strong>${totalCommitted.toFixed(2)}</strong>
+        </div>
+        {/* B-06 (2026-04-29): inline warning when this round's committed
+            spend exceeds available budget — players otherwise have to
+            wait until Results to discover they triggered the loan shark.
+            This chip is a *deliberate, narrow* carve-out from FRONTEND.md
+            rule #1 ("Budget is hidden during play"); it never displays
+            the actual budget number, only the boolean "you're over". The
+            user explicitly OK'd this override (Q4, 2026-04-29). */}
+        {!readOnly &&
+          typeof budgetCurrent === "number" &&
+          totalCommitted > budgetCurrent && (
+            <div
+              className="bakery-view__loan-shark-warning"
+              role="status"
+            >
+              ⚠ This decision will trigger the loan shark — 10% interest
+              on the overspend.
+            </div>
+          )}
+        <div className="bakery-view__total-committed-row">
+          <span>· Staff</span>
+          <strong>${staffCost.toFixed(2)}</strong>
+        </div>
+        <div className="bakery-view__total-committed-row">
+          <span>· Bakery</span>
+          <strong>${bakeryCost.toFixed(2)}</strong>
+        </div>
+        <div className="bakery-view__total-committed-row">
+          <span>· Miscellaneous</span>
+          <strong>${miscSpent.toFixed(2)}</strong>
+        </div>
+        {equipmentUpgradeCost > 0 && (
+          <div className="bakery-view__total-committed-row">
+            <span>· Equipment Upgrade</span>
+            <strong>${equipmentUpgradeCost.toLocaleString()}</strong>
+          </div>
+        )}
       </div>
     </div>
   );

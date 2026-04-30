@@ -64,14 +64,9 @@ async function seed(db, small1, small2, fullOps, fullFin, fullAdv) {
     professorUid: "uid_professor",
   });
   await db.doc(`games/${GAME_ID}/config/params`).set({
-    startingBudget: 500000,
-    sousChefBaseCost: 12500,
     unitCostPerProduct: 1,
     specialtyChefCap: 3,
-    revenueCoefficients: {
-      base: 500, sousChefCoeff: 12, satisfactionCoeff: 8,
-      adSpendCoeff: 0.8, numProductsCoeff: 50, noiseMin: 0, noiseMax: 0,
-    },
+    revenueCoefficients: { noiseMin: 0, noiseMax: 0 },
   });
 
   // TEAM_SMALL — 2 players. Both get `finance`/`advertising` — no
@@ -88,7 +83,7 @@ async function seed(db, small1, small2, fullOps, fullFin, fullAdv) {
       uid, playerId: uid,
       displayName: `Small ${role}`, bakeryName: "Small Bakery",
       teamId: TEAM_SMALL, role,
-      budgetCurrent: 500000, cumulativeRevenue: 0,
+      budgetCurrent: 10000, cumulativeRevenue: 0,
       specialtyChefs: [], sousChefCount: 0,
       consecutiveMissedRounds: 0, disconnected: false,
     });
@@ -115,7 +110,7 @@ async function seed(db, small1, small2, fullOps, fullFin, fullAdv) {
       uid, playerId: uid,
       displayName: `Full ${role}`, bakeryName: "Full Bakery",
       teamId: TEAM_FULL, role,
-      budgetCurrent: 500000, cumulativeRevenue: 0,
+      budgetCurrent: 10000, cumulativeRevenue: 0,
       specialtyChefs: [], sousChefCount: 0,
       consecutiveMissedRounds: 0, disconnected: false,
     });
@@ -168,6 +163,15 @@ async function main() {
 
   console.log("\n── FE-I15: 2-player team (no operations) ──");
 
+  // POST-01: finance must submit prices before operations can submit
+  // decisions. Since small1 holds finance, have them submit prices first.
+  const submitPricesSmall1 = httpsCallable(getFunctions(apps[0]), "submitPrices");
+  await submitPricesSmall1({
+    gameId: GAME_ID,
+    productPrices: { coffee: 4.5, croissant: 4.5, bagel: 4.0, cookie: 3.0 },
+  });
+  console.log("  ✓ finance teammate submitted prices (POST-01 prerequisite)");
+
   // Finance teammate submits — normally blocked, but team has no operations.
   const smallResult = await submitDecisionSmall1({ ...validDecision });
   assert(smallResult.data.submitted === true,
@@ -184,6 +188,14 @@ async function main() {
   console.log("  ✓ advertising teammate can submitDecision when operations is vacant");
 
   console.log("\n── FE-I15: 3-player team (all roles filled) ──");
+
+  // POST-01: finance must submit prices before operations can submit decisions.
+  const submitPricesFullFin = httpsCallable(getFunctions(apps[3]), "submitPrices");
+  await submitPricesFullFin({
+    gameId: GAME_ID,
+    productPrices: { coffee: 4.5, croissant: 4.5, bagel: 4.0, cookie: 3.0 },
+  });
+  console.log("  ✓ finance teammate submitted prices (POST-01 prerequisite)");
 
   // Finance teammate in a fully-staffed team still cannot submitDecision.
   await expectError(
