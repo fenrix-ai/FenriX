@@ -365,7 +365,7 @@ export interface GameConfigParams {
   competitorInsightCost?: number;
   /** Cost to purchase the static nationality → specialty CSV. */
   chefDataTier1Cost?: number;
-  /** Cost to purchase the full per-chef profile dump for the current round. */
+  /** Cost to purchase the full per-chef profile catalog. */
   chefDataTier2Cost?: number;
   /**
    * Apr 28 2026 — flat cost (USD) per product unlock. Falls back to
@@ -441,6 +441,8 @@ export interface RoundResult {
     interestCharged?: number;
     customerCount: number;
     aggregateSatisfactionPct: number;
+    /** Per-product units sold on this simulated day. */
+    productBreakdown?: Partial<Record<ProductKey, number>>;
   }>;
   /** Ad surface the player won this round, with paid amount. */
   adWon?: AdType | null;

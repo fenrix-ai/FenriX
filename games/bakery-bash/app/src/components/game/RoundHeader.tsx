@@ -115,7 +115,7 @@ type DailyRow = NonNullable<RoundResult["dailyBreakdown"]>[number];
 
 function serializeRow(r: RoundResult, daily?: DailyRow): string {
   const counts: Partial<StaffCounts> = r.staffCounts ?? {};
-  const breakdown = r.productBreakdown ?? {};
+  const breakdown = daily?.productBreakdown ?? r.productBreakdown ?? {};
   // P1 (2026-04-27): decision-input fields surfaced from the backend.
   const prices = r.productPrices ?? {};
   const stocked = r.quantitiesStocked ?? {};

@@ -94,6 +94,7 @@ const {
 
 const {
   generateChefPool,
+  MIN_BID_FLOOR_MULTIPLIERS,
   resolveChefAuction,
 } = require('./modules/chef-system');
 
@@ -2611,6 +2612,11 @@ async function runSimulationAndPersist(gameRef, round, config) {
                 interestCharged: d.interestCharged || 0,
                 customerCount: d.customerCount,
                 aggregateSatisfactionPct: d.aggregateSatisfactionPct,
+                productBreakdown: Object.fromEntries(
+                  Object.entries(d.perProductSatisfaction || {})
+                    .filter(([, pps]) => pps && typeof pps === 'object' && typeof pps.qtySold === 'number')
+                    .map(([product, pps]) => [product, pps.qtySold]),
+                ),
               }))
             : [],
           // M-21 (2026-04-28): "what hurt this round" signals grouped on
@@ -5144,41 +5150,27 @@ exports.purchaseChefData = onCall(CALLABLE_OPTS, async (request) => {
       rows.push(`${nationality},"${specs}"`);
     }
   } else {
-    rows.push("round,chef_id,name,nationality,gender,skill_tier,specialties,min_bid_floor");
-    // Aggregate the chef pool across EVERY round played so far. Previously
-    // this only dumped the current round's 12-chef pool, which the UI's
-    // "Full chef profile dump (30+ per nationality)" tagline contradicted —
-    // players reported missing chefs because the file only contained the
-    // current pool.
-    const totalRounds = numberOrDefault(game.currentRound, 1);
-    const roundIds = [];
-    for (let r = 1; r <= totalRounds; r += 1) roundIds.push(`round_${r}`);
-    const roundSnaps = await Promise.all(
-      roundIds.map((rid) => gameRef.collection("rounds").doc(rid).get()),
-    );
-    // Dedupe by chef.id so a chef who appears in multiple rounds (rare,
-    // but possible if the pool generator recycles IDs) shows once.
-    const seen = new Set();
-    for (let i = 0; i < roundSnaps.length; i += 1) {
-      const snap = roundSnaps[i];
-      if (!snap.exists) continue;
-      const pool = Array.isArray(snap.data().chefPool) ? snap.data().chefPool : [];
-      const round = i + 1;
-      for (const chef of pool) {
-        const id = chef.id || "";
-        if (!id || seen.has(id)) continue;
-        seen.add(id);
-        const specs = Array.isArray(chef.specialties) ? chef.specialties.join(";") : "";
-        rows.push([
-          round,
-          id,
-          `"${String(chef.name || "").replace(/"/g, '""')}"`,
-          chef.nationality || "",
-          chef.gender || "",
-          chef.skillTier || "",
-          `"${specs}"`,
-          numberOrDefault(chef.minBidFloor, 0),
-        ].join(","));
+    rows.push("chef_id,name,nationality,gender,skill_tier,specialties,min_bid_floor");
+    const sousChefBaseCost = numberOrDefault(config.sousChefBaseCost, 10);
+    for (const [nationality, chefData] of Object.entries(CHEF_NATIONALITIES)) {
+      const specs = Array.isArray(chefData.specialties) ? chefData.specialties.join(";") : "";
+      const namesByGender = chefData.names || {};
+      for (const gender of ["male", "female"]) {
+        const names = Array.isArray(namesByGender[gender]) ? namesByGender[gender] : [];
+        for (const name of names) {
+          for (const skillTier of ["novel", "intermediate", "advanced"]) {
+            const minBidFloor = numberOrDefault(MIN_BID_FLOOR_MULTIPLIERS[skillTier], 0) * sousChefBaseCost;
+            rows.push([
+              `${nationality}_${gender}_${String(name).toLowerCase().replace(/[^a-z0-9]+/g, "_")}_${skillTier}`,
+              `"${String(name || "").replace(/"/g, '""')}"`,
+              nationality,
+              gender,
+              skillTier,
+              `"${specs}"`,
+              minBidFloor,
+            ].join(","));
+          }
+        }
       }
     }
   }

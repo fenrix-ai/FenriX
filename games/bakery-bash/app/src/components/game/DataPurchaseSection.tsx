@@ -224,7 +224,7 @@ export function DataPurchaseSection() {
           title={
             hasTier2
               ? "Tier 2 chef data is already in your CSV Inbox."
-              : "Full profile dump: skill, satisfaction, avg production + revenue, 30+ chefs per nationality."
+              : "Full profile catalog: every chef name, nationality, gender, skill tier, specialties, and minimum bid floor."
           }
         >
           {hasTier2
@@ -232,7 +232,7 @@ export function DataPurchaseSection() {
             : `Buy Chef Profiles (T2) — $${TIER2_COST.toLocaleString()}`}
         </button>
         <p className="results-phase__data-purchase-hint">
-          Full chef-by-chef profile CSV (30+ per nationality).
+          Full chef profile catalog with every skill-tier variant.
         </p>
       </div>
 
