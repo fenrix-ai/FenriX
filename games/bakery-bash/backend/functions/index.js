@@ -4984,14 +4984,14 @@ exports.purchaseCompetitorInsight = onCall(CALLABLE_OPTS, async (request) => {
 
   const teamGroups = buildTeamGroupsFromPlayerDocs(playersSnap.docs);
 
-  // For each team, identify the Finance player (falls back to solo → ops →
-  // advertising → canonical) whose decisions doc carries quantities + prices.
+  // For each team, identify the Finance player whose decisions doc carries
+  // quantities + prices. Mirrors the sim's finance fallback chain at the
+  // top of runSimulationAndPersist (finance → solo → ops → canonical).
   const teamEntries = Array.from(teamGroups.values()).map((team) => {
     const financeUid =
       team.financeUid ||
       team.soloUid ||
       team.operationsUid ||
-      team.advertisingUid ||
       team.canonicalUid;
     const bakeryName = (
       team.bakeryName ||
@@ -5000,16 +5000,26 @@ exports.purchaseCompetitorInsight = onCall(CALLABLE_OPTS, async (request) => {
     ).replace(/"/g, '""');
     const financeDoc = team.memberDocs.find((pd) => pd.id === financeUid) || team.memberDocs[0];
     return { bakeryName, financeDoc };
-  });
+  }).filter((e) => e.financeDoc);
 
+  // Track read failures so we can distinguish "no team submitted decisions
+  // for this round" (legitimate empty CSV) from "Firestore is unhealthy"
+  // (we should surface the failure rather than charge for an empty payload).
+  let readFailures = 0;
   const decisionSnaps = await Promise.all(
     teamEntries.map(({ financeDoc }) =>
       financeDoc.ref.collection("decisions").doc(`round_${round}`).get().catch((e) => {
+        readFailures += 1;
         logger.warn("purchaseCompetitorInsight decisions read failed", { playerId: financeDoc.id, round, error: e && e.message });
         return null;
       })
     )
   );
+
+  if (teamEntries.length > 0 && readFailures === teamEntries.length) {
+    logger.error("purchaseCompetitorInsight: all decision reads failed", { gameId, round });
+    throw new HttpsError("internal", "Could not read decision data. Please try again.");
+  }
 
   const rows = [];
   rows.push("team_name,product,quantity,price");
