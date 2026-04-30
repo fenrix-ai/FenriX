@@ -169,7 +169,7 @@ function serializeRow(r: RoundResult, daily?: DailyRow): string {
     num(amountBorrowed),
     num(interestCharged),
     customerCount,
-    customerSatisfaction,
+    num(customerSatisfaction),
     num(counts.bakerySousChefs),
     num(counts.deliSousChefs),
     num(counts.baristaSousChefs),
