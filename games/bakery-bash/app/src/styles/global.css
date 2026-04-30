@@ -1393,6 +1393,7 @@ h3 { font-size: 0.7rem; }
   font-size: 0.5rem;
   padding: 0.4rem 0.75rem;
   border: 2px solid var(--caramel);
+  border-radius: 4px;
   background: var(--cream);
   color: var(--espresso);
   cursor: pointer;
