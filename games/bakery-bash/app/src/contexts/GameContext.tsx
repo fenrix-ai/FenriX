@@ -38,7 +38,8 @@ import {
 import { DEFAULT_PRICES } from "../lib/pricing";
 import { functions } from "../lib/firebase";
 
-function buildDefaultDecisionDraft(): PendingDecisionDraft {
+// eslint-disable-next-line react-refresh/only-export-components
+export function buildDefaultDecisionDraft(): PendingDecisionDraft {
   const menu = PRODUCT_KEYS.reduce((acc, p) => {
     acc[p] = BASE_MENU.includes(p);
     return acc;
@@ -84,7 +85,8 @@ const DEFAULT_PENDING_DECISION = buildDefaultDecisionDraft();
 const DEFAULT_PENDING_AD_BIDS = buildDefaultAdBidsDraft();
 const DEFAULT_PENDING_CHEF_BIDS: PendingChefBidsDraft = {};
 
-const initialState: GameState = {
+// eslint-disable-next-line react-refresh/only-export-components
+export const initialState: GameState = {
   gameId: null,
   playerId: null,
   gameCode: null,
@@ -173,10 +175,12 @@ type GameAction =
       type: "UPDATE_PENDING_AD_BID";
       payload: { adType: AdType; amount: number };
     }
+  | { type: "SET_PENDING_AD_BIDS"; payload: PendingAdBidsDraft }
   | {
       type: "UPDATE_PENDING_CHEF_BID";
       payload: { chefId: string; amount: number };
     }
+  | { type: "SET_PENDING_CHEF_BIDS"; payload: PendingChefBidsDraft }
   | { type: "RESET_PENDING" }
   | { type: "SET_DECISION_SUBMITTED"; payload: boolean }
   | { type: "SET_PRICES_SUBMITTED"; payload: boolean }
@@ -201,7 +205,8 @@ type GameAction =
     }
   | { type: "RESET" };
 
-function gameReducer(state: GameState, action: GameAction): GameState {
+// eslint-disable-next-line react-refresh/only-export-components
+export function gameReducer(state: GameState, action: GameAction): GameState {
   switch (action.type) {
     case "JOIN_GAME":
       // Start from initialState so all round/phase/draft state is clean.
@@ -390,6 +395,15 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         },
       };
 
+    case "SET_PENDING_AD_BIDS": {
+      const same = AD_TYPES.every(
+        (adType) => state.pendingAdBids[adType] === action.payload[adType],
+      );
+      return same
+        ? state
+        : { ...state, pendingAdBids: { ...action.payload } };
+    }
+
     case "UPDATE_PENDING_CHEF_BID":
       return {
         ...state,
@@ -398,6 +412,22 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           [action.payload.chefId]: Math.max(0, action.payload.amount),
         },
       };
+
+    case "SET_PENDING_CHEF_BIDS": {
+      const prevKeys = Object.keys(state.pendingChefBids);
+      const nextKeys = Object.keys(action.payload);
+      if (prevKeys.length === nextKeys.length) {
+        let identical = true;
+        for (const key of nextKeys) {
+          if (state.pendingChefBids[key] !== action.payload[key]) {
+            identical = false;
+            break;
+          }
+        }
+        if (identical) return state;
+      }
+      return { ...state, pendingChefBids: { ...action.payload } };
+    }
 
     case "RESET_PENDING":
       return {

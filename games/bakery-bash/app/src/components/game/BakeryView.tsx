@@ -225,13 +225,19 @@ function ProductTile({
                     ? " product-tile__step-value--error"
                     : ""
                 }`}
+                placeholder="0"
                 min={0}
                 max={BAKERY_QTY_MAX}
                 step={1}
-                value={qty}
-                onChange={(e) =>
-                  onQtyChange(parseInt(e.target.value, 10) || 0)
-                }
+                value={qty > 0 ? String(qty) : ""}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  if (raw === "") {
+                    onQtyChange(0);
+                    return;
+                  }
+                  onQtyChange(parseInt(raw, 10) || 0);
+                }}
                 disabled={quantityDisabled}
                 aria-invalid={qty > BAKERY_QTY_MAX ? "true" : undefined}
                 aria-label={`${d.name} quantity`}
