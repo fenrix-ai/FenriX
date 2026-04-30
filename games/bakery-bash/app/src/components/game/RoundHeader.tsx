@@ -142,7 +142,7 @@ function serializeRow(r: RoundResult, daily?: DailyRow): string {
   const customerSatisfaction = daily
     ? daily.aggregateSatisfactionPct
     : r.customerSatisfaction;
-  const dayValue = daily ? daily.day : 0;
+  const dayValue = daily ? daily.day + 1 : 1;
   // Ad winner: backend emits a single `adWon` string (TV / Billboard / Radio
   // / Newspaper) plus an `adWins` array on multi-win rounds. Join the array
   // when present so players don't lose data; fall back to the singular.
