@@ -21,6 +21,8 @@ import {
   AD_TYPES,
   ownerOfAdBids,
   ownerOfChefBids,
+  type PendingAdBidsDraft,
+  type PendingChefBidsDraft,
   parseGamePhase,
   roleOwnsAdBids,
   roleOwnsChefBids,
@@ -222,6 +224,48 @@ function mapBackendChef(chef: BackendChef): ChefListing | null {
   };
 }
 
+function normalizeAdBidDraft(raw: unknown): PendingAdBidsDraft {
+  return AD_TYPES.reduce((acc, adType) => {
+    const value =
+      raw && typeof raw === "object" && !Array.isArray(raw)
+        ? (raw as Record<string, unknown>)[adType]
+        : undefined;
+    acc[adType] =
+      typeof value === "number" && Number.isFinite(value) && value > 0
+        ? Math.max(0, Math.floor(value))
+        : 0;
+    return acc;
+  }, {} as PendingAdBidsDraft);
+}
+
+function normalizeChefBidDraft(raw: unknown): PendingChefBidsDraft {
+  const next: PendingChefBidsDraft = {};
+  if (Array.isArray(raw)) {
+    for (const entry of raw) {
+      if (!entry || typeof entry !== "object") continue;
+      const chefId =
+        typeof (entry as { chefId?: unknown }).chefId === "string"
+          ? (entry as { chefId: string }).chefId
+          : null;
+      const amount =
+        typeof (entry as { amount?: unknown }).amount === "number"
+          ? (entry as { amount: number }).amount
+          : null;
+      if (chefId && amount !== null && Number.isFinite(amount) && amount > 0) {
+        next[chefId] = Math.max(0, Math.floor(amount));
+      }
+    }
+    return next;
+  }
+  if (!raw || typeof raw !== "object") return next;
+  for (const [chefId, amount] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof amount === "number" && Number.isFinite(amount) && amount > 0) {
+      next[chefId] = Math.max(0, Math.floor(amount));
+    }
+  }
+  return next;
+}
+
 export function AuctionPage() {
   useGamePhaseNav();
   const {
@@ -277,11 +321,6 @@ export function AuctionPage() {
   const [submittedChefIds, setSubmittedChefIds] = useState<Set<string>>(
     new Set(),
   );
-  const [chefBidInputs, setChefBidInputs] = useState<Record<string, string>>({});
-  // FE-I16: keep the ad-bid input value as a string so an empty field stays
-  // empty (placeholder "0" gives the visual affordance) instead of forcing
-  // a literal "0" character that gets prepended when the user types.
-  const [adBidInputs, setAdBidInputs] = useState<Partial<Record<AdType, string>>>({});
   const [showExpiredPopup, setShowExpiredPopup] = useState(false);
 
   // A24-I05 — ad-winner banner rendered at the top of the chef phase.
@@ -334,6 +373,75 @@ export function AuctionPage() {
     );
     return unsubscribe;
   }, [gameId]);
+
+  useEffect(() => {
+    if (!gameId || !playerId) return;
+    const playerRef = doc(db, "games", gameId, "players", playerId);
+    const unsubscribe = onSnapshot(
+      playerRef,
+      (snap) => {
+        if (!snap.exists()) return;
+        const data = snap.data() as DocumentData;
+        const pendingBids =
+          data.pendingBids && typeof data.pendingBids === "object"
+            ? (data.pendingBids as Record<string, unknown>)
+            : null;
+        dispatch({
+          type: "SET_PENDING_AD_BIDS",
+          payload: normalizeAdBidDraft(pendingBids?.ad),
+        });
+        dispatch({
+          type: "SET_PENDING_CHEF_BIDS",
+          payload: normalizeChefBidDraft(pendingBids?.chef),
+        });
+      },
+      (err) => {
+        console.error("auction player pending-bids listener error:", {
+          gameId,
+          playerId,
+          err,
+        });
+      },
+    );
+    return unsubscribe;
+  }, [gameId, playerId, dispatch]);
+
+  useEffect(() => {
+    if (!gameId || !teamId || !playerId) return;
+    const teamPendingRef = doc(
+      db,
+      "games",
+      gameId,
+      "teams",
+      teamId,
+      "state",
+      "pending",
+    );
+    const unsubscribe = onSnapshot(
+      teamPendingRef,
+      (snap) => {
+        if (!snap.exists()) return;
+        const data = snap.data() as DocumentData;
+        if (data.updatedByUid === playerId) return;
+        dispatch({
+          type: "SET_PENDING_AD_BIDS",
+          payload: normalizeAdBidDraft(data.ad),
+        });
+        dispatch({
+          type: "SET_PENDING_CHEF_BIDS",
+          payload: normalizeChefBidDraft(data.chef),
+        });
+      },
+      (err) => {
+        console.error("auction team pending-bids listener error:", {
+          gameId,
+          teamId,
+          err,
+        });
+      },
+    );
+    return unsubscribe;
+  }, [gameId, teamId, playerId, dispatch]);
 
   useEffect(() => {
     if (!gameId || !currentRound) {
@@ -442,8 +550,6 @@ export function AuctionPage() {
     // Barlava follow-up: round-roll clears the permanent-submit lock too.
     setSubmittedAdTypes(new Set());
     setSubmittedChefIds(new Set());
-    setChefBidInputs({});
-    setAdBidInputs({});
     if (!gameId || !currentRound) {
       return;
     }
@@ -690,7 +796,6 @@ export function AuctionPage() {
     pendingChefBids,
     chefPool,
     chefPoolIsReal,
-    dispatch,
     phase,
   ]);
 
@@ -923,12 +1028,12 @@ export function AuctionPage() {
                     : 0;
                 const effectiveFloor = Math.max(perTypeFloor, perRoundFloor);
                 const adMinBid = effectiveFloor > 0 ? effectiveFloor : null;
-                const adInputVal = parseInt(adBidInputs[ad.id] ?? "", 10);
+                const adInputVal = pendingAdBids[ad.id] ?? 0;
                 const adBelowMinimum =
-                  adMinBid !== null && !isNaN(adInputVal) && adInputVal > 0 && adInputVal < adMinBid;
+                  adMinBid !== null && adInputVal > 0 && adInputVal < adMinBid;
                 // B-02 (2026-04-29): $999,999 typo cap (Q17). Pure FE
                 // safety — backend has its own bid validators.
-                const adAboveCap = !isNaN(adInputVal) && adInputVal > BID_DOLLAR_MAX;
+                const adAboveCap = adInputVal > BID_DOLLAR_MAX;
                 // Barlava follow-up: per-row duplicate-bid flag.
                 const adDuplicate = isDuplicateAdBid(ad.id);
                 return (
@@ -972,10 +1077,7 @@ export function AuctionPage() {
                         placeholder="0"
                         min={0}
                         max={BID_DOLLAR_MAX}
-                        value={
-                          adBidInputs[ad.id] ??
-                          (pendingAdBids[ad.id] ? String(pendingAdBids[ad.id]) : "")
-                        }
+                        value={adInputVal > 0 ? String(adInputVal) : ""}
                         disabled={timerExpired || !isAdPhase || isLockedAdBid(ad.id)}
                         readOnly={!isAdPhase || isLockedAdBid(ad.id)}
                         aria-invalid={
@@ -985,7 +1087,6 @@ export function AuctionPage() {
                         }
                         onChange={(e) => {
                           const raw = e.target.value;
-                          setAdBidInputs((prev) => ({ ...prev, [ad.id]: raw }));
                           if (raw === "") {
                             setAdBid(ad.id, 0);
                             return;
@@ -1123,10 +1224,10 @@ export function AuctionPage() {
                               ? " auction-chef__bid-input--error"
                               : ""
                           }`}
-                          placeholder="0"
-                          min={0}
-                          max={BID_DOLLAR_MAX}
-                          value={chefBidInputs[chef.id] ?? ""}
+                        placeholder="0"
+                        min={0}
+                        max={BID_DOLLAR_MAX}
+                        value={currentBidAmount > 0 ? String(currentBidAmount) : ""}
                           disabled={timerExpired || !isChefPhase || isLockedChefBid(chef.id)}
                           readOnly={!isChefPhase || isLockedChefBid(chef.id)}
                           aria-invalid={
@@ -1136,7 +1237,6 @@ export function AuctionPage() {
                           }
                           onChange={(e) => {
                             const raw = e.target.value;
-                            setChefBidInputs(prev => ({ ...prev, [chef.id]: raw }));
                             const parsed = parseInt(raw, 10);
                             if (!isNaN(parsed) && parsed >= 0) {
                               setChefBid(chef.id, parsed);

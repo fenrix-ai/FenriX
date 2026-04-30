@@ -3537,16 +3537,19 @@ h3 { font-size: 0.7rem; }
 .staff-tab__task-static {
   font-family: var(--font-pixel, sans-serif);
   font-size: 0.7rem;
-  padding: 0.25rem 0.5rem;
-  background: rgba(0, 0, 0, 0.04);
-  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  padding: 0 0.75rem;
+  background: transparent;
+  border-radius: 0;
 }
 
 .product-tile--readonly .product-tile__stepper--readonly {
   justify-content: center;
   border: 1px dashed rgba(0, 0, 0, 0.15);
-  border-radius: 6px;
-  padding: 0.25rem 0.5rem;
+  padding: 0;
 }
 
 .product-tile__muted {
