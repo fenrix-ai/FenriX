@@ -429,8 +429,10 @@ h3 { font-size: 0.7rem; }
   padding: 0.7rem 1rem;
   background: var(--flour);
   border: 2px solid var(--dough);
+  border-radius: 6px;
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 0.4rem;
 }
 .lobby-page__team--you {
@@ -444,16 +446,19 @@ h3 { font-size: 0.7rem; }
   text-transform: uppercase;
   letter-spacing: 0.05em;
   font-weight: 700;
+  text-align: center;
 }
 .lobby-page__team-members {
-  list-style: disc;
-  padding-left: 1.4rem;
+  list-style: none;
+  padding: 0;
   margin: 0;
   font-size: 0.9rem;
   color: var(--espresso);
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 0.2rem;
+  text-align: center;
 }
 
 .lobby-page__player-list {
@@ -545,7 +550,40 @@ h3 { font-size: 0.7rem; }
 .round-header__round {
   font-family: var(--font-pixel);
   font-size: 0.6rem;
-  flex: 1;
+  white-space: nowrap;
+}
+
+/* ── "My Data" CSV-inbox shortcut in the round header ──── */
+.round-header__csv-inbox {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.6rem;
+  background: var(--honey, #f59e0b);
+  color: var(--espresso, #3c2415);
+  border: 2px solid var(--caramel, #d97706);
+  border-radius: 4px;
+  font-family: var(--font-pixel);
+  font-size: 0.55rem;
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1;
+}
+.round-header__csv-inbox:hover {
+  background: var(--caramel, #d97706);
+  color: #fff;
+}
+.round-header__csv-inbox-icon {
+  width: 16px;
+  height: 16px;
+  filter: brightness(0.3);
+}
+.round-header__csv-inbox:hover .round-header__csv-inbox-icon {
+  filter: brightness(1);
+}
+.round-header__csv-inbox-label {
+  font-weight: 700;
+  letter-spacing: 0.03em;
 }
 
 .round-header__timer {
@@ -781,6 +819,8 @@ h3 { font-size: 0.7rem; }
   display: flex;
   align-items: center;
   border: var(--border-light);
+  border-radius: 4px;
+  overflow: hidden;
   background: var(--cream);
 }
 
@@ -805,16 +845,17 @@ h3 { font-size: 0.7rem; }
 }
 
 .product-tile__step-value {
-  width: 40px;
+  width: 56px;
   height: 32px;
   font-family: var(--font-body);
-  font-size: 0.95rem;
+  font-size: 0.85rem;
   text-align: center;
   border: none;
   border-left: 2px solid var(--dough);
   border-right: 2px solid var(--dough);
   background: var(--cream);
   -moz-appearance: textfield;
+  padding: 0 2px;
 }
 
 .product-tile__step-value::-webkit-outer-spin-button,
@@ -1165,6 +1206,8 @@ h3 { font-size: 0.7rem; }
   align-items: center;
   gap: 0;
   border: var(--border);
+  border-radius: 4px;
+  overflow: hidden;
   width: fit-content;
 }
 
@@ -1250,6 +1293,7 @@ h3 { font-size: 0.7rem; }
   padding: 0.65rem 0.75rem;
   background: var(--flour);
   border: 2px solid var(--dough);
+  border-radius: 6px;
 }
 
 .staff-tab__station-header {
@@ -1319,6 +1363,7 @@ h3 { font-size: 0.7rem; }
   padding: 0.6rem 0.75rem;
   background: var(--cream);
   border: 2px solid var(--dough);
+  border-radius: 6px;
 }
 
 .staff-tab__equipment-btn {
@@ -1326,6 +1371,7 @@ h3 { font-size: 0.7rem; }
   font-size: 0.5rem;
   padding: 0.4rem 0.75rem;
   border: 2px solid var(--caramel);
+  border-radius: 4px;
   background: var(--cream);
   color: var(--espresso);
   cursor: pointer;

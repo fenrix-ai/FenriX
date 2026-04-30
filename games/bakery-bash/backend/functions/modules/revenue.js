@@ -244,13 +244,17 @@ function calculateRoundCosts(decision, auctionResults, cfg = config) {
     stockCost += qty * Math.max(0, cost);
   }
 
-  // Same defense for sousChefCount.
-  const rawSous = (decision && decision.sousChefCount) || 0;
-  const sousCount = Math.max(0, _num(rawSous));
-  const sousChefHireCost = _sousChefHireCost(
-    sousCount,
-    cfg && cfg.sousChefBaseCost
-  );
+  // Per-station sous-chef cost: apply the escalating multiplier curve
+  // independently to each station so the backend matches the frontend
+  // (cost.ts::totalStaffCost). Previously this used the aggregate
+  // sousChefCount, which applied the curve to the total across all
+  // stations — charging substantially more than the UI displayed.
+  const staffCounts = (decision && decision.staffCounts) || {};
+  const baseCost = cfg && cfg.sousChefBaseCost;
+  const sousChefHireCost =
+    _sousChefHireCost(Math.max(0, _num(staffCounts.bakerySousChefs)), baseCost) +
+    _sousChefHireCost(Math.max(0, _num(staffCounts.deliSousChefs)), baseCost) +
+    _sousChefHireCost(Math.max(0, _num(staffCounts.baristaSousChefs)), baseCost);
 
   const adBidCost = Math.max(0, _num((auctionResults && auctionResults.adAuctionWinningBid) || 0));
   const chefBidCost = Math.max(0, _num((auctionResults && auctionResults.chefAuctionWinningBid) || 0));

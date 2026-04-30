@@ -273,6 +273,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       // Carry staffCounts forward so students don't have to re-enter the same
       // headcount every round. Mirrors the price carry-over pattern above.
       nextDecisionDraft.staffCounts = { ...state.pendingDecision.staffCounts };
+      // Carry quantities forward so students keep their stocking levels
+      // between rounds instead of re-entering from scratch.
+      nextDecisionDraft.quantities = { ...state.pendingDecision.quantities };
       // K-05 (2026-04-29): carry the team's unlocked-product menu toggles
       // forward into the next round so a product unlocked in round N is
       // still ON at the start of round N+1. Without this the OPTIONAL_MENU

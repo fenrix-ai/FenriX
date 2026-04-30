@@ -271,6 +271,7 @@ function runMonthlySimulation(players, roundPreferences, cfg = config, { gameId 
     const costDecision = {
       perProductQtyStocked: decision.quantities || {},
       sousChefCount,
+      staffCounts: decision.staffCounts || {},
     };
     const costAuction = {
       adAuctionWinningBid: adBidPaid,
