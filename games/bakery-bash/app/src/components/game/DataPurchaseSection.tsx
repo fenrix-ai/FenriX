@@ -2,6 +2,7 @@ import { useState } from "react";
 import { httpsCallable } from "firebase/functions";
 import { useGame, useGameDispatch } from "../../contexts/GameContext";
 import { functions } from "../../lib/firebase";
+import { humanizeFunctionError } from "../../lib/errors";
 import type { AcquiredCsv } from "../../types/game";
 
 /**
@@ -87,9 +88,7 @@ export function DataPurchaseSection() {
       });
       setInfo("Intel added to your CSV Inbox.");
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Could not purchase insight.";
-      setError(message);
+      setError(humanizeFunctionError(err, "Could not purchase insight. Please try again."));
     } finally {
       setPending(null);
     }
@@ -126,11 +125,7 @@ export function DataPurchaseSection() {
       setPurchasedThisSession((prev) => ({ ...prev, [`tier${tier}`]: true }));
       setInfo(`Tier ${tier} chef data added to your CSV Inbox.`);
     } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Could not purchase chef data.";
-      setError(message);
+      setError(humanizeFunctionError(err, "Could not purchase chef data. Please try again."));
     } finally {
       setPending(null);
     }

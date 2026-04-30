@@ -4947,34 +4947,57 @@ exports.purchaseCompetitorInsight = onCall(CALLABLE_OPTS, async (request) => {
   const config = configSnap.exists ? configSnap.data() : {};
   const insightCost = numberOrDefault(config.competitorInsightCost, 100);
 
-  await db.runTransaction(async (tx) => {
-    const playerRef = gameRef.collection("players").doc(uid);
-    const playerSnap = await tx.get(playerRef);
-    if (!playerSnap.exists) throw new HttpsError("not-found", "Player not found.");
-    const player = playerSnap.data();
-    const budget = player.budgetCurrent || 0;
-    if (budget < insightCost) {
-      throw new HttpsError("failed-precondition", "Insufficient budget to purchase competitor insight.");
-    }
-    tx.update(playerRef, { budgetCurrent: FieldValue.increment(-insightCost) });
-    tx.set(
-      playerRef.collection("purchases").doc(`insight_round_${round}`),
-      { round, costDeducted: insightCost, purchasedAt: FieldValue.serverTimestamp() }
-    );
-  });
+  try {
+    await db.runTransaction(async (tx) => {
+      const playerRef = gameRef.collection("players").doc(uid);
+      const playerSnap = await tx.get(playerRef);
+      if (!playerSnap.exists) throw new HttpsError("not-found", "Player not found.");
+      const player = playerSnap.data();
+      const budget = player.budgetCurrent || 0;
+      if (budget < insightCost) {
+        throw new HttpsError("failed-precondition", "Insufficient budget to purchase competitor insight.");
+      }
+      tx.update(playerRef, { budgetCurrent: FieldValue.increment(-insightCost) });
+      tx.set(
+        playerRef.collection("purchases").doc(`insight_round_${round}`),
+        { round, costDeducted: insightCost, purchasedAt: FieldValue.serverTimestamp() }
+      );
+    });
+  } catch (txErr) {
+    if (txErr instanceof HttpsError) throw txErr;
+    logger.error("purchaseCompetitorInsight transaction failed", { gameId, uid, round, error: txErr && txErr.message });
+    throw new HttpsError("internal", "Failed to process purchase. Please try again.");
+  }
 
-  // Collect all player decisions for the requested round.
-  const playersSnap = await gameRef.collection("players").get();
+  // Collect all player decisions for the requested round (parallel reads).
+  let playersSnap;
+  try {
+    playersSnap = await gameRef.collection("players").get();
+  } catch (readErr) {
+    logger.error("purchaseCompetitorInsight players read failed", { gameId, round, error: readErr && readErr.message });
+    throw new HttpsError("internal", "Could not read player data. Please try again.");
+  }
+
+  const decisionSnaps = await Promise.all(
+    playersSnap.docs.map((pDoc) =>
+      pDoc.ref.collection("decisions").doc(`round_${round}`).get().catch((e) => {
+        logger.warn("purchaseCompetitorInsight decisions read failed for player", { playerId: pDoc.id, round, error: e && e.message });
+        return null;
+      })
+    )
+  );
+
   const rows = [];
   rows.push("team_name,product,quantity,price");
-  for (const pDoc of playersSnap.docs) {
+  for (let i = 0; i < playersSnap.docs.length; i++) {
+    const pDoc = playersSnap.docs[i];
+    const decisionSnap = decisionSnaps[i];
+    if (!decisionSnap || !decisionSnap.exists) continue;
     const pData = pDoc.data();
-    const teamName = pData.displayName || pDoc.id;
-    const decisionSnap = await pDoc.ref.collection("decisions").doc(`round_${round}`).get();
-    if (!decisionSnap.exists) continue;
+    const teamName = (pData.displayName || pDoc.id).replace(/"/g, '""');
     const dec = decisionSnap.data();
-    const quantities = dec.quantities || {};
-    const prices = dec.productPrices || {};
+    const quantities = dec.quantities && typeof dec.quantities === "object" ? dec.quantities : {};
+    const prices = dec.productPrices && typeof dec.productPrices === "object" ? dec.productPrices : {};
     for (const [product, qty] of Object.entries(quantities)) {
       if (typeof qty === "number" && qty > 0) {
         const price = prices[product] || 0;
