@@ -22,7 +22,7 @@ import { formatMoney } from "../lib/cost";
  * `useGame().budgetCurrent` are intentional and auditable.
  *
  * The page renders:
- *   - Winner banner (from final `leaderboard/latest`)
+ *   - Winner banner (from final `conclusion/final`)
  *   - Your final budget + profit (labeled "Profit" post-A24-I09; field
  *     remains `revenueNet` / `cumulativeRevenue`)
  *   - Per-round expansion (click to expand each round's KPIs)
@@ -34,8 +34,10 @@ interface LeaderboardRanking {
   playerId: string;
   displayName: string;
   bakeryName?: string;
+  netRevenue?: number;
   revenueNet?: number;
   cumulativeRevenue?: number;
+  budgetRemaining?: number;
   budgetAfter?: number;
 }
 
@@ -52,6 +54,18 @@ interface ClassRoundSnapshot {
   playerCount?: number | null;
 }
 
+function rankingProfit(r: LeaderboardRanking | null | undefined): number | null {
+  if (!r) return null;
+  const v = r.netRevenue ?? r.cumulativeRevenue ?? r.revenueNet;
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+function rankingBudget(r: LeaderboardRanking | null | undefined): number | null {
+  if (!r) return null;
+  const v = r.budgetRemaining ?? r.budgetAfter;
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
 export function ConclusionPage() {
   const { gameId, playerId, roundResults, budgetCurrent } = useGame();
 
@@ -65,10 +79,12 @@ export function ConclusionPage() {
   // alongside the per-bakery rankings.
   const [classRounds, setClassRounds] = useState<ClassRoundSnapshot[]>([]);
 
-  // Subscribe to leaderboard/latest.
+  // Subscribe to the final conclusion document. `leaderboard/latest` is a
+  // round snapshot; using it here makes the podium/class profit show only
+  // the last round when the game is over.
   useEffect(() => {
     if (!gameId) return;
-    const boardRef = doc(db, "games", gameId, "leaderboard", "latest");
+    const boardRef = doc(db, "games", gameId, "conclusion", "final");
     const unsubscribe = onSnapshot(
       boardRef,
       (snap) => {
@@ -78,14 +94,14 @@ export function ConclusionPage() {
         }
         const data = snap.data() as DocumentData;
         setBoard({
-          round: typeof data.round === "number" ? data.round : 0,
+          round: typeof data.totalRounds === "number" ? data.totalRounds : 0,
           rankings: Array.isArray(data.rankings)
             ? (data.rankings as LeaderboardRanking[])
             : [],
         });
       },
       (err) => {
-        console.error("conclusion leaderboard listener error:", { gameId, err });
+        console.error("conclusion final listener error:", { gameId, err });
       },
     );
     return unsubscribe;
@@ -198,8 +214,8 @@ export function ConclusionPage() {
   // FE-I21: derived class-wide highlights for the summary cards.
   const classHighlights = (() => {
     const totalClassRevenue = rankings.reduce((sum, r) => {
-      const v = r.cumulativeRevenue ?? r.revenueNet ?? 0;
-      return typeof v === "number" ? sum + v : sum;
+      const v = rankingProfit(r);
+      return v === null ? sum : sum + v;
     }, 0);
     const totalCustomers = classRounds.reduce((sum, r) => {
       if (
@@ -241,9 +257,9 @@ export function ConclusionPage() {
       : null;
 
   const finalRevenue =
-    you?.cumulativeRevenue ?? you?.revenueNet ?? fallbackRevenue;
+    rankingProfit(you) ?? fallbackRevenue;
 
-  const finalBudget = you?.budgetAfter ?? budgetCurrent ?? null;
+  const finalBudget = rankingBudget(you) ?? budgetCurrent ?? null;
 
   // Merge per-round results: prefer the richer subcollection, fall back to
   // the lightweight `roundResults` state.
@@ -325,7 +341,7 @@ export function ConclusionPage() {
               )}
             </div>
             <div className="conclusion-page__winner-revenue">
-              {formatMoney(winner.cumulativeRevenue ?? winner.revenueNet)}{" "}
+              {formatMoney(rankingProfit(winner))}{" "}
               in cumulative profit
             </div>
           </div>
@@ -358,9 +374,7 @@ export function ConclusionPage() {
                   </div>
                   <div className="podium__revenue">
                     {slot
-                      ? formatMoney(
-                          slot.cumulativeRevenue ?? slot.revenueNet,
-                        )
+                      ? formatMoney(rankingProfit(slot))
                       : "$0"}
                   </div>
                   <div className="podium__block">#{rank}</div>
@@ -455,9 +469,9 @@ export function ConclusionPage() {
                     {r.playerId === playerId && " (you)"}
                   </td>
                   <td>
-                    {formatMoney(r.cumulativeRevenue ?? r.revenueNet)}
+                    {formatMoney(rankingProfit(r))}
                   </td>
-                  <td>{formatMoney(r.budgetAfter)}</td>
+                  <td>{formatMoney(rankingBudget(r))}</td>
                 </tr>
               ))}
             </tbody>
