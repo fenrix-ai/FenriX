@@ -155,6 +155,11 @@ export function DataPurchaseSection() {
         Spend cash now to peek at the round you just played — competitor
         decisions, chef tables, etc. Purchases land in your CSV Inbox.
       </p>
+      {/* R-3 (2026-04-30) — Competitor Intel tagline. */}
+      <p className="results-phase__intel-tagline">
+        Snoop how your competitors are pricing and setting quantities each
+        round (might be helpful for you to gain a competitive edge!)
+      </p>
 
       <div className="results-phase__data-purchase-row">
         <button
@@ -211,7 +216,7 @@ export function DataPurchaseSection() {
             : `Buy Chef Specialties (T1) — $${TIER1_COST.toLocaleString()}`}
         </button>
         <p className="results-phase__data-purchase-hint">
-          Tier 1 — See which nationality bakes which products best.
+          See which nationality bakes which products best.
         </p>
       </div>
 
@@ -232,7 +237,7 @@ export function DataPurchaseSection() {
             : `Buy Chef Profiles (T2) — $${TIER2_COST.toLocaleString()}`}
         </button>
         <p className="results-phase__data-purchase-hint">
-          Tier 2 — Full chef-by-chef profile CSV (30+ per nationality).
+          Full chef-by-chef profile CSV (30+ per nationality).
         </p>
       </div>
 

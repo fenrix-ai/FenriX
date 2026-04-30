@@ -6,7 +6,6 @@ import { usePhaseCountdownSeconds } from "../../hooks/usePhaseCountdownSeconds";
 import { useGameRoster } from "../../hooks/useGameRoster";
 import { useGamePresence, isStale } from "../../hooks/useGamePresence";
 import { CsvInboxModal } from "./CsvInboxModal";
-import { GameProgressBar } from "./GameProgressBar";
 import { humanizeFunctionError } from "../../lib/errors";
 import {
   PLAYER_ROLE_LABELS,
@@ -305,7 +304,18 @@ export function RoundHeader() {
   const parsed = parseGamePhase(phase ?? "lobby", currentRound ?? 1);
   const phaseBannerLabel = PHASE_LABELS[parsed.base] ?? phase ?? "";
 
-  const roleLabel = PLAYER_ROLE_LABELS[role];
+  // TB-2 (2026-04-30): a player without a selected role gets `role === "solo"`
+  // by default. The label "Solo (all roles)" is correct for genuine solo
+  // players but reads as a bug when teammates are clearly present. Treat the
+  // team as multi-player when more than one uid appears in the assignments
+  // map, regardless of whether those teammates have picked specialist roles
+  // yet — the map is keyed by every team member's uid.
+  const teamSize = Object.keys(teamRoleAssignments ?? {}).length;
+  const isMultiPlayerTeam = teamSize > 1;
+  const showSoloAsRoleless = role === "solo" && isMultiPlayerTeam;
+  const roleLabel = showSoloAsRoleless
+    ? "No role yet"
+    : PLAYER_ROLE_LABELS[role];
   // FE-I15: pass team roleAssignments so the "active role" pip also
   // lights up for teammates filling a vacant specialist role.
   const isActiveRole =
@@ -490,10 +500,6 @@ export function RoundHeader() {
           }
         </div>
       )}
-
-      <div className="round-header__progress">
-        <GameProgressBar />
-      </div>
     </header>
   );
 }

@@ -47,6 +47,9 @@ const HOW_TO_PLAY_ROLES = [
   },
 ] as const;
 
+// H-1 (2026-04-30): numbered stages, in actual loop order
+// (email → bid_ad → bid_chef → roster → decide → simulating → results_ready).
+// CSV Inbox moves out of the loop into the Features section below (H-2).
 const HOW_TO_PLAY_STAGES = [
   {
     label: "Round Briefing",
@@ -66,45 +69,64 @@ const HOW_TO_PLAY_STAGES = [
   {
     label: "Kitchen Roster",
     tagline: "Three specialty chefs max.",
-    body: "After the chef auction, your team reviews who's in your kitchen. You can keep up to three specialty chefs — if you picked up a fourth, your Operations teammate lays one off before continuing.",
+    body: "After the chef auction, your team reviews who's in your kitchen. You can keep up to three specialty chefs — if you picked up a fourth, your Operations teammate lays one off before continuing. When the timer runs out, any chefs beyond your 3-chef limit will be automatically laid off.",
   },
   {
-    label: "Decide",
+    label: "Decisions",
     tagline: "Your bakery, your call.",
     body: "Assign sous chefs to stations, set your menu quantities, price each product, and schedule maintenance. Every hire and every unit ordered costs money — spend wisely, because it all comes out of your revenue.",
   },
   {
-    label: "Simulate",
+    label: "Simulation",
     tagline: "Lights on — customers incoming.",
     body: "See your bakery come to life! Spectate a simulation of your bakery over the course of a month. Watch the menu sell down in real time; sold-out products get stamped so you can see what ran short.",
   },
   {
     label: "Results",
     tagline: "The receipts don't lie.",
-    body: "After every round, see your profit, customer count, satisfaction, maintenance state, and leaderboard position. Download a CSV of the round's daily data — one row per day. Curveball events like burglaries and inspections show up as cards so you can see exactly when and how they hit.",
-  },
-  {
-    label: "CSV Inbox",
-    tagline: "Every file you've earned, in one place.",
-    body: "Tap the CSV Inbox button in the header to open a scrollable panel listing every data file your team has acquired: the results CSV, any competitor intel you've bought, and purchasable chef-data CSVs. Pick which file to download — nothing auto-downloads when you open the panel.",
+    body: "After every round, see your profit, customer count, customer satisfaction, maintenance state, and leaderboard position. Download a CSV of the round's daily data — one row per day. Curveball events like burglaries and inspections show up as cards so you can see exactly when and how they hit.",
   },
 ];
 
+// H-2 (2026-04-30): the CSV Inbox + chef tier/nationality info live in the
+// "Features" section, separate from the numbered round loop.
 const CHEF_TIERS = [
   {
-    tier: "Tier 1 — Low",
+    tier: "Low",
     multiplier: "1.0×",
     body: "Entry-level specialty chefs. Solid production, cheap to acquire.",
   },
   {
-    tier: "Tier 2 — Medium",
+    tier: "Medium",
     multiplier: "1.5×",
     body: "Experienced specialty chefs. Moderate bid floor, reliable output.",
   },
   {
-    tier: "Tier 3 — High",
+    tier: "High",
     multiplier: "2.0×",
     body: "Top-tier specialty chefs. High minimum bid, but double production.",
+  },
+];
+
+// H-3 (2026-04-30): chefs come from four nationalities. Each nationality
+// has multiple visual variations and a pool of names. Specialties stay
+// hidden — only nationality and tier are surfaced before bidding.
+const CHEF_NATIONALITIES_INFO = [
+  {
+    nationality: "French",
+    examples: "Émile, Camille, Antoine, Margaux",
+  },
+  {
+    nationality: "Japanese",
+    examples: "Hiroshi, Yuki, Kenji, Aiko",
+  },
+  {
+    nationality: "Italian",
+    examples: "Marco, Giulia, Alessandro, Sofia",
+  },
+  {
+    nationality: "American",
+    examples: "Tyler, Jess, Riley, Morgan",
   },
 ];
 
@@ -136,6 +158,32 @@ export function HowToPlayPage() {
         </p>
       </section>
 
+      {/* H-4 (2026-04-30) — Objective section. */}
+      <section className="how-to-play__objective" aria-label="Objective">
+        <h2 className="how-to-play__section-title">Objective</h2>
+        <p className="how-to-play__objective-body">
+          Run the most profitable bakery in the room. Make smarter decisions
+          than the other teams across staffing, pricing, advertising, and
+          chef hires. After 5 rounds, the team with the highest cumulative
+          net profit wins.
+        </p>
+      </section>
+
+      {/* H-5 (2026-04-30) — Budget structure. */}
+      <section className="how-to-play__budget" aria-label="Budget">
+        <h2 className="how-to-play__section-title">Your Budget</h2>
+        <p className="how-to-play__budget-body">
+          You start with <strong>$10,000</strong> for the entire game. That
+          single pot funds every bid (ads + chefs), every sous-chef hire,
+          maintenance, equipment upgrades, and any data you buy.
+        </p>
+        <p className="how-to-play__budget-warning">
+          <strong>Heads up:</strong> we will not be tracking your finances —
+          that is YOUR job. Plan ahead so you don't blow the budget on Round
+          1 ads and starve the rest of the game.
+        </p>
+      </section>
+
       <section className="how-to-play__roles" aria-label="Team roles">
         <h2 className="how-to-play__section-title">Roles on your team</h2>
         <div className="how-to-play__role-grid">
@@ -152,11 +200,13 @@ export function HowToPlayPage() {
         </div>
       </section>
 
+      {/* H-1 (2026-04-30) — numbered stages. */}
       <section className="how-to-play__stages-section" aria-label="Round stages">
         <h2 className="how-to-play__section-title">Round flow</h2>
         <div className="how-to-play__stages">
-          {HOW_TO_PLAY_STAGES.map((stage) => (
+          {HOW_TO_PLAY_STAGES.map((stage, idx) => (
             <div key={stage.label} className="how-to-play__card">
+              <span className="how-to-play__card-step">{idx + 1}</span>
               <span className="how-to-play__card-label">{stage.label}</span>
               <h2 className="how-to-play__card-tagline">{stage.tagline}</h2>
               <p className="how-to-play__card-body">{stage.body}</p>
@@ -165,30 +215,66 @@ export function HowToPlayPage() {
         </div>
       </section>
 
-      <section className="how-to-play__chef-tiers">
-        <h2 className="how-to-play__chef-tiers-title">Chef Tiers</h2>
-        <p className="how-to-play__chef-tiers-hint">
-          Three specialty-chef tiers appear in the Chef Auction. Higher tier
-          means a higher minimum bid, but also a bigger production multiplier.
-        </p>
-        <table className="how-to-play__chef-tier-table">
-          <thead>
-            <tr>
-              <th>Tier</th>
-              <th>Multiplier</th>
-              <th>Notes</th>
-            </tr>
-          </thead>
-          <tbody>
-            {CHEF_TIERS.map((t) => (
-              <tr key={t.tier}>
-                <td>{t.tier}</td>
-                <td>{t.multiplier}</td>
-                <td>{t.body}</td>
+      {/* H-2 + H-3 (2026-04-30) — Features section: CSV Inbox + chef tier
+          breakdown + nationality info, separate from the numbered loop. */}
+      <section className="how-to-play__features-section" aria-label="Features">
+        <h2 className="how-to-play__section-title">Features</h2>
+        <div className="how-to-play__feature-card">
+          <h3 className="how-to-play__feature-title">CSV Inbox</h3>
+          <p className="how-to-play__feature-body">
+            Tap the "My Data" button in the header to open a panel listing
+            every data file your team has acquired: the results CSV, any
+            competitor intel you've bought, and purchasable chef-data CSVs.
+            Pick which file to download — nothing auto-downloads when you
+            open the panel.
+          </p>
+        </div>
+
+        <div className="how-to-play__feature-card">
+          <h3 className="how-to-play__feature-title">Chef Tiers</h3>
+          <p className="how-to-play__feature-body">
+            Three specialty-chef tiers appear in the Chef Auction. Higher
+            tier means a higher minimum bid, but also a bigger production
+            multiplier.
+          </p>
+          <table className="how-to-play__chef-tier-table">
+            <thead>
+              <tr>
+                <th>Tier</th>
+                <th>Multiplier</th>
+                <th>Notes</th>
               </tr>
+            </thead>
+            <tbody>
+              {CHEF_TIERS.map((t) => (
+                <tr key={t.tier}>
+                  <td>{t.tier}</td>
+                  <td>{t.multiplier}</td>
+                  <td>{t.body}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="how-to-play__feature-card">
+          <h3 className="how-to-play__feature-title">Chef Nationalities</h3>
+          <p className="how-to-play__feature-body">
+            Chefs come from four nationalities. Each nationality has its own
+            visual style and naming pool. Specialties stay hidden — only
+            nationality and tier are visible before you bid.
+          </p>
+          <ul className="how-to-play__nationality-list">
+            {CHEF_NATIONALITIES_INFO.map((n) => (
+              <li key={n.nationality} className="how-to-play__nationality-row">
+                <strong>{n.nationality}</strong>
+                <span className="how-to-play__nationality-examples">
+                  Example names: {n.examples}
+                </span>
+              </li>
             ))}
-          </tbody>
-        </table>
+          </ul>
+        </div>
       </section>
     </PageShell>
   );

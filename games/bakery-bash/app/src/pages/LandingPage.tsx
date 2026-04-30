@@ -368,6 +368,20 @@ export function LandingPage() {
 
         {path === "create" && (
           <form className="landing-page__form" onSubmit={handleCreate}>
+            {/* J-1 (2026-04-30) — Game Code → Team Name → Your Name. */}
+            <label className="form-field">
+              <span className="form-field__label">Game Code</span>
+              <input
+                type="text"
+                className="form-field__input"
+                placeholder="e.g. ABC234"
+                value={gameCode}
+                onChange={(e) => setGameCode(e.target.value.toUpperCase())}
+                maxLength={6}
+                disabled={disabled}
+              />
+            </label>
+
             <label className="form-field">
               <span className="form-field__label">Team Name</span>
               <input
@@ -390,19 +404,6 @@ export function LandingPage() {
                 value={playerName}
                 onChange={(e) => setPlayerName(e.target.value)}
                 maxLength={40}
-                disabled={disabled}
-              />
-            </label>
-
-            <label className="form-field">
-              <span className="form-field__label">Game Code</span>
-              <input
-                type="text"
-                className="form-field__input"
-                placeholder="e.g. ABC234"
-                value={gameCode}
-                onChange={(e) => setGameCode(e.target.value.toUpperCase())}
-                maxLength={6}
                 disabled={disabled}
               />
             </label>

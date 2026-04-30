@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   collection,
   doc,
@@ -285,6 +285,13 @@ export function RosterPhasePage() {
   // The shared `useGamePhaseNav` hook above already covers every base
   // phase, so the local copy is gone.
 
+  // KR-5 (2026-04-30) — IDs of chefs the team won in this round's chef
+  // auction. Powers the "NEW" sticker on each newly hired chef card.
+  const newlyWonChefIds = useMemo(
+    () => new Set(chefWins.map((w) => w.chefId)),
+    [chefWins],
+  );
+
   // FE-I15: any teammate can act when no one on the team holds
   // operations (2-player team, cleared role, etc.).
   const canAct = roleOwnsRoster(role, teamRoleAssignments);
@@ -366,10 +373,19 @@ export function RosterPhasePage() {
       <header className="roster-phase-page__header">
         <h1 className="roster-phase-page__title">Your Kitchen Roster</h1>
         <p className="roster-phase-page__hint">
-          Review who's in your kitchen for the rest of this round. Keep up to{" "}
-          <strong>{specialtyChefCap}</strong> specialty chefs — lay one off if you
-          ended up with more.
+          Review who's in your kitchen for the rest of this round.
         </p>
+        {/* KR-3 (2026-04-30) — make the cap + auto-layoff behaviour explicit. */}
+        <ul className="roster-phase-page__rules">
+          <li>
+            You can have a maximum of <strong>{specialtyChefCap}</strong>{" "}
+            specialty chefs on your roster.
+          </li>
+          <li>
+            When the timer runs out, any chefs beyond your{" "}
+            {specialtyChefCap}-chef limit will be automatically laid off.
+          </li>
+        </ul>
       </header>
 
       {/* V5 (Apr 25): big "locked in" confirmation banner so players see they
@@ -416,21 +432,36 @@ export function RosterPhasePage() {
 
         {Array.from({ length: specialtyChefCap }, (_, i) => {
           const chef = specialtyChefs[i];
+          const isNew = chef ? newlyWonChefIds.has(chef.id) : false;
           return (
             <div
               key={`slot-${i}`}
-              className="roster-phase-page__slot roster-phase-page__slot--specialty"
+              className={`roster-phase-page__slot roster-phase-page__slot--specialty${
+                isNew ? " roster-phase-page__slot--new" : ""
+              }`}
             >
               <div className="roster-phase-page__slot-label">
                 Specialty Chef {i + 1}
               </div>
               {chef ? (
-                <ChefCard
-                  chef={toChefCardInput(chef)}
-                  mode="roster"
-                  canLayoff={canAct}
-                  onLayoff={handleLayoffClick}
-                />
+                <>
+                  {/* KR-5 (2026-04-30) — yellow/gold "NEW" sticker for chefs
+                      acquired in the current round. */}
+                  {isNew && (
+                    <span
+                      className="roster-phase-page__new-badge"
+                      aria-label="Newly hired this round"
+                    >
+                      NEW
+                    </span>
+                  )}
+                  <ChefCard
+                    chef={toChefCardInput(chef)}
+                    mode="roster"
+                    canLayoff={canAct}
+                    onLayoff={handleLayoffClick}
+                  />
+                </>
               ) : (
                 <div className="roster-phase-page__empty">Empty slot</div>
               )}
@@ -439,22 +470,35 @@ export function RosterPhasePage() {
         })}
 
         {overCap &&
-          specialtyChefs.slice(specialtyChefCap).map((chef) => (
-            <div
-              key={`overflow-${chef.id}`}
-              className="roster-phase-page__slot roster-phase-page__slot--overflow"
-            >
-              <div className="roster-phase-page__slot-label">
-                Extra Chef (must lay off)
+          specialtyChefs.slice(specialtyChefCap).map((chef) => {
+            const isNew = newlyWonChefIds.has(chef.id);
+            return (
+              <div
+                key={`overflow-${chef.id}`}
+                className={`roster-phase-page__slot roster-phase-page__slot--overflow${
+                  isNew ? " roster-phase-page__slot--new" : ""
+                }`}
+              >
+                <div className="roster-phase-page__slot-label">
+                  Extra Chef (must lay off)
+                </div>
+                {isNew && (
+                  <span
+                    className="roster-phase-page__new-badge"
+                    aria-label="Newly hired this round"
+                  >
+                    NEW
+                  </span>
+                )}
+                <ChefCard
+                  chef={toChefCardInput(chef)}
+                  mode="roster"
+                  canLayoff={canAct}
+                  onLayoff={handleLayoffClick}
+                />
               </div>
-              <ChefCard
-                chef={toChefCardInput(chef)}
-                mode="roster"
-                canLayoff={canAct}
-                onLayoff={handleLayoffClick}
-              />
-            </div>
-          ))}
+            );
+          })}
       </div>
 
       {/* S-05 — "Lay offs" panel. Shows chefs the team has dropped THIS

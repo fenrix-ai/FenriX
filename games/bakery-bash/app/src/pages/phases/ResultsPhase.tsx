@@ -344,8 +344,12 @@ export function ResultsPhase() {
               <span className="results-phase__metric-label">Customers</span>
             </div>
             <div className="results-phase__metric-card results-phase__metric-card--satisfaction">
-              <span className="results-phase__metric-value">{latest?.customerSatisfaction ?? "—"}</span>
-              <span className="results-phase__metric-label">Satisfaction</span>
+              <span className="results-phase__metric-value">
+                {typeof latest?.customerSatisfaction === "number"
+                  ? `${Math.round(latest.customerSatisfaction)}%`
+                  : "—"}
+              </span>
+              <span className="results-phase__metric-label">Customer Satisfaction</span>
             </div>
           </div>
 
@@ -380,11 +384,7 @@ export function ResultsPhase() {
             </section>
           )}
 
-          {/* FE-I20: Net revenue / Customers / Customer satisfaction
-              already render in the metric cards above; Gross revenue only
-              shows when a loan was taken out. */}
-          {typeof latest.amountBorrowed === "number" &&
-            latest.amountBorrowed > 0 && (
+          {typeof latest.revenueGross === "number" && (
             <div className="results-phase__kpis">
               <Kpi
                 label="Gross revenue"

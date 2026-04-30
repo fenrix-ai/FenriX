@@ -908,7 +908,21 @@ export function AuctionPage() {
                 </p>
               )}
               {AD_CARDS.map((ad) => {
-                const adMinBid = config?.adBidMinimums?.[ad.id] ?? null;
+                // AA-2 (2026-04-30): displayed minimum is the max of
+                // per-type floor and per-round floor (mirrors backend
+                // `resolveAndApplyAdAuction`). null when neither is set.
+                const perTypeFloor = config?.adBidMinimums?.[ad.id] ?? 0;
+                const roundFloors = config?.adBidRoundFloor;
+                const roundIdx = Math.min(
+                  Math.max((currentRound ?? 1) - 1, 0),
+                  Math.max((roundFloors?.length ?? 1) - 1, 0),
+                );
+                const perRoundFloor =
+                  roundFloors && roundFloors.length > 0
+                    ? roundFloors[roundIdx] ?? 0
+                    : 0;
+                const effectiveFloor = Math.max(perTypeFloor, perRoundFloor);
+                const adMinBid = effectiveFloor > 0 ? effectiveFloor : null;
                 const adInputVal = parseInt(adBidInputs[ad.id] ?? "", 10);
                 const adBelowMinimum =
                   adMinBid !== null && !isNaN(adInputVal) && adInputVal > 0 && adInputVal < adMinBid;
