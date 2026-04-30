@@ -296,6 +296,48 @@ console.log('--- Roster decisions ---');
   const chefRoster = generateBotDecisions(botState, 'roster', TEST_CONFIG, [], 'hard', 'chef_focused', null, 'roster-chef');
   assert(chefRoster.layoffs.length === 1, 'chef_focused bot should lay off 1 chef');
   console.log('  ✓ Chef-focused bot roster');
+
+  const overCapState = makeBotState({
+    specialtyChefs: [
+      { id: 'o1', nationality: 'french', skillTier: 'advanced', specialties: ['croissant'] },
+      { id: 'o2', nationality: 'japanese', skillTier: 'intermediate', specialties: ['matcha'] },
+      { id: 'o3', nationality: 'italian', skillTier: 'novel', specialties: ['sandwich'] },
+      { id: 'o4', nationality: 'american', skillTier: 'advanced', specialties: ['bagel', 'cookie'] },
+      { id: 'o5', nationality: 'italian', skillTier: 'intermediate', specialties: ['coffee'] },
+    ],
+  });
+
+  for (let i = 0; i < 20; i++) {
+    const roster = generateBotDecisions(
+      overCapState,
+      'roster',
+      TEST_CONFIG,
+      [],
+      'novice',
+      'balanced',
+      null,
+      `roster-over-cap-novice-${i}`,
+    );
+    const remaining = overCapState.specialtyChefs.filter((c) => !roster.layoffs.includes(c.id));
+    assert(remaining.length <= TEST_CONFIG.specialtyChefCap, `novice roster must trim to cap, got ${remaining.length}`);
+  }
+  console.log('  ✓ Novice roster forget/mistake path still trims to cap');
+
+  for (let i = 0; i < 20; i++) {
+    const roster = generateBotDecisions(
+      overCapState,
+      'roster',
+      TEST_CONFIG,
+      [],
+      'novice',
+      'random',
+      null,
+      `roster-over-cap-random-${i}`,
+    );
+    const remaining = overCapState.specialtyChefs.filter((c) => !roster.layoffs.includes(c.id));
+    assert(remaining.length <= TEST_CONFIG.specialtyChefCap, `random roster must trim to cap, got ${remaining.length}`);
+  }
+  console.log('  ✓ Random roster path still trims to cap');
 }
 
 // ---------------------------------------------------------------------------

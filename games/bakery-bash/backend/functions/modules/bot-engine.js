@@ -179,6 +179,11 @@ function clamp(val, min, max) {
   return Math.min(max, Math.max(min, val));
 }
 
+function getSpecialtyChefCap(config) {
+  const cap = Number(config && config.specialtyChefCap);
+  return Number.isFinite(cap) && cap >= 0 ? Math.floor(cap) : 3;
+}
+
 function snapPrice(price) {
   return Math.round(price / 0.25) * 0.25;
 }
@@ -553,7 +558,7 @@ function decideChefBids(botState, config, personality, difficulty, rng, opponent
 
 function decideRoster(botState, config, personality, difficulty, rng) {
   const chefs = Array.isArray(botState.specialtyChefs) ? botState.specialtyChefs : [];
-  const cap = _num(config.specialtyChefCap);
+  const cap = getSpecialtyChefCap(config);
   if (chefs.length <= cap) return { layoffs: [] };
 
   const diffCfg = DIFFICULTIES[difficulty];
@@ -584,6 +589,37 @@ function decideRoster(botState, config, personality, difficulty, rng) {
   }
 
   return { layoffs: toLayoff.map((c) => c.id) };
+}
+
+function enforceRosterCap(botState, config, decisions) {
+  const chefs = Array.isArray(botState.specialtyChefs) ? botState.specialtyChefs : [];
+  const cap = getSpecialtyChefCap(config);
+  if (chefs.length <= cap) {
+    return { ...(decisions || {}), layoffs: Array.isArray(decisions && decisions.layoffs) ? decisions.layoffs : [] };
+  }
+
+  const chefIds = new Set(chefs.map((c) => c && c.id).filter(Boolean));
+  const layoffs = [];
+  const layoffIds = new Set();
+  for (const id of Array.isArray(decisions && decisions.layoffs) ? decisions.layoffs : []) {
+    if (chefIds.has(id) && !layoffIds.has(id)) {
+      layoffs.push(id);
+      layoffIds.add(id);
+    }
+  }
+
+  const remaining = chefs.filter((c) => c && c.id && !layoffIds.has(c.id));
+  const excess = remaining.length - cap;
+  if (excess > 0) {
+    const lowestValueFirst = [...remaining]
+      .sort((a, b) => expectedChefValue(a, config) - expectedChefValue(b, config));
+    for (const chef of lowestValueFirst.slice(0, excess)) {
+      layoffs.push(chef.id);
+      layoffIds.add(chef.id);
+    }
+  }
+
+  return { ...(decisions || {}), layoffs };
 }
 
 // ---------------------------------------------------------------------------
@@ -975,7 +1011,7 @@ function generateBotDecisions(
   if (maybeForgetPhase(diffCfg.forgetPhaseChance, rng)) {
     if (phase === 'bid_ad') return { adBids: {} };
     if (phase === 'bid_chef') return { chefBids: [] };
-    if (phase === 'roster') return { layoffs: [] };
+    if (phase === 'roster') return enforceRosterCap(botState, config, { layoffs: [] });
     if (phase === 'decide') {
       // PERSONALITIES.random is intentionally an empty config — its decisions
       // come from randomBotDecisions, not the strategy fields decideOperations
@@ -992,7 +1028,8 @@ function generateBotDecisions(
 
   // Random personality short-circuit
   if (personKey === 'random') {
-    return randomBotDecisions(botState, phase, config, rng);
+    const decisions = randomBotDecisions(botState, phase, config, rng);
+    return phase === 'roster' ? enforceRosterCap(botState, config, decisions) : decisions;
   }
 
   switch (phase) {
@@ -1001,7 +1038,7 @@ function generateBotDecisions(
     case 'bid_chef':
       return { chefBids: decideChefBids(botState, config, personKey, diffKey, rng, opponents, historicalBids) };
     case 'roster':
-      return decideRoster(botState, config, personKey, diffKey, rng);
+      return enforceRosterCap(botState, config, decideRoster(botState, config, personKey, diffKey, rng));
     case 'decide': {
       if (diffKey === 'perfect') {
         return perfectBotDecide(botState, config, opponents, historicalBids, personKey);

@@ -5628,8 +5628,8 @@ exports.onBotPhaseChange = onDocumentWritten(
     const gameRef = gameDoc(gameId);
 
     // Find all bots
-    const playersSnap = await gameRef.collection('players').get();
-    const bots = playersSnap.docs.filter((d) => d.get('isBot') === true);
+    let playersSnap = await gameRef.collection('players').get();
+    let bots = playersSnap.docs.filter((d) => d.get('isBot') === true);
     if (bots.length === 0) return;
 
     const cfgSnap = await gameRef.collection('config').doc('params').get();
@@ -5667,6 +5667,12 @@ exports.onBotPhaseChange = onDocumentWritten(
           gameId, round, phase: parsed.phase, missing: requiredField,
         });
       }
+    }
+
+    if (parsed.phase === 'roster') {
+      playersSnap = await gameRef.collection('players').get();
+      bots = playersSnap.docs.filter((d) => d.get('isBot') === true);
+      if (bots.length === 0) return;
     }
 
     // Load opponents (human players) for opponent modeling
