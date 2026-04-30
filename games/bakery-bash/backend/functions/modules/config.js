@@ -562,6 +562,33 @@ function cleanString(value) {
   return value.trim();
 }
 
+// Invisible / spoofing chars stripped by sanitizeName:
+//   \u00AD                  soft hyphen
+//   \u180E                  Mongolian vowel separator
+//   \u200B-\u200F           zero-width space, ZWNJ, ZWJ, LRM, RLM
+//   \u202A-\u202E           LRE, RLE, PDF, LRO, RLO (directional overrides)
+//   \u2060-\u2064           word joiner, invisible operators
+//   \u2066-\u2069           LRI, RLI, FSI, PDI (newer isolate overrides)
+//   \uFEFF                  zero-width no-break space (BOM)
+//   \u3164                  Hangul filler
+const INVISIBLE_CHARS = /[\u00AD\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF\u3164]/g;
+
+/**
+ * sanitizeName
+ * Strips dangerous Unicode characters that enable visual spoofing or
+ * injection attacks. Preserves normal international text (emoji, CJK,
+ * Arabic, accents, etc.) and collapses runs of whitespace.
+ *
+ * @param {*} value
+ * @returns {string}
+ */
+function sanitizeName(value) {
+  return cleanString(value)
+    .replace(INVISIBLE_CHARS, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /**
  * coerceChefPoolSize
  * Accepts the new flat-number schema, the legacy `{min, max}` object schema,
@@ -764,6 +791,7 @@ module.exports = {
   numberOrDefault,
   objectOrDefault,
   cleanString,
+  sanitizeName,
   EQUIPMENT_GRADES,
   EQUIPMENT_TIER_COSTS,
   EQUIPMENT_CAPACITY_FACTOR,
