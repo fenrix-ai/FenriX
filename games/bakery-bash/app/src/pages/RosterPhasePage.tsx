@@ -384,7 +384,7 @@ export function RosterPhasePage() {
         setLaidOffChefs(next);
       },
       (err) => {
-        console.debug("chefReturnPool listener error:", err);
+        console.error("chefReturnPool listener error:", err);
         setLaidOffChefs([]);
       },
     );

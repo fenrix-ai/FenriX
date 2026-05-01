@@ -130,6 +130,19 @@ service cloud.firestore {
         allow write: if false;
 
         // ───────────────────────────────────────────────────
+        // /games/{gameId}/rounds/{roundId}/chefReturnPool/{chefId}
+        // Chefs laid off during the roster phase land here so the
+        // player can move them back to their roster or let them drop
+        // when the timer expires. Readable by any signed-in player
+        // (chef data contains no financial info). Written exclusively
+        // by Cloud Functions (layoffChef, layoffChefs, swapSpecialtyChef).
+        // ───────────────────────────────────────────────────
+        match /chefReturnPool/{chefId} {
+          allow read: if signedIn();
+          allow write: if false;
+        }
+
+        // ───────────────────────────────────────────────────
         // /games/{gameId}/rounds/{roundId}/topBidsShards/{shardIdx}
         // Sharded live-bid intake. Each shard holds the per-team bid
         // amounts for the teams hashed to that shard. Server-only:
