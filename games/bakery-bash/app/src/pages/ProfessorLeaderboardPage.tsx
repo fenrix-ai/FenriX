@@ -7,8 +7,9 @@ import {
   type DocumentData,
   type Timestamp,
 } from "firebase/firestore";
+import { httpsCallable, type FunctionsError } from "firebase/functions";
 import { useGame } from "../contexts/GameContext";
-import { db } from "../lib/firebase";
+import { db, functions } from "../lib/firebase";
 import { formatMoney } from "../lib/cost";
 import { readNumber } from "../lib/utils";
 import { PageShell } from "../components/ui/PageShell";
@@ -60,6 +61,12 @@ interface ProfessorLeaderboardDoc {
   updatedAt: Timestamp | null;
 }
 
+interface ExportProfessorCsvResponse {
+  gameId: string;
+  csv: string;
+  rowCount: number;
+}
+
 /** Quote a CSV field if it contains delimiters or quotes. */
 function quote(s: string): string {
   if (/[",\n]/.test(s)) {
@@ -71,6 +78,18 @@ function quote(s: string): string {
 function fmt(n: number | undefined): string {
   if (typeof n !== "number" || !Number.isFinite(n)) return "";
   return String(Math.round(n * 100) / 100);
+}
+
+function triggerCsvDownload(csv: string, filename: string) {
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function readRanking(data: DocumentData): ProfessorRanking {
@@ -277,7 +296,36 @@ export function ProfessorLeaderboardPage() {
     }).length;
   }, [board?.rankings, borrowedTotalByUid]);
 
-  const onExportAll = () => {
+  const onExportAll = async () => {
+    if (!gameId) {
+      window.alert("Create or select a game before exporting.");
+      return;
+    }
+
+    // Prefer the backend callable export so professor CSV works even when
+    // this page cannot read /players/*/rounds due missing custom claims.
+    try {
+      const exportProfessorCsv = httpsCallable<
+        { gameId: string },
+        ExportProfessorCsvResponse
+      >(functions, "exportProfessorCsv");
+      const result = await exportProfessorCsv({ gameId });
+      const csv = typeof result.data?.csv === "string" ? result.data.csv : "";
+      if (csv.trim().length > 0) {
+        triggerCsvDownload(csv, `bakery-bash-professor-${gameId}.csv`);
+        return;
+      }
+    } catch (err) {
+      const fnErr = err as FunctionsError;
+      const code = fnErr.code?.split("/").pop() ?? "";
+      // Fall through to the client-side aggregator only when the backend says
+      // there's no round data yet. Other failures are shown immediately.
+      if (code !== "failed-precondition") {
+        window.alert(fnErr.message || "Could not export class CSV.");
+        return;
+      }
+    }
+
     // Multi-player CSV: one row per (player, round). Adds a `bakery` and
     // `player` column on top of the standard round fields. Kept inline
     // (rather than reusing `downloadResultsCsv`) so the professor view
@@ -319,15 +367,7 @@ export function ProfessorLeaderboardPage() {
       return;
     }
     const csv = [header.join(","), ...rows].join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `bakery-bash-professor-${gameId ?? "export"}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    triggerCsvDownload(csv, `bakery-bash-professor-${gameId}.csv`);
   };
 
   const rankings = board?.rankings ?? [];
@@ -349,7 +389,7 @@ export function ProfessorLeaderboardPage() {
           <button
             type="button"
             className="btn btn--secondary"
-            disabled={rankings.length === 0}
+            disabled={!gameId || rankings.length === 0}
             onClick={onExportAll}
           >
             Export All (CSV)
