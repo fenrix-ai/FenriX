@@ -149,6 +149,7 @@ type GameAction =
   | { type: "SET_PHASE_ENDS_AT"; payload: number | null }
   | { type: "SET_PHASE"; payload: GamePhaseString }
   | { type: "SET_ROUND"; payload: number }
+  | { type: "SET_TOTAL_ROUNDS"; payload: number }
   | { type: "SET_PLAYERS"; payload: Player[] }
   | { type: "ADD_RESULT"; payload: RoundResult }
   | { type: "UPDATE_PLAYER"; payload: Partial<Player> }
@@ -266,6 +267,10 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       return { ...state, phase: action.payload };
     }
 
+    case "SET_TOTAL_ROUNDS": {
+      if (state.totalRounds === action.payload) return state;
+      return { ...state, totalRounds: action.payload };
+    }
     case "SET_ROUND": {
       if (state.currentRound === action.payload) return state;
       // New round → reset any local per-round drafts/submission flags.

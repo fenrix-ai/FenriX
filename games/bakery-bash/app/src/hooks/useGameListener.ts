@@ -84,6 +84,12 @@ export function useGameListener(gameId: string | null, playerId?: string | null)
         if (nextRound !== null) {
           dispatch({ type: "SET_ROUND", payload: nextRound });
         }
+        // S-21 (2026-05-01): mirror the professor's totalRounds into
+        // GameState so the UI stops hard-coding "of 5". Defaulted to 5 in
+        // the reducer for back-compat.
+        if (typeof data.totalRounds === "number" && data.totalRounds > 0) {
+          dispatch({ type: "SET_TOTAL_ROUNDS", payload: data.totalRounds });
+        }
         const ends = data.phaseEndsAt;
         if (ends && typeof ends.toMillis === "function") {
           dispatch({ type: "SET_PHASE_ENDS_AT", payload: ends.toMillis() });
