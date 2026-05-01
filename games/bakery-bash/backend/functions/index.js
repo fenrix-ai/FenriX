@@ -4633,10 +4633,7 @@ exports.continueFromRoster = onCall(CALLABLE_OPTS, async (request) => {
     const specialtyChefs = Array.isArray(player.specialtyChefs) ? player.specialtyChefs : [];
     const benchIds = rosterBenchChefIdsForCap(player, specialtyChefs, specialtyChefCap);
     const activeChefs = activeRosterChefs(specialtyChefs, benchIds);
-    if (activeChefs.length > specialtyChefCap) {
-      throw new HttpsError('failed-precondition',
-        `Lay off chefs until you have at most ${specialtyChefCap}.`);
-    }
+    const keptChefs = activeChefs.slice(0, specialtyChefCap);
 
     _roster_round = numberOrDefault(game.currentRound || game.round, 1);
     _roster_role = pSnap.get('role') || null;
@@ -4644,7 +4641,7 @@ exports.continueFromRoster = onCall(CALLABLE_OPTS, async (request) => {
 
     for (const teamPlayerDoc of teamPlayerDocs) {
       transaction.update(teamPlayerDoc.ref, {
-        specialtyChefs: activeChefs,
+        specialtyChefs: keptChefs,
         rosterBenchChefIds: [],
         pendingRosterAction: false,
         rosterCompleted: true,

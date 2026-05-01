@@ -435,8 +435,7 @@ export function RosterPhasePage() {
 
   const overCap = leftChefs.length > specialtyChefCap;
   const rosterFull = leftChefs.length >= specialtyChefCap;
-  const continueDisabled =
-    overCap || submitting !== null || !canAct || rosterCompleted;
+  const continueDisabled = submitting !== null || !canAct || rosterCompleted;
 
   // Combined right panel: overflow chefs + laid-off chefs (deduped)
   const allRightChefs = useMemo(() => {
@@ -722,7 +721,7 @@ export function RosterPhasePage() {
 
       {pendingRosterAction && !overCap && (
         <p className="roster-phase-page__info">
-          Backend flagged a pending roster action — review your chefs above.
+          Chefs in New Hires & Excess Chefs will be dropped when you continue.
         </p>
       )}
 
@@ -731,9 +730,7 @@ export function RosterPhasePage() {
         submitted={rosterCompleted}
         hint={
           canAct
-            ? overCap
-              ? "Lay off a chef to unlock Continue."
-              : undefined
+            ? undefined
             : "Waiting on your Operations teammate."
         }
         action={
