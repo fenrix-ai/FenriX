@@ -206,13 +206,7 @@ export function RosterPhasePage() {
   const [rosterCompleted, setRosterCompleted] = useState(false);
   const [laidOffChefs, setLaidOffChefs] = useState<LaidOffChef[]>([]);
   const [pendingChefId, setPendingChefId] = useState<string | null>(null);
-  /**
-   * IDs of chefs that must stay in the right panel regardless of their
-   * position in the `specialtyChefs` array. Seeded whenever a chef lands
-   * beyond the cap (overflow). Prevents overflow chefs from automatically
-   * sliding into active roster slots when a left-side chef is laid off.
-   */
-  const [forcedRightIds, setForcedRightIds] = useState<Set<string>>(new Set());
+  const [rosterBenchChefIds, setRosterBenchChefIds] = useState<Set<string>>(new Set());
   const [chefWins, setChefWins] = useState<ChefWinnerEntry[]>([]);
   const [chefOutbid, setChefOutbid] = useState<ChefOutbidEntry[]>([]);
   const [chefAuctionResolved, setChefAuctionResolved] = useState(false);
@@ -348,6 +342,12 @@ export function RosterPhasePage() {
         const data = snap.data() as DocumentData;
         const raw = Array.isArray(data.specialtyChefs) ? data.specialtyChefs : [];
         setSpecialtyChefs(raw.map(coerceChef).filter((c): c is RosterChef => c !== null));
+        const rawBenchIds = Array.isArray(data.rosterBenchChefIds)
+          ? data.rosterBenchChefIds
+          : [];
+        setRosterBenchChefIds(new Set(
+          rawBenchIds.filter((id: unknown): id is string => typeof id === "string" && id.length > 0),
+        ));
         setPendingRosterAction(data.pendingRosterAction === true);
         setRosterCompleted(data.rosterCompleted === true);
       },
@@ -402,24 +402,14 @@ export function RosterPhasePage() {
     [chefWins],
   );
 
-  useEffect(() => {
-    const overflowIds = specialtyChefs.slice(specialtyChefCap).map((c) => c.id);
-    if (overflowIds.length === 0) return;
-    setForcedRightIds((prev) => {
-      const next = new Set(prev);
-      overflowIds.forEach((id) => next.add(id));
-      return next;
-    });
-  }, [specialtyChefs, specialtyChefCap]);
-
   const canAct = roleOwnsRoster(role, teamRoleAssignments);
   const ownerLabel = ownerOfRoster();
 
   const leftChefs = specialtyChefs
-    .filter((c) => !forcedRightIds.has(c.id))
+    .filter((c) => !rosterBenchChefIds.has(c.id))
     .slice(0, specialtyChefCap);
   const rightChefsFromArray = specialtyChefs.filter((c) =>
-    forcedRightIds.has(c.id),
+    rosterBenchChefIds.has(c.id),
   );
 
   const overCap = leftChefs.length > specialtyChefCap;
@@ -475,7 +465,7 @@ export function RosterPhasePage() {
   };
 
   const handleAddToRoster = async (chefId: string) => {
-    if (!canAct) return;
+    if (!gameId || !canAct || pendingChefId) return;
     if (rosterFull) {
       setPerChefError((prev) => ({
         ...prev,
@@ -484,13 +474,19 @@ export function RosterPhasePage() {
       return;
     }
     setPerChefError((prev) => ({ ...prev, [chefId]: "" }));
-    const isOverflow = specialtyChefs.some((c) => c.id === chefId);
-    if (isOverflow) {
-      setForcedRightIds((prev) => {
-        const next = new Set(prev);
-        next.delete(chefId);
-        return next;
-      });
+    if (rosterBenchChefIds.has(chefId)) {
+      setPendingChefId(chefId);
+      try {
+        const promote = httpsCallable<
+          { gameId: string; chefId: string },
+          { ok?: boolean; promoted?: boolean }
+        >(functions, "promoteRosterBenchChef");
+        await promote({ gameId, chefId });
+      } catch (err) {
+        setError(humanizeRehireError(err));
+      } finally {
+        setPendingChefId(null);
+      }
     } else {
       await handleRehireClick(chefId);
     }
@@ -552,12 +548,8 @@ export function RosterPhasePage() {
     if (occupied) {
       if (occupied === draggedId) return;
       void handleSwap(occupied, draggedId);
-    } else if (forcedRightIds.has(draggedId) && !rosterFull) {
-      setForcedRightIds((prev) => {
-        const next = new Set(prev);
-        next.delete(draggedId);
-        return next;
-      });
+    } else if (rosterBenchChefIds.has(draggedId) && !rosterFull) {
+      void handleAddToRoster(draggedId);
     }
   };
 

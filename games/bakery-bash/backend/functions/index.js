@@ -438,6 +438,28 @@ function getPlayerTeamKey(playerDoc) {
   return getPlayerTeamId(data) || playerDoc.id;
 }
 
+function cleanStringArray(value) {
+  return Array.isArray(value)
+    ? value.map(cleanString).filter(Boolean)
+    : [];
+}
+
+function rosterBenchChefIds(playerData, specialtyChefs) {
+  const rosterIds = new Set(
+    (Array.isArray(specialtyChefs) ? specialtyChefs : [])
+      .map((chef) => cleanString(chef && chef.id))
+      .filter(Boolean),
+  );
+  return cleanStringArray(playerData && playerData.rosterBenchChefIds)
+    .filter((id, index, ids) => rosterIds.has(id) && ids.indexOf(id) === index);
+}
+
+function activeRosterChefs(specialtyChefs, benchIds) {
+  const bench = new Set(cleanStringArray(benchIds));
+  return (Array.isArray(specialtyChefs) ? specialtyChefs : [])
+    .filter((chef) => chef && !bench.has(chef.id));
+}
+
 /**
  * T2.2: Single per-team transient-state doc for round-scoped pending bids
  * and decision drafts. Replaces the previous cascade pattern where
@@ -474,8 +496,9 @@ async function findPlayersOverChefCap(gameRef, specialtyChefCap) {
   const snap = await gameRef.collection('players').get();
   const offenders = [];
   for (const doc of snap.docs) {
-    const chefs = doc.get('specialtyChefs');
-    const count = Array.isArray(chefs) ? chefs.length : 0;
+    const player = doc.data() || {};
+    const chefs = Array.isArray(player.specialtyChefs) ? player.specialtyChefs : [];
+    const count = activeRosterChefs(chefs, rosterBenchChefIds(player, chefs)).length;
     if (count > specialtyChefCap) {
       offenders.push({
         memberUid: doc.id,
@@ -796,6 +819,7 @@ async function resetPendingPlayerStateForRound(gameRef) {
       'pendingDecision.equipmentUpgradePurchased': false,
       'pendingBids.ad': null,
       'pendingBids.chef': null,
+      rosterBenchChefIds: [],
       pendingRosterAction: false,
       rosterCompleted: false,
       updatedAt: FieldValue.serverTimestamp(),
@@ -1050,12 +1074,22 @@ async function resolveAndApplyChefAuction(gameRef, round, config) {
       const winnerGroup = teamGroups.get(winnerKey);
       const memberDocs = winnerGroup ? winnerGroup.memberDocs : [];
       for (const playerDoc of memberDocs) {
-        const existingCount = Array.isArray((playerDoc.data() || {}).specialtyChefs)
-          ? playerDoc.data().specialtyChefs.length
-          : 0;
+        const playerData = playerDoc.data() || {};
+        const existingChefs = Array.isArray(playerData.specialtyChefs)
+          ? playerData.specialtyChefs
+          : [];
+        const existingBenchIds = rosterBenchChefIds(playerData, existingChefs);
+        const existingActiveCount = activeRosterChefs(existingChefs, existingBenchIds).length;
+        const activeSlotsAvailable = Math.max(0, specialtyChefCap - existingActiveCount);
+        const newlyBenchedIds = wonChefs
+          .slice(activeSlotsAvailable)
+          .map((chef) => cleanString(chef && chef.id))
+          .filter(Boolean);
+        const nextBenchIds = Array.from(new Set(existingBenchIds.concat(newlyBenchedIds)));
         transaction.update(playerDoc.ref, {
           specialtyChefs: FieldValue.arrayUnion(...wonChefs),
-          pendingRosterAction: (existingCount + wonChefs.length) > specialtyChefCap,
+          rosterBenchChefIds: nextBenchIds,
+          pendingRosterAction: nextBenchIds.length > 0,
           updatedAt: FieldValue.serverTimestamp(),
         });
       }
@@ -1410,6 +1444,7 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
       budgetCurrent: config.startingBudget,
       cumulativeRevenue: 0,
       specialtyChefs: [],
+      rosterBenchChefIds: [],
       sousChefCount: 0,
       equipmentGrade: 'C',
       cleanlinessScore: 75,
@@ -1663,6 +1698,7 @@ exports.createTeam = onCall(CALLABLE_OPTS, async (request) => {
         budgetCurrent: config.startingBudget,
         cumulativeRevenue: 0,
         specialtyChefs: [],
+        rosterBenchChefIds: [],
         sousChefCount: 0,
         equipmentGrade: 'C',
         cleanlinessScore: 75,
@@ -2414,6 +2450,13 @@ async function runSimulationAndPersist(gameRef, round, config) {
         : {};
     const financePrices = objectOrDefault(financeDecision.productPrices, {});
     const opsPrices = objectOrDefault(decision.productPrices, {});
+    const canonicalChefs = Array.isArray(canonicalData.specialtyChefs)
+      ? canonicalData.specialtyChefs
+      : [];
+    const activeSpecialtyChefs = activeRosterChefs(
+      canonicalChefs,
+      rosterBenchChefIds(canonicalData, canonicalChefs),
+    );
 
     const aggregatedAuction = {
       adWon: null,
@@ -2486,7 +2529,7 @@ async function runSimulationAndPersist(gameRef, round, config) {
         ),
         equipmentUpgradePurchased: !!decision.equipmentUpgradePurchased,
       },
-      specialtyChefs: Array.isArray(canonicalData.specialtyChefs) ? canonicalData.specialtyChefs : [],
+      specialtyChefs: activeSpecialtyChefs,
       budgetCurrent: simInputBudget,
       returningCustomersPending: numberOrDefault(canonicalData.returningCustomersPending, 0),
       // Forward equipment + cleanliness state from the canonical player doc
@@ -2900,7 +2943,10 @@ async function persistConclusion(gameRef, totalRounds, config) {
           totalInterest,
           netRevenue,
           budgetRemaining: numberOrDefault(p.budgetCurrent, 0),
-          specialtyChefs: Array.isArray(p.specialtyChefs) ? p.specialtyChefs : [],
+          specialtyChefs: activeRosterChefs(
+            Array.isArray(p.specialtyChefs) ? p.specialtyChefs : [],
+            rosterBenchChefIds(p, Array.isArray(p.specialtyChefs) ? p.specialtyChefs : []),
+          ),
         };
       })
     );
@@ -3674,6 +3720,8 @@ exports.layoffChef = onCall(CALLABLE_OPTS, async (request) => {
 
     const removed = specialtyChefs[idx];
     const remaining = specialtyChefs.slice(0, idx).concat(specialtyChefs.slice(idx + 1));
+    const nextBenchIds = rosterBenchChefIds(player, remaining)
+      .filter((id) => id !== chefId);
 
     const round = numberOrDefault(game.currentRound || game.round, 1);
     const returnPoolRef = gameRef
@@ -3691,7 +3739,8 @@ exports.layoffChef = onCall(CALLABLE_OPTS, async (request) => {
     for (const teamPlayerDoc of teamPlayerDocs) {
       transaction.update(teamPlayerDoc.ref, {
         specialtyChefs: remaining,
-        pendingRosterAction: remaining.length > specialtyChefCap,
+        rosterBenchChefIds: nextBenchIds,
+        pendingRosterAction: nextBenchIds.length > 0,
         updatedAt: FieldValue.serverTimestamp(),
       });
     }
@@ -3772,6 +3821,8 @@ exports.swapSpecialtyChef = onCall(CALLABLE_OPTS, async (request) => {
     );
     const insertAt = inIdx < outIdx ? outIdx - 1 : outIdx;
     const next = without.slice(0, insertAt).concat([incoming]).concat(without.slice(insertAt));
+    const nextBenchIds = rosterBenchChefIds(player, next)
+      .filter((id) => id !== outChefId && id !== inChefId);
 
     const round = numberOrDefault(game.currentRound || game.round, 1);
     const returnPoolRef = gameRef
@@ -3789,7 +3840,8 @@ exports.swapSpecialtyChef = onCall(CALLABLE_OPTS, async (request) => {
     for (const teamPlayerDoc of teamPlayerDocs) {
       transaction.update(teamPlayerDoc.ref, {
         specialtyChefs: next,
-        pendingRosterAction: next.length > specialtyChefCap,
+        rosterBenchChefIds: nextBenchIds,
+        pendingRosterAction: nextBenchIds.length > 0,
         updatedAt: FieldValue.serverTimestamp(),
       });
     }
@@ -3881,6 +3933,8 @@ exports.layoffChefs = onCall(CALLABLE_OPTS, async (request) => {
     const remaining = specialtyChefs.filter(
       (c) => !c || !removedIds.has(c.id),
     );
+    const nextBenchIds = rosterBenchChefIds(player, remaining)
+      .filter((id) => !removedIds.has(id));
 
     for (const chef of removed) {
       const returnPoolRef = gameRef
@@ -3898,7 +3952,8 @@ exports.layoffChefs = onCall(CALLABLE_OPTS, async (request) => {
     for (const teamPlayerDoc of teamPlayerDocs) {
       transaction.update(teamPlayerDoc.ref, {
         specialtyChefs: remaining,
-        pendingRosterAction: remaining.length > specialtyChefCap,
+        rosterBenchChefIds: nextBenchIds,
+        pendingRosterAction: nextBenchIds.length > 0,
         updatedAt: FieldValue.serverTimestamp(),
       });
     }
@@ -4159,10 +4214,10 @@ exports.saveDecisionDraft = onCall(CALLABLE_OPTS, async (request) => {
 // ===========================================================================
 //
 // Counterpart to layoffChef. Pulls a chef back out of the current round's
-// chefReturnPool and re-adds them to the player's specialtyChefs IF:
+// chefReturnPool and re-adds them to the player's active specialtyChefs IF:
 //   1. The chef's pool entry exists for the CURRENT round (you can only
 //      rehire someone YOU just laid off, not historical departures).
-//   2. The player's roster has space (specialtyChefs.length < cap).
+//   2. The player's active roster has space.
 //   3. We're still in the roster phase (commit happens on phase advance).
 //
 // Same auth rules as layoffChef — operations / solo or any teammate when
@@ -4234,7 +4289,8 @@ exports.rehireChef = onCall(CALLABLE_OPTS, async (request) => {
     }
 
     const specialtyChefs = Array.isArray(player.specialtyChefs) ? player.specialtyChefs : [];
-    if (specialtyChefs.length >= specialtyChefCap) {
+    const benchIds = rosterBenchChefIds(player, specialtyChefs);
+    if (activeRosterChefs(specialtyChefs, benchIds).length >= specialtyChefCap) {
       throw new HttpsError(
         'failed-precondition',
         `Roster is full (${specialtyChefCap} max). Lay off another chef first.`,
@@ -4250,12 +4306,15 @@ exports.rehireChef = onCall(CALLABLE_OPTS, async (request) => {
     void returnedAt;
     const restoredChef = { ...chefFields, id: chefId };
     const nextRoster = [...specialtyChefs, restoredChef];
+    const nextBenchIds = rosterBenchChefIds(player, nextRoster)
+      .filter((id) => id !== chefId);
 
     transaction.delete(returnPoolRef);
     for (const teamPlayerDoc of teamPlayerDocs) {
       transaction.update(teamPlayerDoc.ref, {
         specialtyChefs: nextRoster,
-        pendingRosterAction: nextRoster.length > specialtyChefCap,
+        rosterBenchChefIds: nextBenchIds,
+        pendingRosterAction: nextBenchIds.length > 0,
         updatedAt: FieldValue.serverTimestamp(),
       });
     }
@@ -4433,6 +4492,74 @@ exports.markStalePlayersDisconnected = onCall(CALLABLE_OPTS, async (request) => 
 });
 
 // ===========================================================================
+// promoteRosterBenchChef
+// ===========================================================================
+
+exports.promoteRosterBenchChef = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
+  const auth = requireAuth(request);
+  const data = request.data || {};
+  const gameId = cleanGameId(data.gameId);
+  const chefId = cleanString(data.chefId);
+  if (!chefId) throw new HttpsError('invalid-argument', 'chefId is required.');
+
+  const uid = auth.uid;
+  const gameRef = gameDoc(gameId);
+  const playerRef = gameRef.collection('players').doc(uid);
+
+  await db.runTransaction(async (transaction) => {
+    const [gSnap, pSnap, cfgSnap] = await Promise.all([
+      transaction.get(gameRef),
+      transaction.get(playerRef),
+      transaction.get(gameRef.collection('config').doc('params')),
+    ]);
+    if (!gSnap.exists) throw new HttpsError('not-found', 'Game not found.');
+    if (!pSnap.exists) throw new HttpsError('failed-precondition', 'Player not in this game.');
+
+    await assertRoleAllowedWithTeam(transaction, gameRef, pSnap, ['operations']);
+
+    const game = gSnap.data();
+    if (game.paused === true) {
+      throw new HttpsError('failed-precondition', 'Game is paused. Roster changes are temporarily disabled.');
+    }
+    const { phase } = parsePhase(game.phase, game.currentRound || game.round);
+    if (phase !== 'roster') {
+      throw new HttpsError('failed-precondition', 'Chefs can only be promoted during the roster phase.');
+    }
+
+    const config = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
+    const specialtyChefCap = numberOrDefault(config.specialtyChefCap, 3);
+    const player = pSnap.data();
+    const teamId = getPlayerTeamId(player);
+    const teamPlayerDocs = teamId
+      ? (await transaction.get(gameRef.collection('players').where('teamId', '==', teamId))).docs
+      : [pSnap];
+    const specialtyChefs = Array.isArray(player.specialtyChefs) ? player.specialtyChefs : [];
+    const benchIds = rosterBenchChefIds(player, specialtyChefs);
+    if (!benchIds.includes(chefId)) {
+      throw new HttpsError('failed-precondition', 'Chef is not waiting on the bench.');
+    }
+    if (activeRosterChefs(specialtyChefs, benchIds).length >= specialtyChefCap) {
+      throw new HttpsError(
+        'failed-precondition',
+        `Roster is full (${specialtyChefCap} max). Lay off another chef first.`,
+      );
+    }
+
+    const nextBenchIds = benchIds.filter((id) => id !== chefId);
+    for (const teamPlayerDoc of teamPlayerDocs) {
+      transaction.update(teamPlayerDoc.ref, {
+        rosterBenchChefIds: nextBenchIds,
+        pendingRosterAction: nextBenchIds.length > 0,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
+  });
+
+  return { ok: true, gameId, chefId, promoted: true };
+});
+
+// ===========================================================================
 // continueFromRoster
 // ===========================================================================
 
@@ -4478,8 +4605,14 @@ exports.continueFromRoster = onCall(CALLABLE_OPTS, async (request) => {
     const specialtyChefCap = numberOrDefault(config.specialtyChefCap, 3);
 
     const player = pSnap.data();
-    const count = Array.isArray(player.specialtyChefs) ? player.specialtyChefs.length : 0;
-    if (count > specialtyChefCap) {
+    const teamId = getPlayerTeamId(player);
+    const teamPlayerDocs = teamId
+      ? (await transaction.get(gameRef.collection('players').where('teamId', '==', teamId))).docs
+      : [pSnap];
+    const specialtyChefs = Array.isArray(player.specialtyChefs) ? player.specialtyChefs : [];
+    const benchIds = rosterBenchChefIds(player, specialtyChefs);
+    const activeChefs = activeRosterChefs(specialtyChefs, benchIds);
+    if (activeChefs.length > specialtyChefCap) {
       throw new HttpsError('failed-precondition',
         `Lay off chefs until you have at most ${specialtyChefCap}.`);
     }
@@ -4488,11 +4621,15 @@ exports.continueFromRoster = onCall(CALLABLE_OPTS, async (request) => {
     _roster_role = pSnap.get('role') || null;
     _roster_displayName = pSnap.get('displayName') || '';
 
-    transaction.update(playerRef, {
-      pendingRosterAction: false,
-      rosterCompleted: true,
-      updatedAt: FieldValue.serverTimestamp(),
-    });
+    for (const teamPlayerDoc of teamPlayerDocs) {
+      transaction.update(teamPlayerDoc.ref, {
+        specialtyChefs: activeChefs,
+        rosterBenchChefIds: [],
+        pendingRosterAction: false,
+        rosterCompleted: true,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
   });
 
   // BE-22: mirror roster-complete submission for professor dashboard
@@ -5544,6 +5681,7 @@ exports.resetGame = onCall(HEAVY_CALLABLE_OPTS, async (request) => {
       budgetCurrent: startingBudget,
       cumulativeRevenue: 0,
       specialtyChefs: [],
+      rosterBenchChefIds: [],
       sousChefCount: 0,
       pendingDecision: {},
       pendingBids: {},
@@ -5929,20 +6067,31 @@ exports.onBotPhaseChange = onDocumentWritten(
 
         if (parsed.phase === 'roster') {
           const hasLayoffs = decisions.layoffs && decisions.layoffs.length > 0;
+          const chefCap = numberOrDefault(config.specialtyChefCap, 3);
           if (hasLayoffs) {
             const layoffIds = new Set(decisions.layoffs);
             const remaining = (botData.specialtyChefs || []).filter((c) => !layoffIds.has(c.id));
-            const chefCap = numberOrDefault(config.specialtyChefCap, 3);
+            const nextBenchIds = rosterBenchChefIds(botData, remaining)
+              .filter((id) => !layoffIds.has(id));
+            const activeCount = activeRosterChefs(remaining, nextBenchIds).length;
             const rosterUpdate = {
               specialtyChefs: remaining,
-              pendingRosterAction: remaining.length > chefCap,
+              rosterBenchChefIds: nextBenchIds,
+              pendingRosterAction: nextBenchIds.length > 0,
             };
-            if (remaining.length <= chefCap) {
+            if (activeCount <= chefCap) {
               rosterUpdate.rosterCompleted = true;
             }
             await botDoc.ref.update(rosterUpdate);
           } else {
+            const specialtyChefs = Array.isArray(botData.specialtyChefs) ? botData.specialtyChefs : [];
+            const activeChefs = activeRosterChefs(
+              specialtyChefs,
+              rosterBenchChefIds(botData, specialtyChefs),
+            );
             await botDoc.ref.update({
+              specialtyChefs: activeChefs,
+              rosterBenchChefIds: [],
               pendingRosterAction: false,
               rosterCompleted: true,
             });
