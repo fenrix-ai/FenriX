@@ -26,7 +26,7 @@ const PHASE_LABELS: Record<string, string> = {
   bid_ad:        "Ad Auction",
   bid_chef:      "Chef Auction",
   roster:        "Kitchen Roster",
-  simulating:    "Round in Progress\u2026",
+  simulating:    "Round in Progress",
   results_ready: "Results",
   game_over:     "Game Over",
 };
