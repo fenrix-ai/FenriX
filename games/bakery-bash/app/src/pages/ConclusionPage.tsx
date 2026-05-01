@@ -262,6 +262,9 @@ export function ConclusionPage() {
     const round = Number(k);
     mergedByRound[round] = { ...mergedByRound[round], ...v };
   }
+  const csvRows = roundsSorted
+    .map((round) => mergedByRound[round])
+    .filter((r): r is RoundResult => !!r);
 
   // Top three for the celebratory podium graphic shown on the Game Over
   // screen. Populated from the leaderboard snapshot (1 / 2 / 3). Missing
@@ -526,11 +529,11 @@ export function ConclusionPage() {
       )}
 
       <footer className="conclusion-page__footer">
-        {roundResults.length > 0 && (
+        {csvRows.length > 0 && (
           <button
             type="button"
             className="btn btn--primary"
-            onClick={() => downloadResultsCsv(roundResults)}
+            onClick={() => downloadResultsCsv(csvRows)}
           >
             ⬇ Download full CSV
           </button>

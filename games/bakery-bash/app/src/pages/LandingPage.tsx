@@ -66,6 +66,16 @@ function humanizeJoinError(err: unknown): string {
     const fnErr = err as FunctionsError;
     const rawCode = fnErr.code || "";
     const suffix = rawCode.split("/").pop() || rawCode;
+    const message =
+      typeof fnErr.message === "string" ? fnErr.message.toLowerCase() : "";
+    // `resource-exhausted` can mean whole game cap OR per-team cap. Surface a
+    // precise message when backend text indicates the selected team is full.
+    if (
+      suffix === "resource-exhausted"
+      && (message.includes("team") || message.includes("full"))
+    ) {
+      return "That team is full. Please pick another team.";
+    }
     if (suffix && JOIN_FAILURE_MESSAGES[suffix]) {
       return JOIN_FAILURE_MESSAGES[suffix];
     }
@@ -192,6 +202,23 @@ export function LandingPage() {
     return unsubscribe;
   }, [path, resolvedGameId]);
 
+  // S-04 follow-up: if the selected team disappears or fills up while the
+  // student is on the form, clear the selection so they can't submit a stale
+  // team id and hit a late transaction error.
+  useEffect(() => {
+    if (path !== "join" || !selectedTeamId || !lobbyTeams) return;
+    const selected = lobbyTeams.find((t) => t.teamId === selectedTeamId);
+    if (!selected) {
+      setSelectedTeamId(null);
+      setError("That team is no longer available. Please pick another.");
+      return;
+    }
+    if (selected.memberCount >= TEAM_MEMBER_CAP) {
+      setSelectedTeamId(null);
+      setError("That team just filled up. Please pick another.");
+    }
+  }, [path, selectedTeamId, lobbyTeams]);
+
   const handleCreate = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -285,6 +312,11 @@ export function LandingPage() {
     if (!selectedTeam) {
       setSelectedTeamId(null);
       setError("That team is no longer available. Please pick another.");
+      return;
+    }
+    if (selectedTeam.memberCount >= TEAM_MEMBER_CAP) {
+      setSelectedTeamId(null);
+      setError("That team is full. Please pick another.");
       return;
     }
 

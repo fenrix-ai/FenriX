@@ -789,9 +789,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
     pendingChefBids,
   } = state;
   useEffect(() => {
-    // Clear on game_over so a reopened tab lands on the landing page instead
-    // of being re-routed into the finished game's conclusion screen.
-    if (!gameId || !playerId || !gameCode || phase === "game_over") {
+    // Keep session linkage through game_over so `/game/conclusion` survives a
+    // refresh and students can still download final CSVs after a reload.
+    // Session is still cleared when linkage becomes invalid (missing game/user).
+    if (!gameId || !playerId || !gameCode) {
       writePersistedSession(null);
       return;
     }
@@ -897,14 +898,21 @@ export function GameProvider({ children }: { children: ReactNode }) {
       writePersistedDraft(null);
       return;
     }
-    writePersistedDraft({
+    const payload = {
       gameId,
       playerId,
       round: currentRound,
       pendingDecision,
       pendingAdBids,
       pendingChefBids,
-    });
+    };
+    const serialized = JSON.stringify(payload);
+    // Debounce localStorage writes: identical payload or rapid keystrokes
+    // should not churn storage ( Safari private mode can throw quota errors).
+    const timer = window.setTimeout(() => {
+      writePersistedDraft(payload);
+    }, 800);
+    return () => window.clearTimeout(timer);
   }, [
     gameId,
     playerId,
