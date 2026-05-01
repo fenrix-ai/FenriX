@@ -180,6 +180,7 @@ export function SimulatePhase() {
               menu={[...PRODUCTS]}
               soldOut={soldOut as Set<string>}
               specialtyChefs={specialtyChefs}
+              maintenanceCount={pendingDecision.staffCounts.maintenanceGuys ?? 0}
             />
           </SceneErrorBoundary>
           <p className="simulate-phase__waiting">Results loading shortly…</p>

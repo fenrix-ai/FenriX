@@ -1,82 +1,69 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="48" viewBox="0 0 32 48" shape-rendering="crispEdges">
-  <title>Maintenance Guy - yellow hard hat, blue coveralls, holding wrench</title>
+  <title>Maintenance Janitor - tan utility uniform, holding broom</title>
 
-  <!-- hard hat dome -->
-  <rect x="13" y="4" width="6" height="1" fill="#c9890a"/>
-  <rect x="12" y="5" width="8" height="1" fill="#f5b800"/>
-  <rect x="11" y="6" width="10" height="1" fill="#f5b800"/>
-  <rect x="11" y="7" width="10" height="1" fill="#f5b800"/>
-  <!-- hard hat brim (wider, darker for shadow) -->
-  <rect x="10" y="8" width="12" height="1" fill="#c9890a"/>
+  <!-- cap -->
+  <rect x="12" y="5" width="8" height="1" fill="#80623b"/>
+  <rect x="11" y="6" width="10" height="1" fill="#a9824e"/>
+  <rect x="11" y="7" width="10" height="1" fill="#a9824e"/>
+  <rect x="10" y="8" width="12" height="1" fill="#80623b"/>
 
-  <!-- head skin -->
-  <rect x="12" y="9" width="8" height="1" fill="#e8b888"/>
-  <rect x="11" y="10" width="10" height="1" fill="#e8b888"/>
-  <rect x="11" y="11" width="10" height="1" fill="#e8b888"/>
-  <rect x="12" y="12" width="8" height="1" fill="#e8b888"/>
-  <rect x="12" y="13" width="8" height="1" fill="#e8b888"/>
-  <rect x="13" y="14" width="6" height="1" fill="#e8b888"/>
+  <!-- head -->
+  <rect x="12" y="9" width="8" height="1" fill="#b9815b"/>
+  <rect x="11" y="10" width="10" height="1" fill="#b9815b"/>
+  <rect x="11" y="11" width="10" height="1" fill="#b9815b"/>
+  <rect x="12" y="12" width="8" height="1" fill="#b9815b"/>
+  <rect x="12" y="13" width="8" height="1" fill="#b9815b"/>
+  <rect x="13" y="14" width="6" height="1" fill="#a96f4b"/>
 
-  <!-- eyes -->
+  <!-- eyes and moustache -->
   <rect x="14" y="11" width="1" height="1" fill="#1c1a1a"/>
   <rect x="17" y="11" width="1" height="1" fill="#1c1a1a"/>
-
-  <!-- stubble / beard shadow -->
-  <rect x="14" y="13" width="4" height="1" fill="#8a6f55"/>
+  <rect x="14" y="13" width="4" height="1" fill="#4b3428"/>
 
   <!-- neck -->
-  <rect x="14" y="15" width="4" height="1" fill="#d8a878"/>
+  <rect x="14" y="15" width="4" height="1" fill="#a96f4b"/>
 
-  <!-- coveralls body (denim blue) -->
-  <rect x="12" y="15" width="2" height="1" fill="#2f4d7a"/>
-  <rect x="18" y="15" width="2" height="1" fill="#2f4d7a"/>
-  <rect x="11" y="16" width="10" height="1" fill="#3b5b8a"/>
-  <rect x="11" y="17" width="10" height="1" fill="#3b5b8a"/>
-  <rect x="11" y="18" width="10" height="1" fill="#3b5b8a"/>
-  <rect x="11" y="19" width="10" height="1" fill="#3b5b8a"/>
-  <rect x="11" y="20" width="10" height="1" fill="#3b5b8a"/>
+  <!-- tan utility shirt -->
+  <rect x="12" y="16" width="8" height="1" fill="#a9824e"/>
+  <rect x="11" y="17" width="10" height="1" fill="#c49a63"/>
+  <rect x="11" y="18" width="10" height="1" fill="#c49a63"/>
+  <rect x="11" y="19" width="10" height="1" fill="#c49a63"/>
+  <rect x="11" y="20" width="10" height="1" fill="#b58a55"/>
+  <rect x="11" y="21" width="10" height="1" fill="#80623b"/>
 
-  <!-- coverall straps over chest (lighter blue) -->
-  <rect x="13" y="16" width="1" height="3" fill="#5a7eb8"/>
-  <rect x="18" y="16" width="1" height="3" fill="#5a7eb8"/>
-  <!-- brassy strap buttons -->
-  <rect x="13" y="18" width="1" height="1" fill="#d4a020"/>
-  <rect x="18" y="18" width="1" height="1" fill="#d4a020"/>
+  <!-- zipper, pockets, patch -->
+  <rect x="16" y="16" width="1" height="6" fill="#6d4e2c"/>
+  <rect x="12" y="18" width="3" height="2" fill="#d5ad73"/>
+  <rect x="18" y="18" width="2" height="2" fill="#d5ad73"/>
+  <rect x="12" y="17" width="2" height="1" fill="#efe0c2"/>
 
-  <!-- tool belt -->
-  <rect x="11" y="21" width="10" height="1" fill="#5a3a20"/>
-  <rect x="15" y="21" width="2" height="1" fill="#c0c0c0"/>
+  <!-- arms -->
+  <rect x="10" y="17" width="1" height="3" fill="#c49a63"/>
+  <rect x="9" y="20" width="1" height="2" fill="#b9815b"/>
+  <rect x="21" y="17" width="1" height="3" fill="#c49a63"/>
+  <rect x="22" y="20" width="1" height="2" fill="#b9815b"/>
 
-  <!-- left arm (hangs straight) -->
-  <rect x="10" y="17" width="1" height="3" fill="#3b5b8a"/>
-  <rect x="9" y="20" width="1" height="2" fill="#e8b888"/>
+  <!-- broom handle -->
+  <rect x="24" y="12" width="1" height="16" fill="#6f4a27"/>
+  <rect x="23" y="22" width="1" height="1" fill="#b9815b"/>
 
-  <!-- right arm (raised, holds wrench) -->
-  <rect x="21" y="17" width="1" height="2" fill="#3b5b8a"/>
-  <rect x="22" y="18" width="1" height="2" fill="#e8b888"/>
+  <!-- broom bristles -->
+  <rect x="22" y="28" width="5" height="1" fill="#d9b060"/>
+  <rect x="22" y="29" width="5" height="1" fill="#c8953f"/>
+  <rect x="21" y="30" width="7" height="1" fill="#c8953f"/>
+  <rect x="22" y="31" width="5" height="1" fill="#a8732c"/>
+  <rect x="23" y="32" width="3" height="1" fill="#8d5d22"/>
 
-  <!-- wrench (open-end style) -->
-  <rect x="23" y="19" width="2" height="1" fill="#9aa3ad"/>
-  <rect x="25" y="17" width="1" height="1" fill="#b8c0c8"/>
-  <rect x="25" y="18" width="1" height="1" fill="#b8c0c8"/>
-  <rect x="25" y="20" width="1" height="1" fill="#b8c0c8"/>
-  <rect x="25" y="21" width="1" height="1" fill="#b8c0c8"/>
-  <rect x="26" y="17" width="1" height="2" fill="#9aa3ad"/>
-  <rect x="26" y="20" width="1" height="2" fill="#9aa3ad"/>
+  <!-- pants -->
+  <rect x="13" y="22" width="3" height="5" fill="#80623b"/>
+  <rect x="16" y="22" width="3" height="5" fill="#80623b"/>
+  <rect x="13" y="24" width="3" height="1" fill="#9b7849"/>
+  <rect x="16" y="24" width="3" height="1" fill="#9b7849"/>
 
-  <!-- pants/legs (darker work pants) -->
-  <rect x="13" y="22" width="3" height="5" fill="#1f3b6a"/>
-  <rect x="16" y="22" width="3" height="5" fill="#1f3b6a"/>
-  <!-- knee highlight -->
-  <rect x="13" y="24" width="3" height="1" fill="#2f4d7a"/>
-  <rect x="16" y="24" width="3" height="1" fill="#2f4d7a"/>
-
-  <!-- work boots -->
-  <rect x="13" y="27" width="3" height="1" fill="#1c1a1a"/>
-  <rect x="16" y="27" width="3" height="1" fill="#1c1a1a"/>
-  <rect x="12" y="27" width="1" height="1" fill="#2b2b2b"/>
-  <rect x="19" y="27" width="1" height="1" fill="#2b2b2b"/>
-
-  <!-- ground shadow -->
+  <!-- work boots and shadow -->
+  <rect x="13" y="27" width="3" height="1" fill="#2b2117"/>
+  <rect x="16" y="27" width="3" height="1" fill="#2b2117"/>
+  <rect x="12" y="27" width="1" height="1" fill="#3b2b1b"/>
+  <rect x="19" y="27" width="1" height="1" fill="#3b2b1b"/>
   <rect x="12" y="29" width="10" height="1" fill="#00000022"/>
 </svg>

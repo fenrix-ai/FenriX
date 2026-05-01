@@ -18,7 +18,7 @@ async function main() {
     'createGame', 'joinGame', 'createTeam', 'getTeamsInLobby',
     'startGame', 'advanceGamePhase', 'retryStuckSimulation',
     'submitDecision', 'submitPrices', 'submitBids',
-    'layoffChef', 'continueFromRoster',
+    'layoffChef', 'swapSpecialtyChef', 'continueFromRoster',
     'pauseGame', 'resumeGame', 'endGame', 'getConclusion',
     'exportPlayerCsv', 'exportProfessorCsv',
     'updateTeamName', 'setTeamRole',
