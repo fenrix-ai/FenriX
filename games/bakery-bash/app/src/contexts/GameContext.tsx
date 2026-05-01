@@ -819,9 +819,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
     pendingChefBids,
   } = state;
   useEffect(() => {
-    // Clear on game_over so a reopened tab lands on the landing page instead
-    // of being re-routed into the finished game's conclusion screen.
-    if (!gameId || !playerId || !gameCode || phase === "game_over") {
+    // Keep session linkage through game_over so `/game/conclusion` survives a
+    // refresh and students can still download final CSVs after a reload.
+    // Session is still cleared when linkage becomes invalid (missing game/user).
+    if (!gameId || !playerId || !gameCode) {
       writePersistedSession(null);
       return;
     }
@@ -848,6 +849,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   // a fresh JOIN_GAME shouldn't write a default-shaped draft over a
   // teammate's already-saved progress.
   const lastSentDraftRef = useRef<string | null>(null);
+  const lastPersistedDraftRef = useRef<string | null>(null);
   // Set true by `markDraftAppliedFromRemote` (called from the team-pending
   // listener) so the next auto-save firing recognizes the change came from
   // a teammate's write — and skips re-emitting the same data back to the
@@ -925,16 +927,26 @@ export function GameProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!gameId || !playerId || phase === "game_over") {
       writePersistedDraft(null);
+      lastPersistedDraftRef.current = null;
       return;
     }
-    writePersistedDraft({
+    const payload = {
       gameId,
       playerId,
       round: currentRound,
       pendingDecision,
       pendingAdBids,
       pendingChefBids,
-    });
+    };
+    const serialized = JSON.stringify(payload);
+    if (serialized === lastPersistedDraftRef.current) return;
+    // Debounce localStorage writes: identical payload or rapid keystrokes
+    // should not churn storage (Safari private mode can throw quota errors).
+    const timer = window.setTimeout(() => {
+      writePersistedDraft(payload);
+      lastPersistedDraftRef.current = serialized;
+    }, 800);
+    return () => window.clearTimeout(timer);
   }, [
     gameId,
     playerId,
