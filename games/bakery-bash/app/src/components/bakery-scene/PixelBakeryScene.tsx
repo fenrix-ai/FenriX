@@ -6,6 +6,8 @@ import {
   SpecialtyChefBadges,
   type SpecialtyChefBadge,
 } from './SpecialtyChefBadges'
+import { SpecialtyChefWalkers } from './SpecialtyChefWalkers'
+import { MaintenanceWalkers } from './MaintenanceWalkers'
 import { CounterFrontLayer } from './CounterFrontLayer'
 import { BreadShelfLayer } from './BreadShelfLayer'
 import { CustomerLayer } from './CustomerLayer'
@@ -32,10 +34,17 @@ interface Props {
   soldOut?: Set<string>
   /**
    * K-07 — team's specialty chefs (max 3). Rendered as portrait cameos
-   * on the back wall above the team sign. Empty array (default) skips
-   * the layer entirely.
+   * on the back wall above the team sign in non-simulate modes. In
+   * `simulate` mode they pace as walkers behind the counter instead
+   * (Apr 30).
    */
   specialtyChefs?: SpecialtyChefBadge[]
+  /**
+   * Apr 30 — number of maintenance staff hired (mechanic + janitor),
+   * walking back-and-forth in front of the counter at the top of the
+   * scene during the simulate phase. 0 (default) skips the layer.
+   */
+  maintenanceCount?: number
 }
 
 // Default to a single front-counter barista. Real-game callers (SimulatePhase)
@@ -60,6 +69,7 @@ export function PixelBakeryScene({
   menu = EMPTY_MENU,
   soldOut = EMPTY_SOLD_OUT,
   specialtyChefs = EMPTY_SPECIALTY_CHEFS,
+  maintenanceCount = 0,
 }: Props) {
   const { chefs, cat, customers, dollars } = useBakeryScene({ mode, teamName, staffCounts, customerCount })
 
@@ -79,9 +89,21 @@ export function PixelBakeryScene({
     >
       <SceneBackdrop menu={menu} soldOut={soldOut} />
       <TeamSign teamName={teamName} />
-      <SpecialtyChefBadges chefs={specialtyChefs} />
+      {/* Apr 30 — in simulate mode, swap the static back-wall cameos for
+          walking specialty chefs that pace BEHIND the counter (rendered
+          before CounterFrontLayer so the counter occludes their feet). */}
+      {mode === 'simulate' ? (
+        <SpecialtyChefWalkers chefs={specialtyChefs} />
+      ) : (
+        <SpecialtyChefBadges chefs={specialtyChefs} />
+      )}
       <ChefLayer chefs={chefs} />
       <CounterFrontLayer menu={menu} soldOut={soldOut} />
+      {/* Apr 30 — maintenance staff walk IN FRONT of the counter
+          (rendered after CounterFrontLayer). Only active in simulate. */}
+      {mode === 'simulate' && (
+        <MaintenanceWalkers count={maintenanceCount} />
+      )}
       <BreadShelfLayer menu={menu} soldOut={soldOut} />
       <CustomerLayer customers={customers} />
       <CatLayer cat={cat} />

@@ -6,6 +6,16 @@ import {
   type DocumentData,
 } from "firebase/firestore";
 import { httpsCallable, type FunctionsError } from "firebase/functions";
+import {
+  DndContext,
+  PointerSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import { CSS } from "@dnd-kit/utilities";
 import { db, functions } from "../lib/firebase";
 import { useGame } from "../contexts/GameContext";
 import { useGamePhaseNav } from "../hooks/useGamePhaseNav";
@@ -30,27 +40,18 @@ import { humanizeFunctionError } from "../lib/errors";
 /**
  * FE-09 — `/game/roster` phase page.
  *
- * After the chef auction resolves, each player sees the chefs they won
- * (and already had) as a roster. If they ended up with more than the
- * `specialtyChefCap` (default 3), they must lay one off before they can
- * click Continue — the backend enforces the cap in
- * `continueFromRoster`, but we also gate the button client-side for
- * immediate feedback.
+ * Apr 30 redesign: split-screen layout. Left side = "current roster"
+ * (cap slots filled by the first `cap` chefs in the array). Right side =
+ * "newly won + beyond capacity" — chefs that need a placement decision.
+ * Players drag a right-side chef onto a filled left slot to lay off the
+ * left chef and promote the dragged one. Click-based layoff still works
+ * via the existing ChefCard button.
  *
- * Role-gated: only `operations` or `solo` can click Lay off / Continue
- * (matches backend `assertRoleAllowed` in `layoffChef` + `continueFromRoster`).
- * The design proposal says Finance owns this, but the shipped backend
- * enforces Operations; we follow the backend.
+ * Role-gated: only `operations` or `solo` can lay off / continue.
  */
 
-/** Chef doc as stored on `players/{uid}.specialtyChefs`. Same shape as pool. */
 type RosterChef = ChefPoolEntry;
 
-/**
- * S-05 — laid-off chef as it appears in the round's `chefReturnPool`
- * subcollection. Same shape as a roster chef plus return-tracking
- * metadata. We render these in the "Lay offs" panel and offer Re-hire.
- */
 interface LaidOffChef extends RosterChef {
   returnedByPlayerId?: string | null;
 }
@@ -82,6 +83,111 @@ function coerceChef(raw: DocumentData): RosterChef | null {
   };
 }
 
+/* ---------------- Drag-drop pieces ---------------- */
+
+interface DraggableChefProps {
+  chef: RosterChef;
+  isNew: boolean;
+  canAct: boolean;
+  onLayoff: (chefId: string) => void;
+}
+
+function DraggableChef({ chef, isNew, canAct, onLayoff }: DraggableChefProps) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } =
+    useDraggable({
+      id: chef.id,
+      data: { chef },
+      disabled: !canAct,
+    });
+  const style = {
+    transform: CSS.Translate.toString(transform),
+    opacity: isDragging ? 0.5 : 1,
+  };
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`roster-phase-page__draggable${
+        isDragging ? " roster-phase-page__draggable--dragging" : ""
+      }`}
+      {...attributes}
+      {...listeners}
+    >
+      {isNew && (
+        <span
+          className="roster-phase-page__new-badge"
+          aria-label="Newly hired this round"
+        >
+          NEW
+        </span>
+      )}
+      <ChefCard
+        chef={toChefCardInput(chef)}
+        mode="roster"
+        canLayoff={canAct}
+        onLayoff={onLayoff}
+      />
+    </div>
+  );
+}
+
+interface DroppableSlotProps {
+  slotIndex: number;
+  chef: RosterChef | null;
+  isNew: boolean;
+  canAct: boolean;
+  onLayoff: (chefId: string) => void;
+}
+
+function DroppableSlot({
+  slotIndex,
+  chef,
+  isNew,
+  canAct,
+  onLayoff,
+}: DroppableSlotProps) {
+  const { isOver, setNodeRef } = useDroppable({
+    id: `slot-${slotIndex}`,
+    data: { slotIndex, occupiedChefId: chef?.id ?? null },
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`roster-phase-page__slot roster-phase-page__slot--specialty${
+        isNew ? " roster-phase-page__slot--new" : ""
+      }${isOver ? " roster-phase-page__slot--drop-target" : ""}`}
+    >
+      <div className="roster-phase-page__slot-label">
+        Specialty Chef {slotIndex + 1}
+      </div>
+      {chef ? (
+        <>
+          {isNew && (
+            <span
+              className="roster-phase-page__new-badge"
+              aria-label="Newly hired this round"
+            >
+              NEW
+            </span>
+          )}
+          <ChefCard
+            chef={toChefCardInput(chef)}
+            mode="roster"
+            canLayoff={canAct}
+            onLayoff={onLayoff}
+          />
+        </>
+      ) : (
+        <div className="roster-phase-page__empty">
+          {isOver ? "Drop to assign…" : "Empty slot"}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Page ---------------- */
+
 export function RosterPhasePage() {
   useGamePhaseNav();
   const { gameId, playerId, teamId, currentRound, role, teamRoleAssignments, config } =
@@ -91,24 +197,9 @@ export function RosterPhasePage() {
   const [specialtyChefs, setSpecialtyChefs] = useState<RosterChef[]>([]);
   const [pendingRosterAction, setPendingRosterAction] = useState(false);
   const [rosterCompleted, setRosterCompleted] = useState(false);
-  // S-05 (2026-04-29) — laid-off chefs for the current round. Subscribed
-  // below from `games/{gameId}/rounds/round_{N}/chefReturnPool`. Renders
-  // in the "Lay offs" panel with a Re-hire button per chef.
   const [laidOffChefs, setLaidOffChefs] = useState<LaidOffChef[]>([]);
-  // Track which chef-id is currently flying through layoff/rehire so we
-  // can disable the relevant button without locking the whole panel.
   const [pendingChefId, setPendingChefId] = useState<string | null>(null);
-  // A24-I05 — chef wins just resolved for this round. Subscribed from
-  // `games/{gameId}/rounds/round_{N}.chefAuctionResults[{teamKey}]`.
   const [chefWins, setChefWins] = useState<ChefWinnerEntry[]>([]);
-  // V4 fix (Apr 25): the chef auction is resolved as a *post-transaction*
-  // side-effect inside `advanceGamePhase(roster)`, so when the FE first
-  // lands on `/game/roster` the round doc may not yet have
-  // `chefAuctionResults` written. Track whether the resolver has run
-  // (`chefAuctionResolvedAt` timestamp on the round doc) to distinguish
-  // "still resolving" from "you didn't win anything" — the latter was
-  // showing for a few seconds at the top of every roster phase and read
-  // as "we won but it says we didn't".
   const [chefAuctionResolved, setChefAuctionResolved] = useState(false);
   const auctionResultKey = teamId || playerId || null;
 
@@ -134,9 +225,6 @@ export function RosterPhasePage() {
           return;
         }
         const data = snap.data() as DocumentData;
-        // The backend writes `chefAuctionResolvedAt` (a server timestamp)
-        // alongside `chefAuctionResults` in the same `roundRef.set()`,
-        // so its presence is the canonical "auction is done" signal.
         setChefAuctionResolved(Boolean(data.chefAuctionResolvedAt));
         const results =
           (data.chefAuctionResults ?? null) as DocumentData | null;
@@ -146,11 +234,6 @@ export function RosterPhasePage() {
           return;
         }
         const totalPaid = Number(entry.totalPaid) || 0;
-        // Per-chef price breakdown isn't stored on the round doc, so we
-        // attribute `totalPaid` across the chefs proportionally to each
-        // chef's min-bid-floor. Close enough for "you paid ~$X for this
-        // chef" visibility; players can cross-reference their finance
-        // teammate's records for the exact split.
         const floors = entry.chefs.map((c: DocumentData) =>
           typeof c.minBidFloor === "number" && c.minBidFloor > 0
             ? c.minBidFloor
@@ -211,7 +294,6 @@ export function RosterPhasePage() {
   const [submitting, setSubmitting] = useState<"continue" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Subscribe to this player's doc for their specialty roster.
   useEffect(() => {
     if (!gameId || !playerId) return;
     const playerRef = doc(db, "games", gameId, "players", playerId);
@@ -232,12 +314,6 @@ export function RosterPhasePage() {
     return unsubscribe;
   }, [gameId, playerId]);
 
-  // S-05 — subscribe to the chefReturnPool for the CURRENT round so we
-  // can render the Lay-offs panel + Re-hire buttons. Backend writes
-  // `returnedByPlayerId` on every layoff (see `layoffChef` /
-  // `layoffChefs` in index.js), but we don't filter by it: any teammate
-  // can rehire (Operations / Solo authorize the call), and showing the
-  // full panel keeps the team aware of every drop, not just yours.
   useEffect(() => {
     if (!gameId || !currentRound) {
       setLaidOffChefs([]);
@@ -258,7 +334,6 @@ export function RosterPhasePage() {
         snap.docs.forEach((d) => {
           const c = coerceChef(d.data());
           if (!c) return;
-          // Carry returnedByPlayerId through for tooltip display.
           const data = d.data() as DocumentData;
           next.push({
             ...c,
@@ -278,22 +353,11 @@ export function RosterPhasePage() {
     return unsubscribe;
   }, [gameId, currentRound]);
 
-  // V4 fix (Apr 25): the local nav effect that lived here used to race
-  // against `useGamePhaseNav` and `GamePhaseListener` — and pointed
-  // `decide` at `/game/decide` while the others used `/game`, which
-  // caused a quick double-navigate on every roster→decide transition.
-  // The shared `useGamePhaseNav` hook above already covers every base
-  // phase, so the local copy is gone.
-
-  // KR-5 (2026-04-30) — IDs of chefs the team won in this round's chef
-  // auction. Powers the "NEW" sticker on each newly hired chef card.
   const newlyWonChefIds = useMemo(
     () => new Set(chefWins.map((w) => w.chefId)),
     [chefWins],
   );
 
-  // FE-I15: any teammate can act when no one on the team holds
-  // operations (2-player team, cleared role, etc.).
   const canAct = roleOwnsRoster(role, teamRoleAssignments);
   const ownerLabel = ownerOfRoster();
   const overCap = specialtyChefs.length > specialtyChefCap;
@@ -301,8 +365,28 @@ export function RosterPhasePage() {
   const continueDisabled =
     overCap || submitting !== null || !canAct || rosterCompleted;
 
-  // S-05 — instant lay-off (no confirm modal). Click chef → fires
-  // `layoffChef` immediately. Failure surfaces via the `error` chip.
+  // LEFT slots: first `cap` chefs. RIGHT panel: newly-won (any index)
+  // plus overflow (slice >= cap), de-duplicated.
+  const leftChefs = specialtyChefs.slice(0, specialtyChefCap);
+  const overflowChefs = specialtyChefs.slice(specialtyChefCap);
+  const rightChefs = useMemo(() => {
+    const seen = new Set<string>();
+    const out: RosterChef[] = [];
+    for (const c of specialtyChefs) {
+      if (newlyWonChefIds.has(c.id) && !seen.has(c.id)) {
+        seen.add(c.id);
+        out.push(c);
+      }
+    }
+    for (const c of overflowChefs) {
+      if (!seen.has(c.id)) {
+        seen.add(c.id);
+        out.push(c);
+      }
+    }
+    return out;
+  }, [specialtyChefs, overflowChefs, newlyWonChefIds]);
+
   const handleLayoffClick = async (chefId: string) => {
     if (!gameId || !canAct || pendingChefId) return;
     setError(null);
@@ -320,9 +404,6 @@ export function RosterPhasePage() {
     }
   };
 
-  // S-05 — re-hire calls the new `rehireChef` callable. Backend rejects
-  // when the roster is at cap, so we ALSO gate the button up-front to
-  // avoid an unnecessary round-trip.
   const handleRehireClick = async (chefId: string) => {
     if (!gameId || !canAct || pendingChefId || rosterFull) return;
     setError(null);
@@ -350,7 +431,6 @@ export function RosterPhasePage() {
         { rosterCompleted?: boolean }
       >(functions, "continueFromRoster");
       await cont({ gameId });
-      // Phase transition takes care of navigation.
     } catch (err) {
       setError(humanizeFunctionError(err, "Could not continue. Try again."));
     } finally {
@@ -358,12 +438,32 @@ export function RosterPhasePage() {
     }
   };
 
+  // dnd-kit setup. PointerSensor with a small distance threshold so
+  // ChefCard's internal Lay-off button click isn't swallowed by drag.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  );
+
+  // Drag from right → left slot. If the slot is filled, we lay off
+  // that left chef (effectively swapping the dragged right chef into
+  // the slot once the array shifts). If the slot is empty, no-op.
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || !active) return;
+    const overData = over.data.current as
+      | { slotIndex?: number; occupiedChefId?: string | null }
+      | undefined;
+    const occupied = overData?.occupiedChefId;
+    const draggedId = String(active.id);
+    if (!occupied) return;
+    if (occupied === draggedId) return;
+    handleLayoffClick(occupied);
+  };
+
   return (
     <PageShell className="roster-phase-page">
       <RoundHeader />
 
-      {/* A24-I05 — show who got hired in the chef auction that just resolved
-          so the team can orient themselves before the Lay-off decision. */}
       <ChefWinnerBanner
         round={currentRound}
         winners={chefWins}
@@ -373,9 +473,9 @@ export function RosterPhasePage() {
       <header className="roster-phase-page__header">
         <h1 className="roster-phase-page__title">Your Kitchen Roster</h1>
         <p className="roster-phase-page__hint">
-          Review who's in your kitchen for the rest of this round.
+          Drag a chef from the right onto a roster slot to swap them in. The
+          chef in that slot is laid off automatically.
         </p>
-        {/* KR-3 (2026-04-30) — make the cap + auto-layoff behaviour explicit. */}
         <ul className="roster-phase-page__rules">
           <li>
             You can have a maximum of <strong>{specialtyChefCap}</strong>{" "}
@@ -388,10 +488,6 @@ export function RosterPhasePage() {
         </ul>
       </header>
 
-      {/* V5 (Apr 25): big "locked in" confirmation banner so players see they
-          submitted before they click Continue a second time. The smaller pill
-          inside SubmissionLock is still rendered below as the per-phase
-          consistency, but this top banner is what students notice. */}
       {rosterCompleted && (
         <div
           className="roster-phase-page__submitted-banner"
@@ -414,97 +510,82 @@ export function RosterPhasePage() {
 
       {overCap && (
         <p className="roster-phase-page__overflow-warning" role="alert">
-          ⚠ You picked up an extra chef — lay one off to continue.
+          ⚠ You picked up an extra chef — lay one off (or drag a new chef onto
+          a slot) to continue.
         </p>
       )}
 
-      <div className="roster-phase-page__slots">
-        <div className="roster-phase-page__slot roster-phase-page__slot--base">
-          <div className="roster-phase-page__slot-label">Basic Chef</div>
-          <div className="roster-phase-page__base-card">
-            <div className="roster-phase-page__base-portrait">👨‍🍳</div>
-            <div className="roster-phase-page__base-name">You</div>
-            <div className="roster-phase-page__base-hint">
-              Your free chef. Produces 30 units per round.
-            </div>
-          </div>
-        </div>
-
-        {Array.from({ length: specialtyChefCap }, (_, i) => {
-          const chef = specialtyChefs[i];
-          const isNew = chef ? newlyWonChefIds.has(chef.id) : false;
-          return (
-            <div
-              key={`slot-${i}`}
-              className={`roster-phase-page__slot roster-phase-page__slot--specialty${
-                isNew ? " roster-phase-page__slot--new" : ""
-              }`}
-            >
-              <div className="roster-phase-page__slot-label">
-                Specialty Chef {i + 1}
+      <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+        <div className="roster-phase-page__split">
+          {/* LEFT — current roster */}
+          <section
+            className="roster-phase-page__split-side roster-phase-page__split-side--current"
+            aria-label="Current roster"
+          >
+            <h2 className="roster-phase-page__split-title">Current Roster</h2>
+            <div className="roster-phase-page__slots">
+              <div className="roster-phase-page__slot roster-phase-page__slot--base">
+                <div className="roster-phase-page__slot-label">Basic Chef</div>
+                <div className="roster-phase-page__base-card">
+                  <div className="roster-phase-page__base-portrait">👨‍🍳</div>
+                  <div className="roster-phase-page__base-name">You</div>
+                  <div className="roster-phase-page__base-hint">
+                    Your free chef. Produces 30 units per round.
+                  </div>
+                </div>
               </div>
-              {chef ? (
-                <>
-                  {/* KR-5 (2026-04-30) — yellow/gold "NEW" sticker for chefs
-                      acquired in the current round. */}
-                  {isNew && (
-                    <span
-                      className="roster-phase-page__new-badge"
-                      aria-label="Newly hired this round"
-                    >
-                      NEW
-                    </span>
-                  )}
-                  <ChefCard
-                    chef={toChefCardInput(chef)}
-                    mode="roster"
-                    canLayoff={canAct}
+
+              {Array.from({ length: specialtyChefCap }, (_, i) => {
+                const chef = leftChefs[i] ?? null;
+                const isNew = chef ? newlyWonChefIds.has(chef.id) : false;
+                return (
+                  <DroppableSlot
+                    key={`slot-${i}`}
+                    slotIndex={i}
+                    chef={chef}
+                    isNew={isNew}
+                    canAct={canAct}
                     onLayoff={handleLayoffClick}
                   />
-                </>
-              ) : (
-                <div className="roster-phase-page__empty">Empty slot</div>
-              )}
+                );
+              })}
             </div>
-          );
-        })}
+          </section>
 
-        {overCap &&
-          specialtyChefs.slice(specialtyChefCap).map((chef) => {
-            const isNew = newlyWonChefIds.has(chef.id);
-            return (
-              <div
-                key={`overflow-${chef.id}`}
-                className={`roster-phase-page__slot roster-phase-page__slot--overflow${
-                  isNew ? " roster-phase-page__slot--new" : ""
-                }`}
-              >
-                <div className="roster-phase-page__slot-label">
-                  Extra Chef (must lay off)
-                </div>
-                {isNew && (
-                  <span
-                    className="roster-phase-page__new-badge"
-                    aria-label="Newly hired this round"
-                  >
-                    NEW
-                  </span>
-                )}
-                <ChefCard
-                  chef={toChefCardInput(chef)}
-                  mode="roster"
-                  canLayoff={canAct}
+          {/* RIGHT — newly won + overflow */}
+          <section
+            className="roster-phase-page__split-side roster-phase-page__split-side--available"
+            aria-label="Newly hired and over-capacity chefs"
+          >
+            <h2 className="roster-phase-page__split-title">
+              Newly Hired & Beyond Capacity
+            </h2>
+            {rightChefs.length === 0 ? (
+              <p className="roster-phase-page__split-empty">
+                No new chefs this round.
+              </p>
+            ) : (
+              <p className="roster-phase-page__split-hint">
+                {canAct
+                  ? "Drag a chef onto a roster slot on the left to swap them in."
+                  : `Your ${ownerLabel} teammate decides who stays.`}
+              </p>
+            )}
+            <div className="roster-phase-page__available-list">
+              {rightChefs.map((chef) => (
+                <DraggableChef
+                  key={chef.id}
+                  chef={chef}
+                  isNew={newlyWonChefIds.has(chef.id)}
+                  canAct={canAct}
                   onLayoff={handleLayoffClick}
                 />
-              </div>
-            );
-          })}
-      </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      </DndContext>
 
-      {/* S-05 — "Lay offs" panel. Shows chefs the team has dropped THIS
-          round; each has a Re-hire button (gated to canAct + roster has
-          space). Once Continue fires, the chefs commit to the return
-          pool and can't be rehired in future rounds. */}
       {laidOffChefs.length > 0 && (
         <section
           className="roster-phase-page__layoffs"
