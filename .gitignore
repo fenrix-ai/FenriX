@@ -25,3 +25,9 @@ games/bakery-bash/backend/snapshots/
 # Scripts in analysis/scripts/ expect copies to live here locally; do
 # not commit them to this public repo.
 analysis/data/
+
+# Tim's personal notes and transcripts (local-only)
+_notes/
+agent_context/
+docs/chapman/
+meetings_transcripts/
