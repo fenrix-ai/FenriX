@@ -197,9 +197,41 @@ function mapPlayerResult(pr, player, config) {
     aggregateSatisfactionPct, customerCount, config,
   );
 
+  // Equipment + cleanliness carry-forward.
+  //
+  // The huginX engine does NOT model equipment grade or cleanliness — those
+  // are BB-owned (per the division-of-responsibility note at top of file).
+  // Without this carry-forward, `r.equipmentGrade` etc. are `undefined`
+  // when the engine path is active (HUGINX_URL set), and the index.js
+  // playerUpdate Firestore Update() then 500s on:
+  //
+  //   "Cannot use \"undefined\" as a Firestore value (found in field
+  //    \"equipmentGrade\")"
+  //
+  // breaking every decide→simulating phase advance. Repro: any 5-round
+  // game where Operations didn't explicitly check the upgrade box.
+  //
+  // Equipment-upgrade *application* (deducting cost, bumping to next tier)
+  // is a separate concern handled by the in-process simulation module. For
+  // engine-mode parity we'd port that logic; for now, carry forward the
+  // input grade so at least no round crashes the leaderboard pipeline.
+  const carryEquipmentGrade =
+    (player && player.equipmentGrade) || "C";
+  const carryCleanlinessGrade =
+    (player && player.cleanlinessGrade) || "B";
+  const carryCleanlinessScore = numberOr(
+    player && player.cleanlinessScore,
+    75,
+  );
+
+  // Display fields read by the writer (line 2807-2808 of index.js).
+  const bakeryName = (player && player.bakeryName) || (player && player.displayName) || "Team";
+  const displayName = (player && player.displayName) || bakeryName;
+
   return {
     playerId: pr.player_id,
-    round: undefined,                                 // index.js writer fills this
+    bakeryName,
+    displayName,
     revenueGross: round2(revenueGross),
     revenueNet: round2(revenueNet),
     amountBorrowed: round2(ls.borrowed),
@@ -214,6 +246,11 @@ function mapPlayerResult(pr, player, config) {
     perProductSold,
     selloutFlags,
     perProductCustomers,
+    // BB-owned state that the engine doesn't compute. Always defined so the
+    // Firestore writer never sees `undefined`.
+    equipmentGrade: carryEquipmentGrade,
+    cleanlinessGrade: carryCleanlinessGrade,
+    cleanlinessScore: carryCleanlinessScore,
     // Pass through useful engine fields for any downstream consumers.
     walkoutCount: numberOr(pr.walkout_count, 0),
     ordersReceived: numberOr(pr.orders_received, 0),
