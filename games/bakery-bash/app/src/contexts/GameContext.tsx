@@ -819,6 +819,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   // a fresh JOIN_GAME shouldn't write a default-shaped draft over a
   // teammate's already-saved progress.
   const lastSentDraftRef = useRef<string | null>(null);
+  const lastPersistedDraftRef = useRef<string | null>(null);
   // Set true by `markDraftAppliedFromRemote` (called from the team-pending
   // listener) so the next auto-save firing recognizes the change came from
   // a teammate's write — and skips re-emitting the same data back to the
@@ -896,6 +897,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!gameId || !playerId || phase === "game_over") {
       writePersistedDraft(null);
+      lastPersistedDraftRef.current = null;
       return;
     }
     const payload = {
@@ -907,10 +909,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
       pendingChefBids,
     };
     const serialized = JSON.stringify(payload);
+    if (serialized === lastPersistedDraftRef.current) return;
     // Debounce localStorage writes: identical payload or rapid keystrokes
-    // should not churn storage ( Safari private mode can throw quota errors).
+    // should not churn storage (Safari private mode can throw quota errors).
     const timer = window.setTimeout(() => {
       writePersistedDraft(payload);
+      lastPersistedDraftRef.current = serialized;
     }, 800);
     return () => window.clearTimeout(timer);
   }, [
