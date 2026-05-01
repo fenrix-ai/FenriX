@@ -95,6 +95,7 @@ const {
 const {
   generateChefPool,
   resolveChefAuction,
+  getChefOutputForProduct,
 } = require('./modules/chef-system');
 
 const { runMonthlySimulation } = require('./modules/multi-day-simulation');
@@ -5292,7 +5293,7 @@ exports.purchaseCompetitorInsight = onCall(CALLABLE_OPTS, async (request) => {
 
   const configSnap = await gameRef.collection("config").doc("params").get();
   const config = configSnap.exists ? configSnap.data() : {};
-  const insightCost = numberOrDefault(config.competitorInsightCost, 100);
+  const insightCost = numberOrDefault(config.competitorInsightCost, 200);
 
   try {
     await db.runTransaction(async (tx) => {
@@ -5391,14 +5392,16 @@ exports.purchaseCompetitorInsight = onCall(CALLABLE_OPTS, async (request) => {
 // ===========================================================================
 // purchaseChefData — Tier 1 / Tier 2 chef data CSVs
 //
-// Tier 1 (chefDataTier1Cost, default $50): static nationality → specialty-
-// product map. Reveals which cuisines lift which products — always the same
-// payload, independent of the current round's generated pool.
+// Tier 1 (chefDataTier1Cost, default $150): the Tradition Tipsheet —
+// nationality → specialty-product map enriched with signal-strength
+// rankings ("which cuisine is best/worst at each product"). Always the
+// same payload, independent of the current round's generated pool.
 //
-// Tier 2 (chefDataTier2Cost, default $150): full per-chef dump for the
-// current round's chef pool (name, nationality, gender, skill tier,
-// specialties, min bid floor) so a team can evaluate every candidate
-// before the chef auction resolves.
+// Tier 2 (chefDataTier2Cost, default $300): the Chef Database — per-chef
+// dump for every pool the team has seen so far, plus an
+// `expected_units_per_round` column derived from each chef's skill tier
+// × tradition × specialty list. Lets a team estimate chef value before
+// the auction resolves.
 //
 // Purchases are recorded at `players/{uid}/purchases/chef_tier{1|2}` and
 // the transaction rejects re-buying the same tier, so the total cost is
@@ -5433,8 +5436,8 @@ exports.purchaseChefData = onCall(CALLABLE_OPTS, async (request) => {
 
   const configSnap = await gameRef.collection("config").doc("params").get();
   const config = configSnap.exists ? configSnap.data() : {};
-  const tier1Cost = numberOrDefault(config.chefDataTier1Cost, 50);
-  const tier2Cost = numberOrDefault(config.chefDataTier2Cost, 150);
+  const tier1Cost = numberOrDefault(config.chefDataTier1Cost, 150);
+  const tier2Cost = numberOrDefault(config.chefDataTier2Cost, 300);
   const cost = tier === 1 ? tier1Cost : tier2Cost;
 
   await db.runTransaction(async (tx) => {
@@ -5463,13 +5466,56 @@ exports.purchaseChefData = onCall(CALLABLE_OPTS, async (request) => {
 
   const rows = [];
   if (tier === 1) {
+    // Tradition Tipsheet — two sections.
+    //
+    // Section A: ranked tradition × product affinity table. For each of
+    // BB's 6 menu products we give the best tradition, the worst, and a
+    // signal_strength flag (high / medium / low / none). This is the
+    // pedagogically valuable signal — it tells students that chef
+    // tradition × product is an interaction worth modelling, with a
+    // clear direction per product, but it does NOT expose the exact
+    // multipliers (those still need to be estimated from the team's
+    // own outcomes).
+    //
+    // Source of truth: the engine's tradition × product multiplier
+    // table (mock-0.3.0+). This client-facing copy is hand-authored to
+    // match the engine's relative ordering. Update both when balancing.
+    rows.push("# Section A: ranked tradition x product affinity (best vs worst)");
+    rows.push("product,best_tradition,worst_tradition,signal_strength");
+    rows.push("croissant,classical_french,american_comfort,high");
+    rows.push("cookie,american_comfort,east_asian,medium");
+    rows.push("bagel,american_comfort,classical_french,low");
+    rows.push("sandwich,mediterranean,east_asian,medium");
+    rows.push("coffee,(neutral),(neutral),none");
+    rows.push("matcha,east_asian,classical_french,high");
+    rows.push("");
+    // Section B: classic specialty list per nationality.
+    rows.push("# Section B: nationality -> specialty products (declared in chef pool)");
     rows.push("nationality,specialties");
     for (const [nationality, data] of Object.entries(CHEF_NATIONALITIES)) {
       const specs = Array.isArray(data.specialties) ? data.specialties.join(";") : "";
       rows.push(`${nationality},"${specs}"`);
     }
   } else {
-    rows.push("round,chef_id,name,nationality,gender,skill_tier,specialties,min_bid_floor");
+    // Chef Database (Tier 2) — per-chef profile dump for every chef the
+    // game has surfaced so far, with one expected_units_<product>
+    // column per BB product. The expected-units columns are derived
+    // server-side from the chef-system multipliers (skill tier ×
+    // specialty match × BASE_CHEF_RATE), so they reflect the actual
+    // engine math without exposing the full coefficient table.
+    const productCols = ["croissant", "cookie", "bagel", "sandwich", "coffee", "matcha"];
+    const expectedHeaders = productCols.map((p) => `expected_units_${p}`);
+    rows.push([
+      "round",
+      "chef_id",
+      "name",
+      "nationality",
+      "gender",
+      "skill_tier",
+      "specialties",
+      "min_bid_floor",
+      ...expectedHeaders,
+    ].join(","));
     const totalRounds = numberOrDefault(game.currentRound, 1);
     const roundIds = [];
     for (let r = 1; r <= totalRounds; r += 1) roundIds.push(`round_${r}`);
@@ -5487,6 +5533,10 @@ exports.purchaseChefData = onCall(CALLABLE_OPTS, async (request) => {
         if (!id || seen.has(id)) continue;
         seen.add(id);
         const specs = Array.isArray(chef.specialties) ? chef.specialties.join(";") : "";
+        const expectedCols = productCols.map((product) => {
+          const out = getChefOutputForProduct(chef, product);
+          return Number.isFinite(out) ? Math.round(out) : 0;
+        });
         rows.push([
           round,
           id,
@@ -5496,6 +5546,7 @@ exports.purchaseChefData = onCall(CALLABLE_OPTS, async (request) => {
           chef.skillTier || "",
           `"${specs}"`,
           numberOrDefault(chef.minBidFloor, 0),
+          ...expectedCols,
         ].join(","));
       }
     }

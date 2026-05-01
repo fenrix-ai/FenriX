@@ -117,11 +117,11 @@ const DEFAULT_UNLOCKED_PRODUCTS = ['croissant', 'bagel', 'coffee'];
  * straightforward: "do I want this product or not?" rather than "is this
  * the *right* product to unlock first?"
  *
- * Sizing rationale (starting budget = $10,000):
- *   $500 per unlock × 3 lockable products = $1,500 max spend, or ~15%
- *   of the starting budget. Affordable in early rounds; a meaningful
- *   trade-off against chef bids ($20–$55/round floor), ad bonuses
- *   ($80–$400 of value).
+ * Sizing rationale (starting budget = $5,000):
+ *   $500 per unlock × 3 lockable products = $1,500 max spend, or ~30%
+ *   of the starting budget. Meaningful trade-off against chef bids
+ *   ($20–$55/round floor), ad bonuses ($80–$400 of value), and the
+ *   purchasable data CSVs ($150–$300 each).
  */
 const PRODUCT_UNLOCK_COST = 500;
 
@@ -342,8 +342,8 @@ const DEFAULT_GAME_CONFIG = {
   // (budget, sous, ads, formula coefficients, curveballs) by 50× so a
   // round of strong product sales meaningfully shifts the budget.
   //
-  // New scale:
-  //   startingBudget       $10,000   (was $500k)
+  // New scale (after balance pass 18):
+  //   startingBudget       $5,000    (was $500k → $10k → $5k)
   //   sousChefBaseCost     $10        (was $500)
   //   chef bid floors      $20/$35/$55  (was $1k/$1.75k/$2.75k)
   //   adBonuses (TV)       $400       (was $20k)
@@ -351,13 +351,22 @@ const DEFAULT_GAME_CONFIG = {
   //   satisfactionCoeff    1.2        (was 60)
   // Loan shark interest (10%) is a percentage so it doesn't scale.
   // Players can absolutely go into debt — see `loan-shark.js`.
-  startingBudget: 10000,
+  //
+  // Balance pass 18 (2026-05-01, harness-driven): $10k → $5k. Multi-team
+  // LLM-agent runs (3 teams x 5 rounds, 3 seeds) showed $10k was 5x the
+  // cost of an engaged round, leaving no R1 budget pressure. Bimodal
+  // outcomes: 5/9 teams idled with $2.8k-$9.7k unspent; 4/9 over-spent
+  // and ended at -$21k to -$37k cash. $5k forces "do everything every
+  // round" teams to choose, while still being 5-10x a conservative
+  // round so cautious teams don't immediately starve. See
+  // `test_agents/simulations/budget_recommendation.md` for the data.
+  startingBudget: 5000,
   // Default player cap matches the historical hardcoded fallback in
   // joinGame / createTeam. Override per-game via `config/params.playerCap`
   // for larger classes (e.g., the 70-student Apr 28 playtest).
   playerCap: 20,
   // Balance pass 16: $500 → $10 (50× scale-down). At $10 base, 4 sous
-  // chefs cost $77.50/round = $387.50 over 5 rounds (~4% of $10k budget).
+  // chefs cost $77.50/round = $387.50 over 5 rounds (~8% of $5k budget).
   // Chef bid floors rescale automatically: novel $20, intermediate $35,
   // advanced $55. Chef value (extra units sold via specialty multipliers)
   // is unchanged because product prices are unchanged, so auction prices
@@ -501,9 +510,15 @@ const DEFAULT_GAME_CONFIG = {
   // in functions/index.js with no DEFAULT_GAME_CONFIG entry; promoting them
   // here lets professors override via Firestore config like every other
   // tunable parameter.
-  competitorInsightCost: 100,
-  chefDataTier1Cost: 50,
-  chefDataTier2Cost: 150,
+  // Buy Data pricing (balance pass 19, 2026-05-01): bumped to be a
+  // meaningful trade-off against the $5k starting budget. Total worst-
+  // case spend across a 5-round game if a team buys everything every
+  // round: $150 (T1, one-time) + $300 (T2, one-time) + 5×$200 (Comp Intel
+  // per round) = $1,450 ≈ 29% of starting budget. Strategic but not
+  // bankrupting.
+  competitorInsightCost: 200,
+  chefDataTier1Cost: 150,
+  chefDataTier2Cost: 300,
 
   // Apr 28, 2026 — flat cost (USD) to unlock one OPTIONAL_MENU product.
   // Override per-game via `/games/{gameId}/config/params.productUnlockCost`.

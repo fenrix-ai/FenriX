@@ -108,6 +108,11 @@ function buildEnginePlayer(p, config) {
       menu,
       customer_satisfaction: clamp(numberOr(p.priorSatisfactionPct, 70.0), 0, 100),
       cleanliness_score: clamp(numberOr(p.cleanlinessScore, 75.0), 0, 100),
+      // mock-0.3.0: derive head chef tradition from the team's
+      // highest-skill specialty chef. Drives the chef × product
+      // interaction family in the engine. Falls back to null when the
+      // team has no specialty chefs yet (round 1 before chef auction).
+      head_chef_tradition: deriveHeadChefTradition(p.specialtyChefs),
     },
     decisions: {
       prices,
@@ -309,6 +314,33 @@ function fillProductQuantities(quantities) {
   }
   return out;
 }
+
+/**
+ * Pick the team's "head chef tradition" from their specialty chef
+ * roster — the nationality of the highest-skill chef. The engine uses
+ * this to drive the tradition × product interaction family
+ * (mock-0.3.0+). Returns null when the team has no specialty chefs
+ * yet (engine treats null as "all products at 1.0× tradition mult").
+ */
+const _SKILL_TIER_RANK = { advanced: 4, intermediate: 3, novel: 2, base: 1 };
+const _VALID_TRADITIONS = new Set([
+  "classical_french", "east_asian", "mediterranean", "american_comfort",
+]);
+function deriveHeadChefTradition(specialtyChefs) {
+  if (!Array.isArray(specialtyChefs) || specialtyChefs.length === 0) return null;
+  let best = null;
+  let bestRank = -1;
+  for (const chef of specialtyChefs) {
+    if (!chef || !_VALID_TRADITIONS.has(chef.nationality)) continue;
+    const rank = _SKILL_TIER_RANK[chef.skillTier] || 0;
+    if (rank > bestRank) {
+      best = chef.nationality;
+      bestRank = rank;
+    }
+  }
+  return best;
+}
+
 
 function mapSpecialtyChefsToStaff(specialtyChefs, sousChefCount) {
   const staff = [];

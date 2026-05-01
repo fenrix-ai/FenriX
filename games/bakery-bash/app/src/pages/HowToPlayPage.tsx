@@ -193,7 +193,7 @@ export function HowToPlayPage() {
       <section className="how-to-play__budget" aria-label="Budget">
         <h2 className="how-to-play__section-title">Your Budget</h2>
         <p className="how-to-play__budget-body">
-          You start with <strong>$10,000</strong> for the entire game. That
+          You start with <strong>$5,000</strong> for the entire game. That
           single pot funds every bid (ads + chefs), every sous-chef hire,
           maintenance, equipment upgrades, and any data you buy.
         </p>

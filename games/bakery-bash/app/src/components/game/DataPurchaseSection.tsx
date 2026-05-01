@@ -25,9 +25,9 @@ import type { AcquiredCsv } from "../../types/game";
  * `ADD_ACQUIRED_CSV` collapses repeat clicks into one inbox entry.
  */
 
-const DEFAULT_TIER1_COST = 50;
-const DEFAULT_TIER2_COST = 150;
-const DEFAULT_COMPETITOR_INTEL_COST = 100;
+const DEFAULT_TIER1_COST = 150;
+const DEFAULT_TIER2_COST = 300;
+const DEFAULT_COMPETITOR_INTEL_COST = 200;
 
 export function DataPurchaseSection() {
   const { gameId, role, currentRound, acquiredCsvs, config } = useGame();
@@ -163,11 +163,12 @@ export function DataPurchaseSection() {
           }
         >
           {hasIntelForCurrentRound
-            ? `Competitor Intel (R${currentRound}) ✓ Purchased`
-            : `Buy Competitor Intel — $${COMPETITOR_INTEL_COST.toLocaleString()}`}
+            ? `Competitor Snapshot (R${currentRound}) ✓ Purchased`
+            : `Buy Competitor Snapshot — $${COMPETITOR_INTEL_COST.toLocaleString()}`}
         </button>
         <p className="results-phase__data-purchase-hint">
-          See what your competitors are setting for price and quantity.
+          Last round's prices and quantities from every other team. Useful for
+          benchmarking your pricing against the field.
         </p>
         {showIntelConfirm && !hasIntelForCurrentRound && (
           <div className="results-phase__intel-confirm">
@@ -200,16 +201,17 @@ export function DataPurchaseSection() {
           disabled={pending !== null || hasTier1}
           title={
             hasTier1
-              ? "Tier 1 chef data is already in your CSV Inbox."
-              : "Table of chef nationalities → product specialties."
+              ? "Tradition Tipsheet is already in your CSV Inbox."
+              : "Ranked tradition × product affinity table — which cuisine is best (and worst) at each menu item."
           }
         >
           {hasTier1
-            ? "Chef Specialties (T1) ✓ Purchased"
-            : `Buy Chef Specialties (T1) — $${TIER1_COST.toLocaleString()}`}
+            ? "Tradition Tipsheet ✓ Purchased"
+            : `Buy Tradition Tipsheet — $${TIER1_COST.toLocaleString()}`}
         </button>
         <p className="results-phase__data-purchase-hint">
-          See which nationality bakes which products best.
+          Ranked tradition × product affinity. Tells you which cuisine is best
+          and worst at each menu item, plus a high/medium/low signal flag.
         </p>
       </div>
 
@@ -221,16 +223,17 @@ export function DataPurchaseSection() {
           disabled={pending !== null || hasTier2}
           title={
             hasTier2
-              ? "Tier 2 chef data is already in your CSV Inbox."
-              : "Per-chef profile dump for every chef from rounds played so far: name, nationality, gender, skill tier, specialties, and minimum bid floor."
+              ? "Chef Database is already in your CSV Inbox."
+              : "Per-chef profile dump for every chef seen so far PLUS an estimated units-per-round-per-product column derived from skill tier and specialty list."
           }
         >
           {hasTier2
-            ? "Chef Profiles (T2) ✓ Purchased"
-            : `Buy Chef Profiles (T2) — $${TIER2_COST.toLocaleString()}`}
+            ? "Chef Database ✓ Purchased"
+            : `Buy Chef Database — $${TIER2_COST.toLocaleString()}`}
         </button>
         <p className="results-phase__data-purchase-hint">
-          Per-chef profiles aggregated across every round played so far.
+          Per-chef profiles aggregated across every round, with an
+          estimated units-per-round-per-product column for each chef.
         </p>
       </div>
 
