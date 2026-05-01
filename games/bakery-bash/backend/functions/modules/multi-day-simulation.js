@@ -99,14 +99,31 @@ function demandMultiplierForDay(gameId, round, day, cfg = config) {
  * Apply a per-day scale factor to roundPreferences.modifiers so the daily
  * demand pool wobbles around `roundMod / daysPerRound`. Sum across the month
  * ≈ roundMod * baseDemand, matching pre-P2 round-level KPI magnitudes.
+ *
+ * Critical: ALL products must receive an explicit day-scaled modifier, not
+ * just those with round preferences. Without this, products with no explicit
+ * modifier fall back to getRoundModifier's default of 1.0, meaning the full
+ * monthly baseDemand is used as daily demand while only 1/daysPerRound of
+ * monthly stock is available — producing fill rates of ~3% and critical
+ * satisfaction scores across the board.
  */
 function dayPreferences(roundPreferences, dayScale) {
-  const baseMods = (roundPreferences && roundPreferences.modifiers)
-    ? roundPreferences.modifiers
-    : (roundPreferences || {});
+  const baseMods = (roundPreferences && roundPreferences.modifiers) || {};
   const scaled = {};
-  for (const [product, mod] of Object.entries(baseMods)) {
-    scaled[product] = (Number(mod) || 1.0) * dayScale;
+  // Seed all known products with their base modifier (default 1.0) × dayScale
+  // so getRoundModifier never falls back to 1.0 (full-month demand) during a
+  // per-day sim pass.
+  for (const product of Object.keys(config.PRODUCT_CATALOG || {})) {
+    const base = Number.isFinite(Number(baseMods[product])) && Number(baseMods[product]) > 0
+      ? Number(baseMods[product])
+      : 1.0;
+    scaled[product] = base * dayScale;
+  }
+  // Also propagate any non-product modifier keys (curveballs, etc.)
+  for (const [k, mod] of Object.entries(baseMods)) {
+    if (!(k in scaled)) {
+      scaled[k] = (Number(mod) || 1.0) * dayScale;
+    }
   }
   return { ...(roundPreferences || {}), modifiers: scaled };
 }

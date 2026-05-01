@@ -26,6 +26,10 @@ import {
   ChefWinnerBanner,
   type ChefWinnerEntry,
 } from "../components/game/ChefWinnerBanner";
+import {
+  ChefOutbidBanner,
+  type ChefOutbidEntry,
+} from "../components/game/ChefOutbidBanner";
 import { SubmissionLock } from "../components/game/SubmissionLock";
 import {
   toChefCardInput,
@@ -203,12 +207,14 @@ export function RosterPhasePage() {
   const [laidOffChefs, setLaidOffChefs] = useState<LaidOffChef[]>([]);
   const [pendingChefId, setPendingChefId] = useState<string | null>(null);
   const [chefWins, setChefWins] = useState<ChefWinnerEntry[]>([]);
+  const [chefOutbid, setChefOutbid] = useState<ChefOutbidEntry[]>([]);
   const [chefAuctionResolved, setChefAuctionResolved] = useState(false);
   const auctionResultKey = teamId || playerId || null;
 
   useEffect(() => {
     if (!gameId || !currentRound || !auctionResultKey) {
       setChefWins([]);
+      setChefOutbid([]);
       setChefAuctionResolved(false);
       return;
     }
@@ -234,6 +240,7 @@ export function RosterPhasePage() {
         const entry = results?.[auctionResultKey] as DocumentData | undefined;
         if (!entry || !Array.isArray(entry.chefs)) {
           setChefWins([]);
+          setChefOutbid([]);
           return;
         }
         const totalPaid = Number(entry.totalPaid) || 0;
@@ -282,6 +289,33 @@ export function RosterPhasePage() {
           })
           .filter((c: ChefWinnerEntry | null): c is ChefWinnerEntry => c !== null);
         setChefWins(wins);
+
+        // Parse outbid chefs from the same entry.
+        const rawOutbid = Array.isArray(entry.outbidChefs) ? entry.outbidChefs : [];
+        const outbidEntries: ChefOutbidEntry[] = rawOutbid
+          .map((o: DocumentData): ChefOutbidEntry | null => {
+            const nat = o.nationality;
+            const validNat: ChefNationality | null =
+              nat === "american" || nat === "french" || nat === "italian" || nat === "japanese"
+                ? nat : null;
+            const rawGen = o.gender;
+            const gender: ChefGender | null =
+              rawGen === "male" || rawGen === "m" ? "m"
+              : rawGen === "female" || rawGen === "f" ? "f"
+              : null;
+            const id = typeof o.id === "string" ? o.id : null;
+            const name = typeof o.name === "string" ? o.name : null;
+            const winnerBakeryName = typeof o.winnerBakeryName === "string" ? o.winnerBakeryName : "Another team";
+            const winningBid = typeof o.winningBid === "number" ? o.winningBid : 0;
+            if (!id || !name || !validNat || !gender) return null;
+            const skillTier =
+              o.skillTier === "novel" || o.skillTier === "intermediate" ||
+              o.skillTier === "advanced" || o.skillTier === "base"
+                ? (o.skillTier as ChefOutbidEntry["skillTier"]) : undefined;
+            return { id, name, nationality: validNat, gender, skillTier, winnerBakeryName, winningBid };
+          })
+          .filter((o: ChefOutbidEntry | null): o is ChefOutbidEntry => o !== null);
+        setChefOutbid(outbidEntries);
       },
       (err) => {
         console.error("roster chef-winner listener error:", {
@@ -514,6 +548,13 @@ export function RosterPhasePage() {
     <PageShell className="roster-phase-page">
       <RoundHeader />
 
+      <ChefOutbidBanner
+        round={currentRound}
+        outbid={chefOutbid}
+        hideWhenEmpty={true}
+        resolved={chefAuctionResolved}
+      />
+
       <ChefWinnerBanner
         round={currentRound}
         winners={chefWins}
@@ -612,7 +653,7 @@ export function RosterPhasePage() {
             </h2>
             {allRightChefs.length === 0 ? (
               <p className="roster-phase-page__split-empty">
-                No new chefs this round.
+                No chefs left in this section.
               </p>
             ) : (
               <p className="roster-phase-page__split-hint">

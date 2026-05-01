@@ -20,12 +20,11 @@ interface Props {
   count: number;
 }
 
-const WALKER_SIZE = 32;
-/** Walking band sits at the top of the floor strip, in front of the
- *  counter. The counter spans y=140..180; the walkers sit at y≈148 so
- *  the upper half of their sprite peeks above the counter while their
- *  feet stay below the counter line (z-ordered in front). */
-const WALKER_TOP_Y = 144;
+const WALKER_SIZE = 44;
+/** Walking band sits on the floor strip in front of the counter.
+ *  The counter spans y=140..180; walkers are placed at y=185 so they
+ *  walk on the same floor strip as customers (customerFeetY≈262). */
+const WALKER_TOP_Y = 185;
 const WALK_X_MIN = 16;
 const WALK_X_MAX = 440;
 const SPEED_MIN = 0.018;

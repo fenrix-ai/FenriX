@@ -980,7 +980,35 @@ async function resolveAndApplyChefAuction(gameRef, round, config) {
     }
 
     // Resolve auction using pure function.
-    const { winners, payments } = resolveChefAuction(chefPool, allBids);
+    const { winners, payments, winningBids } = resolveChefAuction(chefPool, allBids);
+
+    // Build a chefId → chef lookup from the pool for outbid entries.
+    const chefById = new Map(chefPool.map((c) => [c.id, c]));
+
+    // Compute per-team outbid data: chefs a team bid on but didn't win.
+    // outbidByTeam: Map<teamKey, Array<{ chef fields, winnerKey, winnerBakeryName, winningBid }>>
+    const outbidByTeam = new Map();
+    for (const bid of allBids) {
+      const wb = winningBids.get(bid.chefId);
+      if (!wb || wb.winnerId === bid.playerId) continue; // they won, skip
+      if (!outbidByTeam.has(bid.playerId)) outbidByTeam.set(bid.playerId, []);
+      const chef = chefById.get(bid.chefId);
+      if (!chef) continue;
+      const winnerGroup = teamGroups.get(wb.winnerId);
+      const winnerBakeryName = winnerGroup
+        ? winnerGroup.bakeryName
+        : wb.winnerId;
+      outbidByTeam.get(bid.playerId).push({
+        id: chef.id,
+        name: chef.name,
+        nationality: chef.nationality,
+        gender: chef.gender,
+        skillTier: chef.skillTier,
+        winnerKey: wb.winnerId,
+        winnerBakeryName,
+        winningBid: wb.amount,
+      });
+    }
 
     // Write auction results to round doc.
     // BE-I03: key by team slug only. Earlier code duplicated the entry under
@@ -992,7 +1020,14 @@ async function resolveAndApplyChefAuction(gameRef, round, config) {
       chefAuctionResults[winnerKey] = {
         chefs,
         totalPaid: payments.get(winnerKey) || 0,
+        outbidChefs: outbidByTeam.get(winnerKey) || [],
       };
+    }
+    // Write outbid data for teams that bid but won nothing.
+    for (const [teamKey, outbid] of outbidByTeam) {
+      if (!chefAuctionResults[teamKey]) {
+        chefAuctionResults[teamKey] = { chefs: [], totalPaid: 0, outbidChefs: outbid };
+      }
     }
     transaction.set(roundRef, {
       chefAuctionResults,
