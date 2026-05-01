@@ -206,6 +206,13 @@ export function RosterPhasePage() {
   const [rosterCompleted, setRosterCompleted] = useState(false);
   const [laidOffChefs, setLaidOffChefs] = useState<LaidOffChef[]>([]);
   const [pendingChefId, setPendingChefId] = useState<string | null>(null);
+  /**
+   * IDs of chefs that must stay in the right panel regardless of their
+   * position in the `specialtyChefs` array. Seeded whenever a chef lands
+   * beyond the cap (overflow). Prevents overflow chefs from automatically
+   * sliding into active roster slots when a left-side chef is laid off.
+   */
+  const [forcedRightIds, setForcedRightIds] = useState<Set<string>>(new Set());
   const [chefWins, setChefWins] = useState<ChefWinnerEntry[]>([]);
   const [chefOutbid, setChefOutbid] = useState<ChefOutbidEntry[]>([]);
   const [chefAuctionResolved, setChefAuctionResolved] = useState(false);
@@ -306,13 +313,12 @@ export function RosterPhasePage() {
             const id = typeof o.id === "string" ? o.id : null;
             const name = typeof o.name === "string" ? o.name : null;
             const winnerBakeryName = typeof o.winnerBakeryName === "string" ? o.winnerBakeryName : "Another team";
-            const winningBid = typeof o.winningBid === "number" ? o.winningBid : 0;
             if (!id || !name || !validNat || !gender) return null;
             const skillTier =
               o.skillTier === "novel" || o.skillTier === "intermediate" ||
               o.skillTier === "advanced" || o.skillTier === "base"
                 ? (o.skillTier as ChefOutbidEntry["skillTier"]) : undefined;
-            return { id, name, nationality: validNat, gender, skillTier, winnerBakeryName, winningBid };
+            return { id, name, nationality: validNat, gender, skillTier, winnerBakeryName };
           })
           .filter((o: ChefOutbidEntry | null): o is ChefOutbidEntry => o !== null);
         setChefOutbid(outbidEntries);
@@ -396,40 +402,35 @@ export function RosterPhasePage() {
     [chefWins],
   );
 
+  useEffect(() => {
+    const overflowIds = specialtyChefs.slice(specialtyChefCap).map((c) => c.id);
+    if (overflowIds.length === 0) return;
+    setForcedRightIds((prev) => {
+      const next = new Set(prev);
+      overflowIds.forEach((id) => next.add(id));
+      return next;
+    });
+  }, [specialtyChefs, specialtyChefCap]);
+
   const canAct = roleOwnsRoster(role, teamRoleAssignments);
   const ownerLabel = ownerOfRoster();
-  const overCap = specialtyChefs.length > specialtyChefCap;
-  const rosterFull = specialtyChefs.length >= specialtyChefCap;
+
+  const leftChefs = specialtyChefs
+    .filter((c) => !forcedRightIds.has(c.id))
+    .slice(0, specialtyChefCap);
+  const rightChefsFromArray = specialtyChefs.filter((c) =>
+    forcedRightIds.has(c.id),
+  );
+
+  const overCap = leftChefs.length > specialtyChefCap;
+  const rosterFull = leftChefs.length >= specialtyChefCap;
   const continueDisabled =
     overCap || submitting !== null || !canAct || rosterCompleted;
 
-  // LEFT slots: first `cap` chefs. RIGHT panel: chefs that need a
-  // placement decision — newly-won chefs that landed in overflow, plus
-  // any other overflow chef. Newly-won chefs that already sit inside the
-  // left cap slots are NOT mirrored on the right (avoids duplicate
-  // cards across columns).
-  const leftChefs = specialtyChefs.slice(0, specialtyChefCap);
-  const overflowChefs = specialtyChefs.slice(specialtyChefCap);
-  const leftIds = useMemo(
-    () => new Set(leftChefs.map((c) => c.id)),
-    [leftChefs],
-  );
-  const rightChefs = useMemo(() => {
-    const seen = new Set<string>();
-    const out: RosterChef[] = [];
-    for (const c of overflowChefs) {
-      if (!leftIds.has(c.id) && !seen.has(c.id)) {
-        seen.add(c.id);
-        out.push(c);
-      }
-    }
-    return out;
-  }, [overflowChefs, leftIds]);
-
   // Combined right panel: overflow chefs + laid-off chefs (deduped)
   const allRightChefs = useMemo(() => {
-    const seen = new Set<string>(rightChefs.map((c) => c.id));
-    const out: RosterChef[] = [...rightChefs];
+    const seen = new Set<string>(rightChefsFromArray.map((c) => c.id));
+    const out: RosterChef[] = [...rightChefsFromArray];
     for (const c of laidOffChefs) {
       if (!seen.has(c.id)) {
         seen.add(c.id);
@@ -437,7 +438,7 @@ export function RosterPhasePage() {
       }
     }
     return out;
-  }, [rightChefs, laidOffChefs]);
+  }, [rightChefsFromArray, laidOffChefs]);
 
   const handleLayoffClick = async (chefId: string) => {
     if (!gameId || !canAct || pendingChefId) return;
@@ -483,7 +484,16 @@ export function RosterPhasePage() {
       return;
     }
     setPerChefError((prev) => ({ ...prev, [chefId]: "" }));
-    await handleRehireClick(chefId);
+    const isOverflow = specialtyChefs.some((c) => c.id === chefId);
+    if (isOverflow) {
+      setForcedRightIds((prev) => {
+        const next = new Set(prev);
+        next.delete(chefId);
+        return next;
+      });
+    } else {
+      await handleRehireClick(chefId);
+    }
   };
 
   const handleContinue = async () => {
@@ -539,9 +549,16 @@ export function RosterPhasePage() {
       | undefined;
     const occupied = overData?.occupiedChefId;
     const draggedId = String(active.id);
-    if (!occupied) return;
-    if (occupied === draggedId) return;
-    void handleSwap(occupied, draggedId);
+    if (occupied) {
+      if (occupied === draggedId) return;
+      void handleSwap(occupied, draggedId);
+    } else if (forcedRightIds.has(draggedId) && !rosterFull) {
+      setForcedRightIds((prev) => {
+        const next = new Set(prev);
+        next.delete(draggedId);
+        return next;
+      });
+    }
   };
 
   return (

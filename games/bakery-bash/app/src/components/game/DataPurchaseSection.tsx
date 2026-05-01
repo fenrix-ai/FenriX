@@ -167,13 +167,13 @@ export function DataPurchaseSection() {
             : `Buy Competitor Intel — $${COMPETITOR_INTEL_COST.toLocaleString()}`}
         </button>
         <p className="results-phase__data-purchase-hint">
-          See what your competitors are setting for quantities and price.
+          See what your competitors are setting for price and quantity.
         </p>
         {showIntelConfirm && !hasIntelForCurrentRound && (
           <div className="results-phase__intel-confirm">
             <p>
               Spend ${COMPETITOR_INTEL_COST.toLocaleString()} to see all
-              teams' submitted quantities and prices from round {currentRound}?
+              teams' submitted prices and quantities from round {currentRound}?
             </p>
             <button
               className="btn btn--primary btn--small"

@@ -35,6 +35,14 @@ function formatMoney(n: number | null | undefined): string {
   return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
 
+function formatUnitPrice(n: number | null | undefined): string {
+  if (typeof n !== "number" || Number.isNaN(n)) return "—";
+  return `$${n.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
 function looksLikeInternalChefId(value: string | null | undefined): boolean {
   if (!value) return false;
   return /^[a-z0-9-]{12,}$/i.test(value);
@@ -292,13 +300,6 @@ export function ResultsPhase() {
       : typeof latest?.adPaid === "number"
         ? latest.adPaid
         : null;
-  const chefBidPaid =
-    typeof liveAuctionResult.chefBidPaid === "number"
-      ? liveAuctionResult.chefBidPaid
-      : typeof latest?.chefBidPaid === "number"
-        ? latest.chefBidPaid
-        : null;
-
   // Events derived from the result payload.
   const events: RoundEvent[] = Array.isArray(latest?.events) ? latest!.events! : [];
 
@@ -450,9 +451,9 @@ export function ResultsPhase() {
                           const name = presentChefName(chef?.name || chef?.id, index);
                           const tier = chef?.skillTier;
                           const tierColor =
-                            tier === "advanced" ? "#a855f7"
-                            : tier === "intermediate" ? "#3b82f6"
-                            : tier === "novel" ? "#f59e0b"
+                            tier === "advanced" ? "#c9a227"
+                            : tier === "intermediate" ? "#d97a2c"
+                            : tier === "novel" ? "#8a8e94"
                             : undefined;
                           const bid = typeof chef?.bidAmount === "number" && chef.bidAmount > 0
                             ? ` (${formatMoney(chef.bidAmount)})`
@@ -498,7 +499,7 @@ export function ResultsPhase() {
                         <td className="results-phase__breakdown-name">{PRODUCT_LABELS[id]}</td>
                         <td className="results-phase__breakdown-units">{units.toLocaleString()}</td>
                         <td className="results-phase__breakdown-price">
-                          {typeof unitPrice === "number" ? formatMoney(unitPrice) : "—"}
+                          {formatUnitPrice(unitPrice)}
                         </td>
                       </tr>
                     );

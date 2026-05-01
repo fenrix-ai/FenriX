@@ -466,7 +466,7 @@ const DEFAULT_GAME_CONFIG = {
     // screens should not idle past 10s; the briefing copy is short enough
     // to read in that window and players prefer a faster cadence.
     email: 10,
-    decide: 300,
+    decide: 180,
     // 60 → 90: at 25-team load, p95 sharded-write latency is ~12s after the
     // burst starts; 60s left no margin for last-second clickers. Bumping to
     // 90s adds headroom without dragging the round.
@@ -479,7 +479,7 @@ const DEFAULT_GAME_CONFIG = {
     // upper bound for the professor's auto-advance fallback if the
     // simulating side-effect somehow stalls. 8s is a generous timeout.
     simulating: 25,
-    results: 60,
+    results: 300,
   },
 
   totalRounds: 5,

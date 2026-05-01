@@ -292,8 +292,15 @@ function runMonthlySimulation(players, roundPreferences, cfg = config, { gameId 
     const adBidPaid = _num(auctionResults.adBidPaid);
     const chefBidPaid = _num(auctionResults.chefBidPaid);
 
+    const dailyQuantities = decision.quantities || {};
+    const monthlyQuantities = Object.fromEntries(
+      Object.entries(dailyQuantities).map(([product, qty]) => [
+        product,
+        Math.max(0, _num(qty)) * days,
+      ]),
+    );
     const costDecision = {
-      perProductQtyStocked: decision.quantities || {},
+      perProductQtyStocked: monthlyQuantities,
       sousChefCount,
       staffCounts: decision.staffCounts || {},
     };
