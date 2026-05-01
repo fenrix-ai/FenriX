@@ -410,6 +410,10 @@ export interface RoundResult {
   amountBorrowed?: number;
   /** Interest paid on this round's borrow. */
   interestCharged?: number;
+  /** Player's budget at the start of the round (pre-sim). */
+  budgetBefore?: number;
+  /** Player's budget at the end of the round (post-sim). */
+  budgetAfter?: number;
   /** Any station that hit sellout this round (`true` = ran out at least once). */
   selloutAnywhere?: boolean;
   /** Per-product unit-sold breakdown, used for the Results breakdown table. */

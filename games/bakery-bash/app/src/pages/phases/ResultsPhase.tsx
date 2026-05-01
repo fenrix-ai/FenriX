@@ -478,7 +478,7 @@ export function ResultsPhase() {
           <div className="results-phase__metric-cards">
             <div className="results-phase__metric-card results-phase__metric-card--revenue">
               <span className="results-phase__metric-value">{formatMoney(revenueDisplay)}</span>
-              <span className="results-phase__metric-label">Profit</span>
+              <span className="results-phase__metric-label">Net revenue</span>
             </div>
             <div className="results-phase__metric-card results-phase__metric-card--customer">
               <span className="results-phase__metric-value">{latest?.customerCount ?? "—"}</span>
@@ -531,8 +531,15 @@ export function ResultsPhase() {
                 label="Gross revenue (this round)"
                 value={formatMoney(latest.revenueGross)}
               />
+              {(typeof latest.budgetAfter === "number" &&
+                typeof latest.budgetBefore === "number") && (
+                <Kpi
+                  label="Period profit (this round)"
+                  value={formatMoney(latest.budgetAfter - latest.budgetBefore)}
+                />
+              )}
               <Kpi
-                label="Profit (cumulative)"
+                label="Net revenue (cumulative)"
                 value={formatMoney(
                   csvResults.reduce((sum, r) => {
                     // Pre-rename round docs only carry `revenue`; new docs

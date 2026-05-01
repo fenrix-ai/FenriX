@@ -2632,12 +2632,19 @@ async function runSimulationAndPersist(gameRef, round, config) {
       // incremented. Skip the increment to avoid double-counting.
       const priorRoundSnap = priorRoundByUid.get(memberDoc.id);
       const alreadyPersisted = !!(priorRoundSnap && priorRoundSnap.exists);
+      // Defensive defaults: the engine path (process-round-engine-stub) may
+      // not echo every BB-owned field back, and Firestore Update() rejects
+      // any `undefined`. We default to the canonical player's existing
+      // grade rather than just 'C' so we don't silently regress an upgrade.
+      const memberEquipmentFallback = memberData.equipmentGrade || 'C';
+      const memberCleanlinessGradeFallback = memberData.cleanlinessGrade || 'B';
+      const memberCleanlinessScoreFallback = numberOrDefault(memberData.cleanlinessScore, 75);
       const playerUpdate = {
         budgetCurrent: r.budgetAfter,
         returningCustomersPending: r.returningCustomersEarned,
-        equipmentGrade: r.equipmentGrade,
-        cleanlinessScore: r.cleanlinessScore,
-        cleanlinessGrade: r.cleanlinessGrade,
+        equipmentGrade: r.equipmentGrade || memberEquipmentFallback,
+        cleanlinessScore: numberOrDefault(r.cleanlinessScore, memberCleanlinessScoreFallback),
+        cleanlinessGrade: r.cleanlinessGrade || memberCleanlinessGradeFallback,
         sousChefCount: numberOrDefault(
           (r.csvRow && r.csvRow.sous_chef_count),
           0
@@ -2653,6 +2660,15 @@ async function runSimulationAndPersist(gameRef, round, config) {
           fillRate: aggregateFillRate(r.perProductSatisfaction),
           amountBorrowed: r.amountBorrowed,
           interestCharged: r.interestCharged,
+          // S-22 (2026-05-01): surface totalSpent + pre/post-sim budgets so
+          // the player UI can show actual period profit (budgetAfter −
+          // budgetBefore), not just net revenue. The historical "Profit"
+          // KPI on lastRoundResult was bound to revenueNet — gross minus
+          // loan-shark only, which is a misnomer once operating costs are
+          // non-trivial.
+          totalSpent: numberOrDefault(r.totalSpent, 0),
+          budgetBefore: numberOrDefault(simInputBudgetByTeam.get(r.playerId), 0),
+          budgetAfter: numberOrDefault(r.budgetAfter, 0),
           selloutAnywhere: r.selloutAnywhere || false,
           productBreakdown: Object.fromEntries(
             Object.entries(r.perProductSatisfaction || {})
@@ -2751,8 +2767,8 @@ async function runSimulationAndPersist(gameRef, round, config) {
                   numberOrDefault(pps && pps.satisfactionPct, 0),
                 ]),
             ),
-            cleanlinessGrade: r.cleanlinessGrade,
-            cleanlinessScore: r.cleanlinessScore,
+            cleanlinessGrade: r.cleanlinessGrade || memberCleanlinessGradeFallback,
+            cleanlinessScore: numberOrDefault(r.cleanlinessScore, memberCleanlinessScoreFallback),
             priceCompetitivenessPct: numberOrDefault(r.priceCompetitivenessPct, 100),
           },
           // Round-level kitchen + financial state surfaced for the student
