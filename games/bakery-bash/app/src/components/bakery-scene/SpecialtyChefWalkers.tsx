@@ -19,13 +19,15 @@ interface Props {
   chefs: SpecialtyChefBadge[];
 }
 
-const WALKER_SIZE = 40;
+/** Match the sous-chef sprite height after 1.5× scaling (original 40px → 60px). */
+const WALKER_HEIGHT = 60;
+const WALKER_WIDTH = 36;
 /** Horizontal walking band — keep clear of the door (x=456) on the right. */
 const WALK_X_MIN = 24;
 const WALK_X_MAX = 420;
-/** Top-edge Y for the walker. Sits behind counter (which spans y=140..180)
- * so the bottom of the sprite tucks under the counter front overlay. */
-const WALKER_TOP_Y = 104;
+/** Top-edge Y aligned to SCENE.chefTopY so specialty chefs stand at the
+ * same level as sous chefs, layered just behind them. */
+const WALKER_TOP_Y = SCENE.chefTopY;
 const SPEED_MIN = 0.015; // px / ms
 const SPEED_MAX = 0.035;
 
@@ -142,10 +144,10 @@ export function SpecialtyChefWalkers({ chefs }: Props) {
             title={chef.name}
             style={{
               position: "absolute",
-              left: `${Math.round(s.x - WALKER_SIZE / 2)}px`,
+              left: `${Math.round(s.x - WALKER_WIDTH / 2)}px`,
               top: `${WALKER_TOP_Y + bob}px`,
-              width: `${WALKER_SIZE}px`,
-              height: `${WALKER_SIZE}px`,
+              width: `${WALKER_WIDTH}px`,
+              height: `${WALKER_HEIGHT}px`,
               transform: flip,
               transformOrigin: "center",
             }}
@@ -153,8 +155,8 @@ export function SpecialtyChefWalkers({ chefs }: Props) {
             <img
               src={portrait}
               alt=""
-              width={WALKER_SIZE}
-              height={WALKER_SIZE}
+              width={WALKER_WIDTH}
+              height={WALKER_HEIGHT}
               style={{
                 display: "block",
                 width: "100%",
