@@ -1018,7 +1018,10 @@ async function resolveAndApplyChefAuction(gameRef, round, config) {
     const chefAuctionResults = {};
     for (const [winnerKey, chefs] of winners) {
       chefAuctionResults[winnerKey] = {
-        chefs,
+        chefs: chefs.map((c) => ({
+          ...c,
+          bidAmount: winningBids.get(c.id)?.amount ?? null,
+        })),
         totalPaid: payments.get(winnerKey) || 0,
         outbidChefs: outbidByTeam.get(winnerKey) || [],
       };

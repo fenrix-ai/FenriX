@@ -212,7 +212,7 @@ export function ResultsPhase() {
   const [liveAuctionResult, setLiveAuctionResult] = useState<{
     adWins: string[];
     adPaid: number | null;
-    chefsWon: Array<{ id?: string; name?: string }>;
+    chefsWon: Array<{ id?: string; name?: string; skillTier?: string; bidAmount?: number }>;
     chefBidPaid: number | null;
   }>({
     adWins: [],
@@ -248,7 +248,7 @@ export function ResultsPhase() {
             : null,
         chefsWon:
           chefEntry && Array.isArray(chefEntry.chefs)
-            ? (chefEntry.chefs as Array<{ id?: string; name?: string }>)
+            ? (chefEntry.chefs as Array<{ id?: string; name?: string; skillTier?: string; bidAmount?: number }>)
             : [],
         chefBidPaid:
           chefEntry && typeof chefEntry.totalPaid === "number"
@@ -281,7 +281,7 @@ export function ResultsPhase() {
     (Array.isArray(latest?.adWins) ? latest.adWins : undefined) ??
     [];
   const adWon = latest?.adWon ?? latest?.auctionResults?.adWon ?? adWins[0] ?? null;
-  const chefWonList =
+  const chefWonList: Array<{ id?: string; name?: string; skillTier?: string; bidAmount?: number }> =
     (liveAuctionResult.chefsWon.length > 0 ? liveAuctionResult.chefsWon : undefined) ??
     (Array.isArray(latest?.chefsWon) ? latest.chefsWon : undefined) ??
     [];
@@ -444,19 +444,29 @@ export function ResultsPhase() {
                 <span className="results-phase__auction-label">Chef</span>
                 {chefWonList.length > 0 || chefWon ? (
                   <span className="results-phase__auction-value results-phase__auction-value--won">
-                    Hired: {chefWonList.length > 0
-                      ? chefWonList
-                          .map((chef, index) => presentChefName(chef?.name || chef?.id, index))
-                          .join(", ")
+                    Hired:{" "}
+                    {chefWonList.length > 0
+                      ? chefWonList.map((chef, index) => {
+                          const name = presentChefName(chef?.name || chef?.id, index);
+                          const tier = chef?.skillTier;
+                          const tierColor =
+                            tier === "advanced" ? "#a855f7"
+                            : tier === "intermediate" ? "#3b82f6"
+                            : tier === "novel" ? "#f59e0b"
+                            : undefined;
+                          const bid = typeof chef?.bidAmount === "number" && chef.bidAmount > 0
+                            ? ` (${formatMoney(chef.bidAmount)})`
+                            : "";
+                          return (
+                            <span
+                              key={chef?.id ?? index}
+                              style={tierColor ? { color: tierColor, fontWeight: 600 } : undefined}
+                            >
+                              {name}{bid}{index < chefWonList.length - 1 ? ", " : ""}
+                            </span>
+                          );
+                        })
                       : presentChefName(chefWon)}
-                    {typeof chefBidPaid === "number" && chefBidPaid > 0 && (
-                      <>
-                        {" "}
-                        <span className="results-phase__auction-sub">
-                          ({formatMoney(chefBidPaid)})
-                        </span>
-                      </>
-                    )}
                   </span>
                 ) : (
                   <span className="results-phase__auction-value results-phase__auction-value--lost">
@@ -470,29 +480,36 @@ export function ResultsPhase() {
           {productEntries.length > 0 && (
             <section className="results-phase__breakdown">
               <h3 className="results-phase__breakdown-title">
-                Units sold
+                Products Sold
               </h3>
-              <ul className="results-phase__breakdown-list">
-                {productEntries.map(([id, units]) => (
-                  <li
-                    key={id}
-                    className="results-phase__breakdown-row"
-                    data-product={id}
-                  >
-                    <span className="results-phase__breakdown-name">
-                      {PRODUCT_LABELS[id]}
-                    </span>
-                    <span className="results-phase__breakdown-units">
-                      {units.toLocaleString()}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              <table className="results-phase__breakdown-table">
+                <thead>
+                  <tr>
+                    <th className="results-phase__breakdown-th">Item</th>
+                    <th className="results-phase__breakdown-th results-phase__breakdown-th--num">Quantity</th>
+                    <th className="results-phase__breakdown-th results-phase__breakdown-th--num">Unit Price</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {productEntries.map(([id, units]) => {
+                    const unitPrice = latest.productPrices?.[id];
+                    return (
+                      <tr key={id} className="results-phase__breakdown-row" data-product={id}>
+                        <td className="results-phase__breakdown-name">{PRODUCT_LABELS[id]}</td>
+                        <td className="results-phase__breakdown-units">{units.toLocaleString()}</td>
+                        <td className="results-phase__breakdown-price">
+                          {typeof unitPrice === "number" ? formatMoney(unitPrice) : "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
               {latest.selloutAnywhere && (
-                <p className="results-phase__sellout">
-                  🔥 You sold out at least one station — consider hiring more
-                  sous chefs next round.
-                </p>
+                <div className="results-phase__sellout-tip">
+                  <span className="results-phase__sellout-tip-label">Tip:</span>{" "}
+                  You sold out at least one station — consider hiring more sous chefs next round.
+                </div>
               )}
             </section>
           )}

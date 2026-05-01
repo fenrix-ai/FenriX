@@ -618,7 +618,10 @@ export function GamePage() {
           if (!id || !name || !validNat || !gender) return null;
           const skillTier = c.skillTier === "novel" || c.skillTier === "intermediate" || c.skillTier === "advanced" || c.skillTier === "base"
             ? (c.skillTier as ChefWinnerEntry["skillTier"]) : undefined;
-          return { chefId: id, name, nationality: validNat, gender, amount: Math.round(totalPaid * floors[i] / floorSum), skillTier };
+          const amount = typeof c.bidAmount === "number" && c.bidAmount > 0
+            ? c.bidAmount
+            : Math.round(totalPaid * floors[i] / floorSum);
+          return { chefId: id, name, nationality: validNat, gender, amount, skillTier };
         })
         .filter((c: ChefWinnerEntry | null): c is ChefWinnerEntry => c !== null);
       setChefWins(wins);
