@@ -224,6 +224,22 @@ const BATCH_OP_LIMIT = 487;
 const TEAM_CAP = 3;
 
 /**
+ * Defang spreadsheet formula injection in CSV cell values.
+ * Prefixes leading =, +, -, @, tab, CR, LF with a single quote.
+ * Also applies RFC-4180 quote-doubling for embedded quotes.
+ */
+function csvCell(value) {
+  let s = value == null ? '' : String(value);
+  if (/^[=+\-@\t\r\n]/.test(s)) {
+    s = "'" + s;
+  }
+  if (/[",\r\n]/.test(s)) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+/**
  * Batch-delete every document in a collection. Used by `resetGame` to wipe
  * round/sim subcollections without leaving orphans. Chunks at BATCH_OP_LIMIT
  * so games with many rounds × many players don't bust the 500-op batch limit.
@@ -1751,6 +1767,9 @@ exports.getTeamsInLobby = onCall(CALLABLE_OPTS, async (request) => {
 exports.getEventRoster = onCall(CALLABLE_OPTS, async (request) => {
   if (isWarmupRequest(request)) return { ok: true, warm: true };
   requireAuth(request, 'Sign in before loading the event roster.');
+  if (!request.auth.token.professor) {
+    throw new HttpsError('permission-denied', 'Professors only.');
+  }
   return { players: EVENT_ROSTER_DATA };
 });
 
@@ -3160,11 +3179,18 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
   // their personal player + decision docs); the team UI mirror just lags.
   if (_submitDecision_teamId && _submitDecision_draftFields) {
     try {
-      await teamPendingDocRef(gameRef, _submitDecision_teamId).set({
-        decisionDraft: _submitDecision_draftFields,
-        updatedByUid: uid,
-        updatedAt: FieldValue.serverTimestamp(),
-      }, { merge: true });
+      const d = _submitDecision_draftFields;
+      const updateData = {
+        'updatedByUid': uid,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+      if (d.menu !== undefined) updateData['decisionDraft.menu'] = d.menu;
+      if (d.quantities !== undefined) updateData['decisionDraft.quantities'] = d.quantities;
+      if (d.productPrices !== undefined) updateData['decisionDraft.productPrices'] = d.productPrices;
+      if (d.sousChefCount !== undefined) updateData['decisionDraft.sousChefCount'] = d.sousChefCount;
+      if (d.sousChefAssignments !== undefined) updateData['decisionDraft.sousChefAssignments'] = d.sousChefAssignments;
+      if (d.staffCounts !== undefined) updateData['decisionDraft.staffCounts'] = d.staffCounts;
+      await teamPendingDocRef(gameRef, _submitDecision_teamId).update(updateData);
     } catch (mirrorErr) {
       logger.warn('submitDecision team-pending mirror failed — non-fatal.', {
         gameId, uid, teamId: _submitDecision_teamId, error: mirrorErr && mirrorErr.message,
@@ -3329,17 +3355,14 @@ exports.submitPrices = onCall(CALLABLE_OPTS, async (request) => {
     // submit that lands later writes the full `menu` map and the deep
     // merge correctly overlays the optional keys we wrote here.
     if (teamId) {
-      const teamDraftPatch = {
-        productPrices: validated,
-        quantities: validatedQuantities,
-        pricesSubmitted: true,
-        menu: optionalMenuPatch,
-      };
-      transaction.set(teamPendingDocRef(gameRef, teamId), {
-        decisionDraft: teamDraftPatch,
-        updatedByUid: uid,
-        updatedAt: FieldValue.serverTimestamp(),
-      }, { merge: true });
+      transaction.update(teamPendingDocRef(gameRef, teamId), {
+        'decisionDraft.productPrices': validated,
+        'decisionDraft.quantities': validatedQuantities,
+        'decisionDraft.pricesSubmitted': true,
+        ...(optionalMenuPatch ? { 'decisionDraft.menu': optionalMenuPatch } : {}),
+        'updatedByUid': uid,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
     }
   });
 
@@ -3918,11 +3941,18 @@ function sanitizeProductBoolMap(raw) {
   return out;
 }
 
+const ALLOWED_STAFF_KEYS = new Set([
+  'bakerySousChefs',
+  'deliSousChefs',
+  'baristaSousChefs',
+  'maintenanceGuys',
+]);
+
 function sanitizeStaffCounts(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const out = {};
   for (const [k, v] of Object.entries(raw)) {
-    if (typeof k !== 'string' || k.length === 0) continue;
+    if (!ALLOWED_STAFF_KEYS.has(k)) continue;
     if (typeof v !== 'number' || !Number.isFinite(v)) continue;
     out[k] = Math.max(0, Math.min(Math.round(v), 999));
   }
@@ -4000,11 +4030,14 @@ exports.saveDecisionDraft = onCall(CALLABLE_OPTS, async (request) => {
     throw new HttpsError('invalid-argument', 'draft has no recognized fields.');
   }
 
-  await teamPendingDocRef(gameRef, teamId).set({
-    decisionDraft: patch,
-    updatedByUid: uid,
-    updatedAt: FieldValue.serverTimestamp(),
-  }, { merge: true });
+  const updateData = {
+    'updatedByUid': uid,
+    'updatedAt': FieldValue.serverTimestamp(),
+  };
+  for (const [k, v] of Object.entries(patch)) {
+    updateData[`decisionDraft.${k}`] = v;
+  }
+  await teamPendingDocRef(gameRef, teamId).update(updateData);
 
   return { ok: true, gameId, teamId };
 });
@@ -4920,9 +4953,16 @@ exports.extendPhase = onCall(CALLABLE_OPTS, async (request) => {
     throw new HttpsError("failed-precondition", "Cannot extend this phase.");
   }
   if (!game.phaseEndsAt) throw new HttpsError("failed-precondition", "No active timer.");
-  const currentEnd = game.phaseEndsAt.toMillis();
-  const newEnd = Timestamp.fromMillis(currentEnd + cappedExtra * 1000);
-  await gameRef.update({ phaseEndsAt: newEnd });
+  const newEnd = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(gameRef);
+    const currentEnd = snap.get('phaseEndsAt');
+    if (!currentEnd) {
+      throw new HttpsError('failed-precondition', 'No active timer.');
+    }
+    const endTs = Timestamp.fromMillis(currentEnd.toMillis() + cappedExtra * 1000);
+    tx.update(gameRef, { phaseEndsAt: endTs });
+    return endTs;
+  });
   return { success: true, newPhaseEndsAt: newEnd.toMillis() };
 });
 
@@ -4936,8 +4976,8 @@ exports.purchaseCompetitorInsight = onCall(CALLABLE_OPTS, async (request) => {
   const data = request.data || {};
   const gameId = cleanGameId(data.gameId);
   const round = data.round;
-  if (!gameId || typeof round !== "number") {
-    throw new HttpsError("invalid-argument", "gameId and round are required.");
+  if (!gameId || !Number.isInteger(round) || Number.isNaN(round)) {
+    throw new HttpsError("invalid-argument", "gameId and a valid integer round are required.");
   }
   const uid = request.auth.uid;
   const gameRef = gameDoc(gameId);
@@ -4972,18 +5012,22 @@ exports.purchaseCompetitorInsight = onCall(CALLABLE_OPTS, async (request) => {
   try {
     await db.runTransaction(async (tx) => {
       const playerRef = gameRef.collection("players").doc(uid);
-      const playerSnap = await tx.get(playerRef);
+      const purchaseRef = playerRef.collection("purchases").doc(`insight_round_${round}`);
+      const [playerSnap, purchaseSnap] = await Promise.all([
+        tx.get(playerRef),
+        tx.get(purchaseRef),
+      ]);
       if (!playerSnap.exists) throw new HttpsError("not-found", "Player not found.");
+      if (purchaseSnap.exists) {
+        throw new HttpsError("already-exists", "Insight for this round has already been purchased.");
+      }
       const player = playerSnap.data();
       const budget = player.budgetCurrent || 0;
       if (budget < insightCost) {
         throw new HttpsError("failed-precondition", "Insufficient budget to purchase competitor insight.");
       }
       tx.update(playerRef, { budgetCurrent: FieldValue.increment(-insightCost) });
-      tx.set(
-        playerRef.collection("purchases").doc(`insight_round_${round}`),
-        { round, costDeducted: insightCost, purchasedAt: FieldValue.serverTimestamp() }
-      );
+      tx.set(purchaseRef, { round, costDeducted: insightCost, purchasedAt: FieldValue.serverTimestamp() });
     });
   } catch (txErr) {
     if (txErr instanceof HttpsError) throw txErr;
@@ -5015,11 +5059,11 @@ exports.purchaseCompetitorInsight = onCall(CALLABLE_OPTS, async (request) => {
       team.soloUid ||
       team.operationsUid ||
       team.canonicalUid;
-    const bakeryName = (
+    const bakeryName = csvCell(
       team.bakeryName ||
       (team.memberDocs[0] && team.memberDocs[0].data().displayName) ||
       team.key
-    ).replace(/"/g, '""');
+    );
     const financeDoc = team.memberDocs.find((pd) => pd.id === financeUid) || team.memberDocs[0];
     return { bakeryName, financeDoc };
   }).filter((e) => e.financeDoc);
@@ -5055,7 +5099,7 @@ exports.purchaseCompetitorInsight = onCall(CALLABLE_OPTS, async (request) => {
     for (const [product, qty] of Object.entries(quantities)) {
       if (typeof qty === "number" && qty > 0) {
         const price = prices[product] || 0;
-        rows.push(`"${bakeryName}",${product},${qty},${price}`);
+        rows.push(`${csvCell(bakeryName)},${csvCell(product)},${qty},${price}`);
       }
     }
   }
@@ -5172,11 +5216,11 @@ exports.purchaseChefData = onCall(CALLABLE_OPTS, async (request) => {
         rows.push([
           round,
           id,
-          `"${String(chef.name || "").replace(/"/g, '""')}"`,
+          csvCell(chef.name),
           chef.nationality || "",
           chef.gender || "",
           chef.skillTier || "",
-          `"${specs}"`,
+          csvCell(specs),
           numberOrDefault(chef.minBidFloor, 0),
         ].join(","));
       }
@@ -5490,6 +5534,18 @@ exports.createBotPlayer = onCall(CALLABLE_OPTS, async (request) => {
     botName = sanitizeName(data.name) || `Bot ${difficulty.charAt(0).toUpperCase() + difficulty.slice(1)}`;
   }
 
+  // PERF: cap perfect bots at 2 per game to avoid 120s function timeout
+  // from CPU-heavy shadow simulations.
+  if (difficulty === 'perfect') {
+    const playersSnap = await gameRef.collection('players').get();
+    const existingPerfect = playersSnap.docs.filter(
+      (d) => d.get('botDifficulty') === 'perfect',
+    ).length;
+    if (existingPerfect >= 2) {
+      throw new HttpsError('resource-exhausted', 'Maximum of 2 perfect bots per game.');
+    }
+  }
+
   // Validate bot name (same rules as player displayName)
   if (botName.length < 2 || botName.length > 40) {
     botName = `Bot ${difficulty.charAt(0).toUpperCase() + difficulty.slice(1)}`;
@@ -5501,10 +5557,6 @@ exports.createBotPlayer = onCall(CALLABLE_OPTS, async (request) => {
   // Bots count toward totalPlayers, so apply the same cap as joinGame to keep
   // them from squeezing real students out of the roster.
   const playerCap = numberOrDefault(config.playerCap, 20);
-  const currentTotal = numberOrDefault(gameSnap.get('totalPlayers'), 0);
-  if (currentTotal >= playerCap) {
-    throw new HttpsError('resource-exhausted', 'This game is full.');
-  }
 
   const startingBudget = numberOrDefault(
     config.startingBudget,
@@ -5514,44 +5566,52 @@ exports.createBotPlayer = onCall(CALLABLE_OPTS, async (request) => {
   // Generate a synthetic UID for the bot
   const botUid = `bot_${difficulty}_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
 
-  await gameRef.collection('players').doc(botUid).set({
-    uid: botUid,
-    displayName: botName,
-    bakeryName: `${botName}'s Bakery`,
-    role: 'solo',
-    budgetCurrent: startingBudget,
-    cumulativeRevenue: 0,
-    specialtyChefs: [],
-    sousChefCount: 0,
-    equipmentGrade: 'C',
-    cleanlinessScore: 75,
-    cleanlinessGrade: 'B',
-    consecutiveMissedRounds: 0,
-    disconnected: false,
-    isBot: true,
-    botDifficulty: difficulty,
-    botPersonality: personality,
-    botPreset: presetKey || null,
-    createdAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
-  });
+  // Wrap cap check + bot creation + totalPlayers increment in a transaction
+  // so concurrent createBotPlayer calls can't over-fill the game.
+  await db.runTransaction(async (tx) => {
+    const liveGameSnap = await tx.get(gameRef);
+    const liveTotal = numberOrDefault(liveGameSnap.get('totalPlayers'), 0);
+    if (liveTotal >= playerCap) {
+      throw new HttpsError('resource-exhausted', 'This game is full.');
+    }
 
-  // Increment totalPlayers
-  await gameRef.update({
-    totalPlayers: FieldValue.increment(1),
-    updatedAt: FieldValue.serverTimestamp(),
-  });
+    tx.set(gameRef.collection('players').doc(botUid), {
+      uid: botUid,
+      displayName: botName,
+      bakeryName: `${botName}'s Bakery`,
+      role: 'solo',
+      budgetCurrent: startingBudget,
+      cumulativeRevenue: 0,
+      specialtyChefs: [],
+      sousChefCount: 0,
+      equipmentGrade: 'C',
+      cleanlinessScore: 75,
+      cleanlinessGrade: 'B',
+      consecutiveMissedRounds: 0,
+      disconnected: false,
+      isBot: true,
+      botDifficulty: difficulty,
+      botPersonality: personality,
+      botPreset: presetKey || null,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
 
-  // Add to roster
-  await gameRef.collection('roster').doc(botUid).set({
-    uid: botUid,
-    displayName: botName,
-    bakeryName: `${botName}'s Bakery`,
-    isBot: true,
-    difficulty: difficulty || null,
-    personality: personality || null,
-    joinedAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
+    tx.update(gameRef, {
+      totalPlayers: FieldValue.increment(1),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    tx.set(gameRef.collection('roster').doc(botUid), {
+      uid: botUid,
+      displayName: botName,
+      bakeryName: `${botName}'s Bakery`,
+      isBot: true,
+      difficulty: difficulty || null,
+      personality: personality || null,
+      joinedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
   });
 
   logger.info('createBotPlayer ok', { gameId, botUid, difficulty, personality, preset: presetKey });
@@ -5687,8 +5747,25 @@ exports.onBotPhaseChange = onDocumentWritten(
     const chefAuctionResults = roundData.chefAuctionResults || {};
     const roundPreferences = roundData.preferences || { modifiers: {} };
 
+    // Phase guard: if the professor advanced while we were loading data,
+    // skip all bots for this (now stale) phase to avoid writing bids or
+    // decisions into the wrong round.
+    const liveGameSnap = await gameRef.get();
+    const livePhase = liveGameSnap.exists ? liveGameSnap.data().phase : null;
+    if (livePhase !== newPhase) {
+      logger.info('onBotPhaseChange: phase advanced before bot loop — skipping.', {
+        gameId, expectedPhase: newPhase, livePhase,
+      });
+      return;
+    }
+
     for (const botDoc of bots) {
-      const botData = botDoc.data();
+      // Re-read the bot doc so we see any chefs that were just appended by
+      // resolveAndApplyChefAuction (which commits after the phase change).
+      // Without this, bots work with a stale specialtyChefs array and may
+      // skip required layoffs when they are over the cap.
+      const freshBotSnap = await gameRef.collection('players').doc(botDoc.id).get();
+      const botData = freshBotSnap.exists ? freshBotSnap.data() : botDoc.data();
       const difficulty = botData.botDifficulty || 'medium';
       const personality = botData.botPersonality || 'balanced';
 

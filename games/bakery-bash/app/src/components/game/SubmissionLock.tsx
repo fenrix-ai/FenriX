@@ -109,7 +109,11 @@ export function SubmissionLock({
   const expected = useMemo(() => {
     if (typeof expectedPlayerCount === "number") return expectedPlayerCount;
     if (players && players.length > 0) {
-      return new Set(players.map((p) => p.bakeryName)).size;
+      // Count unique player IDs (solo) or team IDs (teams) — NOT bakeryName,
+      // because two teams could coincidentally pick the same name.
+      return new Set(
+        players.map((p) => p.teamId || p.playerId || p.uid || p.id),
+      ).size;
     }
     return null;
   }, [expectedPlayerCount, players]);

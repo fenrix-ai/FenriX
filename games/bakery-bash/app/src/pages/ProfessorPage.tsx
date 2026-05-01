@@ -663,7 +663,7 @@ export function ProfessorPage() {
         phaseKey === "bid_ad"
           ? "advertising"
           : phaseKey === "bid_chef"
-            ? "finance"
+            ? "advertising"
             : "operations";
 
       // M-19 (2026-04-28): if the round has advanced past `phaseKey`, flip

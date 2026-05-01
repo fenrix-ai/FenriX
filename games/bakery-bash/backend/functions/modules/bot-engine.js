@@ -21,7 +21,7 @@ const {
   CHEF_NATIONALITIES,
 } = require('./config');
 
-const { calculateTotalProductOutput } = require('./chef-system');
+const { calculateTotalProductOutput, getTotalSousChefHireCost } = require('./chef-system');
 const { runSimulation } = require('./simulation');
 
 // ---------------------------------------------------------------------------
@@ -426,13 +426,7 @@ function estimateStockCost(quantities, config) {
 }
 
 function estimateSousChefCost(count, config) {
-  // Escalating cost: base + (count-1) * escalation
-  const base = _num(config.sousChefBaseCost);
-  let total = 0;
-  for (let i = 0; i < count; i++) {
-    total += base * (1 + i * 0.15);
-  }
-  return total;
+  return getTotalSousChefHireCost(count, config);
 }
 
 // ---------------------------------------------------------------------------
@@ -565,8 +559,7 @@ function decideRoster(botState, config, personality, difficulty, rng) {
   // Personality override: chef_focused keeps more chefs if possible
   let keepCount = cap;
   if (personality === 'chef_focused') {
-    keepCount = Math.min(chefs.length, cap + 1); // try to keep 1 extra (will still need to layoff)
-    keepCount = Math.min(keepCount, cap); // respect cap
+    keepCount = Math.min(chefs.length, cap + 1); // try to keep 1 extra
   }
 
   const toLayoff = sorted.slice(keepCount);
@@ -839,8 +832,8 @@ function evaluateCandidate(botState, candidate, opponentDecisions, config) {
     if (!myResult) return -Infinity;
 
     // Score = net profit + budget trajectory bonus
-    const profit = _num(myResult.revenue) - _num(myResult.totalCost);
-    const budgetLeft = _num(myResult.endingBudget);
+    const profit = _num(myResult.revenueNet) - _num(myResult.totalSpent);
+    const budgetLeft = _num(myResult.budgetAfter);
     return profit + budgetLeft * 0.1; // weight remaining budget lightly
   } catch (err) {
     // Shadow sim failed, fall back to heuristic score

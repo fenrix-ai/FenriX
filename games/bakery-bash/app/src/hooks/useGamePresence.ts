@@ -86,6 +86,9 @@ export function isStale(
   staleMs: number = PRESENCE_STALE_MS,
 ): boolean {
   const lastSeen = state.presenceByUid[uid];
-  if (lastSeen === undefined) return false;
+  // If a teammate is in role assignments but has no presence doc,
+  // they either crashed before first heartbeat or closed the tab.
+  // Treat them as stale so the "Take over" button appears.
+  if (lastSeen === undefined) return true;
   return state.nowMs - lastSeen > staleMs;
 }

@@ -585,6 +585,7 @@ const INVISIBLE_CHARS = /[\u00AD\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2
 function sanitizeName(value) {
   return cleanString(value)
     .replace(INVISIBLE_CHARS, '')
+    .replace(/[<>]/g, '')      // strip HTML tag delimiters
     .replace(/\s+/g, ' ')
     .trim();
 }

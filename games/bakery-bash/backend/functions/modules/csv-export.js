@@ -197,7 +197,11 @@ function formatCell(value, type) {
  * Wraps in quotes if the value contains a comma, quote, or newline.
  */
 function csvEscape(cell) {
-  const s = cell == null ? '' : String(cell);
+  let s = cell == null ? '' : String(cell);
+  // Defang spreadsheet formula injection (=, +, -, @, tab, CR, LF at start)
+  if (/^[=+\-@\t\r\n]/.test(s)) {
+    s = "'" + s;
+  }
   if (/[",\r\n]/.test(s)) {
     return `"${s.replace(/"/g, '""')}"`;
   }

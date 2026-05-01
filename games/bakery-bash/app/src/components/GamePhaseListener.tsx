@@ -269,7 +269,9 @@ export function GamePhaseListener() {
       try {
         // Get fresh auth token. In prod this proves we're signed in;
         // emulator ignores the value but the request shape is the same.
-        const token = await auth.currentUser?.getIdToken().catch(() => null);
+        const token = auth.currentUser
+          ? await auth.currentUser.getIdToken().catch(() => null)
+          : null;
         if (cancelled) return;
         const res = await fetch(restBase, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},

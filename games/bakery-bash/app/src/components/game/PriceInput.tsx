@@ -53,7 +53,15 @@ export function PriceInput({ value, onChange, cfg, disabled }: Props) {
         value={raw}
         disabled={disabled}
         onChange={(e) => setRaw(e.target.value)}
-        onBlur={() => commit(Number.parseFloat(raw) || cfg.floor)}
+        onBlur={() => {
+          const parsed = Number.parseFloat(raw);
+          if (!Number.isFinite(parsed)) {
+            // Invalid input — reset to current value instead of silently clamping
+            setRaw(String(value));
+            return;
+          }
+          commit(parsed);
+        }}
         className="price-input__field"
         title={`Floor $${cfg.floor.toFixed(2)} / Ceiling $${cfg.ceiling.toFixed(2)}`}
       />

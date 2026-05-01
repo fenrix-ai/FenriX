@@ -26,7 +26,6 @@ service cloud.firestore {
     // ─────────────────────────────────────────────────────────
     function isGameProfessor(gameId) {
       return signedIn()
-        && exists(/databases/$(database)/documents/games/$(gameId))
         && (
           get(/databases/$(database)/documents/games/$(gameId)).data.professorUid
             == request.auth.uid

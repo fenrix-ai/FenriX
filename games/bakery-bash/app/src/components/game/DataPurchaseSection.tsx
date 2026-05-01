@@ -30,7 +30,7 @@ const DEFAULT_TIER2_COST = 150;
 const DEFAULT_COMPETITOR_INTEL_COST = 100;
 
 export function DataPurchaseSection() {
-  const { gameId, role, currentRound, acquiredCsvs, config } = useGame();
+  const { gameId, role, currentRound, acquiredCsvs, config, budgetCurrent } = useGame();
   const dispatch = useGameDispatch();
 
   const [showIntelConfirm, setShowIntelConfirm] = useState(false);
@@ -143,6 +143,13 @@ export function DataPurchaseSection() {
     purchasedThisSession.tier2 ||
     acquiredCsvs.some((c) => c.kind === "chef-tier2");
 
+  const cannotAffordIntel =
+    budgetCurrent !== null && budgetCurrent < COMPETITOR_INTEL_COST;
+  const cannotAffordTier1 =
+    budgetCurrent !== null && budgetCurrent < TIER1_COST;
+  const cannotAffordTier2 =
+    budgetCurrent !== null && budgetCurrent < TIER2_COST;
+
   return (
     <section className="results-phase__data-purchases">
       <h3 className="results-phase__section-title">Buy Round Data</h3>
@@ -160,11 +167,13 @@ export function DataPurchaseSection() {
         <button
           className="btn btn--secondary btn--small"
           onClick={() => setShowIntelConfirm(true)}
-          disabled={pending !== null || hasIntelForCurrentRound}
+          disabled={pending !== null || hasIntelForCurrentRound || cannotAffordIntel}
           title={
             hasIntelForCurrentRound
               ? `Round ${currentRound} intel is already in your CSV Inbox.`
-              : undefined
+              : cannotAffordIntel
+                ? `You need $${COMPETITOR_INTEL_COST.toLocaleString()} to buy this.`
+                : undefined
           }
         >
           {hasIntelForCurrentRound
@@ -199,11 +208,13 @@ export function DataPurchaseSection() {
           type="button"
           className="btn btn--secondary btn--small"
           onClick={() => void handlePurchaseChefData(1)}
-          disabled={pending !== null || hasTier1}
+          disabled={pending !== null || hasTier1 || cannotAffordTier1}
           title={
             hasTier1
               ? "Tier 1 chef data is already in your CSV Inbox."
-              : "Table of chef nationalities → product specialties."
+              : cannotAffordTier1
+                ? `You need $${TIER1_COST.toLocaleString()} to buy this.`
+                : "Table of chef nationalities → product specialties."
           }
         >
           {hasTier1
@@ -220,11 +231,13 @@ export function DataPurchaseSection() {
           type="button"
           className="btn btn--secondary btn--small"
           onClick={() => void handlePurchaseChefData(2)}
-          disabled={pending !== null || hasTier2}
+          disabled={pending !== null || hasTier2 || cannotAffordTier2}
           title={
             hasTier2
               ? "Tier 2 chef data is already in your CSV Inbox."
-              : "Full profile dump: skill, satisfaction, avg production + revenue, 30+ chefs per nationality."
+              : cannotAffordTier2
+                ? `You need $${TIER2_COST.toLocaleString()} to buy this.`
+                : "Full profile dump: skill, satisfaction, avg production + revenue, 30+ chefs per nationality."
           }
         >
           {hasTier2

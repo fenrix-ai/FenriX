@@ -119,7 +119,7 @@ export function CsvInboxModal({ open, onClose }: CsvInboxModalProps) {
           {sortedAcquired.length === 0 && (
             <li className="csv-inbox__item csv-inbox__item--empty">
               <em>
-                No purchased data yet. Finance can buy competitor intel and
+                No purchased data yet. The Analyst can buy competitor intel and
                 chef-data CSVs during the Decide phase.
               </em>
             </li>

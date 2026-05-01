@@ -310,7 +310,7 @@ export function RoundHeader() {
   // team as multi-player when more than one uid appears in the assignments
   // map, regardless of whether those teammates have picked specialist roles
   // yet — the map is keyed by every team member's uid.
-  const teamSize = Object.keys(teamRoleAssignments ?? {}).length;
+  const teamSize = Object.values(teamRoleAssignments ?? {}).filter((v) => v !== null).length;
   const isMultiPlayerTeam = teamSize > 1;
   const showSoloAsRoleless = role === "solo" && isMultiPlayerTeam;
   const roleLabel = showSoloAsRoleless

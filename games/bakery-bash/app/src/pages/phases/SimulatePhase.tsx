@@ -102,6 +102,8 @@ export function SimulatePhase() {
 
   const selloutDays = useRef(getSelloutDays());
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const targetRevenueRef = useRef(targetRevenue);
+  targetRevenueRef.current = targetRevenue;
   const reducedMotion = typeof window !== "undefined"
     ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
     : false;
@@ -113,6 +115,7 @@ export function SimulatePhase() {
     let nightPhase = false;
 
     intervalRef.current = setInterval(() => {
+      const liveTarget = targetRevenueRef.current;
       if (!nightPhase) {
         // Day phase: show customers, check sellouts
         const newSoldOut = new Set(soldOut);
@@ -125,9 +128,9 @@ export function SimulatePhase() {
         setCleanlinessDisplay(prev => Math.max(0, prev - 100 / (TOTAL_DAYS * 3)));
         setOvenDisplay(prev => Math.max(0, prev - 100 / (TOTAL_DAYS * 4)));
 
-        // Animate revenue
-        if (targetRevenue > 0) {
-          setDisplayRevenue(Math.round((currentDay / TOTAL_DAYS) * targetRevenue));
+        // Animate revenue (works for positive, negative, and zero)
+        if (typeof liveTarget === 'number') {
+          setDisplayRevenue(Math.round((currentDay / TOTAL_DAYS) * liveTarget));
         }
 
         nightPhase = true;
@@ -139,7 +142,7 @@ export function SimulatePhase() {
         setIsNight(false);
         if (currentDay > TOTAL_DAYS) {
           if (intervalRef.current) clearInterval(intervalRef.current);
-          setDisplayRevenue(targetRevenue);
+          setDisplayRevenue(liveTarget);
           return;
         }
         setDay(currentDay);
@@ -161,7 +164,7 @@ export function SimulatePhase() {
           {reducedMotion ? "Simulating round…" : `Round ${currentRound ?? "—"}`}
         </div>
         <div className="simulate-phase__revenue-counter">
-          Profit: <strong>{targetRevenue > 0 ? `$${displayRevenue.toLocaleString()}` : "Calculating…"}</strong>
+          Profit: <strong>{typeof targetRevenue === 'number' ? `$${displayRevenue.toLocaleString()}` : "Calculating…"}</strong>
         </div>
       </div>
 
