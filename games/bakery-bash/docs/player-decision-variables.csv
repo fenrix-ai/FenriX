@@ -1,0 +1,11 @@
+Variable,Description
+menu,"Which products are offered (croissant, bagel, coffee, cookie, sandwich, matcha)"
+productPrices,$ price per product
+quantities,Units stocked per product (caps how many can be sold)
+sousChefCount,How many sous chefs hired
+sousChefAssignments,Which station each sous chef works (Bakery / Deli / Barista)
+specialtyChefs,Chefs won at auction (and kept after roster trim)
+adBids,$ bid on TV / Billboard / Radio / Newspaper (winning drives foot traffic)
+maintenanceGuys,"Staff count (drives cleanliness, which affects satisfaction)"
+equipmentUpgradePurchased,Whether they upgraded oven/equipment grade this round
+unlockedProducts,Which optional products (cookie/sandwich/matcha) they've paid to unlock
