@@ -9,25 +9,23 @@ import type { SpecialtyChefBadge } from "./SpecialtyChefBadges";
  * the existing nationality SVG portraits at a larger size so they're not
  * occluded by the bakery station / espresso machine.
  *
- * Sized at 40×40 px (vs the 22×22 wall cameos) so the chef silhouette is
- * clearly visible above the counter line. Each walker has its own random
- * speed + start position so the team's 1–3 specialty chefs don't pace in
- * sync.
+ * Sized larger than the wall cameos and lowered into the counter band so
+ * the counter front covers their legs/feet instead of making them appear
+ * to float above the work surface. Each walker has its own random speed +
+ * start position so the team's 1–3 specialty chefs don't pace in sync.
  */
 
 interface Props {
   chefs: SpecialtyChefBadge[];
 }
 
-/** Match the sous-chef sprite height after 1.5× scaling (original 40px → 60px). */
-const WALKER_HEIGHT = 60;
-const WALKER_WIDTH = 36;
+const WALKER_HEIGHT = 72;
+const WALKER_WIDTH = 46;
 /** Horizontal walking band — keep clear of the door (x=456) on the right. */
 const WALK_X_MIN = 24;
 const WALK_X_MAX = 420;
-/** Top-edge Y aligned to SCENE.chefTopY so specialty chefs stand at the
- * same level as sous chefs, layered just behind them. */
-const WALKER_TOP_Y = SCENE.chefTopY;
+/** Lowered into the counter band; CounterFrontLayer hides the lower body. */
+const WALKER_TOP_Y = SCENE.zones.counter.y - 42;
 const SPEED_MIN = 0.015; // px / ms
 const SPEED_MAX = 0.035;
 
@@ -35,7 +33,6 @@ interface WalkerState {
   x: number;
   direction: 1 | -1;
   speed: number;
-  bobPhase: number;
 }
 
 function randRange(min: number, max: number): number {
@@ -51,7 +48,6 @@ function makeInitial(index: number, total: number): WalkerState {
     x: Math.round(WALK_X_MIN + slot * (index + 0.5)),
     direction: Math.random() < 0.5 ? -1 : 1,
     speed: randRange(SPEED_MIN, SPEED_MAX),
-    bobPhase: Math.random() * Math.PI * 2,
   };
 }
 
@@ -107,7 +103,7 @@ export function SpecialtyChefWalkers({ chefs }: Props) {
             x = WALK_X_MAX;
             direction = -1;
           }
-          next[id] = { x, direction, speed: s.speed, bobPhase: s.bobPhase + dt * 0.006 };
+          next[id] = { x, direction, speed: s.speed };
         }
         return next;
       });
@@ -134,7 +130,6 @@ export function SpecialtyChefWalkers({ chefs }: Props) {
       {visible.map((chef) => {
         const s = states[chef.id];
         if (!s) return null;
-        const bob = Math.round(Math.sin(s.bobPhase) * 1.5);
         const portrait = `/assets/chefs/${chef.nationality}-${chef.gender}.svg`;
         const flip = s.direction === -1 ? "scaleX(-1)" : "scaleX(1)";
         return (
@@ -145,7 +140,7 @@ export function SpecialtyChefWalkers({ chefs }: Props) {
             style={{
               position: "absolute",
               left: `${Math.round(s.x - WALKER_WIDTH / 2)}px`,
-              top: `${WALKER_TOP_Y + bob}px`,
+              top: `${WALKER_TOP_Y}px`,
               width: `${WALKER_WIDTH}px`,
               height: `${WALKER_HEIGHT}px`,
               transform: flip,

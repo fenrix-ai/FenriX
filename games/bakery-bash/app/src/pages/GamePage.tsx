@@ -126,6 +126,7 @@ export function GamePage() {
     pricesSubmitted,
     role,
     teamRoleAssignments,
+    config,
   } = useGame();
   const dispatch = useGameDispatch();
   const { markDraftAppliedFromRemote } = useGameDraftSync();
@@ -151,6 +152,9 @@ export function GamePage() {
     Record<string, { winnerId: string; winningBid: number }> | null
   >(null);
   const [chefWins, setChefWins] = useState<ChefWinnerEntry[]>([]);
+  const [activeRosterChefIds, setActiveRosterChefIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [chefAuctionResolved, setChefAuctionResolved] = useState(false);
 
   // --- Listener: /games/{gameId} — drives phase + round + phaseEndsAt. ---
@@ -629,6 +633,50 @@ export function GamePage() {
     return unsubscribe;
   }, [gameId, currentRound, auctionResultKey]);
 
+  useEffect(() => {
+    if (!gameId || !playerId) {
+      setActiveRosterChefIds(new Set());
+      return;
+    }
+    const specialtyChefCap = config?.specialtyChefCap ?? 3;
+    const playerRef = doc(db, "games", gameId, "players", playerId);
+    const unsubscribe = onSnapshot(
+      playerRef,
+      (snap) => {
+        if (!snap.exists()) {
+          setActiveRosterChefIds(new Set());
+          return;
+        }
+        const data = snap.data() as DocumentData;
+        const rawChefs = Array.isArray(data.specialtyChefs) ? data.specialtyChefs : [];
+        const rosterIds = new Set(
+          rawChefs
+            .map((chef: DocumentData) => typeof chef?.id === "string" ? chef.id : null)
+            .filter((id: string | null): id is string => id !== null),
+        );
+        const benchIds = new Set(
+          (Array.isArray(data.rosterBenchChefIds) ? data.rosterBenchChefIds : [])
+            .filter((id: unknown): id is string => typeof id === "string" && rosterIds.has(id)),
+        );
+        const activeIds = rawChefs
+          .map((chef: DocumentData) => typeof chef?.id === "string" ? chef.id : null)
+          .filter((id: string | null): id is string => id !== null && !benchIds.has(id))
+          .slice(0, specialtyChefCap);
+        setActiveRosterChefIds(new Set(activeIds));
+      },
+      (err) => {
+        console.error("GamePage active roster listener error:", { gameId, playerId, err });
+        setActiveRosterChefIds(new Set());
+      },
+    );
+    return unsubscribe;
+  }, [gameId, playerId, config?.specialtyChefCap]);
+
+  const securedChefWins = useMemo(
+    () => chefWins.filter((chef) => activeRosterChefIds.has(chef.chefId)),
+    [chefWins, activeRosterChefIds],
+  );
+
   const adWinners = useMemo(() => {
     if (!rawAdAuction) return null;
     const out: Partial<Record<AdWinnerEntry["adType"], AdWinnerEntry>> = {};
@@ -897,7 +945,7 @@ export function GamePage() {
           so players see their roster context before submitting decisions. */}
       <ChefWinnerBanner
         round={currentRound}
-        winners={chefWins}
+        winners={securedChefWins}
         hideWhenEmpty={true}
         resolved={chefAuctionResolved}
       />

@@ -986,8 +986,8 @@ describe('phases.js', () => {
   });
 
   it('getPhaseDuration', () => {
-    eq(phases.getPhaseDuration('decide', cfg), 300);
-    ok(phases.getPhaseDuration('results_ready', cfg) > 0);
+    eq(phases.getPhaseDuration('decide', cfg), 180);
+    eq(phases.getPhaseDuration('results_ready', cfg), 300);
   });
 
   it('canSubmitDecision', () => {

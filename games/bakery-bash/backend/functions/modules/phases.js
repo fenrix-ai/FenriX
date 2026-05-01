@@ -39,6 +39,11 @@ const PHASE_ORDER = [
 // Phases that get the "round_N_" prefix in their string form.
 const ROUND_PREFIXED_PHASES = new Set(['email', 'decide', 'bid_ad', 'bid_chef', 'roster']);
 
+const FORCED_PHASE_DURATIONS = {
+  decide: 180,
+  results_ready: 300,
+};
+
 // Terminal / non-round phases.
 const SPECIAL_PHASES = new Set(['lobby', 'game_over', 'simulating', 'results_ready']);
 
@@ -261,6 +266,8 @@ function isValidTransition(fromPhase, toPhase) {
 function getPhaseDuration(phase, config) {
   const durations = (config && config.phaseDurations) || {};
   const canon = canonicalizePhase(phase);
+
+  if (FORCED_PHASE_DURATIONS[canon] != null) return FORCED_PHASE_DURATIONS[canon];
 
   // Direct hit.
   if (durations[canon] != null) return durations[canon];

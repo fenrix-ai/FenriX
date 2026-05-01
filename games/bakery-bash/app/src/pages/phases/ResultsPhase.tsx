@@ -141,6 +141,96 @@ interface WhatHurtPanelProps {
   signals: NonNullable<RoundResult["roundSignals"]>;
 }
 
+function coerceProductBreakdown(raw: DocumentData): Partial<Record<ProductKey, number>> | undefined {
+  const source =
+    raw.productBreakdown && typeof raw.productBreakdown === "object"
+      ? raw.productBreakdown
+      : raw.perProductSold && typeof raw.perProductSold === "object"
+        ? raw.perProductSold
+        : null;
+  if (source) return source as Partial<Record<ProductKey, number>>;
+  if (raw.perProductSatisfaction && typeof raw.perProductSatisfaction === "object") {
+    return Object.fromEntries(
+      Object.entries(raw.perProductSatisfaction as Record<string, DocumentData>)
+        .map(([product, pps]) => [
+          product,
+          pps && typeof pps.qtySold === "number" ? pps.qtySold : 0,
+        ]),
+    ) as Partial<Record<ProductKey, number>>;
+  }
+  return undefined;
+}
+
+function coerceRoundResult(raw: DocumentData | null | undefined): RoundResult | null {
+  if (!raw || typeof raw !== "object" || typeof raw.round !== "number") return null;
+  const revenue =
+    typeof raw.revenueNet === "number"
+      ? raw.revenueNet
+      : typeof raw.revenueGross === "number"
+        ? raw.revenueGross
+        : typeof raw.revenue === "number"
+          ? raw.revenue
+          : 0;
+  return {
+    round: raw.round,
+    revenue,
+    revenueNet: typeof raw.revenueNet === "number" ? raw.revenueNet : undefined,
+    revenueGross: typeof raw.revenueGross === "number" ? raw.revenueGross : undefined,
+    amountBorrowed: typeof raw.amountBorrowed === "number" ? raw.amountBorrowed : undefined,
+    interestCharged: typeof raw.interestCharged === "number" ? raw.interestCharged : undefined,
+    selloutAnywhere:
+      raw.selloutAnywhere === true ||
+      (raw.selloutFlags && typeof raw.selloutFlags === "object"
+        ? Object.values(raw.selloutFlags).some(Boolean)
+        : false),
+    customerCount: typeof raw.customerCount === "number" ? raw.customerCount : 0,
+    customerSatisfaction:
+      typeof raw.aggregateSatisfactionPct === "number"
+        ? Math.round(raw.aggregateSatisfactionPct)
+        : typeof raw.customerSatisfaction === "number"
+          ? raw.customerSatisfaction
+          : 0,
+    productBreakdown: coerceProductBreakdown(raw),
+    adWon: raw.adWon ?? null,
+    adWins: Array.isArray(raw.adWins) ? raw.adWins : undefined,
+    adPaid: typeof raw.adPaid === "number" ? raw.adPaid : undefined,
+    chefsWon: Array.isArray(raw.chefsWon) ? raw.chefsWon : undefined,
+    chefBidPaid: typeof raw.chefBidPaid === "number" ? raw.chefBidPaid : undefined,
+    staffCounts:
+      raw.staffCounts && typeof raw.staffCounts === "object"
+        ? raw.staffCounts
+        : undefined,
+    productPrices:
+      raw.productPrices && typeof raw.productPrices === "object"
+        ? raw.productPrices
+        : undefined,
+    quantitiesStocked:
+      raw.quantitiesStocked && typeof raw.quantitiesStocked === "object"
+        ? raw.quantitiesStocked
+        : undefined,
+    dailyBreakdown: Array.isArray(raw.dailyBreakdown) ? raw.dailyBreakdown : undefined,
+    totalSpent: typeof raw.totalSpent === "number" ? raw.totalSpent : undefined,
+    equipmentGrade: typeof raw.equipmentGrade === "string" ? raw.equipmentGrade : undefined,
+    cleanlinessGrade: typeof raw.cleanlinessGrade === "string" ? raw.cleanlinessGrade : undefined,
+    specialtyChefCount:
+      typeof raw.specialtyChefCount === "number" ? raw.specialtyChefCount : undefined,
+    cumulativeRevenueAfter:
+      typeof raw.cumulativeRevenueAfter === "number" ? raw.cumulativeRevenueAfter : undefined,
+    roundSignals:
+      raw.roundSignals && typeof raw.roundSignals === "object"
+        ? raw.roundSignals
+        : undefined,
+    events: Array.isArray(raw.events) ? raw.events : undefined,
+    auctionResults: {
+      adWon: raw.adWon ?? null,
+      chefWon:
+        typeof raw.chefWon === "string"
+          ? raw.chefWon
+          : raw.chefWon ?? null,
+    },
+  } as RoundResult;
+}
+
 function WhatHurtPanel({ signals }: WhatHurtPanelProps) {
   // Find the lowest-satisfaction product (the "what to fix first" lever).
   // `perProductSatisfaction` is a Partial<Record<ProductKey, number>> —
@@ -216,7 +306,8 @@ export function ResultsPhase() {
   // BE-I03: auction result docs are keyed by team slug (or the player uid for
   // solo players, which is also `team.key` on the backend).
   const auctionResultKey = teamId || playerId;
-  const latest = roundResults[roundResults.length - 1];
+  const [playerDocResult, setPlayerDocResult] = useState<RoundResult | null>(null);
+  const [roundDocResult, setRoundDocResult] = useState<RoundResult | null>(null);
   const [liveAuctionResult, setLiveAuctionResult] = useState<{
     adWins: string[];
     adPaid: number | null;
@@ -228,6 +319,55 @@ export function ResultsPhase() {
     chefsWon: [],
     chefBidPaid: null,
   });
+
+  useEffect(() => {
+    if (!gameId || !playerId || !currentRound) {
+      setPlayerDocResult(null);
+      return;
+    }
+    const playerRef = doc(db, "games", gameId, "players", playerId);
+    const unsubscribe = onSnapshot(playerRef, (snap) => {
+      const result = coerceRoundResult((snap.data() as DocumentData | undefined)?.lastRoundResult);
+      setPlayerDocResult(result?.round === currentRound ? result : null);
+    }, (err) => {
+      console.error("results player-doc fallback listener error:", { gameId, playerId, err });
+      setPlayerDocResult(null);
+    });
+    return unsubscribe;
+  }, [gameId, playerId, currentRound]);
+
+  useEffect(() => {
+    if (!gameId || !playerId || !currentRound) {
+      setRoundDocResult(null);
+      return;
+    }
+    const resultRef = doc(
+      db,
+      "games",
+      gameId,
+      "players",
+      playerId,
+      "rounds",
+      `round_${currentRound}`,
+    );
+    const unsubscribe = onSnapshot(resultRef, (snap) => {
+      setRoundDocResult(snap.exists() ? coerceRoundResult(snap.data() as DocumentData) : null);
+    }, (err) => {
+      console.error("results round-doc fallback listener error:", { gameId, playerId, currentRound, err });
+      setRoundDocResult(null);
+    });
+    return unsubscribe;
+  }, [gameId, playerId, currentRound]);
+
+  const latest =
+    roundResults.find((result) => result.round === currentRound) ??
+    playerDocResult ??
+    roundDocResult ??
+    null;
+  const csvResults =
+    latest && !roundResults.some((result) => result.round === latest.round)
+      ? [...roundResults, latest]
+      : roundResults;
 
   useEffect(() => {
     if (!gameId || !auctionResultKey || !currentRound) return;
@@ -309,11 +449,11 @@ export function ResultsPhase() {
         <h2 className="results-phase__title">
           Round {currentRound} Results
         </h2>
-        {roundResults.length > 0 && canDownloadCsv && (
+        {csvResults.length > 0 && canDownloadCsv && (
           <button
             type="button"
             className="btn btn--ghost results-phase__download"
-            onClick={() => downloadResultsCsv(roundResults)}
+            onClick={() => downloadResultsCsv(csvResults)}
             aria-label="Download your monthly data as CSV"
             title="Download every round you've played as a CSV (one row per day)."
           >
@@ -394,7 +534,7 @@ export function ResultsPhase() {
               <Kpi
                 label="Profit (cumulative)"
                 value={formatMoney(
-                  roundResults.reduce((sum, r) => {
+                  csvResults.reduce((sum, r) => {
                     // Pre-rename round docs only carry `revenue`; new docs
                     // use `revenueNet`. Mirror the same-file `revenueNet ??
                     // revenue` fallback used elsewhere so cumulative isn't
