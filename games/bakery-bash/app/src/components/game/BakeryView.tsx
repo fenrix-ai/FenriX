@@ -258,7 +258,7 @@ function ProductTile({
               Max 9,999 units per product.
             </p>
           )}
-          <span className="product-tile__qty-hint">Daily selling amount for the month</span>
+          <span className="product-tile__qty-hint">Daily</span>
           <span className="product-tile__unit-cost">Cost: ${unitCost.toFixed(2)} / unit</span>
           <PriceInput
             value={price}
