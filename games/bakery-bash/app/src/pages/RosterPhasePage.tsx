@@ -40,12 +40,13 @@ import { humanizeFunctionError } from "../lib/errors";
 /**
  * FE-09 — `/game/roster` phase page.
  *
- * Apr 30 redesign: split-screen layout. Left side = "current roster"
- * (cap slots filled by the first `cap` chefs in the array). Right side =
- * "newly won + beyond capacity" — chefs that need a placement decision.
- * Players drag a right-side chef onto a filled left slot to lay off the
- * left chef and promote the dragged one. Click-based layoff still works
- * via the existing ChefCard button.
+ * Split-screen layout. Left side = "current roster" (cap slots filled by
+ * the first `cap` chefs in the array). Right side = "newly won + beyond
+ * capacity" — chefs that need a placement decision. Players drag a
+ * right-side chef onto a filled left slot to swap them in: the slot
+ * occupant is laid off and the dragged chef is moved into that slot via
+ * the `swapSpecialtyChef` callable so the swap is atomic. Click-based
+ * layoff still works via the existing ChefCard button.
  *
  * Role-gated: only `operations` or `solo` can lay off / continue.
  */
@@ -365,27 +366,28 @@ export function RosterPhasePage() {
   const continueDisabled =
     overCap || submitting !== null || !canAct || rosterCompleted;
 
-  // LEFT slots: first `cap` chefs. RIGHT panel: newly-won (any index)
-  // plus overflow (slice >= cap), de-duplicated.
+  // LEFT slots: first `cap` chefs. RIGHT panel: chefs that need a
+  // placement decision — newly-won chefs that landed in overflow, plus
+  // any other overflow chef. Newly-won chefs that already sit inside the
+  // left cap slots are NOT mirrored on the right (avoids duplicate
+  // cards across columns).
   const leftChefs = specialtyChefs.slice(0, specialtyChefCap);
   const overflowChefs = specialtyChefs.slice(specialtyChefCap);
+  const leftIds = useMemo(
+    () => new Set(leftChefs.map((c) => c.id)),
+    [leftChefs],
+  );
   const rightChefs = useMemo(() => {
     const seen = new Set<string>();
     const out: RosterChef[] = [];
-    for (const c of specialtyChefs) {
-      if (newlyWonChefIds.has(c.id) && !seen.has(c.id)) {
-        seen.add(c.id);
-        out.push(c);
-      }
-    }
     for (const c of overflowChefs) {
-      if (!seen.has(c.id)) {
+      if (!leftIds.has(c.id) && !seen.has(c.id)) {
         seen.add(c.id);
         out.push(c);
       }
     }
     return out;
-  }, [specialtyChefs, overflowChefs, newlyWonChefIds]);
+  }, [overflowChefs, leftIds]);
 
   const handleLayoffClick = async (chefId: string) => {
     if (!gameId || !canAct || pendingChefId) return;
@@ -444,9 +446,28 @@ export function RosterPhasePage() {
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   );
 
-  // Drag from right → left slot. If the slot is filled, we lay off
-  // that left chef (effectively swapping the dragged right chef into
-  // the slot once the array shifts). If the slot is empty, no-op.
+  const handleSwap = async (outChefId: string, inChefId: string) => {
+    if (!gameId || !canAct || pendingChefId) return;
+    setError(null);
+    setPendingChefId(outChefId);
+    try {
+      const swap = httpsCallable<
+        { gameId: string; outChefId: string; inChefId: string },
+        { success?: boolean }
+      >(functions, "swapSpecialtyChef");
+      await swap({ gameId, outChefId, inChefId });
+    } catch (err) {
+      setError(humanizeLayoffError(err));
+    } finally {
+      setPendingChefId(null);
+    }
+  };
+
+  // Drag from right → left slot. If the slot is filled, atomically swap
+  // the dragged chef into that slot via `swapSpecialtyChef` (lays off
+  // the slot occupant + reorders the array so the dragged chef occupies
+  // the slot index). If the slot is empty, no-op — the user can drop
+  // into a filled slot to displace the occupant.
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || !active) return;
@@ -457,7 +478,7 @@ export function RosterPhasePage() {
     const draggedId = String(active.id);
     if (!occupied) return;
     if (occupied === draggedId) return;
-    handleLayoffClick(occupied);
+    void handleSwap(occupied, draggedId);
   };
 
   return (

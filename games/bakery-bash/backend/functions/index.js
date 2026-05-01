@@ -3663,6 +3663,104 @@ exports.layoffChef = onCall(CALLABLE_OPTS, async (request) => {
 });
 
 // ===========================================================================
+// swapSpecialtyChef
+// ===========================================================================
+//
+// Atomic swap used by the roster split-screen drag-drop UI. Lays off the
+// `outChefId` (sends to chefReturnPool) AND reorders the team's
+// `specialtyChefs` array so `inChefId` moves into the slot index that
+// `outChefId` occupied. Without the reorder, dragging an overflow chef
+// onto a filled slot would lay off the occupant but leave the dragged
+// chef stuck in overflow — the visible "swap" would be a no-op for
+// the dragged chef. Mirrors the auth + phase guards from `layoffChef`.
+
+exports.swapSpecialtyChef = onCall(CALLABLE_OPTS, async (request) => {
+  if (isWarmupRequest(request)) return { ok: true, warm: true };
+  const auth = requireAuth(request);
+  const data = request.data || {};
+  const gameId = cleanGameId(data.gameId);
+  const outChefId = cleanString(data.outChefId);
+  const inChefId = cleanString(data.inChefId);
+  if (!outChefId) throw new HttpsError('invalid-argument', 'outChefId is required.');
+  if (!inChefId) throw new HttpsError('invalid-argument', 'inChefId is required.');
+  if (outChefId === inChefId) {
+    throw new HttpsError('invalid-argument', 'outChefId and inChefId must differ.');
+  }
+
+  const uid = auth.uid;
+  const gameRef = gameDoc(gameId);
+  const playerRef = gameRef.collection('players').doc(uid);
+
+  await db.runTransaction(async (transaction) => {
+    const [gSnap, pSnap, cfgSnap] = await Promise.all([
+      transaction.get(gameRef),
+      transaction.get(playerRef),
+      transaction.get(gameRef.collection('config').doc('params')),
+    ]);
+    if (!gSnap.exists) throw new HttpsError('not-found', 'Game not found.');
+    if (!pSnap.exists) throw new HttpsError('failed-precondition', 'Player not in this game.');
+
+    await assertRoleAllowedWithTeam(transaction, gameRef, pSnap, ['operations']);
+
+    const game = gSnap.data();
+    if (game.paused === true) {
+      throw new HttpsError('failed-precondition', 'Game is paused. Roster changes are temporarily disabled.');
+    }
+    const { phase } = parsePhase(game.phase, game.currentRound || game.round);
+    if (phase !== 'roster') {
+      throw new HttpsError('failed-precondition', 'Chefs can only be swapped during the roster phase.');
+    }
+
+    const config = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
+    const specialtyChefCap = numberOrDefault(config.specialtyChefCap, 3);
+    const player = pSnap.data();
+    const teamId = getPlayerTeamId(player);
+    const teamPlayerDocs = teamId
+      ? (await transaction.get(gameRef.collection('players').where('teamId', '==', teamId))).docs
+      : [pSnap];
+    const specialtyChefs = Array.isArray(player.specialtyChefs) ? player.specialtyChefs : [];
+    const outIdx = specialtyChefs.findIndex((c) => c && c.id === outChefId);
+    const inIdx = specialtyChefs.findIndex((c) => c && c.id === inChefId);
+    if (outIdx === -1) throw new HttpsError('not-found', 'Out chef not on your roster.');
+    if (inIdx === -1) throw new HttpsError('not-found', 'In chef not on your roster.');
+
+    const removed = specialtyChefs[outIdx];
+    const incoming = specialtyChefs[inIdx];
+
+    // Build the new array: drop both chefs, then insert `incoming` at
+    // outIdx (adjusted if inIdx < outIdx since the splice shifts).
+    const without = specialtyChefs.filter(
+      (c) => c && c.id !== outChefId && c.id !== inChefId,
+    );
+    const insertAt = inIdx < outIdx ? outIdx - 1 : outIdx;
+    const next = without.slice(0, insertAt).concat([incoming]).concat(without.slice(insertAt));
+
+    const round = numberOrDefault(game.currentRound || game.round, 1);
+    const returnPoolRef = gameRef
+      .collection('rounds')
+      .doc(`round_${round}`)
+      .collection('chefReturnPool')
+      .doc(outChefId);
+
+    transaction.set(returnPoolRef, {
+      ...removed,
+      returnedByPlayerId: uid,
+      returnedAt: FieldValue.serverTimestamp(),
+    });
+
+    for (const teamPlayerDoc of teamPlayerDocs) {
+      transaction.update(teamPlayerDoc.ref, {
+        specialtyChefs: next,
+        pendingRosterAction: next.length > specialtyChefCap,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
+  });
+
+  return { gameId, outChefId, inChefId, swapped: true };
+});
+
+// ===========================================================================
 // layoffChefs (M-13)
 // ===========================================================================
 //
