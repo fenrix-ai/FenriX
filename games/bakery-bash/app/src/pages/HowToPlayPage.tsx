@@ -88,8 +88,28 @@ const HOW_TO_PLAY_STAGES = [
   },
 ];
 
-// H-2 (2026-04-30): the CSV Inbox + chef tier/nationality info live in the
-// "Features" section, separate from the numbered round loop.
+// H-2 (2026-04-30): Features section — CSV Inbox + chef tiers + nationalities.
+const HOW_TO_PLAY_FEATURES = [
+  {
+    key: "csv-inbox",
+    label: "CSV Inbox",
+    tagline: "Your data, on demand.",
+    body: 'Tap the "My Data" button in the header to open a panel listing every data file your team has acquired: the results CSV, any competitor intel you\'ve bought, and purchasable chef-data CSVs. Pick which file to download — nothing auto-downloads when you open the panel.',
+  },
+  {
+    key: "chef-tiers",
+    label: "Chef Tiers",
+    tagline: "Higher tier, bigger multiplier.",
+    body: "Three specialty-chef tiers appear in the Chef Auction. Higher tier means a higher minimum bid, but also a bigger production multiplier.",
+  },
+  {
+    key: "chef-nationalities",
+    label: "Chef Nationalities",
+    tagline: "Four styles, one kitchen.",
+    body: "Chefs come from four nationalities. Each nationality has its own visual style and naming pool. Specialties stay hidden — only nationality and tier are visible before you bid.",
+  },
+] as const;
+
 const CHEF_TIERS = [
   {
     tier: "Low",
@@ -219,61 +239,48 @@ export function HowToPlayPage() {
           breakdown + nationality info, separate from the numbered loop. */}
       <section className="how-to-play__features-section" aria-label="Features">
         <h2 className="how-to-play__section-title">Features</h2>
-        <div className="how-to-play__feature-card">
-          <h3 className="how-to-play__feature-title">CSV Inbox</h3>
-          <p className="how-to-play__feature-body">
-            Tap the "My Data" button in the header to open a panel listing
-            every data file your team has acquired: the results CSV, any
-            competitor intel you've bought, and purchasable chef-data CSVs.
-            Pick which file to download — nothing auto-downloads when you
-            open the panel.
-          </p>
-        </div>
+        <div className="how-to-play__stages">
+          {HOW_TO_PLAY_FEATURES.map((feature) => (
+            <div key={feature.key} className="how-to-play__card">
+              <span className="how-to-play__card-label">{feature.label}</span>
+              <h2 className="how-to-play__card-tagline">{feature.tagline}</h2>
+              <p className="how-to-play__card-body">{feature.body}</p>
 
-        <div className="how-to-play__feature-card">
-          <h3 className="how-to-play__feature-title">Chef Tiers</h3>
-          <p className="how-to-play__feature-body">
-            Three specialty-chef tiers appear in the Chef Auction. Higher
-            tier means a higher minimum bid, but also a bigger production
-            multiplier.
-          </p>
-          <table className="how-to-play__chef-tier-table">
-            <thead>
-              <tr>
-                <th>Tier</th>
-                <th>Multiplier</th>
-                <th>Notes</th>
-              </tr>
-            </thead>
-            <tbody>
-              {CHEF_TIERS.map((t) => (
-                <tr key={t.tier}>
-                  <td>{t.tier}</td>
-                  <td>{t.multiplier}</td>
-                  <td>{t.body}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              {feature.key === "chef-tiers" && (
+                <table className="how-to-play__chef-tier-table">
+                  <thead>
+                    <tr>
+                      <th>Tier</th>
+                      <th>Multiplier</th>
+                      <th>Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {CHEF_TIERS.map((t) => (
+                      <tr key={t.tier}>
+                        <td>{t.tier}</td>
+                        <td>{t.multiplier}</td>
+                        <td>{t.body}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
 
-        <div className="how-to-play__feature-card">
-          <h3 className="how-to-play__feature-title">Chef Nationalities</h3>
-          <p className="how-to-play__feature-body">
-            Chefs come from four nationalities. Each nationality has its own
-            visual style and naming pool. Specialties stay hidden — only
-            nationality and tier are visible before you bid.
-          </p>
-          <ul className="how-to-play__nationality-list">
-            {CHEF_NATIONALITIES_INFO.map((n) => (
-              <li key={n.nationality} className="how-to-play__nationality-row">
-                <strong>{n.nationality}</strong>
-                <span className="how-to-play__nationality-examples">
-                  Example names: {n.examples}
-                </span>
-              </li>
-            ))}
-          </ul>
+              {feature.key === "chef-nationalities" && (
+                <ul className="how-to-play__nationality-list">
+                  {CHEF_NATIONALITIES_INFO.map((n) => (
+                    <li key={n.nationality} className="how-to-play__nationality-row">
+                      <strong>{n.nationality}</strong>
+                      <span className="how-to-play__nationality-examples">
+                        Example names: {n.examples}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
         </div>
       </section>
     </PageShell>
