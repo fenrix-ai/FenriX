@@ -379,6 +379,15 @@ export interface UseBakerySceneResult {
 
 const CHEF_BOB_MS = 400 // full cycle (frames 0→1→0)
 
+/**
+ * X anchor for barista sous chefs. The espresso machine occupies the area
+ * around SCENE.stations.barista (x=260); sous chefs placed there are hidden
+ * behind it. Shift them to the right of the machine so they're visible,
+ * while still sitting behind the counter front (ChefLayer renders before
+ * CounterFrontLayer so the counter overlaps their lower half as intended).
+ */
+const BARISTA_SOUS_X = 320
+
 /** Deterministic chef positioning. Width=24 → each sprite X-offset by 24 px per extra chef at the same station. */
 function computeChefs(staffCounts: Record<StationKey, number>): Chef[] {
   const stations: StationKey[] = ['bakery', 'deli', 'barista']
@@ -391,12 +400,15 @@ function computeChefs(staffCounts: Record<StationKey, number>): Chef[] {
   }
   if (assignments.length > 4) assignments.length = 4
   return assignments.map((a) => {
-    const baseX = SCENE.stations[a.station]
+    const isSingle = staffCounts[a.station] === 1
+    // Barista sous chefs anchor to the right of the espresso machine so
+    // they're visible rather than hidden behind the machine sprite.
+    const baseX = a.station === 'barista' ? BARISTA_SOUS_X : SCENE.stations[a.station]
     const offset = (a.index - 0.5) * 24
     return {
       id: `${a.station}-${a.index}`,
       station: a.station,
-      x: Math.round(baseX + (a.index === 0 && staffCounts[a.station] === 1 ? 0 : offset)),
+      x: Math.round(baseX + (a.index === 0 && isSingle ? 0 : offset)),
       y: SCENE.chefTopY,
       frame: 0,
     }
