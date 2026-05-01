@@ -6,6 +6,8 @@ interface Props {
   frame: number
   /** Optional className for positioning. */
   className?: string
+  /** CSS scale multiplier applied via style width/height (default 1). */
+  pixelScale?: number
 }
 
 /**
@@ -16,7 +18,7 @@ interface Props {
  * `image-rendering: pixelated` is set inline so the canvas draws crisp
  * pixels even when CSS scales the ancestor.
  */
-export function PixelSprite({ data, frame, className }: Props) {
+export function PixelSprite({ data, frame, className, pixelScale = 1 }: Props) {
   const ref = useRef<HTMLCanvasElement | null>(null)
 
   useEffect(() => {
@@ -36,7 +38,12 @@ export function PixelSprite({ data, frame, className }: Props) {
       width={data.width}
       height={data.height}
       className={className}
-      style={{ imageRendering: 'pixelated', display: 'block' }}
+      style={{
+        imageRendering: 'pixelated',
+        display: 'block',
+        width: `${data.width * pixelScale}px`,
+        height: `${data.height * pixelScale}px`,
+      }}
     />
   )
 }

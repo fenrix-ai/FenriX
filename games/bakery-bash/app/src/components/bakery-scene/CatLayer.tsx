@@ -7,7 +7,8 @@ interface Props {
 }
 
 export function CatLayer({ cat }: Props) {
-  const halfW = Math.floor(catSprite.width / 2)
+  const scale = 1.5
+  const halfW = Math.floor((catSprite.width * scale) / 2)
   return (
     <div
       data-testid="cat-wrapper"
@@ -19,7 +20,7 @@ export function CatLayer({ cat }: Props) {
         pointerEvents: 'none',
       }}
     >
-      <PixelSprite data={catSprite} frame={cat.frame} />
+      <PixelSprite data={catSprite} frame={cat.frame} pixelScale={scale} />
     </div>
   )
 }

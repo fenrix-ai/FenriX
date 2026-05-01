@@ -22,6 +22,10 @@ import {
   AdWinnerBanner,
   type AdWinnerEntry,
 } from "../components/game/AdWinnerBanner";
+import {
+  ChefWinnerBanner,
+  type ChefWinnerEntry,
+} from "../components/game/ChefWinnerBanner";
 import { SubmissionLock } from "../components/game/SubmissionLock";
 import { PageShell } from "../components/ui/PageShell";
 import { SimulatePhase } from "./phases/SimulatePhase";
@@ -146,6 +150,8 @@ export function GamePage() {
   const [rawAdAuction, setRawAdAuction] = useState<
     Record<string, { winnerId: string; winningBid: number }> | null
   >(null);
+  const [chefWins, setChefWins] = useState<ChefWinnerEntry[]>([]);
+  const [chefAuctionResolved, setChefAuctionResolved] = useState(false);
 
   // --- Listener: /games/{gameId} — drives phase + round + phaseEndsAt. ---
   useEffect(() => {
@@ -578,6 +584,48 @@ export function GamePage() {
     return unsubscribe;
   }, [gameId, currentRound]);
 
+  // Chef wins listener — same source as RosterPhasePage. Shows chefs the
+  // team won in the most recent auction so players see their roster on
+  // the Decide screen before the next roster phase.
+  const auctionResultKey = teamId || playerId || null;
+  useEffect(() => {
+    if (!gameId || !currentRound || !auctionResultKey) {
+      setChefWins([]);
+      setChefAuctionResolved(false);
+      return;
+    }
+    const roundRef = doc(db, "games", gameId, "rounds", `round_${currentRound}`);
+    const unsubscribe = onSnapshot(roundRef, (snap) => {
+      if (!snap.exists()) { setChefWins([]); setChefAuctionResolved(false); return; }
+      const data = snap.data() as import("firebase/firestore").DocumentData;
+      setChefAuctionResolved(Boolean(data.chefAuctionResolvedAt));
+      const results = (data.chefAuctionResults ?? null) as import("firebase/firestore").DocumentData | null;
+      const entry = results?.[auctionResultKey] as import("firebase/firestore").DocumentData | undefined;
+      if (!entry || !Array.isArray(entry.chefs)) { setChefWins([]); return; }
+      const totalPaid = Number(entry.totalPaid) || 0;
+      const floors = entry.chefs.map((c: import("firebase/firestore").DocumentData) =>
+        typeof c.minBidFloor === "number" && c.minBidFloor > 0 ? c.minBidFloor : 1,
+      );
+      const floorSum = floors.reduce((s: number, f: number) => s + f, 0) || 1;
+      const wins: ChefWinnerEntry[] = entry.chefs
+        .map((c: import("firebase/firestore").DocumentData, i: number): ChefWinnerEntry | null => {
+          const nat = c.nationality;
+          const validNat = nat === "american" || nat === "french" || nat === "italian" || nat === "japanese" ? nat : null;
+          const rawGen = c.gender;
+          const gender = rawGen === "male" || rawGen === "m" ? "m" : rawGen === "female" || rawGen === "f" ? "f" : null;
+          const id = typeof c.id === "string" ? c.id : null;
+          const name = typeof c.name === "string" ? c.name : null;
+          if (!id || !name || !validNat || !gender) return null;
+          const skillTier = c.skillTier === "novel" || c.skillTier === "intermediate" || c.skillTier === "advanced" || c.skillTier === "base"
+            ? (c.skillTier as ChefWinnerEntry["skillTier"]) : undefined;
+          return { chefId: id, name, nationality: validNat, gender, amount: Math.round(totalPaid * floors[i] / floorSum), skillTier };
+        })
+        .filter((c: ChefWinnerEntry | null): c is ChefWinnerEntry => c !== null);
+      setChefWins(wins);
+    }, (err) => { console.error("GamePage chef-winner listener error:", { gameId, currentRound, err }); });
+    return unsubscribe;
+  }, [gameId, currentRound, auctionResultKey]);
+
   const adWinners = useMemo(() => {
     if (!rawAdAuction) return null;
     const out: Partial<Record<AdWinnerEntry["adType"], AdWinnerEntry>> = {};
@@ -841,6 +889,15 @@ export function GamePage() {
   return (
     <PageShell className="game-page game-page--wide">
       <RoundHeader />
+
+      {/* Specialty chef hires — shows chefs won in the most recent auction
+          so players see their roster context before submitting decisions. */}
+      <ChefWinnerBanner
+        round={currentRound}
+        winners={chefWins}
+        hideWhenEmpty={true}
+        resolved={chefAuctionResolved}
+      />
 
       {/* FE-11 — this round's ad winners banner (from bid_ad which now runs
           before decide). Hidden automatically when no bids landed yet. */}

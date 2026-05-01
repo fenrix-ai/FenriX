@@ -22,7 +22,8 @@ export function ChefLayer({ chefs }: Props) {
     >
       {chefs.map((c) => {
         const data = SPRITE_FOR_STATION[c.station]
-        const halfW = Math.floor(data.width / 2)
+        const scale = 1.5
+        const halfW = Math.floor((data.width * scale) / 2)
         return (
           <div
             key={c.id}
@@ -33,7 +34,7 @@ export function ChefLayer({ chefs }: Props) {
               top: `${c.y}px`,
             }}
           >
-            <PixelSprite data={data} frame={c.frame} />
+            <PixelSprite data={data} frame={c.frame} pixelScale={scale} />
           </div>
         )
       })}

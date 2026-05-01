@@ -120,7 +120,7 @@ export function CsvInboxModal({ open, onClose }: CsvInboxModalProps) {
             <li className="csv-inbox__item csv-inbox__item--empty">
               <em>
                 No purchased data yet. Finance can buy competitor intel and
-                chef-data CSVs during the Decide phase.
+                chef-data CSVs in the Results phase.
               </em>
             </li>
           )}

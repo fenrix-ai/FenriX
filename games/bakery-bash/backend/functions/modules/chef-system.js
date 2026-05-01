@@ -309,6 +309,10 @@ function resolveChefAuction(chefPool, playerBids) {
     bidsByChef.get(bid.chefId).push(bid);
   }
 
+  // winningBids: Map<chefId, { winnerId, amount }> — used by callers to
+  // compute per-chef winning bid amounts and build outbid summaries.
+  const winningBids = new Map();
+
   for (const chef of pool) {
     const bids = bidsByChef.get(chef.id);
     if (!bids || bids.length === 0) continue;
@@ -328,9 +332,10 @@ function resolveChefAuction(chefPool, playerBids) {
     winners.get(best.playerId).push(chef);
 
     payments.set(best.playerId, (payments.get(best.playerId) || 0) + best.amount);
+    winningBids.set(chef.id, { winnerId: best.playerId, amount: best.amount });
   }
 
-  return { winners, payments };
+  return { winners, payments, winningBids };
 }
 
 // ---------------------------------------------------------------------------

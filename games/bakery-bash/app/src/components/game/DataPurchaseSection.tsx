@@ -145,15 +145,10 @@ export function DataPurchaseSection() {
 
   return (
     <section className="results-phase__data-purchases">
-      <h3 className="results-phase__section-title">Buy Round Data</h3>
+      <h3 className="results-phase__section-title">Buy Data</h3>
       <p className="results-phase__data-purchases-hint">
         Spend cash now to peek at the round you just played — competitor
         decisions, chef tables, etc. Purchases land in your CSV Inbox.
-      </p>
-      {/* R-3 (2026-04-30) — Competitor Intel tagline. */}
-      <p className="results-phase__intel-tagline">
-        Snoop how your competitors are pricing and setting quantities each
-        round (might be helpful for you to gain a competitive edge!)
       </p>
 
       <div className="results-phase__data-purchase-row">
@@ -171,6 +166,9 @@ export function DataPurchaseSection() {
             ? `Competitor Intel (R${currentRound}) ✓ Purchased`
             : `Buy Competitor Intel — $${COMPETITOR_INTEL_COST.toLocaleString()}`}
         </button>
+        <p className="results-phase__data-purchase-hint">
+          See what your competitors are setting for quantities and price.
+        </p>
         {showIntelConfirm && !hasIntelForCurrentRound && (
           <div className="results-phase__intel-confirm">
             <p>
