@@ -3,7 +3,7 @@ import type { ChefNationality, ChefGender } from "../../types/game";
 /**
  * Shows the chefs a player bid on but was outbid for in the current round.
  * Rendered above ChefWinnerBanner on the Kitchen Roster page so students can
- * immediately see who beat them and for how much.
+ * immediately see who beat them without exposing the winning bid amount.
  */
 export interface ChefOutbidEntry {
   id: string;
@@ -12,7 +12,6 @@ export interface ChefOutbidEntry {
   gender: ChefGender;
   skillTier?: "novel" | "intermediate" | "advanced" | "base";
   winnerBakeryName: string;
-  winningBid: number;
 }
 
 export interface ChefOutbidBannerProps {

@@ -190,29 +190,15 @@ function computePlayerOutputAndSatisfaction(player, roundPreferences, config, st
   const offeredProducts = getOfferedProducts(decision);
   const perProduct = {};
 
-  // Default to a single-day slice (daysPerRound=1, day=0) for single-round
-  // callers (tests, single-day sims). Multi-day wrapper passes
-  // { daysPerRound, day } so each day gets its proper share of monthly stock
-  // with the remainder distributed across early days (no integer-floor loss).
-  const daysPerRound = (stockSliceOpts && stockSliceOpts.daysPerRound) || 1;
-  const day = (stockSliceOpts && stockSliceOpts.day) || 0;
-
   for (const product of offeredProducts) {
     // Step 1: raw total output from base + specialty + sous chefs
     const totalOutput = calculateTotalProductOutput(product, specialtyChefs, sousChefAssignments);
 
-    // Step 2: supply cap — cannot exceed what was stocked.
-    // The multi-day wrapper splits monthly stock across days so the SUM of
-    // daily caps equals exactly the monthly stock the player paid for.
-    // Distribution: floor(monthly/days) per day + 1 extra unit on the first
-    // (monthly % days) days, so a player with monthly_stock=100 and
-    // days=30 gets 4-day caps of 4 each and 26 days of 3, summing to
-    // 4*4 + 26*3 = 94 + 0 ... wait. 100/30 = 3 r 10. So 10 days at 4 +
-    // 20 days at 3 = 40 + 60 = 100. ✓ exact, no loss.
-    const monthlyStock = getQuantity(decision, product);
-    const baseSlice = Math.floor(monthlyStock / daysPerRound);
-    const remainder = monthlyStock - baseSlice * daysPerRound;
-    const qtyStocked = baseSlice + (day < remainder ? 1 : 0);
+    // Step 2: supply cap — cannot exceed the daily quantity stocked.
+    // The decisions UI labels quantities as "Daily", so the 30-day wrapper
+    // reuses this cap each simulated day and multiplies it by days only for
+    // monthly stock cost accounting.
+    const qtyStocked = getQuantity(decision, product);
     const supplyCapped = Math.min(totalOutput, qtyStocked);
 
     // Step 3: equipment factor on throughput
@@ -433,18 +419,23 @@ function runSimulation(players, roundPreferences, config, { gameId = 'game', rou
       const allocatedCustomers = Math.max(0, Math.floor(Number(allocPerProduct[product]) || 0));
       const qtyStocked = preStats.qtyStocked;
 
-      let sellout = false;
-      if (allocatedCustomers > qtyStocked) {
-        const r = applySelloutCap(pp.perProduct, product);
-        sellout = r.sellout;
-        selloutAnywhere = selloutAnywhere || sellout;
-      }
-
-      // Read stats AFTER the potential cap so the output reflects the cap.
-      // applySelloutCap reassigns pp.perProduct[product] to a cloned entry —
-      // capturing stats before the call would surface pre-cap values.
-      const stats = pp.perProduct[product];
       const qtySold = Math.min(allocatedCustomers, qtyStocked);
+      const sellout = allocatedCustomers > qtyStocked;
+      selloutAnywhere = selloutAnywhere || sellout;
+      const serviceFillRate =
+        allocatedCustomers > 0 ? qtySold / allocatedCustomers : 0;
+      const serviceSat = Math.max(0, Math.min(100,
+        fillRateToSatisfactionPct(serviceFillRate) *
+          cleanlinessFactor(pp.cleanlinessGrade) *
+          equipmentFactorSatisfaction(pp.equipmentGrade)
+      ));
+      const stats = {
+        ...preStats,
+        fillRate: serviceFillRate,
+        satisfactionPct: sellout ? Math.min(serviceSat, SELLOUT_SAT_CAP) : serviceSat,
+      };
+      stats.tier = tierForSatisfaction(stats.satisfactionPct);
+      pp.perProduct[product] = stats;
 
       perProductCustomers[product] = allocatedCustomers;
       perProductSatisfaction[product] = {

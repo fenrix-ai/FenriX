@@ -88,6 +88,27 @@ function coerceChef(raw: DocumentData): RosterChef | null {
   };
 }
 
+function normalizeRosterBenchIds(
+  rawBenchIds: unknown,
+  chefs: RosterChef[],
+  specialtyChefCap: number,
+): Set<string> {
+  const chefIds = new Set(chefs.map((chef) => chef.id));
+  const benchIds = new Set<string>();
+  if (Array.isArray(rawBenchIds)) {
+    rawBenchIds.forEach((id) => {
+      if (typeof id === "string" && id.length > 0 && chefIds.has(id)) {
+        benchIds.add(id);
+      }
+    });
+  }
+  const activeChefs = chefs.filter((chef) => !benchIds.has(chef.id));
+  activeChefs.slice(specialtyChefCap).forEach((chef) => {
+    benchIds.add(chef.id);
+  });
+  return benchIds;
+}
+
 /* ---------------- Drag-drop pieces ---------------- */
 
 interface DraggableChefProps {
@@ -206,6 +227,7 @@ export function RosterPhasePage() {
   const [rosterCompleted, setRosterCompleted] = useState(false);
   const [laidOffChefs, setLaidOffChefs] = useState<LaidOffChef[]>([]);
   const [pendingChefId, setPendingChefId] = useState<string | null>(null);
+  const [rosterBenchChefIds, setRosterBenchChefIds] = useState<Set<string>>(new Set());
   const [chefWins, setChefWins] = useState<ChefWinnerEntry[]>([]);
   const [chefOutbid, setChefOutbid] = useState<ChefOutbidEntry[]>([]);
   const [chefAuctionResolved, setChefAuctionResolved] = useState(false);
@@ -306,13 +328,12 @@ export function RosterPhasePage() {
             const id = typeof o.id === "string" ? o.id : null;
             const name = typeof o.name === "string" ? o.name : null;
             const winnerBakeryName = typeof o.winnerBakeryName === "string" ? o.winnerBakeryName : "Another team";
-            const winningBid = typeof o.winningBid === "number" ? o.winningBid : 0;
             if (!id || !name || !validNat || !gender) return null;
             const skillTier =
               o.skillTier === "novel" || o.skillTier === "intermediate" ||
               o.skillTier === "advanced" || o.skillTier === "base"
                 ? (o.skillTier as ChefOutbidEntry["skillTier"]) : undefined;
-            return { id, name, nationality: validNat, gender, skillTier, winnerBakeryName, winningBid };
+            return { id, name, nationality: validNat, gender, skillTier, winnerBakeryName };
           })
           .filter((o: ChefOutbidEntry | null): o is ChefOutbidEntry => o !== null);
         setChefOutbid(outbidEntries);
@@ -341,7 +362,13 @@ export function RosterPhasePage() {
         if (!snap.exists()) return;
         const data = snap.data() as DocumentData;
         const raw = Array.isArray(data.specialtyChefs) ? data.specialtyChefs : [];
-        setSpecialtyChefs(raw.map(coerceChef).filter((c): c is RosterChef => c !== null));
+        const chefs = raw.map(coerceChef).filter((c): c is RosterChef => c !== null);
+        setSpecialtyChefs(chefs);
+        setRosterBenchChefIds(normalizeRosterBenchIds(
+          data.rosterBenchChefIds,
+          chefs,
+          specialtyChefCap,
+        ));
         setPendingRosterAction(data.pendingRosterAction === true);
         setRosterCompleted(data.rosterCompleted === true);
       },
@@ -350,7 +377,7 @@ export function RosterPhasePage() {
       },
     );
     return unsubscribe;
-  }, [gameId, playerId]);
+  }, [gameId, playerId, specialtyChefCap]);
 
   useEffect(() => {
     if (!gameId || !currentRound) {
@@ -398,38 +425,23 @@ export function RosterPhasePage() {
 
   const canAct = roleOwnsRoster(role, teamRoleAssignments);
   const ownerLabel = ownerOfRoster();
-  const overCap = specialtyChefs.length > specialtyChefCap;
-  const rosterFull = specialtyChefs.length >= specialtyChefCap;
+
+  const leftChefs = specialtyChefs
+    .filter((c) => !rosterBenchChefIds.has(c.id))
+    .slice(0, specialtyChefCap);
+  const rightChefsFromArray = specialtyChefs.filter((c) =>
+    rosterBenchChefIds.has(c.id),
+  );
+
+  const overCap = leftChefs.length > specialtyChefCap;
+  const rosterFull = leftChefs.length >= specialtyChefCap;
   const continueDisabled =
     overCap || submitting !== null || !canAct || rosterCompleted;
 
-  // LEFT slots: first `cap` chefs. RIGHT panel: chefs that need a
-  // placement decision — newly-won chefs that landed in overflow, plus
-  // any other overflow chef. Newly-won chefs that already sit inside the
-  // left cap slots are NOT mirrored on the right (avoids duplicate
-  // cards across columns).
-  const leftChefs = specialtyChefs.slice(0, specialtyChefCap);
-  const overflowChefs = specialtyChefs.slice(specialtyChefCap);
-  const leftIds = useMemo(
-    () => new Set(leftChefs.map((c) => c.id)),
-    [leftChefs],
-  );
-  const rightChefs = useMemo(() => {
-    const seen = new Set<string>();
-    const out: RosterChef[] = [];
-    for (const c of overflowChefs) {
-      if (!leftIds.has(c.id) && !seen.has(c.id)) {
-        seen.add(c.id);
-        out.push(c);
-      }
-    }
-    return out;
-  }, [overflowChefs, leftIds]);
-
   // Combined right panel: overflow chefs + laid-off chefs (deduped)
   const allRightChefs = useMemo(() => {
-    const seen = new Set<string>(rightChefs.map((c) => c.id));
-    const out: RosterChef[] = [...rightChefs];
+    const seen = new Set<string>(rightChefsFromArray.map((c) => c.id));
+    const out: RosterChef[] = [...rightChefsFromArray];
     for (const c of laidOffChefs) {
       if (!seen.has(c.id)) {
         seen.add(c.id);
@@ -437,7 +449,7 @@ export function RosterPhasePage() {
       }
     }
     return out;
-  }, [rightChefs, laidOffChefs]);
+  }, [rightChefsFromArray, laidOffChefs]);
 
   const handleLayoffClick = async (chefId: string) => {
     if (!gameId || !canAct || pendingChefId) return;
@@ -474,7 +486,7 @@ export function RosterPhasePage() {
   };
 
   const handleAddToRoster = async (chefId: string) => {
-    if (!canAct) return;
+    if (!gameId || !canAct || pendingChefId) return;
     if (rosterFull) {
       setPerChefError((prev) => ({
         ...prev,
@@ -483,7 +495,22 @@ export function RosterPhasePage() {
       return;
     }
     setPerChefError((prev) => ({ ...prev, [chefId]: "" }));
-    await handleRehireClick(chefId);
+    if (rosterBenchChefIds.has(chefId)) {
+      setPendingChefId(chefId);
+      try {
+        const promote = httpsCallable<
+          { gameId: string; chefId: string },
+          { ok?: boolean; promoted?: boolean }
+        >(functions, "promoteRosterBenchChef");
+        await promote({ gameId, chefId });
+      } catch (err) {
+        setError(humanizeRehireError(err));
+      } finally {
+        setPendingChefId(null);
+      }
+    } else {
+      await handleRehireClick(chefId);
+    }
   };
 
   const handleContinue = async () => {
@@ -539,9 +566,12 @@ export function RosterPhasePage() {
       | undefined;
     const occupied = overData?.occupiedChefId;
     const draggedId = String(active.id);
-    if (!occupied) return;
-    if (occupied === draggedId) return;
-    void handleSwap(occupied, draggedId);
+    if (occupied) {
+      if (occupied === draggedId) return;
+      void handleSwap(occupied, draggedId);
+    } else if (rosterBenchChefIds.has(draggedId) && !rosterFull) {
+      void handleAddToRoster(draggedId);
+    }
   };
 
   return (

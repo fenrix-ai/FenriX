@@ -386,7 +386,7 @@ const CHEF_BOB_MS = 400 // full cycle (frames 0→1→0)
  * while still sitting behind the counter front (ChefLayer renders before
  * CounterFrontLayer so the counter overlaps their lower half as intended).
  */
-const BARISTA_SOUS_X = 320
+const BARISTA_SOUS_X = 414
 
 /** Deterministic chef positioning. Width=24 → each sprite X-offset by 24 px per extra chef at the same station. */
 function computeChefs(staffCounts: Record<StationKey, number>): Chef[] {

@@ -448,7 +448,12 @@ export interface RoundResult {
   adWon?: AdType | null;
   adWins?: AdType[];
   adPaid?: number;
-  chefsWon?: Array<{ id?: string; name?: string }>;
+  chefsWon?: Array<{
+    id?: string;
+    name?: string;
+    skillTier?: "novel" | "intermediate" | "advanced" | "base";
+    bidAmount?: number;
+  }>;
   chefBidPaid?: number;
   /**
    * Curveball events that landed on this team during the round. Optional
