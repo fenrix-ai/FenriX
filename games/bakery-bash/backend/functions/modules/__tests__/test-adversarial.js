@@ -95,7 +95,7 @@ section('A: config.js — type confusion & boundary fuzzing');
 
 test('mergeConfig: null input → full defaults', () => {
   const cfg = config.mergeConfig(null);
-  assert(cfg.startingBudget === 10000, 'startingBudget default');
+  assert(cfg.startingBudget === 5000, 'startingBudget default');
   assert(cfg.totalRounds === 5, 'totalRounds default');
 }, 'HIGH');
 
@@ -116,17 +116,17 @@ test('mergeConfig: string input → full defaults', () => {
 
 test('mergeConfig: NaN budget → default', () => {
   const cfg = config.mergeConfig({ startingBudget: NaN });
-  assert(cfg.startingBudget === 10000, `NaN budget should fall back to default, got ${cfg.startingBudget}`);
+  assert(cfg.startingBudget === 5000, `NaN budget should fall back to default, got ${cfg.startingBudget}`);
 }, 'HIGH');
 
 test('mergeConfig: Infinity budget → default', () => {
   const cfg = config.mergeConfig({ startingBudget: Infinity });
-  assert(cfg.startingBudget === 10000, `Infinity budget should fall back to default, got ${cfg.startingBudget}`);
+  assert(cfg.startingBudget === 5000, `Infinity budget should fall back to default, got ${cfg.startingBudget}`);
 }, 'HIGH');
 
 test('mergeConfig: -Infinity budget → default', () => {
   const cfg = config.mergeConfig({ startingBudget: -Infinity });
-  assert(cfg.startingBudget === 10000, `-Infinity budget should fall back to default`);
+  assert(cfg.startingBudget === 5000, `-Infinity budget should fall back to default`);
 }, 'HIGH');
 
 test('mergeConfig: negative budget override is accepted as-is (no domain clamp)', () => {
@@ -142,12 +142,12 @@ test('mergeConfig: MAX_SAFE_INTEGER budget', () => {
 
 test('mergeConfig: injection string in startingBudget → default', () => {
   const cfg = config.mergeConfig({ startingBudget: "'; DROP TABLE games; --" });
-  assert(cfg.startingBudget === 10000, 'SQL injection in budget → default');
+  assert(cfg.startingBudget === 5000, 'SQL injection in budget → default');
 }, 'CRITICAL');
 
 test('mergeConfig: script tag in startingBudget → default', () => {
   const cfg = config.mergeConfig({ startingBudget: '<script>alert(1)</script>' });
-  assert(cfg.startingBudget === 10000, 'XSS in budget → default');
+  assert(cfg.startingBudget === 5000, 'XSS in budget → default');
 }, 'CRITICAL');
 
 test('mergeConfig: numeric string budget → parsed correctly', () => {

@@ -8,7 +8,7 @@ const near = (a, b, eps = 1e-6) => Math.abs(a - b) < eps;
 
 // ---------- config ----------
 const cfg = config.mergeConfig({});
-assert(cfg.startingBudget === 10000, 'startingBudget default');
+assert(cfg.startingBudget === 5000, 'startingBudget default');
 assert(cfg.sousChefBaseCost === 10, 'sousChefBaseCost default');
 assert(cfg.adBonuses.TV === 400, 'adBonuses.TV default');
 assert(cfg.returningCustomerBonuses.excellent === 0.15, 'returning excellent');
