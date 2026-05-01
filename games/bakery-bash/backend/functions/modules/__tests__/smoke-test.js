@@ -10,7 +10,7 @@ const near = (a, b, eps = 1e-6) => Math.abs(a - b) < eps;
 const cfg = config.mergeConfig({});
 assert(cfg.startingBudget === 5000, 'startingBudget default');
 assert(cfg.sousChefBaseCost === 10, 'sousChefBaseCost default');
-assert(cfg.adBonuses.TV === 400, 'adBonuses.TV default');
+assert(cfg.adBonuses.TV === 250, 'adBonuses.TV default');
 assert(cfg.returningCustomerBonuses.excellent === 0.15, 'returning excellent');
 
 // User overrides (and a bad value)
@@ -22,7 +22,7 @@ const cfg2 = config.mergeConfig({
 assert(cfg2.startingBudget === 3000, 'override startingBudget');
 assert(cfg2.sousChefBaseCost === 10, 'bad value → default');
 assert(cfg2.adBonuses.TV === 999, 'override TV');
-assert(cfg2.adBonuses.Radio === 150, 'untouched Radio');
+assert(cfg2.adBonuses.Radio === 100, 'untouched Radio');
 
 assert(config.numberOrDefault('7', 0) === 7, 'numberOrDefault string');
 assert(config.numberOrDefault(undefined, 5) === 5, 'numberOrDefault undefined');
