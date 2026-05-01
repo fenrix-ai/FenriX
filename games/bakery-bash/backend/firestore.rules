@@ -41,13 +41,30 @@ service cloud.firestore {
     // activity, Bakery round visuals, and winner announcements.
     // Read is open to any signed-in viewer (the /event/display surface
     // can run on a projection laptop without per-device claims).
-    // Writes require the professor custom claim — without that gate,
-    // anonymous-auth visitors (the AuthProvider auto-signs everyone in)
-    // could overwrite live event state mid-session.
+    // Writes require either the professor custom claim OR ownership of
+    // the game referenced by `ownerGameId`. This matches the rest of the
+    // professor surfaces, which use `game.professorUid` / `professorId`
+    // rather than requiring a separately-provisioned global claim.
     // ─────────────────────────────────────────────────────────
     match /eventBoards/{sessionId} {
       allow read: if signedIn();
-      allow write: if isProfessor();
+      allow create: if isProfessor()
+        || (
+          request.resource.data.ownerGameId is string
+          && isGameProfessor(request.resource.data.ownerGameId)
+        );
+      allow update: if isProfessor()
+        || (
+          request.resource.data.ownerGameId is string
+          && isGameProfessor(request.resource.data.ownerGameId)
+          && (
+            (
+              resource.data.ownerGameId is string
+              && resource.data.ownerGameId == request.resource.data.ownerGameId
+            )
+            || !(resource.data.ownerGameId is string)
+          )
+        );
     }
 
     // ─────────────────────────────────────────────────────────

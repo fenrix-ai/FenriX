@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { doc, onSnapshot, setDoc, serverTimestamp } from "firebase/firestore";
 import { useAuth } from "../contexts/AuthContext";
+import { useGame } from "../contexts/GameContext";
 import { useIsProfessor } from "./useIsProfessor";
 import { normalizeAvatarName, slugifyAvatarKey } from "../lib/avatarManifest";
 import { fetchEventRoster } from "../lib/eventRoster";
@@ -32,6 +33,7 @@ interface StoredBoardState {
   meta: EventBoardMeta;
   players: EventStateMap;
   customPlayers: string[];
+  ownerGameId: string | null;
 }
 
 interface StoredBoardDocument extends StoredBoardState {
@@ -173,6 +175,10 @@ function normalizeStoredBoardState(parsed: unknown): StoredBoardState {
         ]),
       ),
       customPlayers: customPlayersSource.map(normalizeAvatarName).filter(Boolean),
+      ownerGameId:
+        typeof parsed.ownerGameId === "string" && parsed.ownerGameId.trim()
+          ? parsed.ownerGameId.trim()
+          : null,
     };
   }
 
@@ -180,6 +186,7 @@ function normalizeStoredBoardState(parsed: unknown): StoredBoardState {
     meta: cloneDefaultMeta("cookie"),
     players: {},
     customPlayers: [],
+    ownerGameId: null,
   };
 }
 
@@ -189,6 +196,7 @@ function loadStoredBoardState(sessionId: string): StoredBoardState {
       meta: cloneDefaultMeta("cookie"),
       players: {},
       customPlayers: [],
+      ownerGameId: null,
     };
   }
 
@@ -207,12 +215,14 @@ function loadStoredBoardState(sessionId: string): StoredBoardState {
       meta: cloneDefaultMeta("cookie"),
       players: legacyRaw ? loadLegacyPlayers(legacyRaw) : {},
       customPlayers: [],
+      ownerGameId: null,
     };
   } catch {
     return {
       meta: cloneDefaultMeta("cookie"),
       players: {},
       customPlayers: [],
+      ownerGameId: null,
     };
   }
 }
@@ -226,6 +236,7 @@ function serializeBoardState(state: StoredBoardState): StoredBoardDocument {
     meta: state.meta,
     players: state.players,
     customPlayers: state.customPlayers,
+    ownerGameId: state.ownerGameId,
     updatedAt: serverTimestamp(),
   };
 }
@@ -252,11 +263,12 @@ function createCustomRosterPlayer(name: string): EventRosterPlayer {
 
 export function useEventLeaderboard() {
   const { user, loading: authLoading } = useAuth();
-  // Only professors can write the eventBoards doc (firestore.rules:45-48).
-  // Display-only consumers should not try to seed-on-empty — the setDoc
-  // call would silently fail and the hook would re-trigger on every
-  // snapshot. Gate seeding + mutation paths on the professor claim.
-  const { isProfessor } = useIsProfessor();
+  const { gameId } = useGame();
+  // Event board writes are allowed either for global professor accounts or
+  // the current game's owning professor UID. Keep the client in sync with
+  // the Firestore rule so the control surface doesn't render as usable and
+  // then fail every write.
+  const { isProfessor, loading: professorLoading } = useIsProfessor();
   const sessionId = useMemo(() => {
     if (typeof window === "undefined") return DEFAULT_SESSION_ID;
     return normalizeEventSessionId(
@@ -267,9 +279,56 @@ export function useEventLeaderboard() {
   const [boardState, setBoardState] = useState<StoredBoardState>(() =>
     loadStoredBoardState(sessionId),
   );
+  const [gameProfessorUid, setGameProfessorUid] = useState<string | null>(null);
+  const [gameProfessorResolved, setGameProfessorResolved] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const eventBoardRef = useMemo(() => doc(db, "eventBoards", sessionId), [sessionId]);
+
+  useEffect(() => {
+    if (!gameId) {
+      setGameProfessorUid(null);
+      setGameProfessorResolved(true);
+      return;
+    }
+
+    setGameProfessorResolved(false);
+    const gameRef = doc(db, "games", gameId);
+    return onSnapshot(
+      gameRef,
+      (snapshot) => {
+        const nextProfessorUid = snapshot.exists()
+          ? typeof snapshot.data().professorUid === "string"
+            ? snapshot.data().professorUid
+            : typeof snapshot.data().professorId === "string"
+              ? snapshot.data().professorId
+              : null
+          : null;
+        setGameProfessorUid(nextProfessorUid);
+        setGameProfessorResolved(true);
+      },
+      () => {
+        setGameProfessorUid(null);
+        setGameProfessorResolved(true);
+      },
+    );
+  }, [gameId]);
+
+  const isGameProfessor =
+    user !== null && gameProfessorUid !== null && user.uid === gameProfessorUid;
+  const canManageBoard = isProfessor || isGameProfessor;
+  const accessLoading =
+    professorLoading || (!isProfessor && Boolean(gameId) && !gameProfessorResolved);
+
+  const withBoardOwnership = (state: StoredBoardState): StoredBoardState => {
+    const ownerGameId =
+      state.ownerGameId ??
+      (gameId && canManageBoard ? gameId : null);
+    return {
+      ...state,
+      ownerGameId,
+    };
+  };
 
   useEffect(() => {
     let active = true;
@@ -312,12 +371,14 @@ export function useEventLeaderboard() {
       eventBoardRef,
       (snapshot) => {
         if (!snapshot.exists()) {
-          // Seed-on-empty only when the caller can actually write
-          // (firestore.rules requires isProfessor() for write). Display
+          // Seed-on-empty only when the caller can actually write. Display
           // consumers stay in a "waiting for board" state until the
           // professor opens the control surface.
-          if (isProfessor) {
-            void setDoc(eventBoardRef, serializeBoardState(loadStoredBoardState(sessionId)));
+          if (canManageBoard) {
+            void setDoc(
+              eventBoardRef,
+              serializeBoardState(withBoardOwnership(loadStoredBoardState(sessionId))),
+            );
           }
           return;
         }
@@ -332,7 +393,7 @@ export function useEventLeaderboard() {
     );
 
     return unsubscribe;
-  }, [authLoading, eventBoardRef, isProfessor, sessionId, user]);
+  }, [authLoading, canManageBoard, eventBoardRef, sessionId, user]);
 
   const rosterNameBySlug = useMemo(
     () =>
@@ -389,10 +450,11 @@ export function useEventLeaderboard() {
   }, [players]);
 
   const saveBoard = (next: StoredBoardState) => {
-    setBoardState(next);
-    saveStoredBoardState(sessionId, next);
-    if (user) {
-      void setDoc(eventBoardRef, serializeBoardState(next), { merge: true }).catch(() => {
+    const nextState = withBoardOwnership(next);
+    setBoardState(nextState);
+    saveStoredBoardState(sessionId, nextState);
+    if (user && canManageBoard) {
+      void setDoc(eventBoardRef, serializeBoardState(nextState), { merge: true }).catch(() => {
         setError("Could not save the shared event board.");
       });
     }
@@ -581,6 +643,7 @@ export function useEventLeaderboard() {
       meta: cloneDefaultMeta(boardState.meta.mode),
       players: {},
       customPlayers: boardState.customPlayers,
+      ownerGameId: boardState.ownerGameId,
     };
     saveBoard(next);
   };
@@ -592,6 +655,8 @@ export function useEventLeaderboard() {
     meta: boardState.meta,
     loading,
     error,
+    canManageBoard,
+    accessLoading,
     setStatus,
     setShape,
     setTeam,
