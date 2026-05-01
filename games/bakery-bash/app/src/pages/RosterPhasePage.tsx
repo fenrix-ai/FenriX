@@ -88,6 +88,27 @@ function coerceChef(raw: DocumentData): RosterChef | null {
   };
 }
 
+function normalizeRosterBenchIds(
+  rawBenchIds: unknown,
+  chefs: RosterChef[],
+  specialtyChefCap: number,
+): Set<string> {
+  const chefIds = new Set(chefs.map((chef) => chef.id));
+  const benchIds = new Set<string>();
+  if (Array.isArray(rawBenchIds)) {
+    rawBenchIds.forEach((id) => {
+      if (typeof id === "string" && id.length > 0 && chefIds.has(id)) {
+        benchIds.add(id);
+      }
+    });
+  }
+  const activeChefs = chefs.filter((chef) => !benchIds.has(chef.id));
+  activeChefs.slice(specialtyChefCap).forEach((chef) => {
+    benchIds.add(chef.id);
+  });
+  return benchIds;
+}
+
 /* ---------------- Drag-drop pieces ---------------- */
 
 interface DraggableChefProps {
@@ -341,12 +362,12 @@ export function RosterPhasePage() {
         if (!snap.exists()) return;
         const data = snap.data() as DocumentData;
         const raw = Array.isArray(data.specialtyChefs) ? data.specialtyChefs : [];
-        setSpecialtyChefs(raw.map(coerceChef).filter((c): c is RosterChef => c !== null));
-        const rawBenchIds = Array.isArray(data.rosterBenchChefIds)
-          ? data.rosterBenchChefIds
-          : [];
-        setRosterBenchChefIds(new Set(
-          rawBenchIds.filter((id: unknown): id is string => typeof id === "string" && id.length > 0),
+        const chefs = raw.map(coerceChef).filter((c): c is RosterChef => c !== null);
+        setSpecialtyChefs(chefs);
+        setRosterBenchChefIds(normalizeRosterBenchIds(
+          data.rosterBenchChefIds,
+          chefs,
+          specialtyChefCap,
         ));
         setPendingRosterAction(data.pendingRosterAction === true);
         setRosterCompleted(data.rosterCompleted === true);
@@ -356,7 +377,7 @@ export function RosterPhasePage() {
       },
     );
     return unsubscribe;
-  }, [gameId, playerId]);
+  }, [gameId, playerId, specialtyChefCap]);
 
   useEffect(() => {
     if (!gameId || !currentRound) {

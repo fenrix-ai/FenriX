@@ -454,6 +454,20 @@ function rosterBenchChefIds(playerData, specialtyChefs) {
     .filter((id, index, ids) => rosterIds.has(id) && ids.indexOf(id) === index);
 }
 
+function rosterBenchChefIdsForCap(playerData, specialtyChefs, specialtyChefCap) {
+  const chefs = Array.isArray(specialtyChefs) ? specialtyChefs : [];
+  const explicitBenchIds = rosterBenchChefIds(playerData, chefs);
+  const benchSet = new Set(explicitBenchIds);
+  const activeChefs = chefs.filter((chef) => chef && !benchSet.has(chef.id));
+  if (activeChefs.length > specialtyChefCap) {
+    for (const chef of activeChefs.slice(specialtyChefCap)) {
+      const id = cleanString(chef && chef.id);
+      if (id) benchSet.add(id);
+    }
+  }
+  return Array.from(benchSet);
+}
+
 function activeRosterChefs(specialtyChefs, benchIds) {
   const bench = new Set(cleanStringArray(benchIds));
   return (Array.isArray(specialtyChefs) ? specialtyChefs : [])
@@ -498,7 +512,10 @@ async function findPlayersOverChefCap(gameRef, specialtyChefCap) {
   for (const doc of snap.docs) {
     const player = doc.data() || {};
     const chefs = Array.isArray(player.specialtyChefs) ? player.specialtyChefs : [];
-    const count = activeRosterChefs(chefs, rosterBenchChefIds(player, chefs)).length;
+    const count = activeRosterChefs(
+      chefs,
+      rosterBenchChefIdsForCap(player, chefs, specialtyChefCap),
+    ).length;
     if (count > specialtyChefCap) {
       offenders.push({
         memberUid: doc.id,
@@ -1078,7 +1095,7 @@ async function resolveAndApplyChefAuction(gameRef, round, config) {
         const existingChefs = Array.isArray(playerData.specialtyChefs)
           ? playerData.specialtyChefs
           : [];
-        const existingBenchIds = rosterBenchChefIds(playerData, existingChefs);
+        const existingBenchIds = rosterBenchChefIdsForCap(playerData, existingChefs, specialtyChefCap);
         const existingActiveCount = activeRosterChefs(existingChefs, existingBenchIds).length;
         const activeSlotsAvailable = Math.max(0, specialtyChefCap - existingActiveCount);
         const newlyBenchedIds = wonChefs
@@ -2455,7 +2472,7 @@ async function runSimulationAndPersist(gameRef, round, config) {
       : [];
     const activeSpecialtyChefs = activeRosterChefs(
       canonicalChefs,
-      rosterBenchChefIds(canonicalData, canonicalChefs),
+      rosterBenchChefIdsForCap(canonicalData, canonicalChefs, config.specialtyChefCap),
     );
 
     const aggregatedAuction = {
@@ -2945,7 +2962,11 @@ async function persistConclusion(gameRef, totalRounds, config) {
           budgetRemaining: numberOrDefault(p.budgetCurrent, 0),
           specialtyChefs: activeRosterChefs(
             Array.isArray(p.specialtyChefs) ? p.specialtyChefs : [],
-            rosterBenchChefIds(p, Array.isArray(p.specialtyChefs) ? p.specialtyChefs : []),
+            rosterBenchChefIdsForCap(
+              p,
+              Array.isArray(p.specialtyChefs) ? p.specialtyChefs : [],
+              config.specialtyChefCap,
+            ),
           ),
         };
       })
@@ -3720,7 +3741,7 @@ exports.layoffChef = onCall(CALLABLE_OPTS, async (request) => {
 
     const removed = specialtyChefs[idx];
     const remaining = specialtyChefs.slice(0, idx).concat(specialtyChefs.slice(idx + 1));
-    const nextBenchIds = rosterBenchChefIds(player, remaining)
+    const nextBenchIds = rosterBenchChefIdsForCap(player, remaining, specialtyChefCap)
       .filter((id) => id !== chefId);
 
     const round = numberOrDefault(game.currentRound || game.round, 1);
@@ -3821,7 +3842,7 @@ exports.swapSpecialtyChef = onCall(CALLABLE_OPTS, async (request) => {
     );
     const insertAt = inIdx < outIdx ? outIdx - 1 : outIdx;
     const next = without.slice(0, insertAt).concat([incoming]).concat(without.slice(insertAt));
-    const nextBenchIds = rosterBenchChefIds(player, next)
+    const nextBenchIds = rosterBenchChefIdsForCap(player, next, specialtyChefCap)
       .filter((id) => id !== outChefId && id !== inChefId);
 
     const round = numberOrDefault(game.currentRound || game.round, 1);
@@ -3933,7 +3954,7 @@ exports.layoffChefs = onCall(CALLABLE_OPTS, async (request) => {
     const remaining = specialtyChefs.filter(
       (c) => !c || !removedIds.has(c.id),
     );
-    const nextBenchIds = rosterBenchChefIds(player, remaining)
+    const nextBenchIds = rosterBenchChefIdsForCap(player, remaining, specialtyChefCap)
       .filter((id) => !removedIds.has(id));
 
     for (const chef of removed) {
@@ -4289,7 +4310,7 @@ exports.rehireChef = onCall(CALLABLE_OPTS, async (request) => {
     }
 
     const specialtyChefs = Array.isArray(player.specialtyChefs) ? player.specialtyChefs : [];
-    const benchIds = rosterBenchChefIds(player, specialtyChefs);
+    const benchIds = rosterBenchChefIdsForCap(player, specialtyChefs, specialtyChefCap);
     if (activeRosterChefs(specialtyChefs, benchIds).length >= specialtyChefCap) {
       throw new HttpsError(
         'failed-precondition',
@@ -4306,7 +4327,7 @@ exports.rehireChef = onCall(CALLABLE_OPTS, async (request) => {
     void returnedAt;
     const restoredChef = { ...chefFields, id: chefId };
     const nextRoster = [...specialtyChefs, restoredChef];
-    const nextBenchIds = rosterBenchChefIds(player, nextRoster)
+    const nextBenchIds = rosterBenchChefIdsForCap(player, nextRoster, specialtyChefCap)
       .filter((id) => id !== chefId);
 
     transaction.delete(returnPoolRef);
@@ -4535,7 +4556,7 @@ exports.promoteRosterBenchChef = onCall(CALLABLE_OPTS, async (request) => {
       ? (await transaction.get(gameRef.collection('players').where('teamId', '==', teamId))).docs
       : [pSnap];
     const specialtyChefs = Array.isArray(player.specialtyChefs) ? player.specialtyChefs : [];
-    const benchIds = rosterBenchChefIds(player, specialtyChefs);
+    const benchIds = rosterBenchChefIdsForCap(player, specialtyChefs, specialtyChefCap);
     if (!benchIds.includes(chefId)) {
       throw new HttpsError('failed-precondition', 'Chef is not waiting on the bench.');
     }
@@ -4610,7 +4631,7 @@ exports.continueFromRoster = onCall(CALLABLE_OPTS, async (request) => {
       ? (await transaction.get(gameRef.collection('players').where('teamId', '==', teamId))).docs
       : [pSnap];
     const specialtyChefs = Array.isArray(player.specialtyChefs) ? player.specialtyChefs : [];
-    const benchIds = rosterBenchChefIds(player, specialtyChefs);
+    const benchIds = rosterBenchChefIdsForCap(player, specialtyChefs, specialtyChefCap);
     const activeChefs = activeRosterChefs(specialtyChefs, benchIds);
     if (activeChefs.length > specialtyChefCap) {
       throw new HttpsError('failed-precondition',
@@ -6071,7 +6092,7 @@ exports.onBotPhaseChange = onDocumentWritten(
           if (hasLayoffs) {
             const layoffIds = new Set(decisions.layoffs);
             const remaining = (botData.specialtyChefs || []).filter((c) => !layoffIds.has(c.id));
-            const nextBenchIds = rosterBenchChefIds(botData, remaining)
+            const nextBenchIds = rosterBenchChefIdsForCap(botData, remaining, chefCap)
               .filter((id) => !layoffIds.has(id));
             const activeCount = activeRosterChefs(remaining, nextBenchIds).length;
             const rosterUpdate = {
@@ -6087,7 +6108,7 @@ exports.onBotPhaseChange = onDocumentWritten(
             const specialtyChefs = Array.isArray(botData.specialtyChefs) ? botData.specialtyChefs : [];
             const activeChefs = activeRosterChefs(
               specialtyChefs,
-              rosterBenchChefIds(botData, specialtyChefs),
+              rosterBenchChefIdsForCap(botData, specialtyChefs, chefCap),
             );
             await botDoc.ref.update({
               specialtyChefs: activeChefs,
