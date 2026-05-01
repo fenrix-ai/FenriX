@@ -98,6 +98,7 @@ const {
 } = require('./modules/chef-system');
 
 const { runMonthlySimulation } = require('./modules/multi-day-simulation');
+const { processRoundViaEngine } = require('./process-round-engine-stub');
 
 const { EVENT_ROSTER_DATA } = require('./modules/event-roster-data');
 
@@ -2571,13 +2572,21 @@ async function runSimulationAndPersist(gameRef, round, config) {
   }, { merge: true });
 
   // -----------------------------------------------------------------------
-  // Pure sim
+  // Sim
   // -----------------------------------------------------------------------
-  // P2 (2026-04-27): runMonthlySimulation wraps runSimulation in a 30-day
-  // loop. Returns the same monthly aggregate shape as runSimulation plus a
-  // `dailyResults` array. Existing consumers (results[i].revenueNet, etc.)
-  // continue to work — those are still the monthly aggregates.
-  const results = runMonthlySimulation(players, prefs, config, { gameId: gameRef.id, round });
+  // 2026-05: routes round simulation through the huginX Cloud Run engine
+  // when HUGINX_URL is set. Falls back to the in-process runMonthlySimulation
+  // if the env var is absent so local emulator runs without the engine
+  // still work. The engine is single-shot per round (no daily loop) — BB
+  // owns loan-shark, equipment, cleanliness, and returning customers
+  // BB-side; the engine just produces revenue + units_sold + customer
+  // satisfaction. See ENGINE_INTEGRATION.md.
+  let results;
+  if (process.env.HUGINX_URL) {
+    ({ results } = await processRoundViaEngine(players, prefs, config, { gameId: gameRef.id, round }));
+  } else {
+    results = runMonthlySimulation(players, prefs, config, { gameId: gameRef.id, round });
+  }
 
   // Per-team sim-input budget, keyed by playerId (== team.key). Used below to
   // write budgetBefore alongside budgetAfter on each player round doc, which
