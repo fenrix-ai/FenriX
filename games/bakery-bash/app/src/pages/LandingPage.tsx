@@ -329,7 +329,7 @@ export function LandingPage() {
   return (
     <PageShell className="landing-page">
       <div className="landing-page__card">
-        <h1 className="landing-page__title">🥐 Bakery Bash</h1>
+        <h1 className="landing-page__title">Bakery Bash</h1>
         <p className="landing-page__subtitle">
           Run your bakery. Outprice the competition. Win.
         </p>
