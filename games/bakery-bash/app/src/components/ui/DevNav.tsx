@@ -18,7 +18,7 @@ const PHASE_JUMPS: { label: string; value: GamePhaseString }[] = [
 ];
 
 export function DevNav() {
-  const { phase, auctionTab } = useGame();
+  const { gameId, phase, auctionTab } = useGame();
   const dispatch = useGameDispatch();
 
   // Mirror the `?dev=1` / `?dev=0` URL param to localStorage on mount, then
@@ -37,6 +37,8 @@ export function DevNav() {
   }, []);
 
   if (!visible) return null;
+
+  const eventQuery = gameId ? `?game=${encodeURIComponent(gameId)}` : "";
 
   const setPhase = (p: GamePhaseString) => {
     dispatch({ type: "SET_PHASE", payload: p });
@@ -64,8 +66,8 @@ export function DevNav() {
         </Link>
       ))}
       <Link to="/leaderboard">Board</Link>
-      <Link to="/event/control">Event Ctrl</Link>
-      <Link to="/event/display">Event View</Link>
+      <Link to={`/event/control${eventQuery}`}>Event Ctrl</Link>
+      <Link to={`/event/display${eventQuery}`}>Event View</Link>
       <Link to="/professor">Prof</Link>
       {isAuctionPhase && (
         <span className="dev-nav__phase-indicator">
