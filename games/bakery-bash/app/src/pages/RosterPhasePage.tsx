@@ -91,9 +91,10 @@ interface DraggableChefProps {
   isNew: boolean;
   canAct: boolean;
   onLayoff: (chefId: string) => void;
+  onAddToRoster?: (chefId: string) => void;
 }
 
-function DraggableChef({ chef, isNew, canAct, onLayoff }: DraggableChefProps) {
+function DraggableChef({ chef, isNew, canAct, onLayoff, onAddToRoster }: DraggableChefProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({
       id: chef.id,
@@ -125,8 +126,9 @@ function DraggableChef({ chef, isNew, canAct, onLayoff }: DraggableChefProps) {
       <ChefCard
         chef={toChefCardInput(chef)}
         mode="roster"
-        canLayoff={canAct}
+        canLayoff={canAct && !onAddToRoster}
         onLayoff={onLayoff}
+        onAddToRoster={canAct && onAddToRoster ? onAddToRoster : undefined}
       />
     </div>
   );
@@ -294,6 +296,7 @@ export function RosterPhasePage() {
 
   const [submitting, setSubmitting] = useState<"continue" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [perChefError, setPerChefError] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!gameId || !playerId) return;
@@ -389,6 +392,19 @@ export function RosterPhasePage() {
     return out;
   }, [overflowChefs, leftIds]);
 
+  // Combined right panel: overflow chefs + laid-off chefs (deduped)
+  const allRightChefs = useMemo(() => {
+    const seen = new Set<string>(rightChefs.map((c) => c.id));
+    const out: RosterChef[] = [...rightChefs];
+    for (const c of laidOffChefs) {
+      if (!seen.has(c.id)) {
+        seen.add(c.id);
+        out.push(c);
+      }
+    }
+    return out;
+  }, [rightChefs, laidOffChefs]);
+
   const handleLayoffClick = async (chefId: string) => {
     if (!gameId || !canAct || pendingChefId) return;
     setError(null);
@@ -421,6 +437,19 @@ export function RosterPhasePage() {
     } finally {
       setPendingChefId(null);
     }
+  };
+
+  const handleAddToRoster = async (chefId: string) => {
+    if (!canAct) return;
+    if (rosterFull) {
+      setPerChefError((prev) => ({
+        ...prev,
+        [chefId]: "There are too many cooks in the kitchen!",
+      }));
+      return;
+    }
+    setPerChefError((prev) => ({ ...prev, [chefId]: "" }));
+    await handleRehireClick(chefId);
   };
 
   const handleContinue = async () => {
@@ -503,8 +532,8 @@ export function RosterPhasePage() {
             specialty chefs on your roster.
           </li>
           <li>
-            When the timer runs out, any chefs beyond your{" "}
-            {specialtyChefCap}-chef limit will be automatically laid off.
+            When the timer runs out, the round ends and all chefs in the{" "}
+            <strong>New Hires &amp; Excess Chefs</strong> panel are automatically dropped.
           </li>
         </ul>
       </header>
@@ -573,93 +602,46 @@ export function RosterPhasePage() {
             </div>
           </section>
 
-          {/* RIGHT — newly won + overflow */}
+          {/* RIGHT — new hires + overflow + laid-off */}
           <section
             className="roster-phase-page__split-side roster-phase-page__split-side--available"
-            aria-label="Newly hired and over-capacity chefs"
+            aria-label="New hires and excess chefs"
           >
             <h2 className="roster-phase-page__split-title">
-              Newly Hired & Beyond Capacity
+              New Hires & Excess Chefs
             </h2>
-            {rightChefs.length === 0 ? (
+            {allRightChefs.length === 0 ? (
               <p className="roster-phase-page__split-empty">
                 No new chefs this round.
               </p>
             ) : (
               <p className="roster-phase-page__split-hint">
                 {canAct
-                  ? "Drag a chef onto a roster slot on the left to swap them in."
+                  ? "Click \"Add to Roster\" to move a chef to your roster, or drag them onto a slot on the left."
                   : `Your ${ownerLabel} teammate decides who stays.`}
               </p>
             )}
             <div className="roster-phase-page__available-list">
-              {rightChefs.map((chef) => (
-                <DraggableChef
-                  key={chef.id}
-                  chef={chef}
-                  isNew={newlyWonChefIds.has(chef.id)}
-                  canAct={canAct}
-                  onLayoff={handleLayoffClick}
-                />
+              {allRightChefs.map((chef) => (
+                <div key={chef.id}>
+                  <DraggableChef
+                    chef={chef}
+                    isNew={newlyWonChefIds.has(chef.id)}
+                    canAct={canAct}
+                    onLayoff={handleLayoffClick}
+                    onAddToRoster={handleAddToRoster}
+                  />
+                  {perChefError[chef.id] && (
+                    <p className="roster-phase-page__error roster-phase-page__error--inline" role="alert">
+                      {perChefError[chef.id]}
+                    </p>
+                  )}
+                </div>
               ))}
             </div>
           </section>
         </div>
       </DndContext>
-
-      {laidOffChefs.length > 0 && (
-        <section
-          className="roster-phase-page__layoffs"
-          aria-label="Laid-off chefs this round"
-        >
-          <h3 className="roster-phase-page__layoffs-title">
-            Lay-offs this round
-          </h3>
-          <p className="roster-phase-page__layoffs-hint">
-            {canAct
-              ? rosterFull
-                ? "Roster is full — lay off another chef first to re-hire."
-                : "Click Re-hire to bring a chef back. Stays in the lay-off pool until you click Continue."
-              : "Your Operations teammate can re-hire any of these chefs before clicking Continue."}
-          </p>
-          <ul className="roster-phase-page__layoff-list">
-            {laidOffChefs.map((chef) => {
-              const pendingThis = pendingChefId === chef.id;
-              const rehireDisabled =
-                !canAct || pendingChefId !== null || rosterFull;
-              return (
-                <li
-                  key={chef.id}
-                  className="roster-phase-page__layoff-row"
-                >
-                  <div className="roster-phase-page__layoff-card">
-                    <ChefCard
-                      chef={toChefCardInput(chef)}
-                      mode="roster"
-                      canLayoff={false}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn--success btn--small roster-phase-page__rehire-btn"
-                    onClick={() => handleRehireClick(chef.id)}
-                    disabled={rehireDisabled}
-                    title={
-                      !canAct
-                        ? "Only the Operations teammate can re-hire."
-                        : rosterFull
-                          ? "Lay off another chef first."
-                          : `Bring ${chef.name} back to your kitchen.`
-                    }
-                  >
-                    {pendingThis ? "Re-hiring…" : "Re-hire"}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      )}
 
       {error && (
         <p className="roster-phase-page__error" role="alert">

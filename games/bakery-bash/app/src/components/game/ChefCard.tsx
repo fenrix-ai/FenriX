@@ -44,6 +44,8 @@ interface ChefCardRosterProps extends ChefCardBaseProps {
   /** If `true`, render the lay-off button. Finance/operations click to open modal. */
   canLayoff?: boolean;
   onLayoff?: (chefId: string) => void;
+  /** If provided, renders an "Add to Roster" button (green) instead of "Lay off". */
+  onAddToRoster?: (chefId: string) => void;
   /** Optional satisfaction %, shown as a small status pill when provided. */
   satisfactionPct?: number | null;
 }
@@ -143,6 +145,7 @@ export function ChefCard(props: ChefCardProps) {
             chefId={chef.id}
             canLayoff={(props as ChefCardRosterProps).canLayoff}
             onLayoff={(props as ChefCardRosterProps).onLayoff}
+            onAddToRoster={(props as ChefCardRosterProps).onAddToRoster}
             satisfactionPct={(props as ChefCardRosterProps).satisfactionPct}
           />
         )}
@@ -187,11 +190,13 @@ function RosterFooter({
   chefId,
   canLayoff,
   onLayoff,
+  onAddToRoster,
   satisfactionPct,
 }: {
   chefId: string;
   canLayoff?: boolean;
   onLayoff?: (chefId: string) => void;
+  onAddToRoster?: (chefId: string) => void;
   satisfactionPct?: number | null;
 }) {
   const tier =
@@ -213,14 +218,24 @@ function RosterFooter({
           {Math.round(satisfactionPct)}% happy
         </span>
       )}
-      {canLayoff && (
+      {onAddToRoster ? (
         <button
           type="button"
-          className="btn btn--danger btn--small"
-          onClick={() => onLayoff?.(chefId)}
+          className="btn btn--success btn--small"
+          onClick={() => onAddToRoster(chefId)}
         >
-          Lay off
+          Add to Roster
         </button>
+      ) : (
+        canLayoff && (
+          <button
+            type="button"
+            className="btn btn--danger btn--small"
+            onClick={() => onLayoff?.(chefId)}
+          >
+            Lay off
+          </button>
+        )
       )}
     </div>
   );
