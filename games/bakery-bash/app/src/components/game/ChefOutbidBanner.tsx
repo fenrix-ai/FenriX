@@ -1,5 +1,4 @@
 import type { ChefNationality, ChefGender } from "../../types/game";
-import { formatMoney } from "../../lib/cost";
 
 /**
  * Shows the chefs a player bid on but was outbid for in the current round.
@@ -76,9 +75,6 @@ export function ChefOutbidBanner({
                 )}
                 <div className="chef-winner-banner__amount chef-winner-banner__amount--outbid">
                   Won by <strong>{entry.winnerBakeryName}</strong>
-                </div>
-                <div className="chef-winner-banner__amount">
-                  Their bid: {formatMoney(entry.winningBid)}
                 </div>
               </div>
             </li>
