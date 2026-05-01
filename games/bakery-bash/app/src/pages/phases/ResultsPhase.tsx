@@ -131,7 +131,11 @@ export function ResultsPhase() {
               <span className="results-phase__metric-label">Customers</span>
             </div>
             <div className="results-phase__metric-card results-phase__metric-card--satisfaction">
-              <span className="results-phase__metric-value">{latest?.customerSatisfaction ?? "—"}</span>
+              <span className="results-phase__metric-value">
+                {typeof latest?.customerSatisfaction === "number"
+                  ? `${Math.round(latest.customerSatisfaction)}%`
+                  : "—"}
+              </span>
               <span className="results-phase__metric-label">Satisfaction</span>
             </div>
           </div>
@@ -156,7 +160,7 @@ export function ResultsPhase() {
             />
             <Kpi
               label="Customer satisfaction"
-              value={`${latest.customerSatisfaction}/100`}
+              value={`${Math.round(latest.customerSatisfaction)}%`}
             />
             {typeof latest.chefSatisfactionScore === "number" && (
               <Kpi
@@ -338,6 +342,16 @@ export function ResultsPhase() {
             </p>
           ))}
         </div>
+      )}
+
+      {/* R-3: Competitor Intel callout */}
+      {(currentRound ?? 0) > 1 && (
+        <section className="results-phase__intel-teaser" aria-label="Competitor Intel">
+          <h3 className="results-phase__section-title">Competitor Intel</h3>
+          <p className="results-phase__intel-hint">
+            Your Finance teammate can purchase Competitor Intel during the next Decisions phase to see what other teams ordered and priced last round — useful for building your predictive model.
+          </p>
+        </section>
       )}
 
       <p className="results-phase__waiting">

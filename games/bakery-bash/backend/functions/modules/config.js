@@ -126,9 +126,9 @@ const CHEF_NATIONALITIES = {
  * in their nationality's specialty list; otherwise `nonSpecialty` applies.
  */
 const CHEF_MULTIPLIERS = {
-  novel:        { nonSpecialty: 1.0,  specialty: 1.4 },
-  intermediate: { nonSpecialty: 1.25, specialty: 1.75 },
-  advanced:     { nonSpecialty: 1.6,  specialty: 2.2 },
+  low:    { nonSpecialty: 1.0,  specialty: 1.4 },
+  medium: { nonSpecialty: 1.25, specialty: 1.75 },
+  high:   { nonSpecialty: 1.6,  specialty: 2.2 },
 };
 
 // ---------------------------------------------------------------------------
@@ -141,11 +141,11 @@ const CHEF_MULTIPLIERS = {
  * being at each skill tier for that round.
  */
 const CHEF_SPAWN_RATES = [
-  { novel: 0.65, intermediate: 0.30, advanced: 0.05 }, // R1
-  { novel: 0.55, intermediate: 0.35, advanced: 0.10 }, // R2
-  { novel: 0.40, intermediate: 0.40, advanced: 0.20 }, // R3
-  { novel: 0.20, intermediate: 0.45, advanced: 0.35 }, // R4
-  { novel: 0.05, intermediate: 0.45, advanced: 0.50 }, // R5
+  { low: 0.85, medium: 0.14, high: 0.01 }, // R1
+  { low: 0.75, medium: 0.23, high: 0.02 }, // R2
+  { low: 0.45, medium: 0.45, high: 0.10 }, // R3
+  { low: 0.20, medium: 0.55, high: 0.25 }, // R4
+  { low: 0.10, medium: 0.55, high: 0.35 }, // R5
 ];
 
 // ---------------------------------------------------------------------------
@@ -194,7 +194,7 @@ const DEFAULT_GAME_CONFIG = {
   },
 
   phaseDurations: {
-    email: 30,
+    email: 5,
     decide: 300,
     bid_ad: 60,
     bid_chef: 60,

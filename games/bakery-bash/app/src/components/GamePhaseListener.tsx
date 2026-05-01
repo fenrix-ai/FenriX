@@ -25,7 +25,7 @@ const TOTAL_WINDOW_MS = (GRACE_SECONDS + FREEZE_SECONDS) * 1000; // 15 s
  *   15 s   → overlay clears; professor's auto-advance fires via ProfessorPage
  */
 export function GamePhaseListener() {
-  const { gameId, playerId, phaseEndsAtMs } = useGame();
+  const { gameId, playerId, phaseEndsAtMs, phase } = useGame();
   const dispatch = useGameDispatch();
   const navigate = useNavigate();
   const location = useLocation();
@@ -189,6 +189,9 @@ export function GamePhaseListener() {
 
   if (stage === null) return null;
 
+  // Professor never gets locked out by the round-transition overlay.
+  if (location.pathname.startsWith("/professor")) return null;
+
   if (stage === "grace") {
     return (
       <div style={{
@@ -212,7 +215,11 @@ export function GamePhaseListener() {
           boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
           whiteSpace: "nowrap",
         }}>
-          <span>Last chance to submit —</span>
+          <span>
+            {phase?.includes("results_ready")
+              ? "Seconds until next round —"
+              : "Last chance to submit —"}
+          </span>
           <span style={{ fontSize: "1.2rem", fontWeight: 800 }}>{countdown}s</span>
         </div>
       </div>

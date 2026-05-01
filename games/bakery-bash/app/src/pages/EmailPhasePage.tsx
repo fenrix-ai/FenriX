@@ -4,6 +4,7 @@ import { useGame } from "../contexts/GameContext";
 import { useGamePhaseNav } from "../hooks/useGamePhaseNav";
 import { PageShell } from "../components/ui/PageShell";
 import { parseGamePhase } from "../types/game";
+import { monthForRound } from "../lib/calendar";
 
 /**
  * FE-06 — `/game/email` phase page (round briefing).
@@ -39,6 +40,7 @@ export function EmailPhasePage() {
   }, [phase, currentRound, gameId, navigate]);
 
   const roundLabel = currentRound && currentRound > 0 ? currentRound : "—";
+  const monthLabel = monthForRound(currentRound);
 
   return (
     <PageShell className="round-briefing">
@@ -59,6 +61,9 @@ export function EmailPhasePage() {
             <span className="round-briefing__round-word">Round</span>
             <span className="round-briefing__round-number">{roundLabel}</span>
           </div>
+          {monthLabel && (
+            <div className="round-briefing__month">{monthLabel}</div>
+          )}
           <div className="round-briefing__tagline">
             Ovens hot. Beans ground. Let's go.
           </div>

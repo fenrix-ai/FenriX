@@ -137,9 +137,14 @@ export function SousChefPanel() {
   return (
     <section className="sous-chef-panel" aria-labelledby="sous-chef-title">
       <header className="sous-chef-panel__header">
-        <h3 id="sous-chef-title" className="sous-chef-panel__title">
-          Sous Chefs
-        </h3>
+        <div className="sous-chef-panel__title-row">
+          <h3 id="sous-chef-title" className="sous-chef-panel__title">
+            Sous Chefs
+          </h3>
+          <span className="sous-chef-panel__total" aria-live="polite">
+            Total: <strong>{sousChefTotal}</strong>
+          </span>
+        </div>
         <p className="sous-chef-panel__hint">
           Hire sous chefs per station and assign each one to a product.
         </p>
@@ -213,7 +218,7 @@ export function SousChefPanel() {
 
       {overcrowded && (
         <p className="sous-chef-panel__warning" role="alert">
-          ⚠ Looks like too many cooks in the kitchen — your head chef looks
+          ⚠ Looks like too many cooks in the kitchen — your chefs look
           stressed.
         </p>
       )}

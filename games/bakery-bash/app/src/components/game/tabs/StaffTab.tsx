@@ -183,14 +183,18 @@ export function StaffTab({ readOnly = false }: StaffTabProps) {
       <p className="sidebar-tab__hint">
         {readOnly
           ? "Your decisions are locked in for this round. Waiting on the rest of the class…"
-          : "Hire sous chefs per station and maintenance guys to keep the kitchen running. Crowded kitchens slow production — watch your head chef for signs of strain. Check the Status tab for machine health."}
+          : "Hire sous chefs per station and maintenance guys to keep the kitchen running. Crowded kitchens slow production — watch your chefs for signs of strain. Check the Status tab for machine health."}
       </p>
+
+      {/* FE-R02: "Sous Chef Hires" section heading */}
+      <h3 className="staff-tab__section-heading">Sous Chef Hires</h3>
+      <p className="staff-tab__section-sub">One sous chef per station boosts that station's throughput.</p>
 
       {/* Three sous chef station steppers */}
       <div className="staff-tab__stations">
         <RoleStepper
-          title="Bakery Station"
-          subtitle="Croissant · Cookie"
+          title="Sous Chef — Bakery (Croissant · Cookie)"
+          subtitle="Oven"
           count={staffCounts.bakerySousChefs}
           nextCost={getHireCost(sousBase, staffCounts.bakerySousChefs)}
           roleTotal={totalRoleCost(sousBase, staffCounts.bakerySousChefs)}
@@ -203,8 +207,8 @@ export function StaffTab({ readOnly = false }: StaffTabProps) {
           readOnly={readOnly}
         />
         <RoleStepper
-          title="Deli"
-          subtitle="Bagel · Sandwich"
+          title="Sous Chef — Deli (Bagel · Sandwich)"
+          subtitle="Meat Slicer"
           count={staffCounts.deliSousChefs}
           nextCost={getHireCost(sousBase, staffCounts.deliSousChefs)}
           roleTotal={totalRoleCost(sousBase, staffCounts.deliSousChefs)}
@@ -217,8 +221,8 @@ export function StaffTab({ readOnly = false }: StaffTabProps) {
           readOnly={readOnly}
         />
         <RoleStepper
-          title="Barista Station"
-          subtitle="Coffee · Matcha"
+          title="Sous Chef — Barista (Coffee · Matcha)"
+          subtitle="Espresso Machine"
           count={staffCounts.baristaSousChefs}
           nextCost={getHireCost(sousBase, staffCounts.baristaSousChefs)}
           roleTotal={totalRoleCost(sousBase, staffCounts.baristaSousChefs)}
@@ -234,9 +238,13 @@ export function StaffTab({ readOnly = false }: StaffTabProps) {
 
       {overcrowded && !readOnly && (
         <p className="staff-tab__warning" role="alert">
-          ⚠ Too many cooks in the kitchen — your head chef looks stressed.
+          ⚠ Too many cooks in the kitchen — your chefs look stressed.
         </p>
       )}
+
+      {/* FE-R02: "Maintenance Crew" section heading with divider */}
+      <hr className="staff-tab__maintenance-divider" />
+      <h3 className="staff-tab__section-heading">Maintenance Crew</h3>
 
       {/* Maintenance Guy stepper + per-guy task assignment */}
       <div className="staff-tab__maintenance">

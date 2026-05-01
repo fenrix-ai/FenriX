@@ -89,6 +89,16 @@ export function ProfessorPage() {
 
   const gameId = contextGameId ?? createdGame?.gameId ?? null;
 
+  // G-2: Lead-a-game (rejoin) state.
+  const [resumeCode, setResumeCode] = useState("");
+  const [resuming, setResuming] = useState(false);
+  const [resumeError, setResumeError] = useState<string | null>(null);
+
+  // P-2: Force layoff state.
+  const [forcingLayoff, setForcingLayoff] = useState<string | null>(null);
+  const [layoffError, setLayoffError] = useState<string | null>(null);
+  const [layoffInfo, setLayoffInfo] = useState<string | null>(null);
+
   // Dev-tools visibility — the DevNav is hidden from students by default.
   // Professors can toggle it from this page so they (and our dev team) can
   // jump between phases while debugging without exposing the controls to
@@ -311,7 +321,7 @@ export function ProfessorPage() {
     if (!phaseEndsAtMs || !gameId || !phase) return;
     const msUntilExpiry = phaseEndsAtMs - Date.now();
     if (msUntilExpiry < -30_000) return;
-    const delay = Math.max(0, msUntilExpiry) + 15_000;
+    const delay = Math.max(0, msUntilExpiry) + 10_000;
     const expectedFromPhase = phase;
     const t = setTimeout(() => {
       void callCallableRef.current(
@@ -340,29 +350,6 @@ export function ProfessorPage() {
       return;
     }
     void callCallable("endGame", "end", "Game ended.");
-  };
-
-  /**
-   * FE-6 — Reset the active game so it can be replayed from the lobby.
-   * Calls the `resetGame` Firebase callable (BE-6). If the callable has
-   * not been deployed yet (pre-BE-6 rollout), the error path surfaces a
-   * friendly note instead of a generic Firebase error code. We retain
-   * the `createdGame` banner and the local `gameId` so the professor
-   * can confirm the reset succeeded before creating a fresh session.
-   */
-  const onReset = () => {
-    if (
-      !window.confirm(
-        "This will delete all round data and reset all players. Are you sure?",
-      )
-    ) {
-      return;
-    }
-    void callCallable(
-      "resetGame",
-      "reset",
-      "Game reset — all round data cleared and players returned to lobby.",
-    );
   };
 
   const handleExtendPhase = async () => {
@@ -407,6 +394,54 @@ export function ProfessorPage() {
     }
   };
 
+  const handleResumeProfessor = async () => {
+    const code = resumeCode.trim().toUpperCase();
+    if (!code) { setResumeError("Enter a join code."); return; }
+    setResumeError(null);
+    setResuming(true);
+    try {
+      const resumeProfessor = httpsCallable<
+        { joinCode: string },
+        { gameId: string; phase: string; round: number }
+      >(functions, "resumeProfessor");
+      const res = await resumeProfessor({ joinCode: code });
+      dispatch({
+        type: "JOIN_GAME",
+        payload: {
+          gameId: res.data.gameId,
+          playerId: user!.uid,
+          gameCode: code,
+          player: { id: user!.uid, name: "Professor", bakeryName: "", budget: 0, cumulativeRevenue: 0 },
+        },
+      });
+      setInfo(`Took control of game ${code} — Phase: ${res.data.phase}`);
+      setResumeCode("");
+    } catch (err) {
+      setResumeError(humanizeFunctionError(err, "Could not take control. Check the join code."));
+    } finally {
+      setResuming(false);
+    }
+  };
+
+  const handleForceLayoff = async (playerId: string, displayName: string) => {
+    if (!gameId) return;
+    if (!window.confirm(`Force layoff excess chefs for ${displayName}? This removes all chefs over the 3-chef cap.`)) return;
+    setLayoffError(null);
+    setLayoffInfo(null);
+    setForcingLayoff(playerId);
+    try {
+      const forceLayoff = httpsCallable<{ gameId: string; playerId: string }, { forcedLayoff: boolean }>(
+        functions, "forceLayoff",
+      );
+      await forceLayoff({ gameId, playerId });
+      setLayoffInfo(`Layoff applied for ${displayName}.`);
+    } catch (err) {
+      setLayoffError(humanizeFunctionError(err, `Could not force layoff for ${displayName}.`));
+    } finally {
+      setForcingLayoff(null);
+    }
+  };
+
   const joinUrl = useMemo(() => {
     const code = createdGame?.joinCode ?? gameCode;
     if (!code) return null;
@@ -441,6 +476,34 @@ export function ProfessorPage() {
   return (
     <PageShell className="professor-page">
       <h1 className="professor-page__title">Professor Control Panel</h1>
+
+      {/* G-2: Lead a Game — take control of an existing game by join code. */}
+      <section className="professor-page__resume">
+        <h2 className="professor-page__section-title">Lead a Game</h2>
+        <p className="professor-page__resume-hint">
+          Enter a join code to take over as professor for an in-progress game.
+        </p>
+        <div className="professor-page__resume-form">
+          <input
+            type="text"
+            className="professor-page__resume-input"
+            placeholder="Join code (e.g. ABC234)"
+            value={resumeCode}
+            onChange={(e) => setResumeCode(e.target.value.toUpperCase())}
+            maxLength={6}
+            disabled={resuming}
+          />
+          <button
+            type="button"
+            className="btn btn--primary"
+            onClick={handleResumeProfessor}
+            disabled={resuming || !user}
+          >
+            {resuming ? "Joining…" : "Take Control"}
+          </button>
+        </div>
+        {resumeError && <p className="professor-page__error" role="alert">{resumeError}</p>}
+      </section>
 
       {/* Create a new game (BE-18). */}
       <section className="professor-page__create">
@@ -506,16 +569,16 @@ export function ProfessorPage() {
 
       {/* Live game controls. */}
       {gameId ? (
-        <p className="professor-page__phase">
-          Game phase: <strong>{phase ?? "loading…"}</strong>
-          {paused && <span className="professor-page__paused"> · paused</span>}
+        <h2 className="professor-page__current-phase">
+          {phase ?? "loading…"}
+          {paused && <span className="professor-page__paused"> · Paused</span>}
           {ownerGate && (
             <span className="professor-page__not-owner">
               {" "}
-              · You are not the professor for this game
+              · Not the owner
             </span>
           )}
-        </p>
+        </h2>
       ) : (
         <p className="professor-page__note">
           Create a game above, or join one to use these controls.
@@ -568,7 +631,7 @@ export function ProfessorPage() {
         <button
           className="btn btn--small btn--secondary"
           onClick={handleExtendPhase}
-          disabled={!!pendingAction || phase === "simulating" || phase === "game_over" || phase === "lobby"}
+          disabled={!gameId || controlsDisabled || !isRunning || phase === "simulating"}
         >
           {pendingAction === "extend" ? "Extending…" : "+ 1 Min"}
         </button>
@@ -599,15 +662,6 @@ export function ProfessorPage() {
           }
         >
           {pendingAction === "end" ? "Ending…" : "End Game"}
-        </button>
-
-        <button
-          className="btn btn--danger"
-          onClick={onReset}
-          disabled={!gameId || controlsDisabled}
-          title="Clear all round data and send players back to the lobby (BE-6)."
-        >
-          {pendingAction === "reset" ? "Resetting…" : "Reset Game"}
         </button>
 
         <Link
@@ -668,6 +722,9 @@ export function ProfessorPage() {
             </p>
           )}
 
+          {layoffError && <p className="professor-page__error" role="alert">{layoffError}</p>}
+          {layoffInfo && !layoffError && <p className="professor-page__info" role="status">{layoffInfo}</p>}
+
           <table className="professor-monitor-table">
             <thead>
               <tr>
@@ -677,6 +734,7 @@ export function ProfessorPage() {
                 {SUBMISSION_PHASES.map((p) => (
                   <th key={p.key}>{p.label}</th>
                 ))}
+                {isRunning && <th>Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -707,6 +765,19 @@ export function ProfessorPage() {
                       </td>
                     );
                   })}
+                  {isRunning && (
+                    <td>
+                      <button
+                        type="button"
+                        className="btn btn--small btn--danger"
+                        onClick={() => void handleForceLayoff(entry.uid, entry.displayName)}
+                        disabled={!!forcingLayoff || controlsDisabled}
+                        title={`Force layoff excess chefs for ${entry.displayName}`}
+                      >
+                        {forcingLayoff === entry.uid ? "…" : "Layoff"}
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

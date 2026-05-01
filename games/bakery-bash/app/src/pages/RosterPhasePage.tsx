@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   doc,
@@ -6,6 +6,16 @@ import {
   type DocumentData,
 } from "firebase/firestore";
 import { httpsCallable, type FunctionsError } from "firebase/functions";
+import {
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  useDraggable,
+  useDroppable,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import { CSS } from "@dnd-kit/utilities";
 import { db, functions } from "../lib/firebase";
 import { useGame } from "../contexts/GameContext";
 import { useGamePhaseNav } from "../hooks/useGamePhaseNav";
@@ -60,7 +70,7 @@ function coerceChef(raw: DocumentData): RosterChef | null {
   const gen = rawGen === "male" || rawGen === "m" ? "m" : rawGen === "female" || rawGen === "f" ? "f" : null;
   const tier = raw.skillTier;
   const validTier =
-    tier === "novel" || tier === "intermediate" || tier === "advanced";
+    tier === "low" || tier === "medium" || tier === "high";
   if (!id || !name || !validNat || !gen || !validTier) return null;
   return {
     id,
@@ -77,7 +87,7 @@ const SPECIALTY_CAP = 3;
 
 export function RosterPhasePage() {
   useGamePhaseNav();
-  const { gameId, playerId, currentRound, phase, role } = useGame();
+  const { gameId, playerId, currentRound, phase, role, phaseEndsAtMs } = useGame();
   const navigate = useNavigate();
 
   const [specialtyChefs, setSpecialtyChefs] = useState<RosterChef[]>([]);
@@ -89,6 +99,46 @@ export function RosterPhasePage() {
     null,
   );
   const [error, setError] = useState<string | null>(null);
+
+  // Drag-and-drop kept-set: chef IDs the player wants to keep on their roster.
+  // Initialized from the player's current specialtyChefs (everything kept by
+  // default), capped at SPECIALTY_CAP — overflow chefs start in the right
+  // "available" zone so the player must explicitly drag them into the kitchen.
+  const [keptIds, setKeptIds] = useState<Set<string>>(new Set());
+
+  // KR-1: countdown timer
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+
+  // KR-5: track which chef IDs were won this round
+  const [newlyWonChefIds, setNewlyWonChefIds] = useState<Set<string>>(new Set());
+
+  // KR-1: tick every second
+  useEffect(() => {
+    if (!phaseEndsAtMs) { setSecondsLeft(null); return; }
+    const tick = () => setSecondsLeft(Math.max(0, Math.ceil((phaseEndsAtMs - Date.now()) / 1000)));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [phaseEndsAtMs]);
+
+  // KR-5: subscribe to round doc for chef auction results
+  useEffect(() => {
+    if (!gameId || !currentRound) return;
+    const roundRef = doc(db, "games", gameId, "rounds", `round_${currentRound}`);
+    const unsubscribe = onSnapshot(roundRef, (snap) => {
+      if (!snap.exists()) return;
+      const data = snap.data() as DocumentData;
+      const results = data.chefAuctionResults || {};
+      const myResult = playerId ? results[playerId] : null;
+      const ids = new Set<string>(
+        Array.isArray(myResult?.chefs)
+          ? myResult.chefs.map((c: { id?: string }) => c.id).filter(Boolean)
+          : [],
+      );
+      setNewlyWonChefIds(ids);
+    });
+    return unsubscribe;
+  }, [gameId, currentRound, playerId]);
 
   // Subscribe to this player's doc for their specialty roster.
   useEffect(() => {
@@ -124,11 +174,71 @@ export function RosterPhasePage() {
     else if (parsed.base === "game_over") navigate("/game/conclusion");
   }, [phase, currentRound, navigate]);
 
+  // Initialize / reconcile the kept-set whenever the player's roster changes.
+  // Default: keep all returning chefs (within cap); newly won chefs land on
+  // the right "available" zone. If we already have data in `keptIds`, prune
+  // to the current chef list so deleted IDs don't linger.
+  useEffect(() => {
+    setKeptIds((prev) => {
+      const valid = new Set(specialtyChefs.map((c) => c.id));
+      // First-time init: all returning chefs are kept by default.
+      if (prev.size === 0 && specialtyChefs.length > 0) {
+        const init = new Set<string>();
+        for (const chef of specialtyChefs) {
+          if (!newlyWonChefIds.has(chef.id) && init.size < SPECIALTY_CAP) {
+            init.add(chef.id);
+          }
+        }
+        return init;
+      }
+      // Reconcile: drop IDs no longer on the roster.
+      const next = new Set<string>();
+      for (const id of prev) if (valid.has(id)) next.add(id);
+      return next;
+    });
+  }, [specialtyChefs, newlyWonChefIds]);
+
+  // Split chefs into kitchen (left) vs available/overflow (right) based on
+  // the kept-set the player has assembled via drag-and-drop.
+  const { kitchenChefs, availableChefs } = useMemo(() => {
+    const kitchen: RosterChef[] = [];
+    const available: RosterChef[] = [];
+    for (const chef of specialtyChefs) {
+      if (keptIds.has(chef.id)) kitchen.push(chef);
+      else available.push(chef);
+    }
+    return { kitchenChefs: kitchen, availableChefs: available };
+  }, [specialtyChefs, keptIds]);
+
   const canAct = roleOwnsRoster(role);
   const ownerLabel = ownerOfRoster();
-  const overCap = specialtyChefs.length > SPECIALTY_CAP;
+  const kitchenOverCap = kitchenChefs.length > SPECIALTY_CAP;
+  // Block continue if the kitchen is over cap, or if there are still
+  // unassigned chefs on the right and the kitchen has slots free
+  // (player must explicitly drag them in or accept the layoff).
   const continueDisabled =
-    overCap || submitting !== null || !canAct || rosterCompleted;
+    kitchenOverCap || submitting !== null || !canAct || rosterCompleted;
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    if (!canAct) return;
+    const chefId = String(event.active.id);
+    const overId = event.over?.id ? String(event.over.id) : null;
+    if (!overId) return;
+    setKeptIds((prev) => {
+      const next = new Set(prev);
+      if (overId === "kitchen") {
+        // Only allow add if kitchen has space.
+        if (next.size < SPECIALTY_CAP) next.add(chefId);
+      } else if (overId === "available") {
+        next.delete(chefId);
+      }
+      return next;
+    });
+  };
 
   const handleLayoffClick = (chefId: string) => {
     const target = specialtyChefs.find((c) => c.id === chefId);
@@ -159,6 +269,18 @@ export function RosterPhasePage() {
     setError(null);
     setSubmitting("continue");
     try {
+      // Lay off any chefs the player chose not to keep (i.e. anything
+      // currently in the right "available" zone).
+      const toLayoff = availableChefs.map((c) => c.id);
+      if (toLayoff.length > 0) {
+        const layoff = httpsCallable<
+          { gameId: string; chefId: string },
+          { success?: boolean }
+        >(functions, "layoffChef");
+        for (const chefId of toLayoff) {
+          await layoff({ gameId, chefId });
+        }
+      }
       const cont = httpsCallable<
         { gameId: string },
         { rosterCompleted?: boolean }
@@ -177,11 +299,21 @@ export function RosterPhasePage() {
       <RoundHeader />
 
       <header className="roster-phase-page__header">
-        <h1 className="roster-phase-page__title">Your Kitchen Roster</h1>
+        <div className="roster-phase-page__header-row">
+          <h1 className="roster-phase-page__title">Your Kitchen Roster</h1>
+          {secondsLeft !== null && (
+            <div
+              className={`roster-phase-page__timer${secondsLeft <= 30 ? " roster-phase-page__timer--urgent" : ""}`}
+              aria-live="polite"
+            >
+              {secondsLeft > 0 ? `${secondsLeft}s` : "Time's up"}
+            </div>
+          )}
+        </div>
         <p className="roster-phase-page__hint">
-          Review who's in your kitchen for the rest of this round. Keep up to{" "}
-          <strong>{SPECIALTY_CAP}</strong> specialty chefs — lay one off if you
-          ended up with more.
+          Keep up to <strong>{SPECIALTY_CAP}</strong> specialty chefs. Lay one
+          off if you ended up with more — or wait for the timer and any extras
+          will be automatically released.
         </p>
       </header>
 
@@ -191,66 +323,42 @@ export function RosterPhasePage() {
         </p>
       )}
 
-      {overCap && (
+      {kitchenOverCap && (
         <p className="roster-phase-page__overflow-warning" role="alert">
-          ⚠ You picked up an extra chef — lay one off to continue.
+          ⚠ Your kitchen has more than {SPECIALTY_CAP} chefs — drag one back to
+          the right to continue.
         </p>
       )}
 
-      <div className="roster-phase-page__slots">
-        <div className="roster-phase-page__slot roster-phase-page__slot--base">
-          <div className="roster-phase-page__slot-label">Head Chef</div>
-          <div className="roster-phase-page__base-card">
-            <div className="roster-phase-page__base-portrait">👨‍🍳</div>
-            <div className="roster-phase-page__base-name">You</div>
-            <div className="roster-phase-page__base-hint">
-              Always in your kitchen.
-            </div>
-          </div>
+      <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+        <div className="roster-phase-page__split">
+          <RosterDropZone
+            id="kitchen"
+            title="Your Kitchen"
+            subtitle={`${kitchenChefs.length} / ${SPECIALTY_CAP}`}
+            empty="Drag chefs here to keep them on staff."
+            chefs={kitchenChefs}
+            isNewMap={newlyWonChefIds}
+            canAct={canAct}
+            onLayoff={handleLayoffClick}
+          />
+          <RosterDropZone
+            id="available"
+            title="Available Chefs"
+            subtitle={
+              availableChefs.length === 0
+                ? "All assigned"
+                : `${availableChefs.length} not on staff`
+            }
+            empty="No chefs to assign."
+            chefs={availableChefs}
+            isNewMap={newlyWonChefIds}
+            canAct={canAct}
+            onLayoff={handleLayoffClick}
+            variant="available"
+          />
         </div>
-
-        {Array.from({ length: SPECIALTY_CAP }, (_, i) => {
-          const chef = specialtyChefs[i];
-          return (
-            <div
-              key={`slot-${i}`}
-              className="roster-phase-page__slot roster-phase-page__slot--specialty"
-            >
-              <div className="roster-phase-page__slot-label">
-                Specialty Chef {i + 1}
-              </div>
-              {chef ? (
-                <ChefCard
-                  chef={toChefCardInput(chef)}
-                  mode="roster"
-                  canLayoff={canAct}
-                  onLayoff={handleLayoffClick}
-                />
-              ) : (
-                <div className="roster-phase-page__empty">Empty slot</div>
-              )}
-            </div>
-          );
-        })}
-
-        {overCap &&
-          specialtyChefs.slice(SPECIALTY_CAP).map((chef) => (
-            <div
-              key={`overflow-${chef.id}`}
-              className="roster-phase-page__slot roster-phase-page__slot--overflow"
-            >
-              <div className="roster-phase-page__slot-label">
-                Extra Chef (must lay off)
-              </div>
-              <ChefCard
-                chef={toChefCardInput(chef)}
-                mode="roster"
-                canLayoff={canAct}
-                onLayoff={handleLayoffClick}
-              />
-            </div>
-          ))}
-      </div>
+      </DndContext>
 
       {error && (
         <p className="roster-phase-page__error" role="alert">
@@ -258,7 +366,7 @@ export function RosterPhasePage() {
         </p>
       )}
 
-      {pendingRosterAction && !overCap && (
+      {pendingRosterAction && !kitchenOverCap && (
         <p className="roster-phase-page__info">
           Backend flagged a pending roster action — review your chefs above.
         </p>
@@ -269,9 +377,11 @@ export function RosterPhasePage() {
         submitted={rosterCompleted}
         hint={
           canAct
-            ? overCap
-              ? "Lay off a chef to unlock Continue."
-              : undefined
+            ? kitchenOverCap
+              ? "Drag a chef back to Available to unlock Continue."
+              : availableChefs.length > 0
+                ? `Continue will lay off ${availableChefs.length} chef${availableChefs.length === 1 ? "" : "s"} on the right.`
+                : undefined
             : "Waiting on your Operations teammate."
         }
         action={
@@ -328,6 +438,103 @@ export function RosterPhasePage() {
         </div>
       )}
     </PageShell>
+  );
+}
+
+/**
+ * Drop zone wrapper. Renders a panel containing draggable chef cards.
+ * `id` is the stable droppable id used in `handleDragEnd` ("kitchen" | "available").
+ */
+function RosterDropZone(props: {
+  id: "kitchen" | "available";
+  title: string;
+  subtitle: string;
+  empty: string;
+  chefs: RosterChef[];
+  isNewMap: Set<string>;
+  canAct: boolean;
+  onLayoff: (id: string) => void;
+  variant?: "available";
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: props.id });
+  return (
+    <div
+      ref={setNodeRef}
+      className={[
+        "roster-phase-page__panel",
+        `roster-phase-page__panel--${props.id}`,
+        props.variant ? `roster-phase-page__panel--${props.variant}` : "",
+        isOver ? "roster-phase-page__panel--over" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      <div className="roster-phase-page__panel-header">
+        <h2 className="roster-phase-page__panel-title">{props.title}</h2>
+        <span className="roster-phase-page__panel-subtitle">
+          {props.subtitle}
+        </span>
+      </div>
+
+      {props.chefs.length === 0 ? (
+        <p className="roster-phase-page__panel-empty">{props.empty}</p>
+      ) : (
+        <div className="roster-phase-page__panel-grid">
+          {props.chefs.map((chef) => (
+            <DraggableChef
+              key={chef.id}
+              chef={chef}
+              isNew={props.isNewMap.has(chef.id)}
+              canAct={props.canAct}
+              onLayoff={props.onLayoff}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A single chef card wrapped with @dnd-kit useDraggable. Adds a yellow
+ * pixelated "NEW" badge in the top-left when the chef was won this round.
+ */
+function DraggableChef(props: {
+  chef: RosterChef;
+  isNew: boolean;
+  canAct: boolean;
+  onLayoff: (id: string) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } =
+    useDraggable({ id: props.chef.id, disabled: !props.canAct });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Translate.toString(transform),
+    opacity: isDragging ? 0.6 : 1,
+    cursor: props.canAct ? "grab" : "default",
+    touchAction: "none",
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...listeners}
+      {...attributes}
+      className={`roster-phase-page__draggable${isDragging ? " roster-phase-page__draggable--dragging" : ""}`}
+    >
+      {props.isNew && (
+        <span className="roster-phase-page__new-badge" aria-label="Newly hired">
+          NEW
+        </span>
+      )}
+      <ChefCard
+        chef={toChefCardInput(props.chef)}
+        mode="roster"
+        canLayoff={props.canAct}
+        onLayoff={props.onLayoff}
+      />
+    </div>
   );
 }
 

@@ -19,7 +19,8 @@ const JOIN_FAILURE_MESSAGES: Record<string, string> = {
   "invalid-argument":
     "Check the join code (6 letters/digits) and name (2–40 characters).",
   "not-found": "No game matches that join code. Double-check with your professor.",
-  "failed-precondition": "This game has already started and isn't accepting new players.",
+  "failed-precondition":
+    "This game is no longer accepting new players. If you were already in this game, re-entering the same join code and name will restore your session.",
 };
 
 function humanizeJoinError(err: unknown): string {
@@ -139,18 +140,6 @@ export function LandingPage() {
 
         <form className="landing-page__form" onSubmit={handleJoin}>
           <label className="form-field">
-            <span className="form-field__label">Your Name</span>
-            <input
-              type="text"
-              className="form-field__input"
-              placeholder="e.g. John"
-              value={playerName}
-              onChange={(e) => setPlayerName(e.target.value)}
-              maxLength={40}
-            />
-          </label>
-
-          <label className="form-field">
             <span className="form-field__label">Game Code</span>
             <input
               type="text"
@@ -178,6 +167,21 @@ export function LandingPage() {
               ))}
             </div>
           </div>
+
+          <label className="form-field">
+            <span className="form-field__label">
+              Your Name{" "}
+              <span className="form-field__char-count">{playerName.length}/40</span>
+            </span>
+            <input
+              type="text"
+              className="form-field__input"
+              placeholder="e.g. John"
+              value={playerName}
+              onChange={(e) => setPlayerName(e.target.value)}
+              maxLength={40}
+            />
+          </label>
 
           <label className="form-field">
             <span className="form-field__label">Team Logo (optional)</span>
@@ -219,7 +223,7 @@ export function LandingPage() {
               ? "Signing you in…"
               : "Join Game"}
           </button>
-          <a href="/how-to-play" className="landing-page__how-to-play-link">How to Play</a>
+          <a href="/how-to-play" className="landing-page__how-to-play-link" style={{ color: "var(--primary, #7c3aed)", fontWeight: 500 }}>How to Play</a>
         </form>
       </div>
     </PageShell>

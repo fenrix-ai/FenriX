@@ -22,8 +22,8 @@ const {
 } = require('./config');
 
 const BASE_CHEF_RATE = 30;            // units/day, every chef's base output
-const SKILL_ORDER = { novel: 0, intermediate: 1, advanced: 2 };
-const MIN_BID_FLOOR_MULTIPLIERS = { novel: 2, intermediate: 3.5, advanced: 5.5 };
+const SKILL_ORDER = { low: 0, medium: 1, high: 2 };
+const MIN_BID_FLOOR_MULTIPLIERS = { low: 2, medium: 3.5, high: 5.5 };
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -47,13 +47,13 @@ function pick(arr) {
 }
 
 /**
- * Sample a skill tier from a { novel, intermediate, advanced } probability map.
+ * Sample a skill tier from a { low, medium, high } probability map.
  */
 function sampleSkillTier(rates) {
   const r = Math.random();
-  if (r < rates.novel) return 'novel';
-  if (r < rates.novel + rates.intermediate) return 'intermediate';
-  return 'advanced';
+  if (r < rates.low) return 'low';
+  if (r < rates.low + rates.medium) return 'medium';
+  return 'high';
 }
 
 /**
@@ -78,7 +78,7 @@ function skillRank(tier) {
  *   {
  *     id, nationality, gender, name, skillTier,
  *     specialties:  (from nationality, hidden from UI but needed for output math),
- *     minBidFloor:  sousChefBaseCost × { novel: 2, intermediate: 3.5, advanced: 5.5 }
+ *     minBidFloor:  sousChefBaseCost × { low: 2, medium: 3.5, high: 5.5 }
  *   }
  *
  * @param {number} round   1-indexed round number (1..totalRounds)

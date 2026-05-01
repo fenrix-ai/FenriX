@@ -91,7 +91,7 @@ const GameConfigDocument = {
   // ── Phase durations ──────────────────────────────────────
   // Seconds per phase; professor can override at game creation.
   phaseDurations: {
-    email: 30,                    // market-insight reading window
+    email: 5,                     // round transition screen — auto-advances
     decide: 300,                  // menu + quantities + sous chef hiring
     bid_ad: 60,                   // sealed ad bids
     bid_chef: 60,                 // sealed chef bids

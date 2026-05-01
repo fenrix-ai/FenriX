@@ -616,11 +616,13 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
     if (!gSnap.exists) {
       throw new HttpsError('not-found', 'No game exists for that join code.');
     }
-    if (gSnap.get('phase') !== 'lobby') {
-      throw new HttpsError('failed-precondition', 'This game is no longer accepting players.');
-    }
 
     const config = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
+
+    // Returning players can rejoin at any phase; only block new joins after lobby.
+    if (!pSnap.exists && gSnap.get('phase') !== 'lobby') {
+      throw new HttpsError('failed-precondition', 'This game is no longer accepting new players.');
+    }
 
     // BE-24: enforce player cap for new joins (rejoins are always allowed)
     if (!pSnap.exists) {
@@ -640,10 +642,12 @@ exports.joinGame = onCall(CALLABLE_OPTS, async (request) => {
     const autoRole = ROLES_ORDER.find((r) => !takenRoles.has(r)) || 'solo';
 
     if (pSnap.exists) {
-      // Rejoin: refresh display name / bakery name but do not reset progress.
+      // Rejoin: refresh display name / bakery name, clear disconnect flag, do not reset progress.
       transaction.update(playerRef, {
         displayName,
         bakeryName,
+        disconnected: false,
+        consecutiveMissedRounds: 0,
         updatedAt: FieldValue.serverTimestamp(),
       });
       transaction.set(rosterRef, {
@@ -914,6 +918,11 @@ exports.advanceGamePhase = onCall(CALLABLE_OPTS, async (request) => {
       await resolveAndApplyChefAuction(gameRef, round, config);
     }
 
+    // KR-3: when leaving roster phase, auto-layoff any players still over the cap.
+    if (transitionContext.fromPhase && transitionContext.fromPhase.includes('_roster')) {
+      await autoLayoffExcessChefs(gameRef, round, config);
+    }
+
     if (toPhase === 'simulating') {
       // Run simulation and persist results; then transition to results_ready.
       await runSimulationAndPersist(gameRef, round, config);
@@ -964,6 +973,56 @@ exports.advanceGamePhase = onCall(CALLABLE_OPTS, async (request) => {
 // ---------------------------------------------------------------------------
 // Simulation orchestration (reads → pure sim → chunked batched writes)
 // ---------------------------------------------------------------------------
+
+/**
+ * KR-3: Auto-layoff specialty chefs beyond the cap for every player.
+ * Runs as a post-transaction side-effect when leaving the roster phase.
+ */
+async function autoLayoffExcessChefs(gameRef, round, config) {
+  const cap = numberOrDefault(config.specialtyChefCap, 3);
+  const playersSnap = await gameRef.collection('players').get();
+  const returnPoolRef = gameRef.collection('rounds').doc(`round_${round}`).collection('chefReturnPool');
+
+  const batches = [];
+  let batch = db.batch();
+  let opCount = 0;
+
+  for (const pDoc of playersSnap.docs) {
+    const chefs = Array.isArray(pDoc.get('specialtyChefs')) ? pDoc.get('specialtyChefs') : [];
+    if (chefs.length <= cap) continue;
+
+    const kept = chefs.slice(0, cap);
+    const removed = chefs.slice(cap);
+
+    batch.update(pDoc.ref, {
+      specialtyChefs: kept,
+      pendingRosterAction: false,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    opCount++;
+
+    for (const chef of removed) {
+      if (!chef || !chef.id) continue;
+      batch.set(returnPoolRef.doc(chef.id), {
+        ...chef,
+        returnedByPlayerId: pDoc.id,
+        autoLayoff: true,
+        returnedAt: FieldValue.serverTimestamp(),
+      });
+      opCount++;
+    }
+
+    // Firestore batch limit is 500 ops.
+    if (opCount >= 490) {
+      batches.push(batch.commit());
+      batch = db.batch();
+      opCount = 0;
+    }
+  }
+
+  if (opCount > 0) batches.push(batch.commit());
+  await Promise.all(batches);
+}
 
 /**
  * Read all data needed for simulation, invoke the pure simulation engine,
@@ -1026,6 +1085,14 @@ async function runSimulationAndPersist(gameRef, round, config) {
       consecutiveMissedRounds: _missed ? _prevMissed + 1 : 0,
       disconnected: _missed ? _prevMissed + 1 >= 2 : false,
     });
+  }
+
+  // DR-7: build staffCounts map so we can persist it in lastRoundResult.
+  const staffCountsByPlayer = new Map();
+  for (const pd of playerDocs) {
+    const p = pd.data() || {};
+    const pending = (p.pendingDecision && typeof p.pendingDecision === 'object') ? p.pendingDecision : {};
+    staffCountsByPlayer.set(pd.id, (pending.staffCounts && typeof pending.staffCounts === 'object') ? pending.staffCounts : {});
   }
 
   // Assemble per-player input for the pure simulation engine.
@@ -1128,6 +1195,7 @@ async function runSimulationAndPersist(gameRef, round, config) {
         selloutAnywhere: r.selloutAnywhere || false,
         burglary: r.burglary || false,           // BE-N06
         burglaryAmount: r.burglaryAmount || 0,   // BE-N06
+        staffCounts: staffCountsByPlayer.get(r.playerId) || {},  // DR-7
       },
       updatedAt: FieldValue.serverTimestamp(),
     });
@@ -1382,6 +1450,9 @@ exports.submitDecision = onCall(CALLABLE_OPTS, async (request) => {
       'pendingDecision.quantities': validated.quantities || {},
       'pendingDecision.sousChefCount': validated.sousChefCount || 0,
       'pendingDecision.sousChefAssignments': validated.sousChefAssignments || {},
+      'pendingDecision.staffCounts': (data.staffCounts && typeof data.staffCounts === 'object' && !Array.isArray(data.staffCounts))
+        ? data.staffCounts
+        : {},
       // BE-19: un-flag a reconnected player immediately on successful submit.
       // Without this, a previously-disconnected player stays flagged on the
       // professor dashboard until the next simulation batch runs.
@@ -2220,4 +2291,132 @@ exports.purchaseCompetitorInsight = onCall(async (request) => {
   }
 
   return { csv: rows.join("\n"), costDeducted: insightCost };
+});
+
+// ===========================================================================
+// resumeProfessor — take over professor control by join code (G-2)
+// ===========================================================================
+
+exports.resumeProfessor = onCall(CALLABLE_OPTS, async (request) => {
+  const auth = requireAuth(request, 'Sign in before resuming professor control.');
+  const joinCode = cleanString((request.data || {}).joinCode).toUpperCase();
+  if (!joinCode) throw new HttpsError('invalid-argument', 'joinCode is required.');
+
+  const gameSnap = await db
+    .collection('games')
+    .where('joinCode', '==', joinCode)
+    .limit(1)
+    .get();
+  if (gameSnap.empty) {
+    throw new HttpsError('not-found', 'No game found for that join code.');
+  }
+
+  const gameRef = gameSnap.docs[0].ref;
+  const gameId = gameRef.id;
+
+  await db.runTransaction(async (transaction) => {
+    const gSnap = await transaction.get(gameRef);
+    if (!gSnap.exists) throw new HttpsError('not-found', 'Game not found.');
+    if (gSnap.get('phase') === 'game_over') {
+      throw new HttpsError('failed-precondition', 'This game has already ended.');
+    }
+
+    const currentProfUid = gSnap.get('professorUid') || gSnap.get('professorId');
+    if (currentProfUid && currentProfUid !== auth.uid) {
+      // Check if the existing professor is still active (heartbeat within 90s).
+      const heartbeat = gSnap.get('professorHeartbeatAt');
+      if (heartbeat) {
+        const ageMs = Date.now() - heartbeat.toMillis();
+        if (ageMs < 90_000) {
+          throw new HttpsError(
+            'failed-precondition',
+            'Another professor is currently managing this game.',
+          );
+        }
+      }
+    }
+
+    transaction.update(gameRef, {
+      professorUid: auth.uid,
+      professorId: auth.uid,
+      professorHeartbeatAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+
+  const gSnap = await gameRef.get();
+  return {
+    gameId,
+    phase: gSnap.get('phase'),
+    round: gSnap.get('currentRound') || gSnap.get('round') || 1,
+  };
+});
+
+// ===========================================================================
+// forceLayoff — professor-triggered layoff of a player's excess chefs (P-2)
+// ===========================================================================
+
+exports.forceLayoff = onCall(CALLABLE_OPTS, async (request) => {
+  const auth = requireAuth(request, 'Sign in before using force layoff.');
+  const data = request.data || {};
+  const gameId = cleanGameId(data.gameId);
+  const targetPlayerId = cleanString(data.playerId);
+  if (!targetPlayerId) throw new HttpsError('invalid-argument', 'playerId is required.');
+
+  const gameRef = gameDoc(gameId);
+  const playerRef = gameRef.collection('players').doc(targetPlayerId);
+
+  await db.runTransaction(async (transaction) => {
+    const [gSnap, pSnap, cfgSnap] = await Promise.all([
+      transaction.get(gameRef),
+      transaction.get(playerRef),
+      transaction.get(gameRef.collection('config').doc('params')),
+    ]);
+
+    if (!gSnap.exists) throw new HttpsError('not-found', 'Game not found.');
+    if (gSnap.get('professorUid') !== auth.uid && gSnap.get('professorId') !== auth.uid) {
+      throw new HttpsError('permission-denied', 'Only the professor can force a layoff.');
+    }
+    if (!pSnap.exists) throw new HttpsError('not-found', 'Player not found.');
+
+    const config = mergeConfig(cfgSnap.exists ? cfgSnap.data() : {});
+    const cap = numberOrDefault(config.specialtyChefCap, 3);
+
+    const player = pSnap.data();
+    const chefs = Array.isArray(player.specialtyChefs) ? player.specialtyChefs : [];
+    if (chefs.length <= cap) {
+      // Already within cap — nothing to do.
+      return;
+    }
+
+    // Layoff excess from the end of the roster (lowest-priority chefs last).
+    const kept = chefs.slice(0, cap);
+    const removed = chefs.slice(cap);
+
+    const round = numberOrDefault(gSnap.get('currentRound') || gSnap.get('round'), 1);
+    for (const chef of removed) {
+      if (!chef || !chef.id) continue;
+      transaction.set(
+        gameRef
+          .collection('rounds')
+          .doc(`round_${round}`)
+          .collection('chefReturnPool')
+          .doc(chef.id),
+        {
+          ...chef,
+          returnedByPlayerId: targetPlayerId,
+          forcedByProfessor: true,
+          returnedAt: FieldValue.serverTimestamp(),
+        },
+      );
+    }
+
+    transaction.update(playerRef, {
+      specialtyChefs: kept,
+      pendingRosterAction: false,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+
+  return { gameId, playerId: targetPlayerId, forcedLayoff: true };
 });

@@ -237,10 +237,12 @@ export interface ChefListing {
   name: string;
   skill: SkillLevel;
   multiplier: number;
+  /** AA-2: Minimum bid floor from backend. 0 if not yet loaded / placeholder. */
+  minBidFloor: number;
 }
 
 /** Real skill tier written by the backend in `rounds/{N}.chefPool`. */
-export type ChefSkillTier = "novel" | "intermediate" | "advanced";
+export type ChefSkillTier = "low" | "medium" | "high";
 
 /**
  * Backend shape of a chef in `rounds/round_{N}.chefPool`. Mirrors

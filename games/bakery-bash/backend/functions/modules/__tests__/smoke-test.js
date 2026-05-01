@@ -31,12 +31,12 @@ assert(config.cleanString('  hi ') === 'hi', 'cleanString');
 assert(config.PRODUCT_KEYS.length === 6, 'product keys len');
 assert(config.CHEF_SPAWN_RATES.length === 5, 'spawn rates rounds');
 for (const r of config.CHEF_SPAWN_RATES) {
-  assert(near(r.novel + r.intermediate + r.advanced, 1.0), 'spawn rate sum = 1');
+  assert(near(r.low + r.medium + r.high, 1.0), 'spawn rate sum = 1');
 }
 
 // ---------- chef-system ----------
 // Chef output
-const frenchAdv = { skillTier: 'advanced', specialties: ['croissant', 'coffee'] };
+const frenchAdv = { skillTier: 'high', specialties: ['croissant', 'coffee'] };
 assert(chefSys.getChefOutputForProduct(frenchAdv, 'croissant') === 30 * 2.2, 'french adv croissant');
 assert(chefSys.getChefOutputForProduct(frenchAdv, 'bagel') === 30 * 1.6, 'french adv bagel');
 assert(chefSys.getChefOutputForProduct({ skillTier: 'base' }, 'croissant') === 30, 'base chef');
@@ -94,7 +94,7 @@ const pool = chefSys.generateChefPool(1, cfg);
 assert(pool.length >= 6 && pool.length <= 8, `pool size ${pool.length}`);
 for (const c of pool) {
   assert(typeof c.id === 'string', 'chef id');
-  assert(['novel', 'intermediate', 'advanced'].includes(c.skillTier), 'skill tier');
+  assert(['low', 'medium', 'high'].includes(c.skillTier), 'skill tier');
   assert(Array.isArray(c.specialties) && c.specialties.length === 2, 'specialties');
   assert(c.minBidFloor > 0, 'min bid floor');
 }

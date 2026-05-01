@@ -501,10 +501,15 @@ export function TeamPage() {
                       <button
                         type="button"
                         className="btn btn--ghost team-page__role-btn"
-                        onClick={() => void handleClaimRole(r)}
-                        disabled={disabled || mine}
+                        onClick={() => {
+                          if (mine) void handleClearRole();
+                          else void handleClaimRole(r);
+                        }}
+                        disabled={disabled && !mine}
                         title={
-                          taken
+                          mine
+                            ? "Click to deselect this role."
+                            : taken
                             ? `${otherClaimer} already picked this role.`
                             : isSolo
                             ? "Roles unlock once a teammate joins."
@@ -513,8 +518,10 @@ export function TeamPage() {
                       >
                         {saving
                           ? "Saving…"
+                          : clearingRole && mine
+                          ? "Deselecting…"
                           : mine
-                          ? "Selected"
+                          ? "Selected · Click to deselect"
                           : taken
                           ? "Taken"
                           : "Choose"}
@@ -558,6 +565,13 @@ export function TeamPage() {
             onClick={() => navigate("/lobby")}
           >
             See all players in lobby
+          </button>
+          <button
+            type="button"
+            className="btn btn--ghost team-page__leave-btn"
+            onClick={() => navigate("/")}
+          >
+            Leave Team
           </button>
         </div>
 

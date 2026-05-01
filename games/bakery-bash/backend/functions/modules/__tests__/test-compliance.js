@@ -267,9 +267,9 @@ section('A3. Chef System');
 
   // Chef multipliers
   const expectedMults = {
-    novel:        { nonSpecialty: 1.0,  specialty: 1.4 },
-    intermediate: { nonSpecialty: 1.25, specialty: 1.75 },
-    advanced:     { nonSpecialty: 1.6,  specialty: 2.2 },
+    low:    { nonSpecialty: 1.0,  specialty: 1.4 },
+    medium: { nonSpecialty: 1.25, specialty: 1.75 },
+    high:   { nonSpecialty: 1.6,  specialty: 2.2 },
   };
   for (const [tier, vals] of Object.entries(expectedMults)) {
     const m = CHEF_MULTIPLIERS[tier];
@@ -282,7 +282,7 @@ section('A3. Chef System');
   assert(BASE_CHEF_RATE === 30, 'Base chef rate = 30 units/day');
 
   // Output formula: 30 × multiplier
-  const frenchAdv = { skillTier: 'advanced', specialties: ['croissant', 'coffee'] };
+  const frenchAdv = { skillTier: 'high', specialties: ['croissant', 'coffee'] };
   assertClose(getChefOutputForProduct(frenchAdv, 'croissant'), 30 * 2.2, 'Advanced French chef on croissant = 66');
   assertClose(getChefOutputForProduct(frenchAdv, 'bagel'),     30 * 1.6, 'Advanced French chef on bagel (non-spec) = 48');
 
@@ -321,26 +321,26 @@ section('A3. Chef System');
 
   // Chef spawn rates per round
   const expectedRates = [
-    { novel: 0.65, intermediate: 0.30, advanced: 0.05 }, // R1
-    { novel: 0.55, intermediate: 0.35, advanced: 0.10 }, // R2
-    { novel: 0.40, intermediate: 0.40, advanced: 0.20 }, // R3
-    { novel: 0.20, intermediate: 0.45, advanced: 0.35 }, // R4
-    { novel: 0.05, intermediate: 0.45, advanced: 0.50 }, // R5
+    { low: 0.85, medium: 0.14, high: 0.01 }, // R1
+    { low: 0.75, medium: 0.23, high: 0.02 }, // R2
+    { low: 0.45, medium: 0.45, high: 0.10 }, // R3
+    { low: 0.20, medium: 0.55, high: 0.25 }, // R4
+    { low: 0.10, medium: 0.55, high: 0.35 }, // R5
   ];
   for (let i = 0; i < expectedRates.length; i++) {
     const r = CHEF_SPAWN_RATES[i];
     const e = expectedRates[i];
-    assert(r && Math.abs(r.novel - e.novel) < 0.001 &&
-           Math.abs(r.intermediate - e.intermediate) < 0.001 &&
-           Math.abs(r.advanced - e.advanced) < 0.001,
+    assert(r && Math.abs(r.low - e.low) < 0.001 &&
+           Math.abs(r.medium - e.medium) < 0.001 &&
+           Math.abs(r.high - e.high) < 0.001,
       `Round ${i+1} chef spawn rates correct`,
-      `got novel=${r && r.novel}, int=${r && r.intermediate}, adv=${r && r.advanced}`);
+      `got low=${r && r.low}, med=${r && r.medium}, high=${r && r.high}`);
   }
 
   // Min bid floor multipliers
-  assert(MIN_BID_FLOOR_MULTIPLIERS.novel === 2,          'Novel min bid floor = 2× baselinFloor');
-  assert(MIN_BID_FLOOR_MULTIPLIERS.intermediate === 3.5, 'Intermediate min bid floor = 3.5×');
-  assert(MIN_BID_FLOOR_MULTIPLIERS.advanced === 5.5,     'Advanced min bid floor = 5.5×');
+  assert(MIN_BID_FLOOR_MULTIPLIERS.low === 2,     'Low min bid floor = 2× baseCost');
+  assert(MIN_BID_FLOOR_MULTIPLIERS.medium === 3.5, 'Medium min bid floor = 3.5×');
+  assert(MIN_BID_FLOOR_MULTIPLIERS.high === 5.5,   'High min bid floor = 5.5×');
 
   // Specialty chef cap = 3
   assert(DEFAULT_GAME_CONFIG.specialtyChefCap === 3, 'Specialty chef cap = 3');
@@ -348,7 +348,7 @@ section('A3. Chef System');
   // Chef pool generation produces 6-8 chefs
   const pool = generateChefPool(1, cfg);
   assert(pool.length >= 6 && pool.length <= 8, `Chef pool size 6-8 (got ${pool.length})`);
-  assert(pool.every(c => ['novel','intermediate','advanced'].includes(c.skillTier)),
+  assert(pool.every(c => ['low','medium','high'].includes(c.skillTier)),
     'All chefs have valid skill tiers');
   assert(pool.every(c => ['french','japanese','italian','american'].includes(c.nationality)),
     'All chefs have valid nationalities');
@@ -686,7 +686,7 @@ const STRATEGIES = [
     bakeryName: 'Big Spender Bakery',
     getDecision: (round) => makeDecision({ sousChefCount: 6, croissant: 100, cookie: 80, bagel: 80, includeOptional: true, coffee: 50, matcha: 30 }),
     getChefs: (round) => [
-      { skillTier: 'advanced', specialties: ['croissant', 'coffee'], nationality: 'french', name: 'Jean-Pierre' },
+      { skillTier: 'high', specialties: ['croissant', 'coffee'], nationality: 'french', name: 'Jean-Pierre' },
     ],
   },
   {
@@ -702,7 +702,7 @@ const STRATEGIES = [
     bakeryName: 'Balanced Bakery',
     getDecision: (round) => makeDecision({ sousChefCount: 3, croissant: 60, cookie: 50, bagel: 55, includeOptional: true, coffee: 40 }),
     getChefs: (round) => [
-      { skillTier: 'intermediate', specialties: ['croissant', 'coffee'], nationality: 'french', name: 'Colette' },
+      { skillTier: 'medium', specialties: ['croissant', 'coffee'], nationality: 'french', name: 'Colette' },
     ],
   },
   {
@@ -711,7 +711,7 @@ const STRATEGIES = [
     bakeryName: 'Specialty Bakery',
     getDecision: (round) => makeDecision({ sousChefCount: 2, croissant: 30, cookie: 30, bagel: 30, includeOptional: true, matcha: 30 }),
     getChefs: (round) => [
-      { skillTier: 'advanced', specialties: ['matcha', 'croissant'], nationality: 'japanese', name: 'Hiroshi' },
+      { skillTier: 'high', specialties: ['matcha', 'croissant'], nationality: 'japanese', name: 'Hiroshi' },
     ],
   },
   {
@@ -927,7 +927,7 @@ section('C. Conclusion Aggregation & Rankings');
 
   // Conclusion data structure
   const winnerChefs = [
-    { skillTier: 'advanced', nationality: 'french', name: 'Jean-Pierre', specialties: ['croissant', 'coffee'] },
+    { skillTier: 'high', nationality: 'french', name: 'Jean-Pierre', specialties: ['croissant', 'coffee'] },
   ];
   const conclusion = buildConclusionData(ranked, winnerChefs);
   assert(!!conclusion.winner,             'Conclusion has a winner object');

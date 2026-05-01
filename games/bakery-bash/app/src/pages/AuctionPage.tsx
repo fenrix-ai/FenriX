@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { doc, onSnapshot, type DocumentData } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { PageShell } from "../components/ui/PageShell";
@@ -91,8 +91,7 @@ const LATE_MEDIUM_MAX = 0.6;   //              40% medium, 40% high
 // on the round doc, not a subcollection). The AuctionPage effect below
 // subscribes to that doc and prefers the real pool when present; this
 // local generator is the fallback for when the doc hasn't materialized.
-// Schema difference: backend tiers are `novel`/`intermediate`/`advanced`
-// (mapped to `low`/`medium`/`high` client-side via `mapBackendSkill`).
+// Backend tiers are `low`/`medium`/`high` (aligned with frontend SkillLevel).
 function rollSkill(round: number): SkillLevel {
   const roll = Math.random();
   if (round <= EARLY_ROUND_CUTOFF) {
@@ -125,6 +124,7 @@ function generateChefPool(round: number): ChefListing[] {
       name: `${NATIONALITY_LABELS[nat]} Chef`,
       skill,
       multiplier: SKILL_CONFIG[skill].multiplier,
+      minBidFloor: 0,
     });
   }
 
@@ -140,6 +140,7 @@ function generateChefPool(round: number): ChefListing[] {
       name: `${NATIONALITY_LABELS[nat]} Chef`,
       skill,
       multiplier: SKILL_CONFIG[skill].multiplier,
+      minBidFloor: 0,
     });
   }
 
@@ -165,12 +166,13 @@ interface BackendChef {
   gender: unknown;
   name?: string;
   skillTier?: string;
+  minBidFloor?: number;
 }
 
 const BACKEND_SKILL_MAP: Record<string, SkillLevel> = {
-  novel: "low",
-  intermediate: "medium",
-  advanced: "high",
+  low: "low",
+  medium: "medium",
+  high: "high",
   base: "low",
 };
 
@@ -198,6 +200,7 @@ function mapBackendChef(chef: BackendChef): ChefListing | null {
     name: chef.name || `${NATIONALITY_LABELS[nat]} Chef`,
     skill,
     multiplier: SKILL_CONFIG[skill].multiplier,
+    minBidFloor: typeof chef.minBidFloor === "number" ? chef.minBidFloor : 0,
   };
 }
 
@@ -205,6 +208,7 @@ export function AuctionPage() {
   useGamePhaseNav();
   const {
     gameId,
+    playerId,
     currentRound,
     phase,
     pendingAdBids,
@@ -230,7 +234,12 @@ export function AuctionPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [chefBidInputs, setChefBidInputs] = useState<Record<string, string>>({});
+  const [adBidInputs, setAdBidInputs] = useState<Record<string, string>>({});
   const [showExpiredPopup, setShowExpiredPopup] = useState(false);
+  // AA-1: chefs won this round — show reveal popup when results arrive
+  const [wonChefs, setWonChefs] = useState<ChefListing[] | null>(null);
+  const [showWinReveal, setShowWinReveal] = useState(false);
+  const wonChefsExtracted = useRef(false);
 
   const parsed = parseGamePhase(phase, currentRound);
   const basePhase = parsed.base;
@@ -297,12 +306,26 @@ export function AuctionPage() {
         const raw = Array.isArray(data.chefPool) ? data.chefPool : null;
         if (!raw) {
           setBackendPool(null);
-          return;
+        } else {
+          const mapped = raw
+            .map((c) => mapBackendChef(c as BackendChef))
+            .filter((c): c is ChefListing => c !== null);
+          setBackendPool(mapped);
         }
-        const mapped = raw
-          .map((c) => mapBackendChef(c as BackendChef))
-          .filter((c): c is ChefListing => c !== null);
-        setBackendPool(mapped);
+
+        // AA-1: detect when auction results arrive and show win reveal popup.
+        const auctionResults = data.chefAuctionResults;
+        if (!wonChefsExtracted.current && auctionResults && playerId && auctionResults[playerId]) {
+          const myWon = auctionResults[playerId];
+          if (Array.isArray(myWon?.chefs)) {
+            wonChefsExtracted.current = true;
+            const wonMapped = (myWon.chefs as BackendChef[])
+              .map((c) => mapBackendChef(c))
+              .filter((c): c is ChefListing => c !== null);
+            setWonChefs(wonMapped);
+            setShowWinReveal(true);
+          }
+        }
       },
       (err) => {
         console.error("games/rounds listener error", {
@@ -314,7 +337,7 @@ export function AuctionPage() {
       },
     );
     return unsubscribe;
-  }, [gameId, currentRound]);
+  }, [gameId, currentRound, playerId]);
 
   const chefPool = backendPool ?? placeholderPool;
   const chefPoolIsReal = backendPool !== null;
@@ -344,13 +367,19 @@ export function AuctionPage() {
 
   const handleSubmitSingleBid = useCallback(async (chefId: string) => {
     if (timerExpired || !gameId) return;
+    const amount = pendingChefBids[chefId] ?? 0;
+    const chef = chefPool.find((c) => c.id === chefId);
+    if (chef && chef.minBidFloor > 0 && amount < chef.minBidFloor) {
+      setSubmitError(`Minimum bid for ${chef.name} is $${chef.minBidFloor.toLocaleString()}.`);
+      return;
+    }
     try {
       const submitBids = httpsCallable(functions, "submitBids");
-      await submitBids({ gameId, bidType: "chef", chefBids: { [chefId]: pendingChefBids[chefId] ?? 0 } });
+      await submitBids({ gameId, bidType: "chef", chefBids: { [chefId]: amount } });
     } catch (err) {
       setSubmitError(humanizeFunctionError(err));
     }
-  }, [timerExpired, gameId, pendingChefBids]);
+  }, [timerExpired, gameId, pendingChefBids, chefPool]);
 
   const handleSubmitBids = useCallback(async () => {
     if (timerExpired) { setShowExpiredPopup(true); return; }
@@ -384,10 +413,16 @@ export function AuctionPage() {
         // submit an empty array to advance the lifecycle without bidding.
         const chefBids: Array<{ chefId: string; amount: number }> = [];
         if (chefPoolIsReal) {
-          const poolIds = new Set(chefPool.map((c) => c.id));
+          const poolById = new Map(chefPool.map((c) => [c.id, c]));
           for (const [chefId, amount] of Object.entries(pendingChefBids)) {
-            if (!poolIds.has(chefId)) continue;
+            if (!poolById.has(chefId)) continue;
             if (typeof amount !== "number" || amount <= 0) continue;
+            // AA-2: enforce minimum bid floor
+            const chef = poolById.get(chefId)!;
+            if (chef.minBidFloor > 0 && amount < chef.minBidFloor) {
+              setSubmitError(`Minimum bid for ${chef.name} is $${chef.minBidFloor.toLocaleString()}.`);
+              return;
+            }
             chefBids.push({ chefId, amount });
           }
         }
@@ -492,6 +527,37 @@ export function AuctionPage() {
           Auction timer is up! Results will be displayed shortly.
         </div>
       )}
+
+      {showWinReveal && wonChefs !== null && (
+        <div className="auction-page__win-reveal" role="dialog" aria-modal="true">
+          <div className="auction-page__win-reveal-backdrop" aria-hidden="true" />
+          <div className="auction-page__win-reveal-card">
+            <h2 className="auction-page__win-reveal-title">
+              {wonChefs.length === 0 ? "No chefs won this round." : `You hired ${wonChefs.length} chef${wonChefs.length > 1 ? "s" : ""}!`}
+            </h2>
+            {wonChefs.length > 0 && (
+              <div className="auction-page__win-reveal-chefs">
+                {wonChefs.map((chef) => (
+                  <div key={chef.id} className={`auction-chef auction-chef--reveal ${SKILL_CONFIG[chef.skill].cssClass}`}>
+                    <img src={chefIcon(chef.nationality, chef.gender)} alt={chef.name} className="auction-chef__icon" />
+                    <span className="auction-chef__name">{chef.name}</span>
+                    <span className={`auction-chef__skill-tag auction-chef__skill-tag--${chef.skill}`}>
+                      {SKILL_CONFIG[chef.skill].label}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button
+              className="btn btn--primary"
+              onClick={() => setShowWinReveal(false)}
+            >
+              View Roster
+            </button>
+          </div>
+        </div>
+      )}
+
       <RoundHeader />
 
       <div className="auction-page__header">
@@ -570,12 +636,19 @@ export function AuctionPage() {
                         className="auction-ad__bid-input auction-page__bid-input"
                         placeholder="0"
                         min={0}
-                        value={pendingAdBids[ad.id] ?? 0}
+                        value={adBidInputs[ad.id] ?? ""}
                         disabled={timerExpired || bidsReadOnly}
                         readOnly={bidsReadOnly}
-                        onChange={(e) =>
-                          setAdBid(ad.id, parseInt(e.target.value, 10) || 0)
-                        }
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          setAdBidInputs((prev) => ({ ...prev, [ad.id]: raw }));
+                          const parsed = parseInt(raw, 10);
+                          if (!isNaN(parsed) && parsed >= 0) {
+                            setAdBid(ad.id, parsed);
+                          } else if (raw === "") {
+                            setAdBid(ad.id, 0);
+                          }
+                        }}
                       />
                     </div>
                   </div>
@@ -624,14 +697,19 @@ export function AuctionPage() {
                     <div className="auction-chef__bid">
                       <label className="auction-chef__bid-label">
                         Your Bid
+                        {chef.minBidFloor > 0 && (
+                          <span className="auction-chef__min-floor">
+                            {" "}(min ${chef.minBidFloor.toLocaleString()})
+                          </span>
+                        )}
                       </label>
                       <div className="auction-page__bid-wrapper">
                         <span className="auction-page__bid-prefix">$</span>
                         <input
                           type="number"
                           className="auction-chef__bid-input auction-page__bid-input"
-                          placeholder="0"
-                          min={0}
+                          placeholder={chef.minBidFloor > 0 ? String(chef.minBidFloor) : "0"}
+                          min={chef.minBidFloor > 0 ? chef.minBidFloor : 0}
                           value={chefBidInputs[chef.id] ?? ""}
                           disabled={timerExpired || bidsReadOnly}
                           readOnly={bidsReadOnly}

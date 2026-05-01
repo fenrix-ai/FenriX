@@ -909,7 +909,7 @@ test('getChefOutputForProduct: unknown skillTier → BASE_CHEF_RATE', () => {
 }, 'MEDIUM');
 
 test('getChefOutputForProduct: null specialties → non-specialty multiplier', () => {
-  const out = chefSystem.getChefOutputForProduct({ skillTier: 'advanced', specialties: null }, 'coffee');
+  const out = chefSystem.getChefOutputForProduct({ skillTier: 'high', specialties: null }, 'coffee');
   assertFinite(out, 'null specialties → finite output');
 }, 'MEDIUM');
 
@@ -920,7 +920,7 @@ test('calculateTotalProductOutput: empty specialtyChefs + zero sous', () => {
 
 test('calculateTotalProductOutput: 100 specialty chefs → no crash', () => {
   const chefs = Array.from({ length: 100 }, () => ({
-    skillTier: 'advanced',
+    skillTier: 'high',
     specialties: ['croissant', 'coffee']
   }));
   assertNoThrow(() => {
@@ -1373,7 +1373,7 @@ function makeTypicalPlayer(playerId, config, round = 1) {
     bakeryName: `Bakery ${playerId}`,
     budgetCurrent: config.startingBudget,
     specialtyChefs: [
-      { skillTier: 'intermediate', specialties: ['croissant', 'coffee'] }
+      { skillTier: 'medium', specialties: ['croissant', 'coffee'] }
     ],
     returningCustomersPending: 0,
     auctionResults: {

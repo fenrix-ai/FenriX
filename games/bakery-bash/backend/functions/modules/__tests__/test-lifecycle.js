@@ -143,7 +143,7 @@ for (let round = 1; round <= TOTAL_ROUNDS; round++) {
 
   // Carol bids on the best chef
   const carolChefBids = [];
-  const advancedChefs = pool.filter(c => c.skillTier === 'advanced');
+  const advancedChefs = pool.filter(c => c.skillTier === 'high');
   if (advancedChefs.length > 0 && round <= 4) {
     carolChefBids.push({ chefId: advancedChefs[0].id, amount: advancedChefs[0].minBidFloor + 100 });
   }
@@ -317,7 +317,7 @@ for (let i = 0; i < 150; i++) {
     displayName: `Player ${i}`,
     bakeryName: `Bakery ${i}`,
     budgetCurrent: 2000,
-    specialtyChefs: i % 5 === 0 ? [{ skillTier: 'advanced', specialties: ['croissant', 'coffee'] }] : [],
+    specialtyChefs: i % 5 === 0 ? [{ skillTier: 'high', specialties: ['croissant', 'coffee'] }] : [],
     returningCustomersPending: 0,
     decision: {
       menu: { croissant: true, cookie: true, bagel: true, sandwich: i % 2 === 0, coffee: i % 3 === 0, matcha: false },

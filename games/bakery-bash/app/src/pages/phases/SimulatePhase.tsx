@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { doc, onSnapshot, type DocumentData } from "firebase/firestore";
+import { db } from "../../lib/firebase";
 import { useGame } from "../../contexts/GameContext";
 
 const TOTAL_DAYS = 30;
@@ -31,11 +33,75 @@ function getSelloutDays(): Record<Product, number> {
   return days;
 }
 
+/**
+ * Sprite asset paths. These are placeholders that Kavin will provide as
+ * SVG files in the project's `public/assets/sprites/` directory. Until the
+ * real assets land, the <img> tags will silently 404 and CSS fallback
+ * styling on the wrapper keeps the layout intact.
+ */
+const SPRITE_MAINTENANCE_MECHANIC = "/assets/sprites/maintenance-mechanic.svg";
+const SPRITE_MAINTENANCE_JANITOR = "/assets/sprites/maintenance-janitor.svg";
+const SPRITE_CHEF_DEFAULT = "/assets/sprites/chef-default.svg";
+
+/**
+ * For a given specialty chef, return the sprite path. Falls back to a
+ * generic chef sprite when nationality/gender variants aren't yet provided.
+ */
+function chefSpriteFor(nationality?: string, gender?: string): string {
+  if (!nationality || !gender) return SPRITE_CHEF_DEFAULT;
+  return `/assets/sprites/chef-${nationality}-${gender}.svg`;
+}
+
+interface SpecialtyChefSprite {
+  id: string;
+  nationality?: string;
+  gender?: string;
+}
+
 export function SimulatePhase() {
-  const { roundResults, maintenanceBars } = useGame();
+  const { gameId, playerId, roundResults, maintenanceBars } = useGame();
   const latest = roundResults[roundResults.length - 1];
   const targetRevenue = typeof latest?.revenue === "number" ? latest.revenue : 0;
   const adWon = latest?.auctionResults?.adWon as string | null | undefined;
+
+  // Maintenance count comes from the latest round's confirmed staff counts.
+  const maintenanceCount = Math.max(
+    0,
+    Number(latest?.staffCounts?.maintenanceGuys ?? 0),
+  );
+
+  // Subscribe to the player doc to get the live specialty chef roster, so
+  // the count of chefs walking behind the counter matches what the player
+  // actually owns (independent of the round-result publish lag).
+  const [specialtyChefs, setSpecialtyChefs] = useState<SpecialtyChefSprite[]>([]);
+  useEffect(() => {
+    if (!gameId || !playerId) return;
+    const ref = doc(db, "games", gameId, "players", playerId);
+    return onSnapshot(ref, (snap) => {
+      if (!snap.exists()) return;
+      const data = snap.data() as DocumentData;
+      const raw = Array.isArray(data.specialtyChefs) ? data.specialtyChefs : [];
+      const list: SpecialtyChefSprite[] = raw
+        .filter((c: unknown): c is { id?: string } => Boolean(c) && typeof c === "object")
+        .map((c: { id?: string; nationality?: string; gender?: string }) => ({
+          id: String(c.id ?? Math.random().toString(36).slice(2)),
+          nationality: c.nationality,
+          gender: c.gender,
+        }));
+      setSpecialtyChefs(list);
+    });
+  }, [gameId, playerId]);
+
+  // Build maintenance sprite list: alternate mechanic/janitor by index.
+  const maintenanceSprites = useMemo(
+    () =>
+      Array.from({ length: maintenanceCount }, (_, i) => ({
+        id: `maint-${i}`,
+        src: i % 2 === 0 ? SPRITE_MAINTENANCE_MECHANIC : SPRITE_MAINTENANCE_JANITOR,
+        kind: i % 2 === 0 ? "mechanic" : "janitor",
+      })),
+    [maintenanceCount],
+  );
 
   const [day, setDay] = useState(1);
   const [isNight, setIsNight] = useState(false);
@@ -130,21 +196,62 @@ export function SimulatePhase() {
           </ul>
         </aside>
 
-        {/* Centre: Bakery visual */}
+        {/* Centre: Bakery visual.
+            Layered floor plan (top → bottom):
+              1. Maintenance walkway — staff pace in front of the counter
+              2. Counter line + ad sign
+              3. Behind-counter zone — specialty chefs walk back-and-forth
+              4. Storefront label / night overlay */}
         <div className="simulate-phase__bakery-visual">
           {adWon && AD_ICONS[adWon] && (
             <div className="simulate-phase__ad-display">
               <img src={AD_ICONS[adWon]} alt={`${adWon} ad`} className="simulate-phase__ad-icon" />
             </div>
           )}
+
+          {/* Maintenance walkway — front-of-counter, top of the screen */}
+          <div className="simulate-phase__maintenance-walkway" aria-hidden="true">
+            {maintenanceSprites.length === 0 ? (
+              <span className="simulate-phase__maintenance-empty">
+                No maintenance hired
+              </span>
+            ) : (
+              maintenanceSprites.map((m, i) => (
+                <img
+                  key={m.id}
+                  src={m.src}
+                  alt=""
+                  className={`simulate-phase__sprite simulate-phase__sprite--maintenance simulate-phase__sprite--maintenance-${m.kind}`}
+                  style={{ animationDelay: `${i * 0.7}s` }}
+                />
+              ))
+            )}
+          </div>
+
+          {/* Counter line — separates customers/maintenance (front) from chefs (back) */}
+          <div className="simulate-phase__counter" aria-hidden="true" />
+
+          {/* Behind-counter zone — specialty chefs pace back and forth.
+              Sprites are larger than the maintenance row and rendered
+              on a dedicated stage so they're not occluded by the counter. */}
+          <div className="simulate-phase__chef-stage" aria-hidden="true">
+            {specialtyChefs.length === 0 ? (
+              <span className="simulate-phase__chef-empty">No chefs on staff</span>
+            ) : (
+              specialtyChefs.map((c, i) => (
+                <img
+                  key={c.id}
+                  src={chefSpriteFor(c.nationality, c.gender)}
+                  alt=""
+                  className="simulate-phase__sprite simulate-phase__sprite--chef"
+                  style={{ animationDelay: `${i * 0.9}s` }}
+                />
+              ))
+            )}
+          </div>
+
           <div className="simulate-phase__storefront">
             <div className="simulate-phase__store-label">🥐 Your Bakery</div>
-            {!isNight && !reducedMotion && (
-              <div className="simulate-phase__customers">
-                <span className="simulate-phase__customer">🚶</span>
-                <span className="simulate-phase__customer simulate-phase__customer--2">🚶‍♀️</span>
-              </div>
-            )}
             {isNight && <div className="simulate-phase__night-label">🌙 Closed</div>}
           </div>
         </div>

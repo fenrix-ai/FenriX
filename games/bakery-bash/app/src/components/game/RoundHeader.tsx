@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { useGame } from "../../contexts/GameContext";
+import { GameProgressBar } from "./GameProgressBar";
 import {
   PLAYER_ROLE_LABELS,
   parseGamePhase,
@@ -16,10 +18,9 @@ const PHASE_LABELS: Record<string, string> = {
   lobby:         "Lobby",
   email:         "Briefing",
   decide:        "Decisions Round",
-  bid_ad:        "Ad Auction",
-  bid_chef:      "Chef Auction",
-  roster:        "Kitchen Roster",
-  simulating:    "Round in Progress\u2026",
+  bid_ad:        "Auction",
+  bid_chef:      "Auction",
+  simulating:    "Simulating…",
   results_ready: "Results",
   game_over:     "Game Over",
 };
@@ -72,7 +73,7 @@ function serializeRow(r: RoundResult): string {
     r.round,
     r.revenue,
     r.customerCount,
-    r.customerSatisfaction,
+    pct(r.customerSatisfaction),
     pct(r.chefSatisfactionScore),
     pct(r.maintenanceBars?.cleanliness),
     avgMachineHealth(r.maintenanceBars),
@@ -133,6 +134,8 @@ export function RoundHeader() {
     phase,
   } = useGame();
 
+  const [showDataPopup, setShowDataPopup] = useState(false);
+
   const phaseSeconds = usePhaseCountdownSeconds();
   // Prefer the backend-driven `phaseEndsAt` countdown; fall back to the
   // legacy local `timeRemaining` (only used by AuctionPage's tab timer
@@ -160,18 +163,30 @@ export function RoundHeader() {
     (parsed.base === "roster" && roleOwnsRoster(role));
 
   return (
+    <>
     <header className="round-header">
       <div className="round-header__phase-banner">
         {phaseBannerLabel}
       </div>
 
       <button
-        className="round-header__email"
-        onClick={() => downloadResultsCsv(roundResults)}
-        title="Download results CSV"
+        className="round-header__my-data-btn"
+        onClick={() => setShowDataPopup(true)}
+        title="View my round data"
+        disabled={roundResults.length === 0}
       >
-        <img src="/assets/ui/email.svg" alt="Download CSV" />
+        My Data
       </button>
+
+      {/* H-6: Persistent how-to-play trigger */}
+      <Link
+        to="/how-to-play"
+        className="round-header__help-link"
+        title="How to Play"
+        aria-label="How to Play"
+      >
+        ?
+      </Link>
 
       <div className="round-header__round">
         Round {currentRound} of {totalRounds}
@@ -180,10 +195,9 @@ export function RoundHeader() {
       {teamLabel && (
         <div className="round-header__team" title="Team">
           <span className="round-header__team-label">{teamLabel}</span>
-          {/* Hide the role badge until backend assignment writes a real
-              teamId — otherwise every fresh client claims to be "solo"
-              even when they're actually one of three teammates. */}
-          {teamId && (
+          {/* Hide the role badge for solo players and until backend
+              assignment writes a real teamId. */}
+          {teamId && role !== "solo" && (
             <div className={`round-header__role-badge${isActiveRole ? " round-header__role-badge--active" : ""}`}>
               {isActiveRole ? `Your turn: ${roleLabel}` : `Active: ${roleLabel}`}
             </div>
@@ -203,6 +217,63 @@ export function RoundHeader() {
           }
         </div>
       )}
+
+      <GameProgressBar />
     </header>
+
+    {showDataPopup && (
+      <div className="round-header__data-overlay" role="dialog" aria-modal="true" aria-label="My round data">
+        <div className="round-header__data-modal">
+          <div className="round-header__data-header">
+            <h2 className="round-header__data-title">My Data</h2>
+            <button
+              className="round-header__data-close"
+              onClick={() => setShowDataPopup(false)}
+              aria-label="Close"
+            >
+              ×
+            </button>
+          </div>
+          <div className="round-header__data-body">
+            {roundResults.length === 0 ? (
+              <p className="round-header__data-empty">No round results yet.</p>
+            ) : (
+              <table className="round-header__data-table">
+                <thead>
+                  <tr>
+                    <th>Round</th>
+                    <th>Revenue</th>
+                    <th>Customers</th>
+                    <th>Satisfaction</th>
+                    <th>Chef Sat.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {roundResults.map((r) => (
+                    <tr key={r.round}>
+                      <td>{r.round}</td>
+                      <td>${typeof r.revenue === "number" ? r.revenue.toLocaleString() : "—"}</td>
+                      <td>{r.customerCount ?? "—"}</td>
+                      <td>{typeof r.customerSatisfaction === "number" ? `${Math.round(r.customerSatisfaction)}%` : "—"}</td>
+                      <td>{typeof r.chefSatisfactionScore === "number" ? `${Math.round(r.chefSatisfactionScore)}%` : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+          <div className="round-header__data-footer">
+            <button
+              className="round-header__data-download-btn"
+              onClick={() => { downloadResultsCsv(roundResults); setShowDataPopup(false); }}
+              disabled={roundResults.length === 0}
+            >
+              Download CSV
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

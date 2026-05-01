@@ -71,9 +71,9 @@ const NATIONALITY_LABEL: Record<ChefNationality, string> = {
 };
 
 const SKILL_LABEL: Record<ChefSkillTier, string> = {
-  novel: "Novel",
-  intermediate: "Intermediate",
-  advanced: "Advanced",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
 };
 
 function formatMoney(n: number | null | undefined): string {

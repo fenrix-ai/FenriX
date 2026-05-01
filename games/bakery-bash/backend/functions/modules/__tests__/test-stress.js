@@ -97,10 +97,10 @@ function makePlayer(index, opts = {}) {
   // Optional specialty chefs
   const specialtyChefs = [];
   if (index % 4 === 0) {
-    specialtyChefs.push({ id: `chef_french_${index}`, nationality: 'french', skillTier: 'intermediate', specialties: ['croissant', 'coffee'] });
+    specialtyChefs.push({ id: `chef_french_${index}`, nationality: 'french', skillTier: 'medium', specialties: ['croissant', 'coffee'] });
   }
   if (index % 7 === 0) {
-    specialtyChefs.push({ id: `chef_japanese_${index}`, nationality: 'japanese', skillTier: 'advanced', specialties: ['matcha', 'croissant'] });
+    specialtyChefs.push({ id: `chef_japanese_${index}`, nationality: 'japanese', skillTier: 'high', specialties: ['matcha', 'croissant'] });
   }
 
   return {
@@ -367,16 +367,16 @@ function runChefAuctionStress() {
 
   // Generate a pool of 10 chefs manually (fixed for determinism)
   const chefPool = [
-    { id: 'chef001', nationality: 'french',   skillTier: 'advanced',     specialties: ['croissant','coffee'],  minBidFloor: 275 },
-    { id: 'chef002', nationality: 'japanese',  skillTier: 'intermediate', specialties: ['matcha','croissant'],  minBidFloor: 175 },
-    { id: 'chef003', nationality: 'italian',   skillTier: 'novel',        specialties: ['sandwich','coffee'],   minBidFloor: 100 },
-    { id: 'chef004', nationality: 'american',  skillTier: 'intermediate', specialties: ['bagel','cookie'],      minBidFloor: 175 },
-    { id: 'chef005', nationality: 'french',    skillTier: 'novel',        specialties: ['croissant','coffee'],  minBidFloor: 100 },
-    { id: 'chef006', nationality: 'japanese',  skillTier: 'advanced',     specialties: ['matcha','croissant'],  minBidFloor: 275 },
-    { id: 'chef007', nationality: 'italian',   skillTier: 'intermediate', specialties: ['sandwich','coffee'],   minBidFloor: 175 },
-    { id: 'chef008', nationality: 'american',  skillTier: 'novel',        specialties: ['bagel','cookie'],      minBidFloor: 100 },
-    { id: 'chef009', nationality: 'french',    skillTier: 'advanced',     specialties: ['croissant','coffee'],  minBidFloor: 275 },
-    { id: 'chef010', nationality: 'japanese',  skillTier: 'novel',        specialties: ['matcha','croissant'],  minBidFloor: 100 },
+    { id: 'chef001', nationality: 'french',   skillTier: 'high',     specialties: ['croissant','coffee'],  minBidFloor: 275 },
+    { id: 'chef002', nationality: 'japanese',  skillTier: 'medium', specialties: ['matcha','croissant'],  minBidFloor: 175 },
+    { id: 'chef003', nationality: 'italian',   skillTier: 'low',        specialties: ['sandwich','coffee'],   minBidFloor: 100 },
+    { id: 'chef004', nationality: 'american',  skillTier: 'medium', specialties: ['bagel','cookie'],      minBidFloor: 175 },
+    { id: 'chef005', nationality: 'french',    skillTier: 'low',        specialties: ['croissant','coffee'],  minBidFloor: 100 },
+    { id: 'chef006', nationality: 'japanese',  skillTier: 'high',     specialties: ['matcha','croissant'],  minBidFloor: 275 },
+    { id: 'chef007', nationality: 'italian',   skillTier: 'medium', specialties: ['sandwich','coffee'],   minBidFloor: 175 },
+    { id: 'chef008', nationality: 'american',  skillTier: 'low',        specialties: ['bagel','cookie'],      minBidFloor: 100 },
+    { id: 'chef009', nationality: 'french',    skillTier: 'high',     specialties: ['croissant','coffee'],  minBidFloor: 275 },
+    { id: 'chef010', nationality: 'japanese',  skillTier: 'low',        specialties: ['matcha','croissant'],  minBidFloor: 100 },
   ];
 
   // 150 players each bidding on all 10 chefs with random amounts
@@ -481,7 +481,7 @@ function runChefAuctionStress() {
 
   // 2e. Tied bids — create a scenario where 50 players all bid exactly the same amount
   {
-    const tiedPool = [{ id: 'tied_chef', nationality: 'french', skillTier: 'novel', specialties: ['croissant'], minBidFloor: 100 }];
+    const tiedPool = [{ id: 'tied_chef', nationality: 'french', skillTier: 'low', specialties: ['croissant'], minBidFloor: 100 }];
     const tiedBids = [];
     const BASE_AMOUNT = 150;
     const BASE_TIME = Date.now();
@@ -709,7 +709,7 @@ function runCsvExportStress() {
         sousChefCount: 0,
         sousChefAssignments: {},
       },
-      specialtyChefs: [{ nationality: 'french,"tricky"', skillTier: 'novel' }],
+      specialtyChefs: [{ nationality: 'french,"tricky"', skillTier: 'low' }],
       revenueGross: 1234.56,
       amountBorrowed: 0,
       interestCharged: 0,

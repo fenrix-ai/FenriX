@@ -1778,6 +1778,11 @@ h3 { font-size: 0.7rem; }
   flex-wrap: wrap;
   justify-content: center;
   margin-bottom: 1.5rem;
+  background: var(--dough);
+  border: var(--border);
+  box-shadow: var(--shadow-pixel);
+  padding: 1rem 1.25rem;
+  border-radius: 8px;
 }
 
 .professor-page__note {
@@ -3128,6 +3133,311 @@ h3 { font-size: 0.7rem; }
   min-width: 1.6em;
 }
 
+/* ── Roster phase split layout (KR-4 + drag-and-drop) ── */
+
+.roster-phase-page__split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin-top: 1rem;
+}
+
+@media (max-width: 720px) {
+  .roster-phase-page__split { grid-template-columns: 1fr; }
+}
+
+.roster-phase-page__panel {
+  background: var(--cream);
+  border: var(--border);
+  box-shadow: var(--shadow-pixel-sm);
+  padding: 1rem;
+  min-height: 320px;
+  display: flex;
+  flex-direction: column;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.roster-phase-page__panel--available {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--cream),
+    var(--cream) 12px,
+    var(--dough) 12px,
+    var(--dough) 13px
+  );
+}
+
+.roster-phase-page__panel--over {
+  border-color: var(--caramel);
+  box-shadow: 0 0 0 3px var(--honey);
+}
+
+.roster-phase-page__panel-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 0.6rem;
+  border-bottom: 2px solid var(--dough);
+  padding-bottom: 0.4rem;
+}
+
+.roster-phase-page__panel-title {
+  margin: 0;
+  font-family: var(--font-pixel);
+  font-size: 0.9rem;
+  letter-spacing: 0.04em;
+  color: var(--espresso);
+  text-transform: uppercase;
+}
+
+.roster-phase-page__panel-subtitle {
+  font-family: var(--font-pixel);
+  font-size: 0.65rem;
+  color: var(--dark-roast);
+  letter-spacing: 0.05em;
+}
+
+.roster-phase-page__panel-empty {
+  color: var(--dark-roast);
+  font-style: italic;
+  text-align: center;
+  margin: auto 0;
+  font-size: 0.85rem;
+}
+
+.roster-phase-page__panel-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.roster-phase-page__draggable {
+  position: relative;
+  user-select: none;
+}
+
+.roster-phase-page__draggable--dragging {
+  z-index: 10;
+}
+
+.roster-phase-page__new-badge {
+  position: absolute;
+  top: 0.25rem;
+  left: 0.25rem;
+  z-index: 2;
+  background: var(--honey);
+  color: var(--espresso);
+  font-family: var(--font-pixel);
+  font-size: 0.55rem;
+  letter-spacing: 0.08em;
+  padding: 0.18rem 0.4rem;
+  border: 2px solid var(--espresso);
+  text-shadow: 1px 1px 0 var(--cream);
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+/* ── My Data modal popup ── */
+
+.round-header__data-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(58, 30, 14, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.round-header__data-modal {
+  background: var(--cream);
+  border: var(--border);
+  box-shadow: var(--shadow-pixel);
+  width: min(720px, 100%);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-body, system-ui, sans-serif);
+}
+
+.round-header__data-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1rem;
+  background: var(--espresso);
+  color: var(--cream);
+  border-bottom: var(--border);
+}
+
+.round-header__data-title {
+  margin: 0;
+  font-family: var(--font-pixel);
+  font-size: 1rem;
+  letter-spacing: 0.04em;
+}
+
+.round-header__data-close {
+  background: var(--caramel);
+  color: var(--cream);
+  border: 2px solid var(--cream);
+  font-size: 1.1rem;
+  line-height: 1;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  font-family: var(--font-pixel);
+}
+
+.round-header__data-close:hover {
+  background: var(--honey);
+  color: var(--espresso);
+}
+
+.round-header__data-body {
+  padding: 1rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.round-header__data-empty {
+  margin: 0;
+  color: var(--dark-roast);
+  text-align: center;
+  padding: 2rem 0;
+  font-family: var(--font-pixel);
+  font-size: 0.7rem;
+}
+
+.round-header__data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.round-header__data-table th,
+.round-header__data-table td {
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--dough);
+  text-align: left;
+}
+
+.round-header__data-table th {
+  background: var(--dough);
+  color: var(--espresso);
+  font-family: var(--font-pixel);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.round-header__data-footer {
+  padding: 0.85rem 1rem;
+  border-top: var(--border);
+  display: flex;
+  justify-content: flex-end;
+  background: var(--dough);
+}
+
+.round-header__data-download-btn {
+  background: var(--caramel);
+  color: var(--cream);
+  border: var(--border);
+  padding: 0.55rem 1rem;
+  font-family: var(--font-pixel);
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+
+.round-header__data-download-btn:hover:not(:disabled) {
+  background: var(--honey);
+  color: var(--espresso);
+}
+
+.round-header__data-download-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Game progress bar (croissant tracker) ── */
+
+.game-progress-bar {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 4px;
+  margin-top: 0.6rem;
+  padding: 0.35rem;
+  background: var(--dough);
+  border: var(--border);
+  border-radius: 4px;
+}
+
+.game-progress-bar__section {
+  flex: 1;
+  position: relative;
+  min-height: 32px;
+  background: var(--honey);
+  opacity: 0.3;
+  border: 2px solid var(--espresso);
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  transition: opacity 200ms ease;
+}
+
+.game-progress-bar__section--done {
+  opacity: 1;
+}
+
+.game-progress-bar__section--current {
+  opacity: 1;
+  background: var(--caramel);
+  box-shadow: inset 0 0 0 2px var(--honey);
+  animation: progress-bar-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes progress-bar-pulse {
+  0%, 100% { box-shadow: inset 0 0 0 2px var(--honey); }
+  50%      { box-shadow: inset 0 0 0 2px var(--cream, #fff7e6); }
+}
+
+.game-progress-bar__croissant {
+  width: 22px;
+  height: 22px;
+  image-rendering: pixelated;
+  opacity: 0.45;
+  filter: drop-shadow(1px 1px 0 var(--espresso));
+}
+
+.game-progress-bar__section--done .game-progress-bar__croissant,
+.game-progress-bar__section--current .game-progress-bar__croissant {
+  opacity: 1;
+}
+
+.game-progress-bar__label {
+  position: absolute;
+  bottom: 1px;
+  right: 3px;
+  font-family: var(--font-pixel);
+  font-size: 0.5rem;
+  color: var(--espresso);
+  letter-spacing: 0.04em;
+}
+
+.round-briefing__month {
+  font-family: var(--font-pixel);
+  font-size: 1.4rem;
+  color: var(--espresso);
+  letter-spacing: 0.06em;
+  margin-top: 0.6rem;
+  text-transform: uppercase;
+}
+
 .round-briefing__tagline {
   font-family: var(--font-pixel);
   font-size: 0.55rem;
@@ -3328,16 +3638,102 @@ h3 { font-size: 0.7rem; }
 .simulate-phase__menu-icon  { width: 28px; height: 28px; }
 .simulate-phase__menu-item--soldout { opacity: 0.5; }
 .simulate-phase__sold-out-badge { font-size: 0.65rem; font-weight: bold; background: #ef4444; color: #fff; padding: 0.1rem 0.3rem; border-radius: 3px; margin-left: auto; }
-/* Bakery centre */
-.simulate-phase__bakery-visual { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; }
-.simulate-phase__ad-display    { display: flex; align-items: center; gap: 0.5rem; }
-.simulate-phase__ad-icon       { width: 80px; height: 80px; }
-.simulate-phase__storefront    { background: rgba(255,255,255,0.2); border-radius: 12px; padding: 2rem; text-align: center; min-width: 200px; }
-.simulate-phase__store-label   { font-size: 1.2rem; font-weight: bold; margin-bottom: 1rem; }
-.simulate-phase__customers     { font-size: 2rem; display: flex; gap: 1rem; justify-content: center; }
-.simulate-phase__customer      { animation: customerWalk 1s infinite alternate; display: inline-block; }
-.simulate-phase__customer--2   { animation-delay: 0.5s; }
-@keyframes customerWalk { from { transform: translateX(-8px); } to { transform: translateX(8px); } }
+/* Bakery centre — vertical floor plan with sprite zones */
+.simulate-phase__bakery-visual {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  position: relative;
+  min-height: 460px;
+}
+
+.simulate-phase__ad-display { display: flex; align-items: center; gap: 0.5rem; align-self: center; }
+.simulate-phase__ad-icon    { width: 80px; height: 80px; }
+
+/* Top maintenance walkway: sprites pace in front of the counter. */
+.simulate-phase__maintenance-walkway {
+  position: relative;
+  height: 110px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  border: 1px dashed rgba(255, 255, 255, 0.25);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+}
+.simulate-phase__maintenance-empty,
+.simulate-phase__chef-empty {
+  width: 100%;
+  text-align: center;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.55);
+  font-style: italic;
+}
+
+/* Counter line — visual divider between front-of-house and behind-counter. */
+.simulate-phase__counter {
+  height: 14px;
+  background: linear-gradient(180deg, var(--caramel) 0%, var(--espresso) 100%);
+  border-top: 3px solid var(--honey);
+  border-bottom: 2px solid var(--espresso);
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.25);
+}
+
+/* Behind-counter chef stage. Larger area + larger sprites so chefs are
+   not occluded by the counter or station equipment. */
+.simulate-phase__chef-stage {
+  position: relative;
+  height: 200px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  overflow: hidden;
+}
+
+.simulate-phase__sprite {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  image-rendering: pixelated;
+  filter: drop-shadow(2px 3px 0 rgba(0, 0, 0, 0.35));
+  pointer-events: none;
+}
+
+.simulate-phase__sprite--maintenance {
+  width: 64px;
+  height: 64px;
+  transform: translateY(-50%);
+  animation: simulate-walk-front 6s linear infinite;
+}
+
+.simulate-phase__sprite--chef {
+  /* Larger than maintenance so chefs are clearly visible behind the counter. */
+  width: 110px;
+  height: 110px;
+  transform: translateY(-50%);
+  animation: simulate-walk-back 8s linear infinite;
+}
+
+@keyframes simulate-walk-front {
+  0%   { left: -10%;  transform: translateY(-50%) scaleX(1); }
+  49%  { left: 100%;  transform: translateY(-50%) scaleX(1); }
+  50%  { left: 100%;  transform: translateY(-50%) scaleX(-1); }
+  99%  { left: -10%;  transform: translateY(-50%) scaleX(-1); }
+  100% { left: -10%;  transform: translateY(-50%) scaleX(1); }
+}
+
+@keyframes simulate-walk-back {
+  0%   { left: 5%;   transform: translateY(-50%) scaleX(1); }
+  49%  { left: 85%;  transform: translateY(-50%) scaleX(1); }
+  50%  { left: 85%;  transform: translateY(-50%) scaleX(-1); }
+  99%  { left: 5%;   transform: translateY(-50%) scaleX(-1); }
+  100% { left: 5%;   transform: translateY(-50%) scaleX(1); }
+}
+
+.simulate-phase__storefront    { background: rgba(255,255,255,0.2); border-radius: 12px; padding: 1rem; text-align: center; min-width: 200px; align-self: center; }
+.simulate-phase__store-label   { font-size: 1.2rem; font-weight: bold; margin-bottom: 0.5rem; }
 .simulate-phase__night-label   { font-size: 1.5rem; }
 /* Status panel */
 .simulate-phase__status-panel  { background: rgba(255,255,255,0.15); border-radius: 8px; padding: 1rem; }
@@ -3347,4 +3743,7 @@ h3 { font-size: 0.7rem; }
 .simulate-phase__bar-fill      { height: 100%; border-radius: 5px; transition: width 2s linear; }
 .simulate-phase__bar-pct       { font-size: 0.75rem; }
 .simulate-phase__waiting       { font-size: 0.8rem; color: #999; margin-top: 1rem; }
-@media (prefers-reduced-motion: reduce) { .simulate-phase__customer { animation: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .simulate-phase__sprite--maintenance,
+  .simulate-phase__sprite--chef { animation: none; left: 50%; transform: translate(-50%, -50%); }
+}

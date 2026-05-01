@@ -138,7 +138,7 @@ describe('config.js', () => {
 
   it('CHEF_SPAWN_RATES sums to 1.0 per round', () => {
     for (const r of config.CHEF_SPAWN_RATES) {
-      near(r.novel + r.intermediate + r.advanced, 1.0, 0.001, 'spawn rate sum');
+      near(r.low + r.medium + r.high, 1.0, 0.001, 'spawn rate sum');
     }
   });
 
@@ -335,12 +335,12 @@ describe('chef-system.js', () => {
   const cfg = config.mergeConfig({});
 
   it('getChefOutputForProduct — advanced with specialty', () => {
-    const chef = { skillTier: 'advanced', specialties: ['croissant', 'coffee'] };
+    const chef = { skillTier: 'high', specialties: ['croissant', 'coffee'] };
     eq(chefSys.getChefOutputForProduct(chef, 'croissant'), 30 * 2.2);
   });
 
   it('getChefOutputForProduct — advanced without specialty', () => {
-    const chef = { skillTier: 'advanced', specialties: ['croissant', 'coffee'] };
+    const chef = { skillTier: 'high', specialties: ['croissant', 'coffee'] };
     eq(chefSys.getChefOutputForProduct(chef, 'bagel'), 30 * 1.6);
   });
 
@@ -349,20 +349,20 @@ describe('chef-system.js', () => {
   });
 
   it('getChefOutputForProduct — novel tier', () => {
-    const chef = { skillTier: 'novel', specialties: ['matcha'] };
+    const chef = { skillTier: 'low', specialties: ['matcha'] };
     const output = chefSys.getChefOutputForProduct(chef, 'matcha');
     ok(output > 0, 'novel output > 0');
   });
 
   it('calculateTotalProductOutput with sous chef', () => {
-    const chefs = [{ skillTier: 'advanced', specialties: ['croissant', 'coffee'] }];
+    const chefs = [{ skillTier: 'high', specialties: ['croissant', 'coffee'] }];
     const total = chefSys.calculateTotalProductOutput('croissant', chefs, { croissant: 1 });
     // base(30) + advanced specialty(66) + sous(0.5 × 66 = 33) = 129
     near(total, 129, 0.01, 'total output');
   });
 
   it('calculateTotalProductOutput without sous', () => {
-    const chefs = [{ skillTier: 'advanced', specialties: ['croissant', 'coffee'] }];
+    const chefs = [{ skillTier: 'high', specialties: ['croissant', 'coffee'] }];
     const total = chefSys.calculateTotalProductOutput('croissant', chefs, {});
     // base(30) + advanced specialty(66) = 96
     near(total, 96, 0.01, 'total output no sous');
@@ -428,7 +428,7 @@ describe('chef-system.js', () => {
     ok(pool.length >= 6 && pool.length <= 8, `pool size ${pool.length}`);
     for (const c of pool) {
       ok(typeof c.id === 'string');
-      ok(['novel', 'intermediate', 'advanced'].includes(c.skillTier));
+      ok(['low', 'medium', 'high'].includes(c.skillTier));
       ok(Array.isArray(c.specialties) && c.specialties.length === 2);
       ok(c.minBidFloor > 0);
     }
@@ -1033,8 +1033,8 @@ describe('csv-export.js', () => {
       adBids: { TV: 200, Billboard: 0, Radio: 50, Newspaper: 0 },
     },
     specialtyChefs: [
-      { nationality: 'french', skillTier: 'advanced' },
-      { nationality: 'italian', skillTier: 'intermediate' },
+      { nationality: 'french', skillTier: 'high' },
+      { nationality: 'italian', skillTier: 'medium' },
     ],
     revenueGross: 2100.55,
     amountBorrowed: 100,
@@ -1058,7 +1058,7 @@ describe('csv-export.js', () => {
   it('buildCsvRow — specialty chefs mapped', () => {
     const row = csvExport.buildCsvRow(roundResult);
     eq(row.specialty_chef_1_nationality, 'french');
-    eq(row.specialty_chef_1_skill, 'advanced');
+    eq(row.specialty_chef_1_skill, 'high');
     eq(row.specialty_chef_2_nationality, 'italian');
     eq(row.specialty_chef_3_nationality, '');
   });
@@ -1230,7 +1230,7 @@ describe('conclusion.js', () => {
       { playerId: 'a', netRevenue: 1000, budgetRemaining: 500 },
     ]);
     const data = conclusion.buildConclusionData(ranked, [
-      { name: 'Chef A', nationality: 'french', skillTier: 'advanced', variant: 'v1' },
+      { name: 'Chef A', nationality: 'french', skillTier: 'high', variant: 'v1' },
     ]);
     eq(data.winner.playerId, 'b');
     eq(data.winner.chefRoster.length, 1);
@@ -1445,9 +1445,9 @@ describe('simulation.js — Integration', () => {
     });
 
     const players = [
-      makePl('p1', 'Alice', [{ skillTier: 'advanced', specialties: ['croissant', 'coffee'] }]),
+      makePl('p1', 'Alice', [{ skillTier: 'high', specialties: ['croissant', 'coffee'] }]),
       makePl('p2', 'Bob', []),
-      makePl('p3', 'Carol', [{ skillTier: 'intermediate', specialties: ['cookie', 'bagel'] }]),
+      makePl('p3', 'Carol', [{ skillTier: 'medium', specialties: ['cookie', 'bagel'] }]),
     ];
     const prefs = { modifiers: { croissant: 1.4, cookie: 1.15, bagel: 1.0, sandwich: 1.0, coffee: 1.0, matcha: 1.0 } };
     const results = simulation.runSimulation(players, prefs, cfg);
@@ -1496,7 +1496,7 @@ describe('simulation.js — Integration', () => {
       bakeryName: 'Good Bakery',
       budgetCurrent: 2000,
       sousChefCount: 0,
-      specialtyChefs: [{ skillTier: 'advanced', specialties: ['croissant', 'coffee'] }],
+      specialtyChefs: [{ skillTier: 'high', specialties: ['croissant', 'coffee'] }],
       returningCustomersPending: 30, // 30 returning from last round
       decision: {
         menu: { croissant: true, cookie: true, bagel: true, sandwich: false, coffee: false, matcha: false },
@@ -1519,7 +1519,7 @@ describe('simulation.js — Integration', () => {
         sousChefCount: 1,
         sousChefAssignments: { croissant: 1 },
       },
-      specialtyChefs: [{ skillTier: 'advanced', specialties: ['croissant', 'coffee'] }],
+      specialtyChefs: [{ skillTier: 'high', specialties: ['croissant', 'coffee'] }],
     };
     const prefs = { modifiers: { croissant: 1.0, cookie: 1.0 } };
     const result = simulation.computePlayerOutputAndSatisfaction(player, prefs, cfg);
@@ -1796,7 +1796,7 @@ describe('Regression Tests', () => {
     // Player with high output but low stock → should trigger sellout
     const players = [{
       playerId: 'p1', displayName: 'A', bakeryName: 'B', budgetCurrent: 2000,
-      specialtyChefs: [{ skillTier: 'advanced', specialties: ['croissant', 'coffee'] }],
+      specialtyChefs: [{ skillTier: 'high', specialties: ['croissant', 'coffee'] }],
       returningCustomersPending: 0,
       decision: {
         menu: { croissant: true, cookie: false, bagel: false, sandwich: false, coffee: false, matcha: false },
@@ -1919,7 +1919,7 @@ describe('Stress Tests', () => {
         displayName: `Player ${i}`,
         bakeryName: `Bakery ${i}`,
         budgetCurrent: 2000,
-        specialtyChefs: i % 3 === 0 ? [{ skillTier: 'advanced', specialties: ['croissant', 'coffee'] }] : [],
+        specialtyChefs: i % 3 === 0 ? [{ skillTier: 'high', specialties: ['croissant', 'coffee'] }] : [],
         returningCustomersPending: i % 5 === 0 ? 10 : 0,
         decision: {
           menu: { croissant: true, cookie: true, bagel: true, sandwich: i % 2 === 0, coffee: i % 3 === 0, matcha: i % 4 === 0 },
@@ -1960,7 +1960,7 @@ describe('Stress Tests', () => {
         displayName: 'Stress Tester',
         bakeryName: 'Stress Bakery',
         budgetCurrent: budget,
-        specialtyChefs: round >= 2 ? [{ skillTier: 'advanced', specialties: ['croissant', 'coffee'] }] : [],
+        specialtyChefs: round >= 2 ? [{ skillTier: 'high', specialties: ['croissant', 'coffee'] }] : [],
         returningCustomersPending: returning,
         decision: {
           menu: { croissant: true, cookie: true, bagel: true, sandwich: round >= 1, coffee: round >= 2, matcha: false },
