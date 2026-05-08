@@ -1,5 +1,8 @@
 import { Nav } from '../components/Nav'
 import { Hero } from '../sections/Hero'
+import { Mission } from '../sections/Mission'
+import { Work } from '../sections/Work'
+import { BakeryBashFeature } from '../sections/BakeryBashFeature'
 import { Footer } from '../sections/Footer'
 
 export function Home() {
@@ -8,7 +11,9 @@ export function Home() {
       <Nav />
       <main className="pt-16">
         <Hero />
-        {/* TODO: Mission, Work, BakeryBashFeature, Team, Contact go here */}
+        <Mission />
+        <Work />
+        <BakeryBashFeature />
       </main>
       <Footer />
     </>
