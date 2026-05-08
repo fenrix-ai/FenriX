@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { submitContact, type ContactPayload } from '../submit-contact'
 
-const addDocMock = vi.fn()
-const collectionMock = vi.fn(() => 'collectionRef')
+const addDocMock: ReturnType<typeof vi.fn> = vi.fn()
+const collectionMock: ReturnType<typeof vi.fn> = vi.fn(() => 'collectionRef')
 
 vi.mock('firebase/firestore', () => ({
-  addDoc: (...args: unknown[]) => addDocMock(...args),
-  collection: (...args: unknown[]) => collectionMock(...args),
+  addDoc: (a: unknown, b: unknown) => addDocMock(a, b),
+  collection: (a: unknown, b: string) => collectionMock(a, b),
   serverTimestamp: () => 'TS'
 }))
 vi.mock('../firebase', () => ({
