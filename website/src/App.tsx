@@ -1,7 +1,9 @@
 export function App() {
   return (
-    <div style={{ padding: 40, fontFamily: 'sans-serif', color: '#e7ecf2', background: '#0b0d10', minHeight: '100vh' }}>
-      FenriX scaffold up.
+    <div className="min-h-screen bg-bg text-ink flex items-center justify-center">
+      <h1 className="font-display text-5xl tracking-tightish">
+        Fenri<span className="text-cyan">X</span>
+      </h1>
     </div>
   )
 }
