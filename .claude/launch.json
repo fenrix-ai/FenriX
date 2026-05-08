@@ -28,6 +28,13 @@
       "runtimeArgs": ["run", "preview", "--", "--port", "4173", "--strictPort"],
       "cwd": "games/bakery-bash/app",
       "port": 4173
+    },
+    {
+      "name": "fenrix-website",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "website",
+      "port": 5175
     }
   ]
 }
