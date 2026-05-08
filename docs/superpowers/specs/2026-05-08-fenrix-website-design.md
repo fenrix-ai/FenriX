@@ -137,35 +137,31 @@ Full-width, comes after the Work grid.
 | Scott Switzer         | Student Engineer         |                                |
 | Sofia Morales Vilchis | Student Engineer         |                                |
 
-### 5.6 Affiliations (lightweight)
-
-- "Built at" — Chapman University wordmark, monochrome, low-emphasis
-- Optional row of 3-4 grayed-out placeholder slots for future sponsors/partners ("Want to see your logo here? Get in touch.")
-
-### 5.7 Contact
+### 5.6 Contact
 
 - Heading: "Want to play, partner, or join?"
-- Two-column on desktop, stacked on mobile.
-- **Left column — direct paths:**
-  - `Schools & sponsors:` mailto link
-  - `Press inquiries:` mailto link
-  - `Join FenriX:` short copy + link to GitHub org
-- **Right column — form:**
-  - Fields: Name (required) · Email (required) · Org / School (optional) · Topic (dropdown: Partnership · Sponsorship · Press · Joining · Other) · Message (required, textarea)
-  - Honeypot field for bot protection
-  - Client-side validation; server-side rules in Firestore
-  - Submission: `addDoc()` to `contact_submissions` collection
-  - Success state: "Thanks — we'll be in touch within 5 business days."
-  - Failure state: "Something broke. Email us directly at [...]" with mailto fallback
+- Sub: "Drop us a note — we read everything."
+- Centered single-column layout (max width ~640px). No email addresses exposed anywhere on the site — the form is the only contact channel.
+- **Form fields:**
+  - Name (required)
+  - Email (required) — *visitor's* email, not ours
+  - Org / School (optional)
+  - Topic (dropdown: Partnership · Sponsorship · Press · Joining · Other)
+  - Message (required, textarea)
+  - Honeypot hidden field for bot protection
+- Client-side validation; server-side rules in Firestore.
+- Submission: `addDoc()` to `contact_submissions` collection.
+- Success state: "Thanks — we'll be in touch within 5 business days."
+- Failure state: "Something broke. Please try again in a moment." (no fallback email)
+- Below the form, a small "Want to join FenriX as a student?" link points to the GitHub org (`fenrix-ai`).
 
-### 5.8 Footer
+### 5.7 Footer
 
 - FenriX logo (small)
-- Three columns:
+- Two columns:
   - **Studio:** Work · About · Team · Contact
-  - **Connect:** GitHub (`fenrix-ai`) · Email
-  - **Legal:** © 2026 FenriX · Chapman University
-- Bottom-line: "Built by FenriX, with Claude."
+  - **Connect:** GitHub (`fenrix-ai`)
+- Bottom-line: "© 2026 FenriX · Chapman University · Built by FenriX, with Claude."
 
 ## 6. Bakery Bash Demo Page (`/demo/bakery-bash`)
 
@@ -217,7 +213,6 @@ website/
 │   │   ├── Work.tsx
 │   │   ├── BakeryBashFeature.tsx
 │   │   ├── Team.tsx
-│   │   ├── Affiliations.tsx
 │   │   ├── Contact.tsx
 │   │   └── Footer.tsx
 │   ├── components/
@@ -322,9 +317,8 @@ The Bakery Bash deploy from `games/bakery-bash/app/` is unaffected — separate 
 
 ## 16. Open Questions / Risks
 
-- **Real photos for the Team section** — placeholder avatars are good v1. Photos can drop in once we collect them.
-- **Contact email addresses** — the spec assumes mailto links. We need at least one real email (likely a shared FenriX inbox or `frenzel.tim1@gmail.com` as listed in onboarding) before launch.
-- **Sponsor/affiliation slots** — keep them as "Coming soon" placeholders, or hide section entirely until we have one? Default: keep with placeholders.
+- **Real photos for the Team section** — placeholder geometric avatars are good v1. Photos can drop in via the `data-photo` attribute once collected.
+- **Firestore submission monitoring** — the contact form is the only contact channel and lives entirely in Firestore. Someone needs to check the `contact_submissions` collection in the Firebase console regularly. A future improvement: a Cloud Function that emails a digest of new submissions to a designated address — out of scope for v1.
 
 ## 17. Success Criteria
 
