@@ -342,5 +342,22 @@ service cloud.firestore {
         }
       }
     }
+
+    // ─────────────────────────────────────────────────────────
+    // contact_submissions — created by the FenriX marketing site
+    // contact form (website/src/sections/Contact.tsx). Reads only via
+    // the Firebase console — no client-side code surfaces these.
+    // ─────────────────────────────────────────────────────────
+    match /contact_submissions/{doc} {
+      allow read: if false;
+      allow create: if
+        request.resource.data.email is string
+        && request.resource.data.email.size() < 200
+        && request.resource.data.message is string
+        && request.resource.data.message.size() < 4000
+        && request.resource.data.name is string
+        && request.resource.data.name.size() < 120;
+      allow update, delete: if false;
+    }
   }
 }

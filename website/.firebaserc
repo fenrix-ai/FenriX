@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "bakery-bash-54d12"
+  },
+  "targets": {
+    "bakery-bash-54d12": {
+      "hosting": {
+        "fenrix-site": [
+          "fenrix-site"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}
