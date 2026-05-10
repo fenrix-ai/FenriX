@@ -5,8 +5,11 @@
   "targets": {
     "bakery-bash-54d12": {
       "hosting": {
-        "fenrix-site": ["fenrix-site"]
+        "fenrix-site": [
+          "fenrix-site"
+        ]
       }
     }
-  }
+  },
+  "etags": {}
 }
