@@ -23,7 +23,7 @@ function BakeryBashPreview() {
         <img
           src="/bakery-bash-screenshot.png"
           alt="Bakery Bash gameplay"
-          className="w-full h-full object-cover"
+          className="w-full h-full object-contain"
           onError={() => setPngFailed(true)}
         />
       </PreviewFrame>
@@ -36,7 +36,7 @@ function BakeryBashPreview() {
         <img
           src="/bakery-bash-screenshot.jpg"
           alt="Bakery Bash gameplay"
-          className="w-full h-full object-cover"
+          className="w-full h-full object-contain"
           onError={() => setJpgFailed(true)}
         />
       </PreviewFrame>
@@ -58,7 +58,7 @@ function BakeryBashPreview() {
 
 function PreviewFrame({ children }: { children: React.ReactNode }) {
   return (
-    <div className="relative aspect-[4/3] rounded-xl border border-white/10 bg-surface overflow-hidden">
+    <div className="relative aspect-[3/2] rounded-xl border border-white/10 bg-[#FFF5DD] overflow-hidden">
       {children}
     </div>
   )
