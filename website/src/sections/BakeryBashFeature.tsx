@@ -1,5 +1,68 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Play } from 'lucide-react'
+import { Play, Image as ImageIcon } from 'lucide-react'
+
+/**
+ * Bakery Bash preview block.
+ *
+ * Tries (in order):
+ *   /bakery-bash-screenshot.png
+ *   /bakery-bash-screenshot.jpg
+ *
+ * Drop a real screenshot at website/public/bakery-bash-screenshot.png to
+ * replace the neutral placeholder. The placeholder intentionally doesn't
+ * try to mimic the game UI — it's a quiet "no image yet" slot.
+ */
+function BakeryBashPreview() {
+  const [pngFailed, setPngFailed] = useState(false)
+  const [jpgFailed, setJpgFailed] = useState(false)
+
+  if (!pngFailed) {
+    return (
+      <PreviewFrame>
+        <img
+          src="/bakery-bash-screenshot.png"
+          alt="Bakery Bash gameplay"
+          className="w-full h-full object-cover"
+          onError={() => setPngFailed(true)}
+        />
+      </PreviewFrame>
+    )
+  }
+
+  if (!jpgFailed) {
+    return (
+      <PreviewFrame>
+        <img
+          src="/bakery-bash-screenshot.jpg"
+          alt="Bakery Bash gameplay"
+          className="w-full h-full object-cover"
+          onError={() => setJpgFailed(true)}
+        />
+      </PreviewFrame>
+    )
+  }
+
+  // Neutral placeholder — does not impersonate the game UI.
+  return (
+    <PreviewFrame>
+      <div className="w-full h-full flex flex-col items-center justify-center gap-3 bg-white/[0.02]">
+        <ImageIcon size={28} className="text-ink-dim/60" strokeWidth={1.4} />
+        <div className="font-mono text-[10px] tracking-widest uppercase text-ink-dim/70">
+          Screenshot coming soon
+        </div>
+      </div>
+    </PreviewFrame>
+  )
+}
+
+function PreviewFrame({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="relative aspect-[4/3] rounded-xl border border-white/10 bg-surface overflow-hidden">
+      {children}
+    </div>
+  )
+}
 
 const steps = [
   { n: '01', title: 'Pick strategy', body: 'Set prices, ad budget, staff levels.' },
@@ -15,35 +78,14 @@ export function BakeryBashFeature() {
     >
       <div className="container-page py-24 md:py-32">
         <div className="grid gap-12 md:grid-cols-[1.1fr_1fr] items-center">
-          <div className="relative aspect-[4/3] rounded-xl border border-white/10 bg-surface overflow-hidden shadow-2xl shadow-cyan/5">
-            <div className="absolute inset-0 bg-gradient-to-br from-cyan/10 via-transparent to-coral/10" />
-            <div className="absolute top-0 left-0 right-0 h-8 bg-bg/80 border-b border-white/5 flex items-center gap-1.5 px-3">
-              <span className="w-2.5 h-2.5 rounded-full bg-coral/70" />
-              <span className="w-2.5 h-2.5 rounded-full bg-success/70" />
-              <span className="w-2.5 h-2.5 rounded-full bg-cyan/70" />
-              <span className="ml-3 font-mono text-[10px] text-ink-dim">bakery-bash · round 3 · 02:14 left</span>
-            </div>
-            <div className="absolute inset-0 pt-8 grid grid-cols-2 gap-3 p-4 text-[10px] font-mono">
-              <div className="rounded border border-white/8 bg-surface-raised p-3">
-                <div className="text-ink-dim mb-1 tracking-widest uppercase">Revenue</div>
-                <div className="text-cyan font-display text-2xl">$5,400</div>
-                <div className="text-success mt-1">+18% vs last round</div>
-              </div>
-              <div className="rounded border border-white/8 bg-surface-raised p-3">
-                <div className="text-ink-dim mb-1 tracking-widest uppercase">Customers</div>
-                <div className="text-ink font-display text-2xl">843</div>
-                <div className="text-coral mt-1">−4% vs forecast</div>
-              </div>
-              <div className="col-span-2 rounded border border-white/8 bg-surface-raised p-3">
-                <div className="text-ink-dim mb-2 tracking-widest uppercase">Leaderboard</div>
-                <div className="space-y-1">
-                  <div className="flex justify-between"><span className="text-cyan">★ sofia_v</span><span>$4,870</span></div>
-                  <div className="flex justify-between"><span>kavin.r</span><span>$4,210</span></div>
-                  <div className="flex justify-between"><span>mia.t</span><span>$3,540</span></div>
-                </div>
-              </div>
-            </div>
-          </div>
+          {/*
+            Bakery Bash preview slot.
+            To use a real screenshot: drop a file at
+              website/public/bakery-bash-screenshot.png
+            (or .jpg) and the <img> below will pick it up. The placeholder
+            block renders only when the image is missing.
+          */}
+          <BakeryBashPreview />
 
           <div>
             <div className="font-mono text-[10px] tracking-widest uppercase text-coral mb-3">
