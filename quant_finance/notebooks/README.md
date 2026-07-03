@@ -36,6 +36,16 @@ python3 notebooks/run_identification.py   # -> models/results/identifications_v2
 > `data/` (raw filings + extracted reports) and `models/gguf/` (weights) are
 > gitignored — too large. The extractor regenerates the reports from the raw corpus.
 
+## 02 — LLM trading-strategy backtest (analytics example)
+
+`02_llm_strategy_backtest.ipynb` — an end-to-end example over the same 8 companies as a
+tradable universe (real tickers via yfinance). Compares three monthly-rebalanced arms:
+a **local LLM** scoring the stocks (shown **anonymized/feature-only** so it can't use
+hindsight), the **same framework with a momentum rule** (no LLM), and **buy-and-hold**.
+Serves `qwen35-35b-a3b` (best speed×capability from the ID benchmark). Illustrative
+finding: a trivial momentum rule beat both; the LLM matched buy-and-hold on return but
+cut drawdown — risk control, not alpha.
+
 ### Caveat surfaced in v2
 The corpus is only **name-anonymized**: real third-party entities and events leak
 (e.g. "Airbus"/"Skywise" for Palantir), which makes identification easier than a
