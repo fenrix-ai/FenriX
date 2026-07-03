@@ -1,9 +1,9 @@
 # Identification benchmark v2 — real anonymized 10-K corpus (2026-07-02)
 
 ## Data
-`processed.zip` = the **anonymized real filing corpus**: 8 companies as numbered
-dirs, each with dozens–hundreds of raw SEC full-submission dumps (XBRL + exhibits +
-10-Ks/10-Qs/8-Ks, ~1.15 GB). `notebooks/extract_reports.py` pulls each company's
+The **anonymized real filing corpus** (`data/anonymized_filings_7yr/`): 8 companies as
+numbered dirs, each with dozens–hundreds of raw SEC full-submission dumps (XBRL +
+exhibits + 10-Ks/10-Qs/8-Ks). `notebooks/extract_reports.py` pulls each company's
 most-recent 10-K **Item 1 Business** narrative → `data/processed_reports/company_N.txt`
 (~9k words). Then 7 models × 8 companies, nothink, native-GPU llama.cpp.
 

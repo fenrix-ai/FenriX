@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Extract one identifying 10-K Business narrative per company from the raw
-anonymized SEC full-submission dumps in data/processed/<N>/*.txt.
+anonymized SEC full-submission dumps in data/anonymized_filings_7yr/<N>/*.txt.
 
 The raw filings interleave XBRL, financial tables, and exhibits with the 10-K
 body, and the Business section is often one giant line (so naive line-filtering
@@ -17,7 +17,7 @@ Ground truth (dir -> real company, from the anonymization project's entities.yam
 import re
 from pathlib import Path
 
-DATA = Path(__file__).resolve().parent.parent / "data" / "processed"
+DATA = Path(__file__).resolve().parent.parent / "data" / "anonymized_filings_7yr"
 OUT  = Path(__file__).resolve().parent.parent / "data" / "processed_reports"
 OUT.mkdir(exist_ok=True)
 

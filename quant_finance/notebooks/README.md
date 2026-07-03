@@ -29,7 +29,7 @@ ones, but real business substance remains — so a preprocessing step is require
    `../models/results/identifications_v2/` (`*.json`, `_grading_v2.csv`, `RESULTS_v2.md`).
 
 ```bash
-python3 notebooks/extract_reports.py      # data/processed/ -> data/processed_reports/
+python3 notebooks/extract_reports.py      # data/anonymized_filings_7yr/ -> data/processed_reports/
 python3 notebooks/run_identification.py   # -> models/results/identifications_v2/
 ```
 
