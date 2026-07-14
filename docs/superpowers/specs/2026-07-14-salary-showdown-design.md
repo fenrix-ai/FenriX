@@ -48,7 +48,7 @@ Design contract: *smart beats lucky, but never boringly* (see §10 Validation Ha
 ## 4. The Round Loop (rounds 2–5)
 
 1. **Front Office** (~3 min) — GM submits. Roster table (sticker stats vs. actual season output with green/red deltas; contract = rate × rounds left), payroll bar vs. cap with dead money shaded, expiring-contracts panel (re-sign at renewal price or let walk), cut flow with dead-money confirmation modal, tonight's market preview (incoming FAs + auction stars: name/position/hype only), scouting news banner (flavor + one soft hint; hint strength is a professor knob). Market inflation ticks at phase open.
-2. **Free Agency** (~2.5 min) — GM submits. Full market table; new entrants flagged NEW; walked players return at inflated rates; live season stats shown beside sticker stats. Sign flow = years slider (see §5). Signings commit instantly (shared pool — no inter-team conflict). Round 1 variant: extended timer, build min-8 roster, roster checklist widget enforces position coverage.
+2. **Free Agency** (~2.5 min) — GM submits. **Rotating market:** round 1 opens with a large pool (~75% of all free agents); each later round the signable list is a fresh server-seeded random subset (~40–50%) — identical for every team. Unavailable players remain visible but greyed ("not in market tonight"), so pre-game analysis of the full pool stays useful. Anti-frustration guard: a player absent two consecutive rounds is guaranteed into the next draw. Cut/walked players join the rotation; expiring re-signs are exempt (incumbent right lives in Front Office). Rotation × inflation is the urgency engine: waiting risks both reappearance and +8% pricing. Live season stats shown beside sticker stats. Sign flow = years slider (see §5). Signings commit instantly (shared pool — no inter-team conflict). Round 1 variant: extended timer, build min-8 roster, roster checklist widget enforces position coverage.
 3. **Star Auction** (~2 min) — Scout submits. 4–6 exclusive star cards (stats, age, hype — no price). Sealed bid = **per-round salary** offered; live cap validation ("Not enough cap room" hard-blocks overbids). Teams may bid on multiple stars and may win multiple if cap fits.
 4. **Set Lineup** (~1.5 min) — Coach submits. 5 starter slots (2 Guards / 2 Wings / 1 Big, enforced), 1 Sixth Man, rest Bench. No derived synergy meters shown (would leak the hidden model). Timeout → last valid lineup carries over (round 1: auto-arrangement).
 5. **Simulate** (~1 min) — no inputs. Team screens: your ~19 games resolve as a rapid cascade of mini-cards. Projector: league-wide scoreboard flood.
@@ -227,6 +227,7 @@ Efficient Star (rare, fairly priced), Volume Scorer **trap**, Two-Way Wing, Elit
 4. **Fairness sim:** 1,000 simulated seasons, model-following teams vs. sort-by-PPG teams → good-model team finishes top-3 in **~75%** of seasons, wins the championship in **~40–45%**. Logistic steepness and noise are tuned until both hold.
 5. **Scout-grade check:** a scout-grade-only strategy finishes mid-table in the fairness sim — better than the PPG-sorters, worse than the modelers.
 6. **Personality null check:** personality labels have no statistically detectable relationship with TrueImpact or wins in generated data.
+7. **Market-coverage check:** every round's free-agency draw contains enough position and price-tier coverage to build (round 1, 20 teams × 8 players) or repair (rounds 2–5) a legal roster.
 
 ## 11. Screens
 
@@ -289,4 +290,5 @@ Two-screen principle: private detail (your box scores) on team laptops; shared d
 - Synergy thresholds and penalty/bonus magnitudes
 - Trap-star count (6–8), treasure-cluster size (≥15), salary R² (0.45), league-table R² (0.80)
 - Scout-grade correlation (r ≈ 0.3); follower-count weight in hype (0.20)
+- Market rotation: round-1 pool share (~75%), per-round draw share (~40–50%), reappearance-guarantee window (2 rounds)
 - Phase timer durations; auction wave sizes (4–6)
