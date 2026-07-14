@@ -90,25 +90,38 @@ Round 1 skips Front Office (no roster exists yet).
 
 Framing: *"Your ownership group hired you as a front office. Draft night is Thursday. Come with a plan."* No graded pre-work — preparation is its own reward (inflation and draft-night time pressure punish cold starts organically).
 
-**`players.csv`** — one row per player (~175):
+**`players.csv`** — one row per player (~175). Full contract — column order is frozen; additions append at the end (§7.4):
 
-| Column | Role in the design |
-|---|---|
-| `name` | fictional, memorable; fuels awards/trash talk |
-| `position` | G/W/B; also shapes stat emissions (position-normalization mini-lesson) |
-| `age` | load-bearing: aging curve (§9.3) |
-| `years_pro` | near-duplicate of age (correlated-columns lesson) |
-| `hype` | 1–5★; the mispricing thermometer |
-| `salary` | per-round list rate; blank for auction-class players |
-| `games_played` | red herring (no effect in V1) |
-| `mins_per_game` | context; low-minutes stats are noisier |
-| `pts_per_game` | seductive; drives hype; weak win-driver alone |
-| `fg_attempts_per_game` | the trap detector — `pts ÷ attempts` is the killer derived stat |
-| `fg_pct`, `3p_pct` | strong true win-drivers; `3p_pct` also feeds spacing synergy |
-| `ft_pct` | red herring (near-zero effect) |
-| `rebounds`, `assists`, `steals`, `blocks` | honest, moderately weighted, underpriced by hype; `blocks` feeds rim synergy |
-| `turnovers_per_game` | the poison column (§9.5) |
-| `prev_pts`, `prev_fg_pct`, `prev_mins` | prior-season values; YoY delta vs. age reveals the aging curve pre-game |
+| # | Column | Type / range | Gameplay mapping |
+|---|---|---|---|
+| 1 | `player_id` | int, unique, stable | Utility — join key across all files |
+| 2 | `name` | text, unique | Utility — display, awards, trash talk |
+| 3 | `position` | `G` / `W` / `B` | **Mechanical** — lineup slot eligibility; stat profiles differ by position (normalize within) |
+| 4 | `age` | int 19–38 | **Mechanical** — sets the age-drift multiplier (§9.3); the only stat column that is a direct sim input |
+| 5 | `years_pro` | int 0–19 | Red herring — decoy duplicate of `age` (correlated-columns lesson) |
+| 6 | `hype` | 1.0–5.0, halves | Trap fuel — generated the salary; predicts price, not performance |
+| 7 | `salary_per_round` | $M, 2.0–28.0; blank for auction-class | **Mechanical** — per-round payroll charge via contract; cost, not quality |
+| 8 | `auction_round` | int 1–5; blank for free agents | **Mechanical** — which round the star hits the block. Revealed deliberately: rewards cap planning rounds ahead |
+| 9 | `personality` | `Leader` / `Professional` / `Quiet` / `Diva` / `Hothead` | Red herring in V1 — pure flavor; narrative-resistance lesson ("Divas were fine all along"). V2 chemistry hook (§14) |
+| 10 | `scout_grade` | `A+` … `D` | Noisy-honest — weakly correlated with TrueImpact (target r ≈ 0.3): beats guessing, loses to models. The non-fan's starting prior |
+| 11 | `social_media_followers` | int, 10k–20M | Trap fuel — feeds hype, zero sim weight ("10M followers ≠ good at basketball") |
+| 12 | `games_played` | int 40–82 | Red herring (V2 durability hook) |
+| 13 | `mins_per_game` | 8–38 | Context — last season's role + sample-size warning; tier assignment sets minutes in-game, not this |
+| 14 | `pts_per_game` | 2–30 | Emission of usage × efficiency; main hype driver. Trap fuel alone, honest when paired with attempts |
+| 15 | `fg_attempts_per_game` | 2–24 | The decoder — emission of usage; `pts ÷ fga` unlocks scoring value's sign |
+| 16 | `fg_pct` | .38–.62 | Honest, underpriced — emission of efficiency (heavy TrueImpact weight) |
+| 17 | `three_pt_pct` | .20–.45 | Honest, double-duty — efficiency + spacing-synergy eligibility |
+| 18 | `ft_pct` | .55–.95 | Red herring — near-zero sim weight |
+| 19 | `rebounds_per_game` | 1–13 | Honest, underpriced — defense/rebounding emission |
+| 20 | `assists_per_game` | 0.5–10 | Honest — playmaking emission (the one honest stat hype partially sees) |
+| 21 | `steals_per_game` | 0.2–2.5 | Honest, underpriced — defense emission |
+| 22 | `blocks_per_game` | 0–2.8 | Honest, double-duty — defense + rim-protection synergy |
+| 23 | `turnovers_per_game` | 0.5–4.5 | The poison column — heaviest negative TrueImpact weight, invisible to hype |
+| 24 | `prev_pts_per_game` | number | Honest — time machine |
+| 25 | `prev_fg_pct` | number | Honest — time machine |
+| 26 | `prev_mins_per_game` | number | Honest — YoY deltas vs. `age` draw the aging curve pre-game |
+
+Information architecture: **4 mechanical** (`position`, `age`, `salary_per_round`, `auction_round`) · **~10 honest evidence** · **4 trap fuel** (`pts`, `hype`, `salary`, `followers`) · **4 red herrings** (`years_pro`, `games_played`, `ft_pct`, `personality`) · rest utility/context.
 
 **`league_history.csv`** — 90 rows (30 fictional teams × 3 seasons; `season` column). Columns: `team_name`, `season`, `wins`, `losses`, team-level `pts_per_game`, `fg_pct`, `3p_pct`, `ft_pct`, `rebounds`, `assists`, `steals`, `blocks`, `turnovers`, `total_payroll`, `avg_hype`.
 
@@ -117,11 +130,29 @@ This is the **outcome table**: regressing `wins` on the rest reveals the sim's t
 **Scouting memo** (1 page): column definitions, season rules, zero strategy hints.
 **Player cheat sheet** (printable): round loop, role ownership, cap/dead-money rules, base-rate tables. No spoilers.
 
-### 7.2 In-game data feed
+### 7.2 In-game data feed — round box scores
 
-After every Simulate phase: downloadable CSV of **the whole league's box scores** for that round (~190 games × ~18 player-lines ≈ 3,400 rows/round). Per player-game: points, rebounds, assists, steals, blocks, turnovers, FG attempts, FG%, minutes. Public like real NBA stats.
+After every Simulate phase: downloadable CSV of **the whole league's box scores** for that round (~190 games × ~18 player-lines ≈ 3,400 rows/round). Public like real NBA stats. **One denormalized file per round** — pivot-table ready with zero joins; cumulative analysis is just stacking files. Note: unsigned free agents generate no box scores (they didn't play); a player's live form exists only for rounds he was rostered.
 
-Enables mid-game discovery: aging fade, trap-star inefficiency bleed, breakout bargains — and opponent scouting for the Scout role. Free agents' live form is analyzable before signing.
+| # | Column | Notes |
+|---|---|---|
+| 1 | `round` | 1–5 |
+| 2 | `game_id` | e.g. `R2-G087` |
+| 3 | `team` | class franchise name |
+| 4 | `opponent` | class franchise name |
+| 5–7 | `team_score`, `opp_score`, `win` | denormalized per row; `win` ∈ {0,1} |
+| 8–10 | `player_id`, `player_name`, `position` | joins back to `players.csv` |
+| 11 | `tier` | `starter` / `sixth` / `bench` — tier-vs-output is analyzable |
+| 12–22 | `mins`, `pts`, `fgm`, `fga`, `three_pm`, `three_pa`, `rebounds`, `assists`, `steals`, `blocks`, `turnovers` | **raw counts, not percentages** — so aggregation is correct (sum makes/attempts, don't average percentages) |
+
+Enables mid-game discovery: aging fade, trap-star inefficiency bleed, breakout bargains — and opponent scouting for the Scout role.
+
+### 7.3 Schema governance (the anti-Bakery-Bash-mess rules)
+
+- **One schema, one generator, everything derives.** Hidden attributes live in one place; every student-facing artifact (both pre-release CSVs, round box scores, in-app market/roster tables) is an emission from the same pipeline. Adding a column = one emission function + one harness assertion; nothing is hand-maintained in parallel.
+- **Additive-only, append-right.** Existing columns are never renamed, retyped, or reordered. New columns append at the end.
+- **The freeze gate.** Schema changes are free until the pre-release ships (T−7 days). After that, the dataset is frozen for the run — students have downloaded it. Late ideas go to the next run's version, never the live one.
+- Schema version noted in the scouting memo (not inside the CSVs).
 
 ## 8. Simulation Engine
 
@@ -152,9 +183,12 @@ All game state transitions and resolution are Cloud Functions-only (server-autho
 ### 9.1 Mispricing chain
 
 ```
-hype   = 0.55·norm(PPG) + 0.20·norm(FGA) + 0.15·norm(AST) + noise   // no efficiency, defense, TO, age
+hype   = 0.45·norm(PPG) + 0.20·norm(followers) + 0.15·norm(FGA) + 0.10·norm(AST) + noise
+         // no efficiency, defense, TO, age
 salary = rate_curve(hype) + noise
 ```
+
+`scout_grade` is generated from TrueImpact + heavy noise (target r ≈ 0.3) — the "experts beat nothing, models beat experts" column. `personality` is assigned independently of everything (pure flavor; the reveal shows it predicted nothing).
 
 Salary↔TrueImpact correlation target **R² ≈ 0.45**: stars usually cost more (market isn't stupid), but ≥15 players sit in bottom-half salary AND top-quartile TrueImpact (the treasure cluster).
 
@@ -191,6 +225,8 @@ Efficient Star (rare, fairly priced), Volume Scorer **trap**, Two-Way Wing, Elit
 2. **Bargain check:** the ≥15-player treasure cluster exists.
 3. **Trap check:** every trap's hype rank exceeds its TrueImpact rank by ≥40 percentile points.
 4. **Fairness sim:** 1,000 simulated seasons, model-following teams vs. sort-by-PPG teams → good-model team finishes top-3 in **~75%** of seasons, wins the championship in **~40–45%**. Logistic steepness and noise are tuned until both hold.
+5. **Scout-grade check:** a scout-grade-only strategy finishes mid-table in the fairness sim — better than the PPG-sorters, worse than the modelers.
+6. **Personality null check:** personality labels have no statistically detectable relationship with TrueImpact or wins in generated data.
 
 ## 11. Screens
 
@@ -238,6 +274,7 @@ Two-screen principle: private detail (your box scores) on team laptops; shared d
 - Performance-driven market repricing (hot players' rates spike)
 - Hot/cold form streaks; fatigue system; injuries
 - Durability pattern (games_played predicts availability — currently a red herring)
+- **Personality with teeth:** traits gain real effects — e.g., locker-room chemistry (two Divas clash, a Leader lifts young players), turning the V1 red herring into a discoverable V2 pattern for returning students
 
 ## 15. Open Tuning Dials (playtest targets)
 
@@ -245,4 +282,5 @@ Two-screen principle: private detail (your box scores) on team laptops; shared d
 - Logistic steepness + noise (fairness targets §10.4)
 - Synergy thresholds and penalty/bonus magnitudes
 - Trap-star count (6–8), treasure-cluster size (≥15), salary R² (0.45), league-table R² (0.80)
+- Scout-grade correlation (r ≈ 0.3); follower-count weight in hype (0.20)
 - Phase timer durations; auction wave sizes (4–6)
