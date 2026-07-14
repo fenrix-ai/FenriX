@@ -230,9 +230,15 @@ Efficient Star (rare, fairly priced), Volume Scorer **trap**, Two-Way Wing, Elit
 
 ## 11. Screens
 
+**UI principles (apply to every screen):**
+
+- **Facts, never conclusions.** Screens show raw stats and plain arithmetic (this-season vs. listed numbers) but never value judgments ("a steal", "declining", "underperforming"), trend adjectives, or derived efficiency metrics. Anything that smells like analysis is the students' job — the UI must not do their modeling for them. (Same rule as the lineup screen's no-synergy-meter policy. The scouting-news hint line is the one sanctioned exception, professor-controlled.)
+- **Visual style: "Arena Broadcast."** Dark courtside palette (navy `#0d1b2e`–`#132a4a`, gold `#ffc94d` accents), LED-style monospace timers, bold italic uppercase branding, gold ticker bars with boxed tags (e.g., `SCOUT WIRE`). **No emojis anywhere in the product UI.** Hype is rendered as ★ glyphs (it's a real data column, not decoration).
+- **First-timer readability:** each decision screen leads with what to do (numbered sections / status lines), one headline number per player card, full stat tables one tap deeper.
+
 1. **Landing/Join (`/`)** — join code, display name, franchise pick/create, role claim (shows open roles per team).
 2. **Lobby (`/lobby`)** — teams assembling, rules carousel (*wins crown the champion · $100M hard cap · cut players still get paid*), professor starts season.
-3. **Front Office (`/game/office`)** — §4.1. New UI build.
+3. **Front Office (`/game/office`)** — §4.1. New UI build. Approved layout (mocked 2026-07-14): single scroll, sticky payroll bar (cash + dead-money segments) pinned top, three numbered collapsible sections — 1 Expiring deals · 2 Your roster · 3 Tonight's market (read-only) — all expanded by default; a section auto-collapses to a one-line "n of n decided" summary header when its decisions are complete; headers always show status so collapsed ≠ hidden obligations. Player cards: avatar initials, position badge, age, contract (rate × rounds), and a monospace stat line "this ssn X ppg / listed Y ppg" — no judgment labels. Wizard structure was considered and rejected.
 4. **Free Agency (`/game/market`)** — §4.2. New UI build. Sign panel: years slider with live rate/total/cap check.
 5. **Star Auction (`/game/auction`)** — §4.3. Ancestor: Bakery Bash sealed-bid screens.
 6. **Set Lineup (`/game/lineup`)** — §4.4. Drag-to-slot; deliberately dumb (no derived meters).
