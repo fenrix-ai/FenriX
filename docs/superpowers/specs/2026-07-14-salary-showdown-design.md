@@ -151,7 +151,7 @@ Enables mid-game discovery: aging fade, trap-star inefficiency bleed, breakout b
 
 - **One schema, one generator, everything derives.** Hidden attributes live in one place; every student-facing artifact (both pre-release CSVs, round box scores, in-app market/roster tables) is an emission from the same pipeline. Adding a column = one emission function + one harness assertion; nothing is hand-maintained in parallel.
 - **Additive-only, append-right.** Existing columns are never renamed, retyped, or reordered. New columns append at the end.
-- **The freeze gate.** Schema changes are free until the pre-release ships (T−7 days). After that, the dataset is frozen for the run — students have downloaded it. Late ideas go to the next run's version, never the live one.
+- **The freeze applies to shipped files, not the schema.** The two pre-release CSVs are immutable once students have downloaded them — there is no patching those. But the schema can still grow mid-run through the live layers, additive-only: new columns on the round box-score feed, new in-app table columns, or a supplemental professor-released drop between rounds (e.g., a "mid-season scouting update" CSV). Rule of thumb: never change what's in students' hands; ship additions as new columns or new files.
 - Schema version noted in the scouting memo (not inside the CSVs).
 
 ## 8. Simulation Engine
