@@ -19,6 +19,6 @@ games/{gameId}/reveal/latest          # written ONLY after round 5 RESULTS (fina
 
 RULES POLICY
 - authenticated members of a game may READ everything under their game EXCEPT teams/*/private/* of other teams and reveal/* before status=finished.
-- players/{uid}: user may create own membership (via joinGame callable in practice) and update displayName only.
+- players/{uid}: membership CREATE is server-only (joinGame callable via Admin SDK); the only client write is updating one's own displayName.
 - ALL other writes: server only (callables use Admin SDK, which bypasses rules).
 - hidden.json / engine_params.json are NOT in Firestore at all.
