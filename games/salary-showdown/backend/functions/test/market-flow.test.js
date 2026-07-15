@@ -122,7 +122,13 @@ describe('market flow (signing, cutting, hardship, non-exclusive shared catalog)
     const market2 = (await db.doc(`games/${gameId}/market/2`).get()).data();
     // the hook's draw must equal a draw over the UNFILTERED FA catalog: contract
     // status never hides a player from other teams' rotation draws (spec §4.2).
-    const expected = drawMarket({ gameId, round: 2, faPool: fa, absentCounts: market1.absentCounts, extraPids: [] });
+    // Neither team ever called submitBids, so the AUCTION(1) exit hook (Task 10)
+    // resolved every round-1 star unsold — they fall through to round 2's market as
+    // extraPids, exactly like Task 9's enter:FREE_AGENCY hook already promised.
+    const unsoldSnap = await db.collection(`games/${gameId}/unsold`).get();
+    const extraPids = unsoldSnap.docs.map((d) => Number(d.id));
+    expect(extraPids.length).toBeGreaterThan(0); // sanity: the auction really did run
+    const expected = drawMarket({ gameId, round: 2, faPool: fa, absentCounts: market1.absentCounts, extraPids });
     expect(market2.available).toEqual(expected.available);
     expect(market2.absentCounts).toEqual(expected.absentCounts);
     expect(market2).toHaveProperty('unsoldPrices');

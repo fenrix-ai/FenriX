@@ -3,7 +3,8 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import players from './data/players.json' with { type: 'json' };
 import { nextPhase, HOOKS } from './phases.js';
 import { drawMarket, validateSigning, runHardship } from './market.js';
-import { cutPlayer, expiringPids } from './payroll.js';
+import { cutPlayer, expiringPids, hypeCurve } from './payroll.js';
+import { validateBids, resolveAuction } from './auction.js';
 
 const ROLES = ['GM', 'Scout', 'Coach'];
 const db = () => getFirestore();
@@ -185,6 +186,24 @@ export const cutRosterPlayer = onCall(async (req) => {
   });
 });
 
+// Scout-only. teamId comes from the caller's own membership doc, never from the
+// payload — a Scout has no way to address another team's private bid doc, so this
+// endpoint cannot be used to bid on another team's behalf.
+export const submitBids = onCall(async (req) => {
+  const { gameId, bids } = req.data;
+  const { teamId } = await memberWithRole(gameId, req.auth?.uid, 'Scout');
+  const g = (await db().doc(`games/${gameId}`).get()).data();
+  if (g.phase !== 'AUCTION') throw new HttpsError('failed-precondition', 'auction is closed');
+  const wave = (await db().doc(`games/${gameId}/auctions/${g.round}`).get()).data();
+  try { validateBids({ bids, round: g.round, starPids: wave?.stars ?? [] }); }
+  catch (e) { throw new HttpsError('invalid-argument', e.message); }
+  // A full overwrite (not merge): resubmitting replaces the whole bid set, so a
+  // Scout can freely revise before the professor closes the phase. Once AUCTION's
+  // exit hook has read this doc there is no further write path back into it.
+  await db().doc(`games/${gameId}/teams/${teamId}/private/auction`).set({ bids, round: g.round });
+  return { accepted: Object.keys(bids).length };
+});
+
 // -------- phase hooks
 
 HOOKS['enter:FREE_AGENCY'] = async (gameId, round) => {
@@ -237,4 +256,47 @@ HOOKS['FREE_AGENCY'] = async (gameId, round) => {   // exit hook: hardship
       });
     });
   }
+};
+
+HOOKS['enter:AUCTION'] = async (gameId, round) => {
+  const stars = players.filter((p) => +p.auction_round === round).map((p) => p.pid);
+  await db().doc(`games/${gameId}/auctions/${round}`).set({ stars });
+};
+
+HOOKS['AUCTION'] = async (gameId, round) => {   // exit hook: resolve sealed bids
+  const auctionRef = db().doc(`games/${gameId}/auctions/${round}`);
+  const wave = (await auctionRef.get()).data();
+  // Internally idempotent beyond runHookOnce's log: a retry that lost the hooklog
+  // write (hook body ran, but the log write itself failed) must not re-resolve —
+  // that would re-push contracts onto rosters a second time and re-create unsold
+  // claim tokens that a team may have already claimed via signPlayer in the
+  // meantime. `results` on the auctions/{round} doc is this hook's own completion
+  // marker, checked before any writes happen.
+  if (wave?.results) return;
+  const teamDocs = await db().collection(`games/${gameId}/teams`).get();
+  const teams = teamDocs.docs.map((t) => ({ teamId: t.id, ...t.data() }));
+  const bids = [];
+  for (const t of teams) {
+    const priv = await db().doc(`games/${gameId}/teams/${t.teamId}/private/auction`).get();
+    if (!priv.exists || priv.data().round !== round) continue;
+    for (const [pid, b] of Object.entries(priv.data().bids ?? {}))
+      bids.push({ teamId: t.teamId, pid: Number(pid), rate: b.rate, years: b.years });
+  }
+  const { awards, teamsAfter } = resolveAuction({ bids, starPids: wave.stars, teams,
+    round, seed: gameId, catalogById: CATALOG });
+  const batch = db().batch();
+  for (const t of teamsAfter)
+    batch.update(db().doc(`games/${gameId}/teams/${t.teamId}`), { roster: t.roster });
+  batch.update(auctionRef, { results: awards });
+  // Unsold stars fall through to next round's FA rotation. enter:FREE_AGENCY (above)
+  // reads games/{gameId}/unsold/{pid} = { price } to build unsoldPrices/extraPids —
+  // field name confirmed against that reader (doc.data().price), not the `listBase`
+  // name from the original draft. signPlayer's transaction treats this doc as the
+  // exclusive star's claim token (tx.get + tx.delete on a successful signing).
+  for (const a of awards.filter((x) => !x.teamId)) {
+    const star = CATALOG[a.pid];
+    batch.set(db().doc(`games/${gameId}/unsold/${a.pid}`),
+      { price: Math.round(hypeCurve(+star.hype) * 10) / 10 });
+  }
+  await batch.commit();
 };
