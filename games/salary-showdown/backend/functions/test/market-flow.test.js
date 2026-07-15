@@ -4,6 +4,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import fft from 'firebase-functions-test';
 import players from '../src/data/players.json' with { type: 'json' };
 import { drawMarket } from '../src/market.js';
+import { askPrice, contractRate } from '../src/payroll.js';
 
 process.env.FIRESTORE_EMULATOR_HOST = 'localhost:8180';
 process.env.GCLOUD_PROJECT = 'salary-showdown-dev';
@@ -125,6 +126,40 @@ describe('market flow (signing, cutting, hardship, non-exclusive shared catalog)
     expect(market2.available).toEqual(expected.available);
     expect(market2.absentCounts).toEqual(expected.absentCounts);
     expect(market2).toHaveProperty('unsoldPrices');
+  });
+});
+
+describe('unsold auction star exclusivity', () => {
+  // Auction stars are the ONLY exclusive players (spec §4.2). An unsold star falls
+  // through to the FA market via games/{id}/unsold/{pid}; the first team to sign
+  // him claims (deletes) that doc in the signing transaction, so a rival same-phase
+  // signing fails STAR_TAKEN and later draws never include him.
+  it('first signer takes the star and deletes unsold/{pid}; a rival gets STAR_TAKEN', async () => {
+    const res = await call(createGame, { teamNames: ['Eta', 'Theta'] }, 'prof4');
+    const gid = res.gameId;
+    const teams = await db.collection(`games/${gid}/teams`).get();
+    const [tA, tB] = teams.docs.map((d) => d.id);
+    await call(joinGame, { joinCode: res.joinCode, teamId: tA, role: 'GM', displayName: 'A' }, 'gmS1');
+    await call(joinGame, { joinCode: res.joinCode, teamId: tB, role: 'GM', displayName: 'B' }, 'gmS2');
+    await call(startSeason, { gameId: gid }, 'prof4');
+    // seed the state Task 10's auction resolution will produce: an unsold star with
+    // a recorded price, forced into the market with that price as his list price
+    const star = players.find((p) => p.auction_round);
+    await db.doc(`games/${gid}/unsold/${star.pid}`).set({ price: 20.0 });
+    const m1 = (await db.doc(`games/${gid}/market/1`).get()).data();
+    await db.doc(`games/${gid}/market/1`).update({
+      available: [...m1.available, star.pid],
+      unsoldPrices: { [star.pid]: 20.0 },
+    });
+
+    const { contract } = await call(signPlayer, { gameId: gid, pid: star.pid, years: 2 }, 'gmS1');
+    expect(contract.rate).toBe(contractRate(askPrice(20.0, 1), 2));
+    expect((await db.doc(`games/${gid}/unsold/${star.pid}`).get()).exists).toBe(false); // claimed
+
+    await expect(call(signPlayer, { gameId: gid, pid: star.pid, years: 1 }, 'gmS2'))
+      .rejects.toThrow('STAR_TAKEN');
+    const b = (await db.doc(`games/${gid}/teams/${tB}`).get()).data();
+    expect(b.roster.some((c) => c.pid === star.pid)).toBe(false);
   });
 });
 

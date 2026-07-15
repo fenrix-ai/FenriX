@@ -23,7 +23,10 @@ games/{gameId}/market/{round}         # { available: [pid], absentCounts: {pid: 
 games/{gameId}/auctions/{round}       # { stars: [pid], results: [{pid, teamId|null, rate, years, guaranteed}] } — results field added at resolution
 games/{gameId}/unsold/{pid}           # { price } — auction-class player that went unsold at auction; written by auction
                                       # resolution (Task 10). Read by the enter:FREE_AGENCY hook to force the star back into
-                                      # market/{round}.available with `price` as its list price until a team signs it.
+                                      # market/{round}.available with `price` as its list price. Unlike ordinary FAs, unsold
+                                      # stars stay EXCLUSIVE: this doc is the claim token — signPlayer tx.gets + tx.deletes
+                                      # it inside the signing transaction (doc missing => STAR_TAKEN), so exactly one team
+                                      # ever signs the star and later draws no longer include him.
                                       # server-only: never client-accessible, explicit deny-all in rules.
 games/{gameId}/rounds/{r}             # { games: [{home, away, homeScore, awayScore}], awards: {...}, boxCsv: string, standings: [...] }
 games/{gameId}/reveal/latest          # written ONLY after round 5 RESULTS (finale payload)

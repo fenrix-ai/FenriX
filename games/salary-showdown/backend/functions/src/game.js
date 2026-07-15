@@ -139,6 +139,18 @@ export const signPlayer = onCall(async (req) => {
     // re-signs never touch the market doc: an expiring pid re-ups off the books,
     // whether or not it happens to also be in this round's drawn market.
     const market = isResign ? null : (await tx.get(marketRef)).data();
+    // Unsold auction stars are EXCLUSIVE (spec §4.2: auction stars are the only
+    // exclusive players). The star's unsold/{pid} doc is the claim token: it is
+    // read and deleted inside this transaction, so the first signer takes him, a
+    // same-phase rival loses the transaction race (STAR_TAKEN), and the next
+    // enter:FREE_AGENCY draw — which reads the unsold collection — no longer
+    // includes him.
+    let unsoldRef = null;
+    if (!isResign && market?.unsoldPrices?.[pid] != null) {
+      unsoldRef = db().doc(`games/${gameId}/unsold/${pid}`);
+      if (!(await tx.get(unsoldRef)).exists)
+        throw new HttpsError('failed-precondition', 'STAR_TAKEN');
+    }
     if (isResign && !expiringPids(team, g.round).includes(pid))
       throw new HttpsError('failed-precondition', 'only expiring contracts re-sign here');
     let contract;
@@ -151,6 +163,7 @@ export const signPlayer = onCall(async (req) => {
     } catch (e) { throw new HttpsError('failed-precondition', e.message); }
     const roster = team.roster.filter((c) => c.pid !== pid).concat(contract);
     tx.update(teamRef, { roster });
+    if (unsoldRef) tx.delete(unsoldRef);   // claim the exclusive star
     return { contract };
   });
 });
