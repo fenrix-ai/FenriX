@@ -5,6 +5,7 @@ import { nextPhase, HOOKS } from './phases.js';
 import { drawMarket, validateSigning, runHardship } from './market.js';
 import { cutPlayer, expiringPids, hypeCurve } from './payroll.js';
 import { validateBids, resolveAuction } from './auction.js';
+import { validateLineup, autoRepair } from './lineup.js';
 
 const ROLES = ['GM', 'Scout', 'Coach'];
 const db = () => getFirestore();
@@ -204,6 +205,27 @@ export const submitBids = onCall(async (req) => {
   return { accepted: Object.keys(bids).length };
 });
 
+const activePidsOf = (team, round) =>
+  team.roster.filter((c) => c.startRound + c.years - 1 >= round).map((c) => c.pid);
+
+// Coach-only. Validated server-side against the CURRENT roster (activePidsOf at the
+// game's live round) so a stale client can never lock in a lineup that no longer
+// matches the roster (auction wins / hardship signings since the lineup was drafted).
+// Resubmitting overwrites in full — same free-revision pattern as submitBids — until
+// the professor closes LINEUP, at which point the exit hook below takes over.
+export const submitLineup = onCall(async (req) => {
+  const { gameId, lineup } = req.data;
+  const { teamId } = await memberWithRole(gameId, req.auth?.uid, 'Coach');
+  const g = (await db().doc(`games/${gameId}`).get()).data();
+  if (g.phase !== 'LINEUP') throw new HttpsError('failed-precondition', 'lineups are locked');
+  const teamRef = db().doc(`games/${gameId}/teams/${teamId}`);
+  const team = (await teamRef.get()).data();
+  try { validateLineup({ lineup, activePids: activePidsOf(team, g.round), catalogById: CATALOG }); }
+  catch (e) { throw new HttpsError('invalid-argument', e.message); }
+  await teamRef.update({ lineup, lineupLockedRound: g.round });
+  return { ok: true };
+});
+
 // -------- phase hooks
 
 HOOKS['enter:FREE_AGENCY'] = async (gameId, round) => {
@@ -299,4 +321,26 @@ HOOKS['AUCTION'] = async (gameId, round) => {   // exit hook: resolve sealed bid
       { price: Math.round(hypeCurve(+star.hype) * 10) / 10 });
   }
   await batch.commit();
+};
+
+// exit: repair every non-submitted (or now-illegal) lineup.
+// Internally idempotent WITHOUT an extra lineupLockedRound guard: a lineup that
+// already validates against the current activePids is left completely untouched —
+// autoRepair is only ever called in the catch branch, i.e. only when validateLineup
+// threw. So a re-invocation (e.g. a retry that lost the hooklog write) on a team
+// whose lineup already passed validation just re-validates the SAME object again,
+// re-writes the SAME lineup + lineupLockedRound, and changes nothing. The risk case
+// — autoRepair silently reordering an already-legal lineup's bench (it rebuilds
+// `rest` sorted by public mins_per_game desc, not the coach's submitted order) —
+// never triggers here because autoRepair only runs on lineups that failed to validate.
+HOOKS['LINEUP'] = async (gameId, round) => {
+  const teams = await db().collection(`games/${gameId}/teams`).get();
+  for (const t of teams.docs) {
+    const team = t.data();
+    const active = activePidsOf(team, round);
+    let lineup = team.lineup;
+    try { validateLineup({ lineup, activePids: active, catalogById: CATALOG }); }
+    catch { lineup = autoRepair({ prevLineup: team.lineup, activePids: active, catalogById: CATALOG }); }
+    await t.ref.update({ lineup, lineupLockedRound: round });
+  }
 };
