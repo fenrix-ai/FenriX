@@ -1,0 +1,76 @@
+{
+ "schema_version": "1.0",
+ "seed": 310,
+ "logistic_k": 0.09,
+ "style_constants": {
+  "Balanced": {
+   "scale": 1.0,
+   "const": 0.0
+  },
+  "Run & Gun": {
+   "scale": 3.1928747084234326,
+   "const": 45.32877261081809
+  },
+  "3PT Barrage": {
+   "scale": 2.15899964755395,
+   "const": -21.54293396515909
+  },
+  "Inside Attack": {
+   "scale": 9.149130003694106,
+   "const": -69.91045051075366
+  },
+  "Lockdown": {
+   "scale": 3.2120928309361876,
+   "const": -36.58343795989609
+  }
+ },
+ "tier_weights": {
+  "starter": 1.0,
+  "sixth": 0.6,
+  "bench": 0.35
+ },
+ "style_delta": {
+  "Balanced": {},
+  "Run & Gun": {
+   "tov": -1.0
+  },
+  "3PT Barrage": {
+   "shooting": 1.0,
+   "interior": -0.25
+  },
+  "Inside Attack": {
+   "big_score": 0.25,
+   "reb_total": 1.2
+  },
+  "Lockdown": {
+   "stocks": 0.9,
+   "score": -0.1
+  }
+ },
+ "pace": {
+  "Balanced": 1.0,
+  "Run & Gun": 1.15,
+  "3PT Barrage": 1.03,
+  "Inside Attack": 1.0,
+  "Lockdown": 0.85
+ },
+ "synergy": {
+  "shooter_3pt_skill": 42,
+  "rim_block_skill": 48,
+  "spacing_penalty": -3.0,
+  "spacing_bonus": 1.5,
+  "rim_penalty": -3.0,
+  "rim_bonus": 2.0,
+  "rim_elite": 82,
+  "barrage_misfire": -2.0
+ },
+ "ti_weights": {
+  "base": 6.0,
+  "scoring": 1.6,
+  "playmaking": 0.55,
+  "steal": 1.05,
+  "block": 1.0,
+  "rebound": 0.25,
+  "turnover": 1.5
+ }
+}
