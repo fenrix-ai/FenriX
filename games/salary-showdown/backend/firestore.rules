@@ -1,6 +1,40 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} { allow read, write: if false; }
+    function isMember(gameId) {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/games/$(gameId)/players/$(request.auth.uid));
+    }
+    function myTeam(gameId) {
+      return get(/databases/$(database)/documents/games/$(gameId)/players/$(request.auth.uid)).data.teamId;
+    }
+    match /games/{gameId} {
+      allow read: if isMember(gameId);
+      allow write: if false;
+
+      match /players/{uid} {
+        allow read: if isMember(gameId);
+        allow update: if request.auth != null && request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName']);
+        allow create, delete: if false;
+      }
+      match /teams/{teamId} {
+        allow read: if isMember(gameId);
+        allow write: if false;
+        match /private/{doc} {
+          allow read: if isMember(gameId) && myTeam(gameId) == teamId;
+          allow write: if false;
+        }
+      }
+      match /catalog/{pid}  { allow read: if isMember(gameId); allow write: if false; }
+      match /market/{round} { allow read: if isMember(gameId); allow write: if false; }
+      match /auctions/{round} { allow read: if isMember(gameId); allow write: if false; }
+      match /rounds/{r}     { allow read: if isMember(gameId); allow write: if false; }
+      match /reveal/{doc} {
+        allow read: if isMember(gameId)
+          && get(/databases/$(database)/documents/games/$(gameId)).data.status == 'finished';
+        allow write: if false;
+      }
+    }
   }
 }
