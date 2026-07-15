@@ -1,0 +1,12 @@
+Salary Showdown data harness — seed 310, schema v1.0
+
+[PASS] 1 base regression: tov beta -5.27 (p=0.000), fg beta 239.3 (p=0.011), 3p beta 146.3, payroll t=-0.38, hype t=1.34, R2=0.68
+[PASS] 2 bargain cluster: 15 players bottom-half salary AND top-quartile TrueImpact (need >=15)
+[PASS] 3 trap gap: 13 traps, min(hype pctile - TI pctile) = 75 (need >=40)
+[PASS] 4 fairness sim: k=0.09: modeler top-3 82% (target (0.6, 0.93)), champion 52% (target (0.3, 0.62))
+[PASS] 5 scout-grade strategy: medians: modeler 1 < grade 4 < ppg 16 required; grade in [4,14]
+[PASS] 6 personality null: max |t| across personality dummies = 0.59 (need <2)
+[PASS] 7 market coverage: 0/1000 round-draws under-stocked (need 0)
+[PASS] 8 no dominant style: means[Balanced:39.8, Run:40.6, 3PT:41.7, Inside:41.8, Lockdown:41.1] max|t|=0.33 spread=1.9; best-fit counts[Balanced:11, Run:13, 3PT:26, Inside:19, Lockdown:21]
+[PASS] 9 interactions: RGxTOV -2.56(p=0.039) BARx3P 376(p=0.000) INSxREB 2.34(p=0.003) LOCKxDEF 3.05(p=0.005) mains_flat=True tov_ok=True coverage=True
+[PASS] diag: salary~TI R2: all=0.00, ordinary players=0.48 (market sane for ordinary, blind to traps/defense) | scout_grade~TI r=0.35
