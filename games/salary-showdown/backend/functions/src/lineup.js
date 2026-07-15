@@ -2,7 +2,12 @@ export const PLAYSTYLES = ['Balanced', 'Run & Gun', '3PT Barrage', 'Inside Attac
 const TEMPLATE = { G: 2, W: 2, B: 1 };
 
 export function validateLineup({ lineup, activePids, catalogById }) {
-  const { starters, sixth, bench, playstyle } = lineup;
+  const { starters, sixth, bench, playstyle } = lineup ?? {};
+  // Shape guard: a malformed client payload (non-array starters/bench, or no lineup
+  // object at all) must fail as a named, catchable error — not throw a raw TypeError
+  // (e.g. "starters is not iterable") that the callable would surface as an
+  // uncontrolled 500 instead of invalid-argument.
+  if (!Array.isArray(starters) || !Array.isArray(bench)) throw new Error('BAD_SHAPE');
   if (!PLAYSTYLES.includes(playstyle)) throw new Error('BAD_PLAYSTYLE');
   const all = [...starters, sixth, ...bench].filter((p) => p != null);
   if (new Set(all).size !== all.length) throw new Error('DUPLICATE_PLAYER');

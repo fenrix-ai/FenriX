@@ -42,8 +42,22 @@ describe('market flow (signing, cutting, hardship, non-exclusive shared catalog)
     expect(contract.startRound).toBe(1);
     const team = (await db.doc(`games/${gameId}/teams/${teamA}`).get()).data();
     expect(team.roster.some((c) => c.pid === sharedPid)).toBe(true);
+    // spendLog gains the same contract object as an append-only acquisition record.
+    expect(team.spendLog).toEqual([contract]);
     const marketAfter = (await db.doc(`games/${gameId}/market/1`).get()).data();
     expect(marketAfter.available).toEqual(market.available); // market table is static within a phase
+  });
+
+  it('signPlayer coerces a numeric-string years (\'3\') deterministically, and rejects a fractional one', async () => {
+    const market = (await db.doc(`games/${gameId}/market/1`).get()).data();
+    const pidStringYears = market.available[2];
+    const { contract } = await call(signPlayer, { gameId, pid: pidStringYears, years: '3' }, 'gmA');
+    expect(contract.years).toBe(3);
+    expect(Number.isInteger(contract.years)).toBe(true);
+
+    const pidFractional = market.available[3];
+    await expect(call(signPlayer, { gameId, pid: pidFractional, years: '2.5' }, 'gmA'))
+      .rejects.toThrow('BAD_YEARS');
   });
 
   it('another team CAN sign its own copy of the same pid (non-exclusive)', async () => {

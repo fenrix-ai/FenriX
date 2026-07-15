@@ -61,6 +61,26 @@ describe('lineup flow (submission, Coach-only, auto-repair on LINEUP exit)', () 
     await expect(call(submitLineup, { gameId, lineup }, 'gmA')).rejects.toThrow(/Coach only/i);
   });
 
+  it('rejects a malformed lineup shape through the callable with invalid-argument, not a raw 500', async () => {
+    const team = (await db.doc(`games/${gameId}/teams/${teamA}`).get()).data();
+    const lineup = legalLineupFrom(team.roster.map((c) => c.pid), 'Balanced');
+    const malformed = { ...lineup, starters: 'not-an-array' }; // would crash a naive [...starters] spread
+    await expect(call(submitLineup, { gameId, lineup: malformed }, 'coachA')).rejects.toThrow('BAD_SHAPE');
+    await expect(call(submitLineup, { gameId, lineup: malformed }, 'coachA'))
+      .rejects.toMatchObject({ code: 'invalid-argument' });
+  });
+  it('persists ONLY {starters, sixth, bench, playstyle}, stripping any extra client-supplied keys', async () => {
+    const team = (await db.doc(`games/${gameId}/teams/${teamA}`).get()).data();
+    const lineup = legalLineupFrom(team.roster.map((c) => c.pid), 'Run & Gun');
+    const withExtras = { ...lineup, hacked: true, note: 'not part of the schema' };
+
+    const res = await call(submitLineup, { gameId, lineup: withExtras }, 'coachA');
+    expect(res).toEqual({ ok: true });
+
+    const after = (await db.doc(`games/${gameId}/teams/${teamA}`).get()).data();
+    expect(after.lineup).toEqual(lineup); // exactly the four known fields, nothing extra
+    expect(Object.keys(after.lineup).sort()).toEqual(['bench', 'playstyle', 'sixth', 'starters']);
+  });
   it('rejects an illegal template through the callable (invalid-argument BAD_TEMPLATE)', async () => {
     const team = (await db.doc(`games/${gameId}/teams/${teamA}`).get()).data();
     const lineup = legalLineupFrom(team.roster.map((c) => c.pid), 'Balanced');

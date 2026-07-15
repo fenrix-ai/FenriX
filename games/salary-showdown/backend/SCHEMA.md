@@ -7,7 +7,16 @@ games/{gameId}/players/{uid}          # membership: { teamId, role: GM|Scout|Coa
 games/{gameId}/teams/{teamId}         # PUBLIC team state (rosters are public like real NBA):
   name, wins, losses, pointDiff, pointsFor,
   roster: [{pid, rate, startRound, years, viaAuction, hardship}],
-  deadMoney: [{rate, startRound, endRound}],
+  deadMoney: [{pid, rate, startRound, endRound}],
+  spendLog: [{pid, rate, years, startRound, viaAuction, hardship}]  # append-only ledger: every
+                                      # contract ever acquired (signPlayer incl. re-signs, auction
+                                      # wins, hardship signings) gets pushed here and NEVER removed —
+                                      # cutting a contract removes it from `roster` but not from
+                                      # spendLog, because committed money is never recovered. FINALE's
+                                      # reveal (winsPerDollar.totalSpend = Σ rate×years, and perTeam
+                                      # best/worst signing) reads spendLog, not the live roster, so a
+                                      # cut or expired contract still counts and stays eligible for
+                                      # "worst signing".
   lineup: {starters[5], sixth, bench[], playstyle} | null,
   lineupLockedRound, hardshipUsed: [round]
 games/{gameId}/teams/{teamId}/private/auction    # { bids: { [pid]: {rate, years} } } — Scout writes via callable
@@ -28,13 +37,25 @@ games/{gameId}/unsold/{pid}           # { price } — auction-class player that 
                                       # it inside the signing transaction (doc missing => STAR_TAKEN), so exactly one team
                                       # ever signs the star and later draws no longer include him.
                                       # server-only: never client-accessible, explicit deny-all in rules.
-games/{gameId}/rounds/{r}             # { games: [{home, away, homeScore, awayScore}], awards: {...}, boxCsv: string, standings: [...] }
+games/{gameId}/rounds/{r}             # { games: [{home, away, homeScore, awayScore}], awards: {...}, boxCsv: string,
+                                      #   standings: [{teamId, name, wins, losses, pointDiff, pointsFor, tiebreakCoin, rank}] }
+                                      # tiebreakCoin is the seeded per-round coin-flip value used as the LAST link in the
+                                      # tiebreak chain (wins > pointDiff > pointsFor > tiebreakCoin) — kept on the stored
+                                      # row (not stripped) so the tiebreak is auditable from the round doc itself; team
+                                      # docs (games/{gameId}/teams/{teamId}) are unaffected — only wins/losses/pointDiff/
+                                      # pointsFor roll forward there.
 games/{gameId}/reveal/latest          # written ONLY after round 5 RESULTS (finale payload)
 games/{gameId}/hooklog/{key}          # phase-hook idempotency log; key "{round}-{phase}" (exit) or "enter-{round}-{phase}" (entry): { at: ts }
                                       # server-only: makes advancePhase retries safe (a resolved hook is never re-fired); explicit deny-all in rules
 
 RULES POLICY
 - authenticated members of a game may READ everything under their game EXCEPT teams/*/private/* of other teams, reveal/* before status=finished, and hooklog/*, unsold/* (server-only, always denied).
+- the game's professor (games/{gameId}.professorUid == request.auth.uid) may additionally READ
+  everything under their own game — including OTHER teams' private bid docs (they run the room; the
+  professor panel shows submission status per spec) and reveal/* even before status=finished (they're
+  the one who triggers the finale). hooklog/* and unsold/* stay denied to everyone, professor
+  included — those are pure server-internal scratch data. The professor gets no extra WRITE access:
+  every mutation remains callable-only regardless of role.
 - players/{uid}: membership CREATE is server-only (joinGame callable via Admin SDK); the only client write is updating one's own displayName.
 - ALL other writes: server only (callables use Admin SDK, which bypasses rules).
 - hidden.json / engine_params.json are NOT in Firestore at all.

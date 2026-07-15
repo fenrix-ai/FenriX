@@ -11,7 +11,7 @@ beforeAll(async () => {
   });
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
-    await db.doc('games/g1').set({ status: 'active', phase: 'FREE_AGENCY', round: 1 });
+    await db.doc('games/g1').set({ status: 'active', phase: 'FREE_AGENCY', round: 1, professorUid: 'prof1' });
     await db.doc('games/g1/players/alice').set({ teamId: 't1', role: 'GM', displayName: 'A' });
     await db.doc('games/g1/players/bob').set({ teamId: 't2', role: 'Scout', displayName: 'B' });
     await db.doc('games/g1/teams/t1').set({ name: 'Alpha', wins: 0 });
@@ -71,5 +71,27 @@ describe('firestore rules', () => {
   it('authenticated user cannot create own membership doc directly', async () => {
     const db = env.authenticatedContext('mallory').firestore();
     await assertFails(db.doc('games/g1/players/mallory').set({ teamId: 't1', role: 'GM', displayName: 'M' }));
+  });
+  it('the professor (non-member uid that created the game) reads game doc, a team doc, a private bid doc, and reveal pre-finish', async () => {
+    const db = env.authenticatedContext('prof1').firestore();
+    // prof1 has no games/g1/players/{uid} doc — isMember(g1) is false for them; only
+    // isProfessor(g1) (professorUid == prof1) can be granting these reads.
+    await assertSucceeds(db.doc('games/g1').get());
+    await assertSucceeds(db.doc('games/g1/teams/t1').get());
+    await assertSucceeds(db.doc('games/g1/teams/t2/private/auction').get()); // NOT their own team
+    // g1.status is 'active' (not finished) — the professor bypasses the finished gate.
+    await assertSucceeds(db.doc('games/g1/reveal/latest').get());
+    // professors get no extra WRITE access — everything stays callable-only.
+    await assertFails(db.doc('games/g1/teams/t1').set({ wins: 99 }));
+    await assertFails(db.doc('games/g1').update({ phase: 'RESULTS' }));
+  });
+  it('a random authenticated non-member is still denied everywhere, professor grant or not', async () => {
+    const db = env.authenticatedContext('mallory').firestore();
+    await assertFails(db.doc('games/g1').get());
+    await assertFails(db.doc('games/g1/teams/t1').get());
+    await assertFails(db.doc('games/g1/teams/t1/private/auction').get());
+    await assertFails(db.doc('games/g1/reveal/latest').get());
+    await assertFails(db.doc('games/g1/hooklog/1-FREE_AGENCY').get());
+    await assertFails(db.doc('games/g1/unsold/1004').get());
   });
 });

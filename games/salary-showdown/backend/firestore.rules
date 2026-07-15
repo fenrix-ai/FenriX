@@ -5,39 +5,51 @@ service cloud.firestore {
       return request.auth != null
         && exists(/databases/$(database)/documents/games/$(gameId)/players/$(request.auth.uid));
     }
+    // The professor never holds a players/{uid} membership doc (isMember is false for
+    // them) but runs the room: they need to read everything under their own game —
+    // including other teams' private bids (professor panel shows submission status)
+    // and reveal/* before the game finishes (they're the one who triggers the finale).
+    // No extra WRITE access: every mutation stays callable-only (Admin SDK bypasses
+    // rules), matching the existing write: if false everywhere below.
+    function isProfessor(gameId) {
+      return request.auth != null
+        && get(/databases/$(database)/documents/games/$(gameId)).data.professorUid == request.auth.uid;
+    }
     function myTeam(gameId) {
       return get(/databases/$(database)/documents/games/$(gameId)/players/$(request.auth.uid)).data.teamId;
     }
     match /games/{gameId} {
-      allow read: if isMember(gameId);
+      allow read: if isMember(gameId) || isProfessor(gameId);
       allow write: if false;
 
       match /players/{uid} {
-        allow read: if isMember(gameId);
+        allow read: if isMember(gameId) || isProfessor(gameId);
         allow update: if request.auth != null && request.auth.uid == uid
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName']);
         allow create, delete: if false;
       }
       match /teams/{teamId} {
-        allow read: if isMember(gameId);
+        allow read: if isMember(gameId) || isProfessor(gameId);
         allow write: if false;
         match /private/{doc} {
-          allow read: if isMember(gameId) && myTeam(gameId) == teamId;
+          allow read: if (isMember(gameId) && myTeam(gameId) == teamId) || isProfessor(gameId);
           allow write: if false;
         }
       }
-      match /catalog/{pid}  { allow read: if isMember(gameId); allow write: if false; }
-      match /market/{round} { allow read: if isMember(gameId); allow write: if false; }
-      match /auctions/{round} { allow read: if isMember(gameId); allow write: if false; }
-      match /rounds/{r}     { allow read: if isMember(gameId); allow write: if false; }
+      match /catalog/{pid}  { allow read: if isMember(gameId) || isProfessor(gameId); allow write: if false; }
+      match /market/{round} { allow read: if isMember(gameId) || isProfessor(gameId); allow write: if false; }
+      match /auctions/{round} { allow read: if isMember(gameId) || isProfessor(gameId); allow write: if false; }
+      match /rounds/{r}     { allow read: if isMember(gameId) || isProfessor(gameId); allow write: if false; }
       // server-only idempotency log for phase hooks — never client-accessible
       match /hooklog/{key}  { allow read, write: if false; }
       // server-only auction-resolution scratch data (unsold-star list prices for the
       // FA market draw) — never client-accessible
       match /unsold/{pid}   { allow read, write: if false; }
       match /reveal/{doc} {
-        allow read: if isMember(gameId)
-          && get(/databases/$(database)/documents/games/$(gameId)).data.status == 'finished';
+        // Professor bypasses the finished gate entirely (they trigger the finale and
+        // may need to read reveal/* the instant it's written, in the same call).
+        allow read: if isProfessor(gameId) || (isMember(gameId)
+          && get(/databases/$(database)/documents/games/$(gameId)).data.status == 'finished');
         allow write: if false;
       }
     }

@@ -142,13 +142,15 @@ export function simulateRound({ gameId, round, teams, catalogById }) {
     topScorer: { pid: topScorerRow.player_id, teamId: topScorerRow.teamId, pts: topScorerRow.pts },
     bargain,
   };
-  // standings with full tiebreak chain
+  // standings with full tiebreak chain. tiebreakCoin (the seeded per-round coin flip
+  // used as the last tiebreak) is kept on the STORED standings row — not stripped —
+  // so the tiebreak is auditable from rounds/{r} itself, per spec.
   const coin = makeRng(`${gameId}|standings|${round}`);
   const standings = teams.map((t) => ({ teamId: t.teamId, name: t.name, ...totals[t.teamId],
-                                        coin: coin.next() }))
+                                        tiebreakCoin: coin.next() }))
     .sort((a, b) => b.wins - a.wins || b.pointDiff - a.pointDiff
-                 || b.pointsFor - a.pointsFor || a.coin - b.coin)
-    .map((t, i) => { const { coin: _c, ...rest } = t; return { ...rest, rank: i + 1 }; });
+                 || b.pointsFor - a.pointsFor || a.tiebreakCoin - b.tiebreakCoin)
+    .map((t, i) => ({ ...t, rank: i + 1 }));
   return { games, boxRows, awards, standings };
 }
 

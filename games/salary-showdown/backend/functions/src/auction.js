@@ -6,9 +6,15 @@ export function validateBids({ bids, round, starPids }) {
   for (const [pidStr, b] of Object.entries(bids ?? {})) {
     const pid = Number(pidStr);
     if (!starPids.includes(pid)) throw new Error('NOT_IN_WAVE');
-    if (!Number.isInteger(b.years) || b.years < 1 || b.years > maxYears) throw new Error('BAD_YEARS');
-    if (b.rate < minBid(round) - 1e-9) throw new Error('MIN_BID');
-    if (Math.abs(b.rate * 10 - Math.round(b.rate * 10)) > 1e-6) throw new Error('BID_STEP');
+    // Client-supplied numerics are untrusted: coerce before validating so a NaN/string
+    // payload fails a named check instead of poisoning downstream arithmetic (a NaN
+    // guaranteed-money sort key, e.g., silently breaks resolveAuction's priority order).
+    const rate = Number(b.rate);
+    const years = Number(b.years);
+    if (!Number.isFinite(rate)) throw new Error('BAD_RATE');
+    if (!Number.isInteger(years) || years < 1 || years > maxYears) throw new Error('BAD_YEARS');
+    if (rate < minBid(round) - 1e-9) throw new Error('MIN_BID');
+    if (Math.abs(rate * 10 - Math.round(rate * 10)) > 1e-6) throw new Error('BID_STEP');
   }
 }
 
@@ -18,7 +24,7 @@ export function validateBids({ bids, round, starPids }) {
 // still resolves to { teamId: null } instead of vanishing from the results.
 export function resolveAuction({ bids, starPids, teams, round, seed, catalogById }) {
   const rng = makeRng(`${seed}|auction|${round}`);
-  const teamsAfter = teams.map((t) => ({ ...t, roster: [...t.roster] }));
+  const teamsAfter = teams.map((t) => ({ ...t, roster: [...t.roster], spendLog: [...(t.spendLog ?? [])] }));
   const byTeam = Object.fromEntries(teamsAfter.map((t) => [t.teamId, t]));
   const expanded = bids.map((b) => ({ ...b, guaranteed: Math.round(b.rate * b.years * 10) / 10,
                                       tiebreak: rng.next() }));
@@ -45,6 +51,7 @@ export function resolveAuction({ bids, starPids, teams, round, seed, catalogById
                        viaAuction: true, hardship: false };
     if (!capOkWith(team, contract, CAP, TOTAL_ROUNDS).ok) continue;      // cap skip
     team.roster.push(contract);
+    team.spendLog.push(contract);   // append-only acquisition ledger (Task: dead-money hall of shame)
     sold.add(bid.pid);
     awards.push({ pid: bid.pid, teamId: bid.teamId, rate: bid.rate, years: bid.years,
                   guaranteed: bid.guaranteed });

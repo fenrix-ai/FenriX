@@ -24,6 +24,19 @@ describe('validateLineup', () => {
     const style = { ...legal, playstyle: 'Chaos' };
     expect(() => validateLineup({ lineup: style, activePids: active, catalogById: byId })).toThrow('BAD_PLAYSTYLE');
   });
+  // NaN/type-injection hardening: a malformed client payload must fail as a named,
+  // catchable Error — never a raw TypeError from spreading a non-iterable — so the
+  // submitLineup callable can map it to invalid-argument instead of an uncontrolled 500.
+  it('rejects malformed shapes (non-array starters/bench, missing lineup) with BAD_SHAPE instead of crashing', () => {
+    expect(() => validateLineup({ lineup: { ...legal, starters: 'not-an-array' }, activePids: active, catalogById: byId }))
+      .toThrow('BAD_SHAPE');
+    expect(() => validateLineup({ lineup: { ...legal, bench: { 0: 'x' } }, activePids: active, catalogById: byId }))
+      .toThrow('BAD_SHAPE');
+    expect(() => validateLineup({ lineup: undefined, activePids: active, catalogById: byId }))
+      .toThrow('BAD_SHAPE');
+    expect(() => validateLineup({ lineup: null, activePids: active, catalogById: byId }))
+      .toThrow('BAD_SHAPE');
+  });
 });
 
 describe('autoRepair', () => {

@@ -54,6 +54,9 @@ describe('sim flow (round-robin sim fires on LINEUP -> SIMULATE, rounds/{r} pers
     expect(round.standings).toHaveLength(2);
     expect(round.standings[0].rank).toBe(1);
     expect(round.standings[1].rank).toBe(2);
+    // tiebreakCoin is kept on the STORED standings row (not stripped) so the
+    // per-round seeded tiebreak is auditable from rounds/{r} itself.
+    for (const row of round.standings) expect(typeof row.tiebreakCoin).toBe('number');
 
     const header = round.boxCsv.split('\n')[0].split(',');
     expect(header).toHaveLength(23);

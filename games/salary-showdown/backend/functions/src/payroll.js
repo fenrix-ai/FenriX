@@ -37,7 +37,7 @@ export function cutPlayer(team, pid, currentRound) {
   const endRound = c.startRound + c.years - 1;
   const deadMoney = [...team.deadMoney];
   if (endRound >= currentRound)
-    deadMoney.push({ rate: c.rate, startRound: currentRound, endRound });
+    deadMoney.push({ pid: c.pid, rate: c.rate, startRound: currentRound, endRound });
   return { ...team, roster: team.roster.filter((x) => x.pid !== pid), deadMoney };
 }
 

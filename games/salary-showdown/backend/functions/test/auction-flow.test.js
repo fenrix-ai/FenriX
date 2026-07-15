@@ -106,3 +106,36 @@ describe('auction flow (sealed bids -> resolution)', () => {
     expect(afterUnsold).toEqual(beforeUnsold);
   });
 });
+
+// Regression test: HOOKS['AUCTION'] only honors a private/auction doc whose `round`
+// field matches the round actually being resolved (`if (!priv.exists || priv.data().round
+// !== round) continue;`). A doc left over from a prior round — e.g. a retry/race that
+// wrote a stale `round` — must be ignored entirely, not honored as a phantom bid.
+describe('stale prior-round bid doc is ignored at resolution', () => {
+  it('a private/auction doc with round: r-1 present is ignored — no phantom award, star resolves unsold', async () => {
+    const res = await call(createGame, { teamNames: ['Iota', 'Kappa'] }, 'prof5');
+    const gameId = res.gameId;
+    const teams = await db.collection(`games/${gameId}/teams`).get();
+    const [tA] = teams.docs.map((d) => d.id);
+    await call(joinGame, { joinCode: res.joinCode, teamId: tA, role: 'Scout', displayName: 'S' }, 'scoutStale');
+    await call(startSeason, { gameId }, 'prof5');
+    await call(advancePhase, { gameId }, 'prof5'); // FREE_AGENCY(1) -> AUCTION(1)
+
+    const wave = (await db.doc(`games/${gameId}/auctions/1`).get()).data();
+    const target = wave.stars[0];
+    // A legal-looking, generously high bid — but tagged with round: 0, a PRIOR round,
+    // as if a retry/race left this doc behind before the live round (1) ever bid on
+    // it. This must never be honored.
+    await db.doc(`games/${gameId}/teams/${tA}/private/auction`).set({
+      bids: { [target]: { rate: 50.0, years: 1 } }, round: 0,
+    });
+
+    await call(advancePhase, { gameId }, 'prof5'); // AUCTION(1) -> LINEUP(1): resolves
+
+    const auction = (await db.doc(`games/${gameId}/auctions/1`).get()).data();
+    expect(auction.results.find((a) => a.pid === target)).toMatchObject({ pid: target, teamId: null });
+    const teamADoc = (await db.doc(`games/${gameId}/teams/${tA}`).get()).data();
+    expect(teamADoc.roster.some((c) => c.pid === target)).toBe(false);
+    expect(teamADoc.spendLog.some((c) => c.pid === target)).toBe(false);
+  });
+});

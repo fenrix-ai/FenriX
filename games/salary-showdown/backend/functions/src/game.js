@@ -40,6 +40,11 @@ export const createGame = onCall(async (req) => {
     batch.set(gameRef.collection('teams').doc(), {
       name, wins: 0, losses: 0, pointDiff: 0, pointsFor: 0,
       roster: [], deadMoney: [], lineup: null, lineupLockedRound: 0, hardshipUsed: [],
+      // append-only ledger of every contract ever acquired (signPlayer incl. re-signs,
+      // auction wins, hardship signings) — cuts never remove an entry here, since
+      // committed money is never recovered. FINALE's totalSpend/best-worst signing
+      // read from this, not from the live `roster`.
+      spendLog: [],
     });
   }
   await batch.commit();
@@ -101,10 +106,19 @@ async function runHookOnce(gameId, key, hook, round) {
   await logRef.set({ at: FieldValue.serverTimestamp() });
 }
 
+// expectedPhase/expectedRound are optional double-click guards: when the caller
+// supplies them (Plan 2's client always will), a mismatch against the live game doc
+// means a prior advancePhase call already landed — e.g. two rapid clicks racing each
+// other — so this call is stale and must not also fire the (now wrong) exit/entry
+// hooks. Omitting them preserves old-client/test behavior exactly.
 export const advancePhase = onCall(async (req) => {
-  const { gameId } = req.data;
+  const { gameId, expectedPhase, expectedRound } = req.data;
   const g = await assertProfessor(gameId, req.auth?.uid);
   if (g.status === 'finished') throw new HttpsError('failed-precondition', 'game over');
+  if (g.phase === 'LOBBY') throw new HttpsError('failed-precondition', 'season not started');
+  if ((expectedPhase != null && expectedPhase !== g.phase)
+      || (expectedRound != null && expectedRound !== g.round))
+    throw new HttpsError('failed-precondition', 'PHASE_MISMATCH');
   // resolve the phase we are LEAVING
   await runHookOnce(gameId, `${g.round}-${g.phase}`, HOOKS[g.phase], g.round);
   const nxt = nextPhase(g.round, g.phase, g.config.totalRounds);
@@ -131,7 +145,13 @@ async function memberWithRole(gameId, uid, role) {
 // on the team doc is atomic, so a GM double-submitting the same pid re-reads the
 // freshest roster and trips ALREADY_SIGNED instead of stacking two copies.
 export const signPlayer = onCall(async (req) => {
-  const { gameId, pid, years } = req.data;
+  const { gameId, pid } = req.data;
+  // Coerce at the callable boundary: a numeric-string '3' resolves deterministically
+  // to the integer 3 (validateSigning's Number.isInteger check then applies to a real
+  // number either way); a non-numeric or fractional payload (e.g. '3.5', NaN) becomes
+  // Number.NaN / a non-integer, which validateSigning's existing BAD_YEARS guard
+  // already rejects — no client-supplied non-number ever reaches contract math.
+  const years = Number(req.data.years);
   const { teamId } = await memberWithRole(gameId, req.auth?.uid, 'GM');
   return db().runTransaction(async (tx) => {
     const g = (await tx.get(db().doc(`games/${gameId}`))).data();
@@ -167,7 +187,12 @@ export const signPlayer = onCall(async (req) => {
       }));
     } catch (e) { throw new HttpsError('failed-precondition', e.message); }
     const roster = team.roster.filter((c) => c.pid !== pid).concat(contract);
-    tx.update(teamRef, { roster });
+    // spendLog is append-only: a re-sign REPLACES the pid's entry in `roster` but
+    // still logs a fresh acquisition here — the expired contract's own prior
+    // spendLog entry (from when it was first signed) is untouched, so both the old
+    // and new commitments count toward totalSpend, exactly like a real cap sheet.
+    const spendLog = [...(team.spendLog ?? []), contract];
+    tx.update(teamRef, { roster, spendLog });
     if (unsoldRef) tx.delete(unsoldRef);   // claim the exclusive star
     return { contract };
   });
@@ -225,7 +250,12 @@ export const submitLineup = onCall(async (req) => {
   const team = (await teamRef.get()).data();
   try { validateLineup({ lineup, activePids: activePidsOf(team, g.round), catalogById: CATALOG }); }
   catch (e) { throw new HttpsError('invalid-argument', e.message); }
-  await teamRef.update({ lineup, lineupLockedRound: g.round });
+  // Persist ONLY the known shape — a validated lineup still might carry extra
+  // client-supplied keys (validateLineup destructures what it needs and never
+  // objects to siblings), so strip anything beyond {starters, sixth, bench, playstyle}
+  // before it lands in the public team doc.
+  const { starters, sixth, bench, playstyle } = lineup;
+  await teamRef.update({ lineup: { starters, sixth, bench, playstyle }, lineupLockedRound: g.round });
   return { ok: true };
 });
 
@@ -277,6 +307,9 @@ HOOKS['FREE_AGENCY'] = async (gameId, round) => {   // exit hook: hardship
       if ((cur.hardshipUsed ?? []).includes(round)) return;
       tx.update(ref, {
         roster: [...cur.roster, ...f.signings],
+        // f.signings entries already match the spendLog contract shape
+        // ({pid, rate, years, startRound, viaAuction, hardship}) — log them verbatim.
+        spendLog: [...(cur.spendLog ?? []), ...f.signings],
         hardshipUsed: [...(cur.hardshipUsed ?? []), round],
       });
     });
@@ -304,14 +337,19 @@ HOOKS['AUCTION'] = async (gameId, round) => {   // exit hook: resolve sealed bid
   for (const t of teams) {
     const priv = await db().doc(`games/${gameId}/teams/${t.teamId}/private/auction`).get();
     if (!priv.exists || priv.data().round !== round) continue;
+    // Defense in depth: submitBids already runs these through validateBids (which
+    // itself coerces + rejects non-finite/non-integer numerics) before persisting the
+    // private bid doc, but coerce again here so resolveAuction's sort/cap arithmetic
+    // never sees a raw client-controlled string even if that doc were ever written
+    // some other way.
     for (const [pid, b] of Object.entries(priv.data().bids ?? {}))
-      bids.push({ teamId: t.teamId, pid: Number(pid), rate: b.rate, years: b.years });
+      bids.push({ teamId: t.teamId, pid: Number(pid), rate: Number(b.rate), years: Number(b.years) });
   }
   const { awards, teamsAfter } = resolveAuction({ bids, starPids: wave.stars, teams,
     round, seed: gameId, catalogById: CATALOG });
   const batch = db().batch();
   for (const t of teamsAfter)
-    batch.update(db().doc(`games/${gameId}/teams/${t.teamId}`), { roster: t.roster });
+    batch.update(db().doc(`games/${gameId}/teams/${t.teamId}`), { roster: t.roster, spendLog: t.spendLog });
   batch.update(auctionRef, { results: awards });
   // Unsold stars fall through to next round's FA rotation. enter:FREE_AGENCY (above)
   // reads games/{gameId}/unsold/{pid} = { price } to build unsoldPrices/extraPids —
@@ -423,12 +461,18 @@ HOOKS['enter:FINALE'] = async (gameId) => {
   const perTeam = [], winsPerDollar = [];
   for (const t of teamDocs.docs) {
     const team = t.data();
-    const vals = team.roster.map((c) => ({
+    // spendLog, not roster: roster only holds contracts still active/uncut, so a cut
+    // or naturally-expired signing would silently drop out of both best/worst-signing
+    // contention and totalSpend. spendLog is the append-only ledger of EVERY contract
+    // ever acquired, so a bad cut signing stays eligible for "worst", and totalSpend
+    // counts the full committed rate*years of every contract — including one that was
+    // later cut — because that money is never recovered. That is the game's lesson.
+    const spendLog = team.spendLog ?? [];
+    const vals = spendLog.map((c) => ({
       pid: c.pid, valuePerDollar: Math.round((hiddenData[c.pid].ti / Math.max(2, c.rate)) * 100) / 100 }));
     vals.sort((a, b) => b.valuePerDollar - a.valuePerDollar);
     perTeam.push({ teamId: t.id, bestSigning: vals[0] ?? null, worstSigning: vals.at(-1) ?? null });
-    const spend = team.roster.reduce((s, c) => s + c.rate * c.years, 0)
-      + team.deadMoney.reduce((s, d) => s + d.rate * (d.endRound - d.startRound + 1), 0);
+    const spend = spendLog.reduce((s, c) => s + c.rate * c.years, 0);
     winsPerDollar.push({ teamId: t.id, wins: team.wins, totalSpend: Math.round(spend * 10) / 10,
       ratio: Math.round((team.wins / Math.max(1, spend)) * 1000) / 1000 });
   }
@@ -441,7 +485,7 @@ HOOKS['enter:FINALE'] = async (gameId) => {
       // against. Documented in the Produces interface; the brief's Step 3 code
       // sample omitted it, so this is filled from the same params engine.js already
       // treats as the single source of truth for the TrueImpact formula.
-      tovPerGame: engineParams.ti_weights.turnover,
+      turnoverWeight: engineParams.ti_weights.turnover,
       defenseVisible: true,
     },
   });

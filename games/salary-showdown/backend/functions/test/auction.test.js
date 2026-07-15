@@ -18,6 +18,29 @@ describe('validateBids', () => {
       .toThrow('BAD_YEARS');
     validateBids({ bids: { [wave1[0]]: { rate: 5.0, years: 3 } }, round: 1, starPids: wave1 });
   });
+
+  // NaN/type-injection hardening: client-supplied bid numerics are coerced with
+  // Number() before validation, so a non-finite rate fails a named check instead of
+  // poisoning resolveAuction's sort/cap arithmetic downstream (a NaN guaranteed-money
+  // sort key would silently scramble priority order).
+  it('rejects a non-finite rate (NaN, or a non-numeric string) with BAD_RATE', () => {
+    expect(() => validateBids({ bids: { [wave1[0]]: { rate: NaN, years: 2 } }, round: 1, starPids: wave1 }))
+      .toThrow('BAD_RATE');
+    expect(() => validateBids({ bids: { [wave1[0]]: { rate: 'not-a-number', years: 2 } }, round: 1, starPids: wave1 }))
+      .toThrow('BAD_RATE');
+    expect(() => validateBids({ bids: { [wave1[0]]: { rate: undefined, years: 2 } }, round: 1, starPids: wave1 }))
+      .toThrow('BAD_RATE');
+  });
+  it('coerces a numeric-string rate and validates it normally instead of crashing', () => {
+    // '5.0' -> Number('5.0') = 5.0, a legal round-1 bid (minBid(1) = 2.0, on-step).
+    validateBids({ bids: { [wave1[0]]: { rate: '5.0', years: 2 } }, round: 1, starPids: wave1 });
+  });
+  it("coerces a string years value ('3') deterministically to the integer 3", () => {
+    validateBids({ bids: { [wave1[0]]: { rate: 5.0, years: '3' } }, round: 1, starPids: wave1 });
+    // a fractional numeric string is still a non-integer once coerced -> BAD_YEARS
+    expect(() => validateBids({ bids: { [wave1[0]]: { rate: 5.0, years: '3.5' } }, round: 1, starPids: wave1 }))
+      .toThrow('BAD_YEARS');
+  });
 });
 
 describe('resolveAuction', () => {
@@ -31,6 +54,12 @@ describe('resolveAuction', () => {
     expect(awards[0]).toMatchObject({ pid: wave1[0], teamId: 'a', guaranteed: 24 });
     expect(teamsAfter.find((t) => t.teamId === 'a').roster).toHaveLength(1);
     expect(teamsAfter.find((t) => t.teamId === 'b').roster).toHaveLength(0);
+    // spendLog (append-only acquisition ledger): the winning contract is logged
+    // alongside the roster push; the losing team's spendLog stays empty.
+    expect(teamsAfter.find((t) => t.teamId === 'a').spendLog).toEqual([
+      { pid: wave1[0], rate: 8.0, startRound: 1, years: 3, viaAuction: true, hardship: false },
+    ]);
+    expect(teamsAfter.find((t) => t.teamId === 'b').spendLog).toEqual([]);
   });
   it('skips winners who fail cap or roster and falls to next bid', () => {
     const broke = mkTeam('a', [{ pid: 1, rate: 95.0, startRound: 1, years: 5 }]);

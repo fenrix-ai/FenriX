@@ -50,6 +50,34 @@ describe('lifecycle', () => {
     const g = (await db.doc(`games/${gameId}`).get()).data();
     expect(g).toMatchObject({ round: 1, phase: 'AUCTION' });
   });
+  // Rejection-only: deliberately does NOT drive a successful advance here, so it
+  // can't disturb the hooklog state the next two tests depend on (they assert
+  // exactly which invocation first writes hooklog/1-AUCTION). The "matching
+  // expectedPhase/expectedRound still succeeds" half is covered inside the
+  // "records a completed exit hook" test below instead.
+  it('advancePhase rejects an expectedPhase/expectedRound mismatch (double-click guard) without mutating state', async () => {
+    const before = (await db.doc(`games/${gameId}`).get()).data();
+    expect(before).toMatchObject({ round: 1, phase: 'AUCTION' }); // sanity: prior test's end state
+    // stale expectedPhase: caller thinks it's still FREE_AGENCY (a prior click already advanced it)
+    await expect(call(advancePhase, { gameId, expectedPhase: 'FREE_AGENCY', expectedRound: 1 }, 'prof'))
+      .rejects.toMatchObject({ code: 'failed-precondition', message: expect.stringContaining('PHASE_MISMATCH') });
+    // stale expectedRound, correct phase
+    await expect(call(advancePhase, { gameId, expectedPhase: 'AUCTION', expectedRound: 99 }, 'prof'))
+      .rejects.toMatchObject({ code: 'failed-precondition', message: expect.stringContaining('PHASE_MISMATCH') });
+    // the game doc must be untouched by the rejected attempts (no hook fired, no phase moved)
+    const after = (await db.doc(`games/${gameId}`).get()).data();
+    expect(after).toMatchObject({ round: 1, phase: 'AUCTION' });
+    const log = await db.doc(`games/${gameId}/hooklog/1-AUCTION`).get();
+    expect(log.exists).toBe(false);
+  });
+  it('advancePhase throws failed-precondition "season not started" while phase is LOBBY, instead of an internal error', async () => {
+    // Independent game, never past startSeason: phase is still LOBBY.
+    const res = await call(createGame, { teamNames: ['Lobby1', 'Lobby2'] }, 'prof');
+    await expect(call(advancePhase, { gameId: res.gameId }, 'prof'))
+      .rejects.toMatchObject({ code: 'failed-precondition', message: expect.stringContaining('season not started') });
+    const g = (await db.doc(`games/${res.gameId}`).get()).data();
+    expect(g).toMatchObject({ status: 'lobby', phase: 'LOBBY', round: 0 }); // untouched
+  });
   it('advancePhase skips an exit hook already recorded in hooklog (retry-safe)', async () => {
     // Simulate a retry: a prior attempt resolved FREE_AGENCY's exit hook (logged),
     // then died before the game doc updated — the doc still shows FREE_AGENCY.
@@ -67,12 +95,14 @@ describe('lifecycle', () => {
     const g = (await db.doc(`games/${gameId}`).get()).data();
     expect(g).toMatchObject({ round: 1, phase: 'AUCTION' });
   });
-  it('advancePhase records a completed exit hook in hooklog', async () => {
+  it('advancePhase records a completed exit hook in hooklog (and a matching expectedPhase/expectedRound does not block it)', async () => {
     // Positive half of the guard: first run fires the hook and writes the log.
+    // Also supplies matching expectedPhase/expectedRound — the double-click guard
+    // must be a no-op (not a blocker) when the caller's expectation is correct.
     let probeRuns = 0;
     HOOKS.AUCTION = () => { probeRuns += 1; };
     try {
-      const res = await call(advancePhase, { gameId }, 'prof'); // AUCTION -> LINEUP
+      const res = await call(advancePhase, { gameId, expectedPhase: 'AUCTION', expectedRound: 1 }, 'prof'); // AUCTION -> LINEUP
       expect(res).toEqual({ round: 1, phase: 'LINEUP' });
       expect(probeRuns).toBe(1);
       const log = await db.doc(`games/${gameId}/hooklog/1-AUCTION`).get();

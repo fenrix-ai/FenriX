@@ -40,6 +40,12 @@ describe('simulateRound', () => {
     expect(wins).toBe(6);
     expect(out.standings[0].rank).toBe(1);
   });
+  it('keeps the seeded tiebreakCoin value on each stored standings row (audit trail, not stripped)', () => {
+    for (const row of out.standings) expect(typeof row.tiebreakCoin).toBe('number');
+    // deterministic: re-running with the same seed reproduces the same coin values
+    const again = simulateRound({ gameId: 'g', round: 1, teams, catalogById: byId });
+    expect(again.standings.map((r) => r.tiebreakCoin)).toEqual(out.standings.map((r) => r.tiebreakCoin));
+  });
   it('emits the 23-column feed and awards', () => {
     const csv = toCsv(out.boxRows);
     expect(csv.split('\n')[0].split(',')).toHaveLength(23);

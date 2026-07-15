@@ -34,10 +34,10 @@ describe('payroll timeline', () => {
     expect(payrollAt(team, 2)).toBe(15.0);
     expect(payrollAt(team, 4)).toBe(0.0);
   });
-  it('cut moves the contract to dead money for cut round..end', () => {
+  it('cut moves the contract to dead money for cut round..end, tagged with the cut pid', () => {
     const after = cutPlayer(team, 1, 2);
     expect(after.roster.map((c) => c.pid)).toEqual([2]);
-    expect(after.deadMoney).toEqual([{ rate: 10.0, startRound: 2, endRound: 3 }]);
+    expect(after.deadMoney).toEqual([{ pid: 1, rate: 10.0, startRound: 2, endRound: 3 }]);
     expect(payrollAt(after, 2)).toBe(15.0);   // unchanged: dead money still owed
     expect(payrollAt(after, 3)).toBe(15.0);
   });

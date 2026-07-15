@@ -19,7 +19,7 @@ This boots the Emulator UI at `http://127.0.0.1:4100`, Functions at
 running for manual poking; `Ctrl-C` to stop.
 
 Run the test suite headless against a fresh Firestore emulator (this is what CI /
-you should run before every commit — 16 files, 88 tests):
+you should run before every commit — 16 files, 102 tests):
 
 ```bash
 cd games/salary-showdown/backend && firebase emulators:exec --project salary-showdown-dev --only firestore "cd functions && npx vitest run"
