@@ -114,6 +114,13 @@ describe('reveal: spend accounting survives a cut (dead-money hall of shame)', (
     expect(contract.years).toBe(3);
     const { deadMoney } = await call(cutRosterPlayer, { gameId, pid }, 'gmA');
     expect(deadMoney.some((d) => d.pid === pid)).toBe(true); // deadMoney entries carry pid
+    // Cut removes it from the live roster immediately (checked right here, NOT after
+    // driving to FINALE below — FA is non-exclusive and this pid is no longer
+    // "owned" post-cut, so a LATER round's hardship autofill could legitimately
+    // re-sign this same team its own fresh copy of it before the game ends; that
+    // would be correct game behavior, not something this test should forbid).
+    const justAfterCut = (await db.doc(`games/${gameId}/teams/${teamA}`).get()).data();
+    expect(justAfterCut.roster.some((c) => c.pid === pid)).toBe(false);
 
     // Drive to round 5 FINALE purely via advancePhase (hardship + auto-repair carry
     // both teams the rest of the way, exactly like the passive-team test above).
@@ -127,11 +134,10 @@ describe('reveal: spend accounting survives a cut (dead-money hall of shame)', (
     }
 
     const teamADoc = (await db.doc(`games/${gameId}/teams/${teamA}`).get()).data();
-    // the cut contract's own spendLog entry is still present (append-only ledger)
+    // the cut contract's own spendLog entry is still present (append-only ledger),
+    // regardless of anything hardship did with this pid in a later round.
     const cutEntry = teamADoc.spendLog.find((c) => c.pid === pid);
     expect(cutEntry).toMatchObject({ pid, rate: contract.rate, years: 3 });
-    // and it is no longer on the live roster (that's what "cut" means)
-    expect(teamADoc.roster.some((c) => c.pid === pid)).toBe(false);
 
     const expectedSpend = Math.round(
       teamADoc.spendLog.reduce((s, c) => s + c.rate * c.years, 0) * 10) / 10;
