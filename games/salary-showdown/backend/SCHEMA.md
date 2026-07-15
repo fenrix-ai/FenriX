@@ -13,6 +13,10 @@ games/{gameId}/teams/{teamId}         # PUBLIC team state (rosters are public li
 games/{gameId}/teams/{teamId}/private/auction    # { bids: { [pid]: {rate, years} } } — Scout writes via callable
 games/{gameId}/catalog/{pid}          # public player card (26 CSV cols), seeded at createGame
 games/{gameId}/market/{round}         # { available: [pid], absentCounts: {pid: n}, unsoldPrices: {pid: rate} }  (public, server-written)
+                                      # FA is NON-EXCLUSIVE (spec §4.2): available is a shared catalog of signable COPIES —
+                                      # signing never removes a pid, and any number of teams may sign the same player;
+                                      # only auction stars are exclusive. Draws run over the full FA catalog regardless
+                                      # of contract status (a team re-upping its own active copy trips ALREADY_SIGNED).
                                       # absentCounts tracks consecutive rounds each FA pid was NOT drawn (drawMarket forces
                                       # a pid back in once absent >=2 rounds running); unsoldPrices carries list prices for
                                       # unsold auction stars pulled in from games/{gameId}/unsold (see below).

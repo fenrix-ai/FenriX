@@ -109,13 +109,13 @@ describe('runHardship', () => {
     const res = runHardship({ teams: [ok], faPool: fa, round: 2, catalogById: byId });
     expect(res).toEqual([]);
   });
-  it('never double-assigns a pid across two teams stranded in the same call', () => {
+  it('hands two identically stranded teams copies of the same players (non-exclusive FA, spec §4.2)', () => {
     const stranded1 = { teamId: 't1', roster: [], deadMoney: [] };
     const stranded2 = { teamId: 't2', roster: [], deadMoney: [] };
     const fixes = runHardship({ teams: [stranded1, stranded2], faPool: fa, round: 2, catalogById: byId });
     expect(fixes.length).toBe(2);
-    const pids1 = fixes[0].signings.map((c) => c.pid);
-    const pids2 = fixes[1].signings.map((c) => c.pid);
-    expect(pids1.filter((pid) => pids2.includes(pid))).toEqual([]);
+    // identical needs against the shared catalog -> identical cheapest-legal picks;
+    // each team gets its own independent copy of the same players.
+    expect(fixes[1].signings.map((c) => c.pid)).toEqual(fixes[0].signings.map((c) => c.pid));
   });
 });

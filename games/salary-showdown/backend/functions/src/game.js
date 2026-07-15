@@ -72,8 +72,8 @@ export const startSeason = onCall(async (req) => {
   const { gameId } = req.data;
   const g = await assertProfessor(gameId, req.auth?.uid);
   if (g.status !== 'lobby') throw new HttpsError('failed-precondition', 'already started');
-  // round-1 market draw (75% of FA pool, seeded, identical for all teams; nobody has
-  // signed anything yet so the pool needs no signed-pid filtering here).
+  // round-1 market draw (75% of the FA catalog, seeded, identical for all teams;
+  // non-exclusive per spec §4.2 — the draw is a shared catalog of signable copies).
   const d = drawMarket({ gameId, round: 1, faPool: FA_POOL, absentCounts: {}, extraPids: [] });
   const batch = db().batch();
   batch.set(db().doc(`games/${gameId}/market/1`),
@@ -119,13 +119,12 @@ async function memberWithRole(gameId, uid, role) {
   return m.data();
 }
 
-// A pid signed on the market is a one-shot resource shared by every team in the
-// game: the FA pool a team can browse is whatever's left in market/{round}.available
-// once every OTHER team's signings this round are subtracted out. We enforce that by
-// removing the pid from market/{round}.available in the SAME transaction as the
-// roster write, so two GMs racing for the same free agent contend on that one shared
-// doc — Firestore serializes the transactions, and the loser re-reads a market that
-// no longer lists the pid and fails with NOT_IN_MARKET (no new error code needed).
+// Free agency is NON-EXCLUSIVE (spec §4.2): the FA pool is a shared catalog — any
+// number of teams may sign their own independent copy of the same player, and
+// signing never removes a pid from market/{round}.available. Only AUCTION stars are
+// exclusive. The transaction still matters within a single team: read/validate/write
+// on the team doc is atomic, so a GM double-submitting the same pid re-reads the
+// freshest roster and trips ALREADY_SIGNED instead of stacking two copies.
 export const signPlayer = onCall(async (req) => {
   const { gameId, pid, years } = req.data;
   const { teamId } = await memberWithRole(gameId, req.auth?.uid, 'GM');
@@ -152,7 +151,6 @@ export const signPlayer = onCall(async (req) => {
     } catch (e) { throw new HttpsError('failed-precondition', e.message); }
     const roster = team.roster.filter((c) => c.pid !== pid).concat(contract);
     tx.update(teamRef, { roster });
-    if (!isResign) tx.update(marketRef, { available: market.available.filter((x) => x !== pid) });
     return { contract };
   });
 });
@@ -176,20 +174,6 @@ export const cutRosterPlayer = onCall(async (req) => {
 
 // -------- phase hooks
 
-// A signed pid is off the free-agent pool for every round its contract covers —
-// drawMarket itself has no notion of who's under contract (it's a pure function
-// over the FA catalog), so the caller (here) is responsible for excluding anyone
-// currently rostered before the pool is drawn from. Round 1 needs no such filter
-// (nobody has signed anything yet); startSeason draws it directly.
-async function signedPidSet(gameId, round) {
-  const teams = await db().collection(`games/${gameId}/teams`).get();
-  const signed = new Set();
-  for (const t of teams.docs)
-    for (const c of t.data().roster ?? [])
-      if (c.startRound <= round && round <= c.startRound + c.years - 1) signed.add(c.pid);
-  return signed;
-}
-
 HOOKS['enter:FREE_AGENCY'] = async (gameId, round) => {
   if (round === 1) return; // startSeason already drew round 1
   const prev = (await db().doc(`games/${gameId}/market/${round - 1}`).get()).data();
@@ -204,10 +188,12 @@ HOOKS['enter:FREE_AGENCY'] = async (gameId, round) => {
     unsoldPids.push(pid);
     unsoldPrices[pid] = doc.data().price;
   }
-  const signed = await signedPidSet(gameId, round);
-  const pool = FA_POOL.filter((p) => !signed.has(p.pid));
-  const extraPids = unsoldPids.filter((pid) => !signed.has(pid));
-  const d = drawMarket({ gameId, round, faPool: pool, absentCounts: prev?.absentCounts ?? {}, extraPids });
+  // Non-exclusive FA (spec §4.2): the draw always runs over the FULL catalog —
+  // players under contract to some team still appear (other teams may sign their
+  // own copies). A team re-upping its own still-active copy is what ALREADY_SIGNED
+  // blocks at signing time; the draw itself never filters by contract status.
+  const d = drawMarket({ gameId, round, faPool: FA_POOL,
+    absentCounts: prev?.absentCounts ?? {}, extraPids: unsoldPids });
   await db().doc(`games/${gameId}/market/${round}`)
     .set({ available: d.available, absentCounts: d.absentCounts, unsoldPrices });
 };
@@ -222,13 +208,11 @@ HOOKS['FREE_AGENCY'] = async (gameId, round) => {   // exit hook: hardship
   const teams = teamsSnap.docs
     .map((t) => ({ teamId: t.id, ...t.data() }))
     .filter((t) => !(t.hardshipUsed ?? []).includes(round));
-  // runHardship only excludes pids a team already owns (per-team `owned`), not pids
-  // signed to OTHER teams — so the pool handed in must already have every currently-
-  // rostered pid stripped out, or two teams needing hardship in the same round could
-  // both be handed the same "free" agent who is in fact on a rival roster.
-  const signed = await signedPidSet(gameId, round);
-  const pool = FA_POOL.filter((p) => !signed.has(p.pid));
-  const fixes = runHardship({ teams, faPool: pool, round, catalogById: CATALOG });
+  // Non-exclusive FA (spec §4.2): the full catalog is the hardship pool too — two
+  // stranded teams may each receive their own copy of the same cheap player.
+  // runHardship's per-team `owned` exclusion still stops a single team from holding
+  // two copies of one player.
+  const fixes = runHardship({ teams, faPool: FA_POOL, round, catalogById: CATALOG });
   for (const f of fixes) {
     const ref = db().doc(`games/${gameId}/teams/${f.teamId}`);
     await db().runTransaction(async (tx) => {

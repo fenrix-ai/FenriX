@@ -51,23 +51,24 @@ function activeByPos(team, round, catalogById) {
 // Depth bar is intentionally stricter than the 2G/2W/1B starting-five minimum
 // (LINEUP_NEED): 3G/3W/2B on an 8-man roster guarantees a bench replacement is
 // available at every position, not just exactly enough bodies for a starting five.
+// Non-exclusive FA (spec §4.2): two stranded teams may each receive their own copy
+// of the same cheap player; the per-team `owned` exclusion only stops a single team
+// from holding two copies of one player.
 export function runHardship({ teams, faPool, round, catalogById }) {
   const out = [];
-  const claimed = new Set();   // prevents two teams stranded in the same call from getting the same pid
   for (const team of teams) {
     const { counts, total } = activeByPos(team, round, catalogById);
     const deficits = { G: Math.max(0, 3 - counts.G), W: Math.max(0, 3 - counts.W), B: Math.max(0, 2 - counts.B) };
     let fill = Math.max(8 - total, deficits.G + deficits.W + deficits.B);
     if (fill <= 0) continue;
     const owned = new Set(team.roster.map((c) => c.pid));
-    const cheap = [...faPool].filter((p) => !owned.has(p.pid) && !claimed.has(p.pid))
+    const cheap = [...faPool].filter((p) => !owned.has(p.pid))
       .sort((a, b) => +a.salary_per_round - +b.salary_per_round);
     const signings = [];
     const take = (pred) => {
       const i = cheap.findIndex(pred);
       if (i === -1) return false;
       const p = cheap.splice(i, 1)[0];
-      claimed.add(p.pid);
       signings.push({ pid: p.pid, rate: askPrice(+p.salary_per_round, round), startRound: round,
                       years: 1, viaAuction: false, hardship: true });   // cap-exempt by rule
       return true;

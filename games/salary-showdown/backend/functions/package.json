@@ -4,7 +4,7 @@
   "engines": { "node": "20" },
   "scripts": {
     "test": "vitest run",
-    "test:unit": "vitest run --exclude '**/{rules,lifecycle,smoke}.test.js'",
+    "test:unit": "vitest run --exclude '**/{rules,lifecycle,smoke,market-flow}.test.js'",
     "emu": "cd .. && firebase emulators:start --project salary-showdown-dev"
   },
   "dependencies": {
