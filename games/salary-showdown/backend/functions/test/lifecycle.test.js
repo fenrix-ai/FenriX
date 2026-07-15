@@ -9,7 +9,7 @@ const t = fft({ projectId: 'salary-showdown-dev' });
 initializeApp({ projectId: 'salary-showdown-dev' });
 const db = getFirestore();
 
-const { createGame, joinGame, startSeason } = await import('../src/game.js');
+const { createGame, joinGame, startSeason, advancePhase } = await import('../src/game.js');
 const call = (fn, data, uid) => t.wrap(fn)({ data, auth: { uid, token: {} } });
 
 describe('lifecycle', () => {
@@ -41,5 +41,12 @@ describe('lifecycle', () => {
     expect(g).toMatchObject({ status: 'active', round: 1, phase: 'FREE_AGENCY' });
     const market = (await db.doc(`games/${gameId}/market/1`).get()).data();
     expect(market.available.length).toBeGreaterThan(100);
+  });
+  it('advancePhase is professor-only and moves FREE_AGENCY to AUCTION', async () => {
+    await expect(call(advancePhase, { gameId }, 'u1')).rejects.toThrow(/professor/i);
+    const res = await call(advancePhase, { gameId }, 'prof');
+    expect(res).toEqual({ round: 1, phase: 'AUCTION' });
+    const g = (await db.doc(`games/${gameId}`).get()).data();
+    expect(g).toMatchObject({ round: 1, phase: 'AUCTION' });
   });
 });

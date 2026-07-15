@@ -2,6 +2,7 @@ import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import players from './data/players.json' with { type: 'json' };
 import { makeRng } from './rng.js';
+import { nextPhase, HOOKS } from './phases.js';
 
 const ROLES = ['GM', 'Scout', 'Coach'];
 const db = () => getFirestore();
@@ -79,4 +80,19 @@ export const startSeason = onCall(async (req) => {
   batch.update(db().doc(`games/${gameId}`), { status: 'active', round: 1, phase: 'FREE_AGENCY' });
   await batch.commit();
   return { phase: 'FREE_AGENCY' };
+});
+
+export const advancePhase = onCall(async (req) => {
+  const { gameId } = req.data;
+  const g = await assertProfessor(gameId, req.auth?.uid);
+  if (g.status === 'finished') throw new HttpsError('failed-precondition', 'game over');
+  const hook = HOOKS[g.phase];
+  if (hook) await hook(gameId, g.round);          // resolve the phase we are LEAVING
+  const nxt = nextPhase(g.round, g.phase, g.config.totalRounds);
+  const update = { round: nxt.round, phase: nxt.phase, timerEndsAt: null };
+  if (nxt.phase === 'FINALE') update.status = 'finished';
+  const entry = HOOKS[`enter:${nxt.phase}`];
+  if (entry) await entry(gameId, nxt.round);      // e.g. market draw on FREE_AGENCY entry
+  await db().doc(`games/${gameId}`).update(update);
+  return nxt;
 });
