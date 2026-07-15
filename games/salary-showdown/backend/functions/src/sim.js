@@ -18,13 +18,28 @@ function playerSlots(lineup) {
   return out;
 }
 
+// Largest-remainder apportionment: scale the tier quotas to a 240 total, floor each,
+// then hand the leftover minutes to the largest fractional remainders (slot order
+// breaks ties — deterministic). Independent per-slot rounding would land on 238 for
+// the standard 8-man rotation (5x33 + 24 + 2x15 scaled by 240/219); this pins every
+// team's box minutes to exactly 240.
+function apportionMins(rawMins, total = 240) {
+  const scale = total / rawMins.reduce((a, b) => a + b, 0);
+  const quotas = rawMins.map((m) => m * scale);
+  const mins = quotas.map(Math.floor);
+  let left = total - mins.reduce((a, b) => a + b, 0);
+  const order = [...quotas.keys()].sort(
+    (a, b) => (quotas[b] - mins[b]) - (quotas[a] - mins[a]) || a - b);
+  for (const idx of order.slice(0, left)) mins[idx] += 1;
+  return mins;
+}
+
 function teamBox(rng, lineup, pace) {
   const slots = playerSlots(lineup);
-  const rawMins = slots.map(([, tier]) => TIER_MINS[tier]);
-  const scale = 240 / rawMins.reduce((a, b) => a + b, 0);
+  const minsBySlot = apportionMins(slots.map(([, tier]) => TIER_MINS[tier]));
   return slots.map(([pid, tier], i) => {
     const e = hidden[pid].exp;
-    const mins = Math.round(rawMins[i] * scale);
+    const mins = minsBySlot[i];
     const mf = Math.min(1.6, Math.max(0.5, mins / e.mins));
     const fga = Math.max(1, Math.round(e.fga * pace * mf + rng.normal(0, 1.1)));
     const fga3 = Math.min(fga, Math.round(fga * e.fga3_share));
@@ -93,10 +108,12 @@ export function simulateRound({ gameId, round, teams, catalogById }) {
         rebounds: r.rebounds, assists: r.assists, steals: r.steals, blocks: r.blocks,
         turnovers: r.turnovers, playstyle: team.lineup.playstyle,
         // internal-only: NOT part of FEED_COLS, so toCsv (which projects onto
-        // FEED_COLS explicitly) never emits it. Carried so award attribution below
-        // can resolve teamId directly instead of reverse-looking-up by team NAME —
-        // createGame never enforces name uniqueness, so two same-named teams in one
-        // game would otherwise collide in a name->teamId map and misattribute awards.
+        // FEED_COLS explicitly) never emits it. Carried so (a) award attribution
+        // below can resolve teamId directly instead of reverse-looking-up by team
+        // NAME — createGame never enforces name uniqueness, so two same-named teams
+        // would otherwise collide in a name->teamId map — and (b) the bargain
+        // aggregation can key rows per ROSTERED COPY (teamId|player_id), which
+        // non-exclusive free agency requires.
         teamId: team.teamId });
     };
     emit(boxA, A, B, as, bs); emit(boxB, B, A, bs, as);
@@ -106,11 +123,15 @@ export function simulateRound({ gameId, round, teams, catalogById }) {
                           + 3 * r.blocks - 2.5 * r.turnovers;
   const best = boxRows.reduce((a, b) => (gamescore(a) >= gamescore(b) ? a : b));
   const topScorerRow = boxRows.reduce((a, b) => (a.pts >= b.pts ? a : b));
-  const byPlayer = {};
-  for (const r of boxRows) (byPlayer[r.player_id] ??= []).push(r);
+  // Keyed by teamId|player_id, NOT player_id alone: free agency is non-exclusive
+  // (spec §4.2/§7.2), so two teams can roster independent copies of the same pid in
+  // the same round, and awards are computed over rostered copies — each copy's
+  // bargain math must see only its own team's rows, never the other copy's.
+  const byCopy = {};
+  for (const r of boxRows) (byCopy[`${r.teamId}|${r.player_id}`] ??= []).push(r);
   let bargain = null;
   for (const t of teams) for (const c of t.roster) {
-    const rows = byPlayer[c.pid]; if (!rows) continue;
+    const rows = byCopy[`${t.teamId}|${c.pid}`]; if (!rows) continue;
     const perDollar = rows.reduce((s, r) => s + gamescore(r), 0) / Math.max(2, c.rate);
     if (!bargain || perDollar > bargain.perDollar)
       bargain = { pid: c.pid, teamId: t.teamId, perDollar: Math.round(perDollar * 100) / 100 };
