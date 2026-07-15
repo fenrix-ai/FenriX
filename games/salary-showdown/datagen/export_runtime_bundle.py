@@ -14,6 +14,7 @@ import csv
 import json
 import os
 import subprocess
+from types import SimpleNamespace
 
 import numpy as np
 
@@ -101,6 +102,19 @@ def main():
     json.dump(params, open(os.path.join(DATA_OUT, "engine_params.json"), "w"), indent=1)
 
     # ---- parity fixture: 200 random legal lineups x 5 styles, 100 win-prob pairs
+    #
+    # IMPORTANT: team_strength() for the fixture must be computed from the SAME rounded
+    # values that ship in hidden.json (ti/ti_raw/comps to 6dp, attrs to 3dp) — not from the
+    # full-precision in-memory Player objects. The JS port can only ever read hidden.json,
+    # so a fixture baked from unrounded floats is off by ~1e-5 (rounding error amplified
+    # through the tier/scoring/style-scale weights) and can never be matched to 1e-9 by any
+    # correct port. (Discovered during Task 4 parity debugging: the JS port reproduced the
+    # rounded-input recompute bit-for-bit, proving the fixture — not the port — was wrong.)
+    def hidden_view(pid):
+        h = hidden[str(pid)]
+        return SimpleNamespace(pid=pid, position=h["position"], ti=h["ti"], ti_raw=h["ti_raw"],
+                                comps=h["comps"], attrs=h["attrs"])
+
     rng = np.random.default_rng(42)
     by = {q: [p for p in players if p.position == q] for q in "GWB"}
     constants = {s: dict(v) for s, v in params["style_constants"].items()}
@@ -112,9 +126,10 @@ def main():
         st, sx, bn = E.pick_lineup(roster, metric=lambda p: p.ti)
         lineups.append((st, sx, bn))
         style = C.PLAYSTYLES[int(rng.integers(0, 5))]
+        st_v, sx_v, bn_v = [hidden_view(p.pid) for p in st], hidden_view(sx.pid), [hidden_view(p.pid) for p in bn]
         cases.append(dict(starters=[p.pid for p in st], sixth=sx.pid,
                           bench=[p.pid for p in bn[:2]], style=style,
-                          strength=E.team_strength(st, sx, bn, style, constants, use_drift=True)))
+                          strength=E.team_strength(st_v, sx_v, bn_v, style, constants, use_drift=True)))
     winprobs = []
     for _ in range(100):
         i, j = int(rng.integers(0, 200)), int(rng.integers(0, 200))
