@@ -1,6 +1,8 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import players from './data/players.json' with { type: 'json' };
+import hiddenData from './data/hidden.json' with { type: 'json' };
+import engineParams from './data/engine_params.json' with { type: 'json' };
 import { nextPhase, HOOKS } from './phases.js';
 import { drawMarket, validateSigning, runHardship } from './market.js';
 import { cutPlayer, expiringPids, hypeCurve } from './payroll.js';
@@ -392,4 +394,55 @@ HOOKS['enter:SIMULATE'] = async (gameId, round) => {
     boxCsv: toCsv(out.boxRows),
   });
   await batch.commit();
+};
+
+// enter: publish the Reveal payload — the ONLY moment hidden truth (ti, archetype,
+// isTrap) leaves the server. Written exclusively here, never earlier; the rules
+// (Task 6) also gate reads on status == 'finished', which advancePhase sets in the
+// same call right after this hook resolves, so there is no read-before-write leak
+// window and no leak-after-write window either.
+// Internally idempotent beyond runHookOnce's log (brief's explicit requirement,
+// mirroring HOOKS['AUCTION']'s `wave?.results` / HOOKS['enter:SIMULATE']'s
+// `roundRef.get()).exists` pattern): reveal/latest existing is this hook's own
+// completion marker, checked before any reads/writes.
+HOOKS['enter:FINALE'] = async (gameId) => {
+  const revealRef = db().doc(`games/${gameId}/reveal/latest`);
+  if ((await revealRef.get()).exists) return;
+  const teamDocs = await db().collection(`games/${gameId}/teams`).get();
+  const scatter = players.map((p) => ({
+    pid: p.pid, name: p.name, hype: Number(p.hype),
+    salary: p.salary_per_round === '' ? null : Number(p.salary_per_round),
+    ti: hiddenData[p.pid].ti,
+    // plain boolean — never `|| undefined`. Firestore's admin SDK rejects
+    // undefined field values in set() by default (ignoreUndefinedProperties is
+    // not configured anywhere in this project), so the ~8-of-10 non-trap
+    // archetypes would otherwise crash this write outright.
+    isTrap: ['volume_trap', 'aging_legend'].includes(hiddenData[p.pid].archetype ?? ''),
+    archetype: hiddenData[p.pid].archetype,
+  }));
+  const perTeam = [], winsPerDollar = [];
+  for (const t of teamDocs.docs) {
+    const team = t.data();
+    const vals = team.roster.map((c) => ({
+      pid: c.pid, valuePerDollar: Math.round((hiddenData[c.pid].ti / Math.max(2, c.rate)) * 100) / 100 }));
+    vals.sort((a, b) => b.valuePerDollar - a.valuePerDollar);
+    perTeam.push({ teamId: t.id, bestSigning: vals[0] ?? null, worstSigning: vals.at(-1) ?? null });
+    const spend = team.roster.reduce((s, c) => s + c.rate * c.years, 0)
+      + team.deadMoney.reduce((s, d) => s + d.rate * (d.endRound - d.startRound + 1), 0);
+    winsPerDollar.push({ teamId: t.id, wins: team.wins, totalSpend: Math.round(spend * 10) / 10,
+      ratio: Math.round((team.wins / Math.max(1, spend)) * 1000) / 1000 });
+  }
+  await revealRef.set({
+    scatter, perTeam, winsPerDollar,
+    trueWeights: {
+      narrative: 'Wins came from efficiency, ball security, and defense. Payroll and hype predicted nothing.',
+      // the engine's actual turnover weight (ti_weights.turnover, engine_params.json)
+      // — what the students' own league_history.csv regression is being checked
+      // against. Documented in the Produces interface; the brief's Step 3 code
+      // sample omitted it, so this is filled from the same params engine.js already
+      // treats as the single source of truth for the TrueImpact formula.
+      tovPerGame: engineParams.ti_weights.turnover,
+      defenseVisible: true,
+    },
+  });
 };
