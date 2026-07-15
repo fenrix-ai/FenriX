@@ -1,11 +1,15 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import players from './data/players.json' with { type: 'json' };
-import { makeRng } from './rng.js';
 import { nextPhase, HOOKS } from './phases.js';
+import { drawMarket, validateSigning, runHardship } from './market.js';
+import { cutPlayer, expiringPids } from './payroll.js';
 
 const ROLES = ['GM', 'Scout', 'Coach'];
 const db = () => getFirestore();
+
+const CATALOG = Object.fromEntries(players.map((p) => [p.pid, p]));
+const FA_POOL = players.filter((p) => !p.auction_round);
 
 export async function assertProfessor(gameId, uid) {
   const g = await db().doc(`games/${gameId}`).get();
@@ -68,15 +72,12 @@ export const startSeason = onCall(async (req) => {
   const { gameId } = req.data;
   const g = await assertProfessor(gameId, req.auth?.uid);
   if (g.status !== 'lobby') throw new HttpsError('failed-precondition', 'already started');
-  // round-1 market draw (75% of FA pool, seeded, identical for all teams)
-  // TODO(Task 9): replace with drawMarket() once implemented; this placeholder
-  // draws directly from the FA pool with the same seeding convention drawMarket
-  // is expected to use, so wiring it in later is a drop-in swap.
-  const fa = players.filter((p) => !p.auction_round);
-  const rng = makeRng(`${gameId}|market|1`);
-  const drawn = rng.shuffle([...fa]).slice(0, Math.floor(fa.length * 0.75)).map((p) => p.pid);
+  // round-1 market draw (75% of FA pool, seeded, identical for all teams; nobody has
+  // signed anything yet so the pool needs no signed-pid filtering here).
+  const d = drawMarket({ gameId, round: 1, faPool: FA_POOL, absentCounts: {}, extraPids: [] });
   const batch = db().batch();
-  batch.set(db().doc(`games/${gameId}/market/1`), { available: drawn });
+  batch.set(db().doc(`games/${gameId}/market/1`),
+    { available: d.available, absentCounts: d.absentCounts, unsoldPrices: {} });
   batch.update(db().doc(`games/${gameId}`), { status: 'active', round: 1, phase: 'FREE_AGENCY' });
   await batch.commit();
   return { phase: 'FREE_AGENCY' };
@@ -109,3 +110,134 @@ export const advancePhase = onCall(async (req) => {
   await db().doc(`games/${gameId}`).update(update);
   return nxt;
 });
+
+async function memberWithRole(gameId, uid, role) {
+  if (!uid) throw new HttpsError('unauthenticated', 'sign in first');
+  const m = await db().doc(`games/${gameId}/players/${uid}`).get();
+  if (!m.exists) throw new HttpsError('permission-denied', 'not in this game');
+  if (m.data().role !== role) throw new HttpsError('permission-denied', `${role} only`);
+  return m.data();
+}
+
+// A pid signed on the market is a one-shot resource shared by every team in the
+// game: the FA pool a team can browse is whatever's left in market/{round}.available
+// once every OTHER team's signings this round are subtracted out. We enforce that by
+// removing the pid from market/{round}.available in the SAME transaction as the
+// roster write, so two GMs racing for the same free agent contend on that one shared
+// doc — Firestore serializes the transactions, and the loser re-reads a market that
+// no longer lists the pid and fails with NOT_IN_MARKET (no new error code needed).
+export const signPlayer = onCall(async (req) => {
+  const { gameId, pid, years } = req.data;
+  const { teamId } = await memberWithRole(gameId, req.auth?.uid, 'GM');
+  return db().runTransaction(async (tx) => {
+    const g = (await tx.get(db().doc(`games/${gameId}`))).data();
+    const isResign = g.phase === 'FRONT_OFFICE';
+    if (!isResign && g.phase !== 'FREE_AGENCY')
+      throw new HttpsError('failed-precondition', 'market is closed');
+    const teamRef = db().doc(`games/${gameId}/teams/${teamId}`);
+    const marketRef = db().doc(`games/${gameId}/market/${g.round}`);
+    const team = (await tx.get(teamRef)).data();
+    // re-signs never touch the market doc: an expiring pid re-ups off the books,
+    // whether or not it happens to also be in this round's drawn market.
+    const market = isResign ? null : (await tx.get(marketRef)).data();
+    if (isResign && !expiringPids(team, g.round).includes(pid))
+      throw new HttpsError('failed-precondition', 'only expiring contracts re-sign here');
+    let contract;
+    try {
+      ({ contract } = validateSigning({
+        team, pid, years, round: g.round,
+        marketAvailable: market?.available ?? [], catalogById: CATALOG, isResign,
+        unsoldPrices: market?.unsoldPrices ?? {},
+      }));
+    } catch (e) { throw new HttpsError('failed-precondition', e.message); }
+    const roster = team.roster.filter((c) => c.pid !== pid).concat(contract);
+    tx.update(teamRef, { roster });
+    if (!isResign) tx.update(marketRef, { available: market.available.filter((x) => x !== pid) });
+    return { contract };
+  });
+});
+
+export const cutRosterPlayer = onCall(async (req) => {
+  const { gameId, pid } = req.data;
+  const { teamId } = await memberWithRole(gameId, req.auth?.uid, 'GM');
+  return db().runTransaction(async (tx) => {
+    const g = (await tx.get(db().doc(`games/${gameId}`))).data();
+    if (!['FRONT_OFFICE', 'FREE_AGENCY'].includes(g.phase))
+      throw new HttpsError('failed-precondition', 'cuts happen in front office or free agency');
+    const teamRef = db().doc(`games/${gameId}/teams/${teamId}`);
+    const team = (await tx.get(teamRef)).data();
+    let after;
+    try { after = cutPlayer(team, pid, g.round); }
+    catch (e) { throw new HttpsError('failed-precondition', e.message); }
+    tx.update(teamRef, { roster: after.roster, deadMoney: after.deadMoney });
+    return { deadMoney: after.deadMoney };
+  });
+});
+
+// -------- phase hooks
+
+// A signed pid is off the free-agent pool for every round its contract covers —
+// drawMarket itself has no notion of who's under contract (it's a pure function
+// over the FA catalog), so the caller (here) is responsible for excluding anyone
+// currently rostered before the pool is drawn from. Round 1 needs no such filter
+// (nobody has signed anything yet); startSeason draws it directly.
+async function signedPidSet(gameId, round) {
+  const teams = await db().collection(`games/${gameId}/teams`).get();
+  const signed = new Set();
+  for (const t of teams.docs)
+    for (const c of t.data().roster ?? [])
+      if (c.startRound <= round && round <= c.startRound + c.years - 1) signed.add(c.pid);
+  return signed;
+}
+
+HOOKS['enter:FREE_AGENCY'] = async (gameId, round) => {
+  if (round === 1) return; // startSeason already drew round 1
+  const prev = (await db().doc(`games/${gameId}/market/${round - 1}`).get()).data();
+  // unsold auction stars: written by the auction-resolution hook (Task 10) into
+  // games/{gameId}/unsold/{pid} = { price }. They're always forced back into the
+  // market with that price as their list price until someone signs them.
+  const unsoldSnap = await db().collection(`games/${gameId}/unsold`).get();
+  const unsoldPrices = {};
+  const unsoldPids = [];
+  for (const doc of unsoldSnap.docs) {
+    const pid = Number(doc.id);
+    unsoldPids.push(pid);
+    unsoldPrices[pid] = doc.data().price;
+  }
+  const signed = await signedPidSet(gameId, round);
+  const pool = FA_POOL.filter((p) => !signed.has(p.pid));
+  const extraPids = unsoldPids.filter((pid) => !signed.has(pid));
+  const d = drawMarket({ gameId, round, faPool: pool, absentCounts: prev?.absentCounts ?? {}, extraPids });
+  await db().doc(`games/${gameId}/market/${round}`)
+    .set({ available: d.available, absentCounts: d.absentCounts, unsoldPrices });
+};
+
+HOOKS['FREE_AGENCY'] = async (gameId, round) => {   // exit hook: hardship
+  const teamsSnap = await db().collection(`games/${gameId}/teams`).get();
+  // Internally idempotent even though runHookOnce already guards re-entry per the
+  // brief's own idempotency-log mechanism: skip any team whose hardshipUsed already
+  // records this round, both before computing fixes (so a second invocation doesn't
+  // even consider an already-fixed team) and again inside each write's transaction
+  // (so a true concurrent double-invocation can't double-apply).
+  const teams = teamsSnap.docs
+    .map((t) => ({ teamId: t.id, ...t.data() }))
+    .filter((t) => !(t.hardshipUsed ?? []).includes(round));
+  // runHardship only excludes pids a team already owns (per-team `owned`), not pids
+  // signed to OTHER teams — so the pool handed in must already have every currently-
+  // rostered pid stripped out, or two teams needing hardship in the same round could
+  // both be handed the same "free" agent who is in fact on a rival roster.
+  const signed = await signedPidSet(gameId, round);
+  const pool = FA_POOL.filter((p) => !signed.has(p.pid));
+  const fixes = runHardship({ teams, faPool: pool, round, catalogById: CATALOG });
+  for (const f of fixes) {
+    const ref = db().doc(`games/${gameId}/teams/${f.teamId}`);
+    await db().runTransaction(async (tx) => {
+      const cur = (await tx.get(ref)).data();
+      if ((cur.hardshipUsed ?? []).includes(round)) return;
+      tx.update(ref, {
+        roster: [...cur.roster, ...f.signings],
+        hardshipUsed: [...(cur.hardshipUsed ?? []), round],
+      });
+    });
+  }
+};

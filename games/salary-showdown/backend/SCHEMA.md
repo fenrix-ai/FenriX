@@ -12,15 +12,22 @@ games/{gameId}/teams/{teamId}         # PUBLIC team state (rosters are public li
   lineupLockedRound, hardshipUsed: [round]
 games/{gameId}/teams/{teamId}/private/auction    # { bids: { [pid]: {rate, years} } } — Scout writes via callable
 games/{gameId}/catalog/{pid}          # public player card (26 CSV cols), seeded at createGame
-games/{gameId}/market/{round}         # { available: [pid], resignExempt: true }  (public, server-written)
+games/{gameId}/market/{round}         # { available: [pid], absentCounts: {pid: n}, unsoldPrices: {pid: rate} }  (public, server-written)
+                                      # absentCounts tracks consecutive rounds each FA pid was NOT drawn (drawMarket forces
+                                      # a pid back in once absent >=2 rounds running); unsoldPrices carries list prices for
+                                      # unsold auction stars pulled in from games/{gameId}/unsold (see below).
 games/{gameId}/auctions/{round}       # { stars: [pid], results: [{pid, teamId|null, rate, years, guaranteed}] } — results field added at resolution
+games/{gameId}/unsold/{pid}           # { price } — auction-class player that went unsold at auction; written by auction
+                                      # resolution (Task 10). Read by the enter:FREE_AGENCY hook to force the star back into
+                                      # market/{round}.available with `price` as its list price until a team signs it.
+                                      # server-only: never client-accessible, explicit deny-all in rules.
 games/{gameId}/rounds/{r}             # { games: [{home, away, homeScore, awayScore}], awards: {...}, boxCsv: string, standings: [...] }
 games/{gameId}/reveal/latest          # written ONLY after round 5 RESULTS (finale payload)
 games/{gameId}/hooklog/{key}          # phase-hook idempotency log; key "{round}-{phase}" (exit) or "enter-{round}-{phase}" (entry): { at: ts }
                                       # server-only: makes advancePhase retries safe (a resolved hook is never re-fired); explicit deny-all in rules
 
 RULES POLICY
-- authenticated members of a game may READ everything under their game EXCEPT teams/*/private/* of other teams, reveal/* before status=finished, and hooklog/* (server-only, always denied).
+- authenticated members of a game may READ everything under their game EXCEPT teams/*/private/* of other teams, reveal/* before status=finished, and hooklog/*, unsold/* (server-only, always denied).
 - players/{uid}: membership CREATE is server-only (joinGame callable via Admin SDK); the only client write is updating one's own displayName.
 - ALL other writes: server only (callables use Admin SDK, which bypasses rules).
 - hidden.json / engine_params.json are NOT in Firestore at all.
