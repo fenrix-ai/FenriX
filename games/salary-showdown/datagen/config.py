@@ -1,7 +1,8 @@
 """Salary Showdown dataset generator — every tuning dial in one place.
 
 Mirrors spec §15 (docs/superpowers/specs/2026-07-14-salary-showdown-design.md).
-Nothing ships unless harness.py passes all 9 checks against these numbers.
+Nothing ships unless harness.py passes all 11 checks (plus the box-arithmetic
+diagnostic) against these numbers.
 """
 
 SEED = 310  # MGSC 310. Fixed for reproducibility; bump to regenerate a fresh league.
@@ -33,32 +34,47 @@ ARCHETYPE_COUNTS = {
 }
 
 # ---------------------------------------------------------------- aging curve (spec §9.3)
-def age_drift(age: int) -> float:
-    """Multiplier on TrueImpact for the UPCOMING season (sticker stats are last season)."""
-    if age <= 23:
-        return min(1.12, 1.0 + 0.04 * (24 - age))
-    if age <= 29:
-        return 1.0
-    if age <= 32:
-        return 1.0 - 0.04 * (age - 29)
-    return max(0.42, 0.86 - 0.10 * (age - 32))   # the cliff: 33 -> 0.76, 34 -> 0.66, 35 -> 0.56
-
+# ONE schedule tells the whole aging story (honest breadcrumb, no hidden cliff):
+#   young  +4.5%/yr (total remaining upside capped at +12%)
+#   24-29  flat
+#   30-32  -4.5%/yr
+#   33+    -11%/yr, compounding season over season (level floors at 0.45 of peak)
+# * yoy_growth backs out the prev_* columns  -> the published trail draws this curve.
+# * age_drift is the engine's PER-SEASON multiplier on last-season (sticker) TrueImpact
+#   -> a student extrapolating the prev_ trail predicts the upcoming season correctly.
+# * age_level is the cumulative level vs peak; aging legends' CURRENT skill attributes are
+#   generated at peak then scaled by it, so their sticker stats already show the fade and
+#   the -11%/yr trail, the sticker, and the engine all agree.
 def yoy_growth(age: int) -> float:
-    """Approx per-year growth used to back out prev_* columns (age was age-1 last season)."""
+    """Per-season growth arriving at `age`: level(age) / level(age-1) - 1."""
     if age <= 24:
-        return 0.05
+        return 0.045
     if age <= 29:
         return 0.0
     if age <= 32:
         return -0.045
-    return -0.09
+    return -0.11
+
+def age_drift(age: int) -> float:
+    """Multiplier on TrueImpact for the UPCOMING season (sticker stats are last season).
+    Same per-season schedule as yoy_growth — the trail extrapolates to this exactly."""
+    if age <= 23:
+        return min(1.12, 1.0 + 0.045 * (24 - age))   # remaining young upside, capped +12%
+    return max(0.45, 1.0 + yoy_growth(age + 1))
+
+def age_level(age: int) -> float:
+    """Cumulative skill level vs peak (24-29 = 1.0); compounds yoy_growth, floors at 0.45."""
+    lvl = 1.0
+    for a in range(30, age + 1):
+        lvl *= 1.0 + yoy_growth(a)
+    return max(0.45, lvl)
 
 # ---------------------------------------------------------------- TrueImpact weights (spec §8.1)
 TI_BASE = 6.0
 W_SCORING = 1.60      # scoring_value = fga * (pts_per_shot - PPS_LEAGUE_AVG)
 W_PLAYMAKING = 0.55   # per assist
-W_STEAL = 0.85
-W_BLOCK = 0.80
+W_STEAL = 1.05        # defense weights sized so the stl/blk win-signal is RECOVERABLE from
+W_BLOCK = 1.00        # 90 history rows (check 1) — defense is the underpriced treasure
 W_REBOUND = 0.25
 W_TURNOVER = 1.50     # the poison: ~2x what intuition prices
 W_CREATION = 0.06     # small real value per shot attempt (gravity/shot-creation): volume
@@ -68,8 +84,11 @@ PPS_LEAGUE_AVG = 1.00
 # value play (~10), journeymen ~7.5, volume traps ~4-6 ("mediocre starter or worse").
 
 # ---------------------------------------------------------------- synergy (spec §8.2)
-SHOOTER_3PT_SKILL = 62      # hidden three_pt attribute threshold to count as a "real shooter"
-RIM_BLOCK_SKILL = 65        # hidden defense threshold (Bigs/Wings) to count as rim presence
+# Bars tuned so violating a bar is a SIGNAL, not a constant: harness check 10 asserts that
+# 15-50% of the 90 history team-seasons violate at least one bar and that violators average
+# at least 2 fewer wins than clean teams.
+SHOOTER_3PT_SKILL = 42      # hidden three_pt attribute threshold to count as a "real shooter"
+RIM_BLOCK_SKILL = 48        # hidden defense threshold (Bigs/Wings) to count as rim presence
 SPACING_PENALTY = -3.0      # <2 shooters among starters
 SPACING_BONUS = 1.5         # >=3 shooters
 RIM_PENALTY = -3.0
@@ -87,24 +106,41 @@ PACE = {"Balanced": 1.00, "Run & Gun": 1.15, "3PT Barrage": 1.03, "Inside Attack
 # style for a roster tracks the roster's distinctive dimension, not just how good it is.
 STYLE_DELTA = {
     "Balanced":      {},
-    "Run & Gun":     dict(security=0.90, tov=-0.45),     # fast pays iff you handle it clean FOR your volume
-                                                         # (tov term couples directly to the published column)
+    "Run & Gun":     dict(tov=-1.00),   # fast pays iff you handle it clean: the delta IS the
+                                        # (slot-weighted) turnover burden, so the published tov
+                                        # column is an almost-perfect moderator proxy and the
+                                        # RGxTOV interaction is recoverable from any 90-row draw
+                                        # (mixed security/tov loadings made the fitted slope
+                                        # depend on each draw's usage-vs-security variance mix)
     "3PT Barrage":   dict(shooting=1.00, interior=-0.25),  # threes pay iff you can make them
                                                            # (shooting = pure 3pt skill -> tight link to 3p% column)
-    "Inside Attack": dict(big_score=0.90, reb_total=0.90, guard_score=-0.15),  # paint pays iff your Big can score
-                                                           # (scoring Bigs, vs Lockdown's shot-blockers)
+    "Inside Attack": dict(big_score=0.25, reb_total=1.20),  # paint pays iff you own the glass
+                                                            # (reb_total dominates so the published
+                                                            # rebounds column is a clean moderator)
     "Lockdown":      dict(stocks=0.90, score=-0.10),     # slow pays iff you force stops
                                                           # (stocks = steals+blocks -> tight link to stl+blk columns)
 }
 BARRAGE_MISFIRE = -2.0      # extra penalty if Barrage chosen with <3 real shooters in lineup
-TARGET_STYLE_SD = 6.5       # every style's delta is rescaled to this SD across the history
+TARGET_STYLE_SD = 8.0       # every style's delta is rescaled to this SD across the history
                             # population: no style dominates by variance, and fit effects
-                            # are large enough to be recoverable from 90 rows
-HISTORY_QUALITY_TILT = dict(efficiency=6.0, ball_security=6.0, three_pt=9.0)
+                            # are large enough to be recoverable from 90 rows (7.5 gives the
+                            # per-style interaction tests enough power that one unlucky
+                            # 90-row draw doesn't sink check 9; cell-mean balance is handled
+                            # by the rerandomized assignment in history.build_history)
+STYLE_ASSIGN_TRIES = 300    # rerandomization draws: blocked assignments are drawn until the
+                            # per-style cell-mean deltas are all ~0 (best of N kept), so flat
+                            # main effects hold by construction, not by luck
+HISTORY_QUALITY_TILT = dict(efficiency=9.0, ball_security=9.0, three_pt=8.5)
                             # per-team attribute tilt SDs (market blind spots only): real
                             # leagues have good and bad teams; the wider spreads power the
-                            # student regressions. three_pt widest so the Barrage moderator
-                            # (team 3P%) has identifiable range.
+                            # student regressions.
+DEFENSE_TILT_SD = 13.0      # defense tilt is drawn INDEPENDENTLY for perimeter (G) and
+                            # interior (B) defenders (W gets the average): steals are
+                            # guard-driven and blocks big-driven, so two independent team
+                            # tilts make the stl and blk betas separately identifiable
+                            # (one shared tilt left them collinear with arbitrary credit
+                            # splits). The market only quarter-sees defense, so payroll
+                            # |t| must stay < 2 (verified in check 1).
 
 # ---------------------------------------------------------------- game model
 LOGISTIC_K = 0.075          # steepness on strength gap; tuned by harness check 4
@@ -121,7 +157,10 @@ HYPE_W_SKILL = 0.40         # the market sees VISIBLE skill (playmaking + half-c
                             # turnovers, and age. Keeps salary~TI honest for normal players
                             # while traps stay fully overpriced.
 HYPE_NOISE = 0.10
-SALARY_NOISE_SD = 0.14      # price dispersion: enough mispricing for a healthy bargain cluster
+SALARY_NOISE_SD = 0.18      # price dispersion: enough mispricing for a healthy bargain cluster
+                            # (also keeps payroll and avg_hype from being near-duplicates in
+                            # the check-1 regression — their collinearity was inflating both
+                            # t-stats in opposite directions on unlucky draws)
 SCOUT_GRADE_R = 0.22        # target correlation of scout grade with TI (grade-only strategy must stay mid-table)
 GRADES = ["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D"]
 PERSONALITIES = ["Leader", "Professional", "Quiet", "Diva", "Hothead"]

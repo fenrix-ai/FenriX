@@ -1,4 +1,4 @@
-"""Validation harness (spec §10): the generator ships only if all 9 checks pass.
+"""Validation harness (spec §10): the generator ships only if all 11 checks pass.
 
 Each check literally runs the analysis a student would run on the generated data and
 asserts the designed answer is recoverable. Fail closed: no green, no CSVs.
@@ -22,14 +22,26 @@ def _pctile(vals):
 def check1_regression(history, report):
     X = [[r[c] for c in HIST_STATS] + [r["total_payroll"], r["avg_hype"]] for r in history]
     fit = ols(X, [r["wins"] for r in history], names=HIST_STATS + ["payroll", "hype"])
+    # defense must be VISIBLE, not just true: steals + blocks jointly positive (their sum —
+    # the two split the collinear defense credit, so requiring each individually positive
+    # just tests split noise) and at least one individually significant at p<0.10 with a
+    # positive sign — while payroll stays null (the market only quarter-sees defense; if
+    # the tilt ever makes payroll track wins, shrink the tilt).
+    b_stl, b_blk = fit["beta"]["steals_per_game"], fit["beta"]["blocks_per_game"]
+    p_stl, p_blk = fit["p"]["steals_per_game"], fit["p"]["blocks_per_game"]
+    def_ok = (b_stl + b_blk > 0
+              and ((b_stl > 0 and p_stl < 0.10) or (b_blk > 0 and p_blk < 0.10)))
     ok = (fit["beta"]["turnovers_per_game"] < 0 and fit["p"]["turnovers_per_game"] < 0.05
           and fit["beta"]["fg_pct"] > 0 and fit["p"]["fg_pct"] < 0.05
           and fit["beta"]["three_pt_pct"] > 0
+          and def_ok
           and abs(fit["t"]["payroll"]) < 2.0 and abs(fit["t"]["hype"]) < 2.0)
     report.append(("1 base regression",
                    f"tov beta {fit['beta']['turnovers_per_game']:.2f} (p={fit['p']['turnovers_per_game']:.3f}), "
                    f"fg beta {fit['beta']['fg_pct']:.1f} (p={fit['p']['fg_pct']:.3f}), "
                    f"3p beta {fit['beta']['three_pt_pct']:.1f}, "
+                   f"stl beta {fit['beta']['steals_per_game']:.1f} (p={fit['p']['steals_per_game']:.3f}), "
+                   f"blk beta {fit['beta']['blocks_per_game']:.1f} (p={fit['p']['blocks_per_game']:.3f}), "
                    f"payroll t={fit['t']['payroll']:.2f}, hype t={fit['t']['hype']:.2f}, R2={fit['r2']:.2f}", ok))
     return ok, fit
 
@@ -180,7 +192,40 @@ def check9_interactions(history, report):
     return ok
 
 
-def run_all(players, fa_pool, history, best_styles, fairness_res, k, constants, rng):
+def check10_synergy(syn_flags, report):
+    """Spec §9.4 made real: violating a synergy bar must be a SIGNAL (a discoverable
+    negative-residual cluster), not a league-wide constant."""
+    viol = [f["wins"] for f in syn_flags if f["viol"]]
+    clean = [f["wins"] for f in syn_flags if not f["viol"]]
+    share = len(viol) / len(syn_flags)
+    gap = (float(np.mean(clean)) - float(np.mean(viol))) if viol and clean else 0.0
+    ok = 0.15 <= share <= 0.50 and gap >= 2.0
+    report.append(("10 synergy bars",
+                   f"{len(viol)}/{len(syn_flags)} team-seasons violate a bar (share {share:.0%}, "
+                   f"need 15-50%); violators avg {gap:.1f} wins below clean teams (need >=2)", ok))
+    return ok
+
+
+def check11_auction_waves(players, report):
+    """Auction structure: 5 per wave, a trap seeded in every wave, all three positions in
+    every wave, and the 25-star class not wildly off the pool's position mix."""
+    stars = [p for p in players if p.auction_round]
+    waves = {w: [p for p in stars if p.auction_round == w] for w in range(1, C.AUCTION_WAVES + 1)}
+    sizes_ok = all(len(ps) == 5 for ps in waves.values()) and len(stars) == C.N_AUCTION
+    traps_ok = all(any(p.is_trap for p in ps) for ps in waves.values())
+    wave_pos_ok = all({p.position for p in ps} >= {"G", "W", "B"} for ps in waves.values())
+    mix = {q: sum(1 for p in stars if p.position == q) for q in "GWB"}
+    mix_ok = all(mix[q] >= 4 for q in "GWB")
+    ok = sizes_ok and traps_ok and wave_pos_ok and mix_ok
+    tr = ",".join(str(sum(p.is_trap for p in waves[w])) for w in sorted(waves))
+    report.append(("11 auction waves",
+                   f"sizes {[len(waves[w]) for w in sorted(waves)]}, traps/wave [{tr}], "
+                   f"all-positions-per-wave={wave_pos_ok}, class mix G{mix['G']}/W{mix['W']}/B{mix['B']} "
+                   f"(need >=4 each)", ok))
+    return ok
+
+
+def run_all(players, fa_pool, history, best_styles, syn_flags, fairness_res, k, constants, rng):
     report = []
     results = [
         check1_regression(history, report)[0],
@@ -192,7 +237,20 @@ def run_all(players, fa_pool, history, best_styles, fairness_res, k, constants, 
         check7_market_coverage(fa_pool, rng, report),
         check8_no_dominant_style(history, best_styles, report),
         check9_interactions(history, report),
+        check10_synergy(syn_flags, report),
+        check11_auction_waves(players, report),
     ]
+    # box-score arithmetic (also enforced by construction in attributes._fill_published,
+    # and re-verified on the emitted CSV by tools/verify_box_arithmetic): fail loudly here too
+    bad = [p.name for p in players
+           if not (2 * p.pub["fga"] * p.pub["fg_pct"] <= p.pub["pts"] + 1e-9
+                   and p.pub["pts"] <= 3 * p.pub["fga"] * p.pub["fg_pct"] + 0.35 * p.pub["fga"] + 1e-9)]
+    arith_ok = not bad
+    results.append(arith_ok)
+    report.append(("diag box arithmetic",
+                   f"{len(bad)} players with impossible scoring lines (need 0)"
+                   + (f": {bad[:3]}" if bad else ""), arith_ok))
+
     # extra diagnostics (list_salary = pre-blanking price, so auction stars count too)
     r2_all = pearson_r([p.list_salary for p in players], [p.ti for p in players]) ** 2
     ordinary = [p for p in players if not p.is_trap and p.archetype not in ("elite_defender", "rim_protector")]

@@ -1,12 +1,15 @@
 Salary Showdown data harness — seed 310, schema v1.0
 
-[PASS] 1 base regression: tov beta -5.27 (p=0.000), fg beta 239.3 (p=0.011), 3p beta 146.3, payroll t=-0.38, hype t=1.34, R2=0.68
-[PASS] 2 bargain cluster: 15 players bottom-half salary AND top-quartile TrueImpact (need >=15)
-[PASS] 3 trap gap: 13 traps, min(hype pctile - TI pctile) = 75 (need >=40)
-[PASS] 4 fairness sim: k=0.09: modeler top-3 82% (target (0.6, 0.93)), champion 52% (target (0.3, 0.62))
-[PASS] 5 scout-grade strategy: medians: modeler 1 < grade 4 < ppg 16 required; grade in [4,14]
-[PASS] 6 personality null: max |t| across personality dummies = 0.59 (need <2)
+[PASS] 1 base regression: tov beta -3.84 (p=0.000), fg beta 273.0 (p=0.014), 3p beta 266.3, stl beta 2.2 (p=0.014), blk beta 4.8 (p=0.048), payroll t=-0.03, hype t=1.37, R2=0.70
+[PASS] 2 bargain cluster: 18 players bottom-half salary AND top-quartile TrueImpact (need >=15)
+[PASS] 3 trap gap: 13 traps, min(hype pctile - TI pctile) = 72 (need >=40)
+[PASS] 4 fairness sim: k=0.09: modeler top-3 86% (target (0.6, 0.93)), champion 48% (target (0.3, 0.62))
+[PASS] 5 scout-grade strategy: medians: modeler 2 < grade 5 < ppg 16 required; grade in [4,14]
+[PASS] 6 personality null: max |t| across personality dummies = 0.64 (need <2)
 [PASS] 7 market coverage: 0/1000 round-draws under-stocked (need 0)
-[PASS] 8 no dominant style: means[Balanced:39.8, Run:40.6, 3PT:41.7, Inside:41.8, Lockdown:41.1] max|t|=0.33 spread=1.9; best-fit counts[Balanced:11, Run:13, 3PT:26, Inside:19, Lockdown:21]
-[PASS] 9 interactions: RGxTOV -2.56(p=0.039) BARx3P 376(p=0.000) INSxREB 2.34(p=0.003) LOCKxDEF 3.05(p=0.005) mains_flat=True tov_ok=True coverage=True
-[PASS] diag: salary~TI R2: all=0.00, ordinary players=0.48 (market sane for ordinary, blind to traps/defense) | scout_grade~TI r=0.35
+[PASS] 8 no dominant style: means[Balanced:41.3, Run:40.7, 3PT:40.2, Inside:40.7, Lockdown:42.1] max|t|=0.19 spread=1.2; best-fit counts[Balanced:12, Run:17, 3PT:29, Inside:20, Lockdown:12]
+[PASS] 9 interactions: RGxTOV -2.87(p=0.026) BARx3P 837(p=0.000) INSxREB 2.47(p=0.001) LOCKxDEF 2.47(p=0.008) mains_flat=True tov_ok=True coverage=True
+[PASS] 10 synergy bars: 25/90 team-seasons violate a bar (share 28%, need 15-50%); violators avg 23.2 wins below clean teams (need >=2)
+[PASS] 11 auction waves: sizes [5, 5, 5, 5, 5], traps/wave [2,1,1,1,1], all-positions-per-wave=True, class mix G9/W8/B8 (need >=4 each)
+[PASS] diag box arithmetic: 0 players with impossible scoring lines (need 0)
+[PASS] diag: salary~TI R2: all=0.03, ordinary players=0.39 (market sane for ordinary, blind to traps/defense) | scout_grade~TI r=0.39

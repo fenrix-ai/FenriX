@@ -35,43 +35,78 @@ GRADE_RANK = {g: i for i, g in enumerate(C.GRADES)}   # A+ = 0 (best)
 
 
 def build_roster(fa_pool, metric_vals, rng, jitter=0.12):
-    """Greedy under cap + position minimums (3G/3W/2B in 8). metric_vals: {pid: score}."""
+    """Greedy under cap + position minimums (3G/3W/2B in 8). metric_vals: {pid: score}.
+    Invariant (asserted by callers): exactly ROSTER_SIZE players, >=3G/3W/2B, salary <= CAP."""
     sd = float(np.std(list(metric_vals.values()))) + 1e-9
     noisy = {p.pid: metric_vals[p.pid] + rng.normal(0, jitter * sd) for p in fa_pool}
     order = sorted(fa_pool, key=lambda p: -noisy[p.pid])
     roster, budget = [], C.CAP
     need = {"G": 3, "W": 3, "B": 2}
-    cheapest = {pos: min(p.salary for p in fa_pool if p.position == pos) for pos in "GWB"}
+    pos_sorted = {pos: sorted((p for p in fa_pool if p.position == pos), key=lambda p: p.salary)
+                  for pos in "GWB"}
+    have = {"G": 0, "W": 0, "B": 0}
+    in_roster = set()
+
+    def reserve(pos, k, skip_pid):
+        """Total salary of the k cheapest AVAILABLE players at pos (pool-global cheapest may
+        already be on the roster — that was the old off-by-a-few-dollars bug)."""
+        total = got = 0
+        for q in pos_sorted[pos]:
+            if q.pid in in_roster or q.pid == skip_pid:
+                continue
+            total += q.salary
+            got += 1
+            if got == k:
+                break
+        return total
+
     for p in order:
         if len(roster) == C.ROSTER_SIZE:
             break
-        slots_left = C.ROSTER_SIZE - len(roster) - 1
-        must_reserve = sum(max(0, n - sum(1 for q in roster if q.position == pos) - (1 if p.position == pos else 0))
-                           * cheapest[pos] for pos, n in need.items())
-        open_pos = sum(max(0, n - sum(1 for q in roster if q.position == pos)) for pos, n in need.items())
-        if p.salary > budget - must_reserve:
+        # direct feasibility: after adding p, the unmet minimums must fit the open slots
+        deficit = {pos: max(0, n - have[pos] - (1 if p.position == pos else 0))
+                   for pos, n in need.items()}
+        if sum(deficit.values()) > C.ROSTER_SIZE - len(roster) - 1:
             continue
-        if open_pos > slots_left + 1 and sum(1 for q in roster if q.position == p.position) >= need[p.position] + (slots_left + 1 - open_pos):
+        must_reserve = sum(reserve(pos, k, p.pid) for pos, k in deficit.items() if k)
+        if p.salary > budget - must_reserve + 1e-9:
             continue
         roster.append(p)
+        in_roster.add(p.pid)
+        have[p.position] += 1
         budget -= p.salary
-    # patch any unmet position minimums with cheapest options
+    # patch any unmet position minimums; never exceed ROSTER_SIZE (swap, don't append)
     for pos, n in need.items():
         while sum(1 for q in roster if q.position == pos) < n:
-            cands = [p for p in fa_pool if p.position == pos and p not in roster and p.salary <= budget + max((q.salary for q in roster if q.position != pos and sum(1 for r in roster if r.position == q.position) > need[q.position]), default=0)]
+            cands = [p for p in fa_pool if p.position == pos and p not in roster]
             if not cands:
                 break
             add = min(cands, key=lambda p: p.salary)
-            if add.salary > budget:
-                drop = max((q for q in roster if q.position != pos and sum(1 for r in roster if r.position == q.position) > need[q.position]),
+            if len(roster) == C.ROSTER_SIZE or add.salary > budget + 1e-9:
+                drop = max((q for q in roster
+                            if sum(1 for r in roster if r.position == q.position) > need[q.position]),
                            key=lambda q: q.salary, default=None)
                 if drop is None:
                     break
                 roster.remove(drop)
                 budget += drop.salary
+                affordable = [p for p in cands if p.salary <= budget + 1e-9]
+                if not affordable:
+                    break
+                add = min(affordable, key=lambda p: p.salary)
             roster.append(add)
             budget -= add.salary
     return roster
+
+
+def _assert_legal(roster, tag):
+    counts = {pos: sum(1 for p in roster if p.position == pos) for pos in "GWB"}
+    total = sum(p.salary for p in roster)
+    if (len(roster) != C.ROSTER_SIZE or counts["G"] < 3 or counts["W"] < 3 or counts["B"] < 2
+            or total > C.CAP + 1e-6):
+        raise AssertionError(
+            f"illegal roster from build_roster ({tag}): size={len(roster)} counts={counts} "
+            f"salary={total:.1f} (need exactly {C.ROSTER_SIZE}, >=3G/3W/2B, <= {C.CAP})")
 
 
 def season_ranks(fa_pool, weights, rng, k, constants, n_teams=None):
@@ -80,7 +115,7 @@ def season_ranks(fa_pool, weights, rng, k, constants, n_teams=None):
     # teams 1-9: PPG sorters. 10-14: scout-grade followers. 15-19: random.
     metrics, jitters = [], []
     mscore = {p.pid: model_score(p, weights) for p in fa_pool}
-    metrics.append(dict(mscore)); jitters.append(0.25)   # student models are noisy estimates
+    metrics.append(dict(mscore)); jitters.append(0.20)   # student models are noisy estimates
     for _ in range(6):
         metrics.append({p.pid: p.pub["pts"] for p in fa_pool}); jitters.append(0.12)
     for _ in range(3):   # efficiency-aware amateurs: points, but discounted for bricks
@@ -93,6 +128,7 @@ def season_ranks(fa_pool, weights, rng, k, constants, n_teams=None):
     strengths = np.zeros(n_teams)
     for t in range(n_teams):
         roster = build_roster(fa_pool, metrics[t], rng, jitter=jitters[t])
+        _assert_legal(roster, tag=f"team {t}")
         lineup_metric = (lambda p: mscore[p.pid]) if t == 0 else (lambda p: metrics[t][p.pid])
         st, sx, bn = E.pick_lineup(roster, lineup_metric)
         strengths[t] = E.team_strength(st, sx, bn, "Balanced", constants, use_drift=True)
@@ -127,10 +163,18 @@ def run_fairness(fa_pool, weights, rng, k, constants, n_seasons=None):
                 grade_median=float(np.median(grade_ranks)))
 
 
-def tune_k(fa_pool, weights, rng, constants):
-    """Pick k so the modeler's championship rate lands in the drama window."""
+def tune_k(fa_pool, rng, fit_for_k):
+    """Pick k so the modeler's championship rate lands in the drama window.
+
+    fit_for_k(k) -> (weights, constants) must REFIT the student model on a history built
+    at that k: scoring every k with one stale provisional weight vector made the tuner see
+    a uniformly weak modeler and degenerate to the lowest k (which then starved the
+    interaction/defense signals of steepness)."""
     best_k, best_res, best_err = C.LOGISTIC_K, None, 9e9
-    for k in (0.030, 0.040, 0.045, 0.050, 0.055, 0.065, 0.075, 0.090):
+    # grid floored at 0.05: interaction detectability (check 9) needs k >= ~0.05, and the
+    # champ window (0.30, 0.62) is wide enough to absorb the modeler's edge at these k
+    for k in (0.050, 0.055, 0.065, 0.075, 0.090):
+        weights, constants = fit_for_k(k)
         res = run_fairness(fa_pool, weights, rng, k, constants, n_seasons=150)
         lo, hi = C.FAIR_CHAMP_TARGET
         mid = (lo + hi) / 2

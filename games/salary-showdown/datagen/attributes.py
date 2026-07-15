@@ -12,13 +12,16 @@ import config as C
 # attribute ranges per archetype: (usage, efficiency, three_pt, playmaking, ball_security, defense, age_lo, age_hi, positions)
 ARCHETYPES = {
     "efficient_star": ((70, 88), (68, 88), (45, 80), (45, 70), (60, 85), (45, 70), 24, 30, "GWB"),
-    "volume_trap":    ((84, 95), (26, 42), (30, 50), (35, 55), (25, 42), (20, 40), 24, 31, "GW"),
+    "volume_trap":    ((84, 95), (30, 44), (30, 50), (35, 55), (25, 42), (20, 40), 24, 31, "GW"),
     "two_way_wing":   ((45, 65), (50, 68), (45, 70), (35, 55), (55, 75), (65, 85), 23, 31, "W"),
-    "elite_defender": ((18, 35), (56, 74), (25, 55), (25, 45), (72, 92), (80, 96), 23, 32, "GWB"),
+    "elite_defender": ((18, 35), (58, 76), (25, 55), (25, 45), (72, 92), (83, 97), 23, 32, "GWB"),
     "floor_general":  ((35, 55), (48, 65), (40, 65), (78, 95), (72, 92), (40, 60), 23, 33, "G"),
     "sharpshooter":   ((30, 52), (55, 72), (75, 95), (30, 50), (60, 80), (30, 55), 22, 32, "GW"),
-    "rim_protector":  ((20, 38), (55, 75), (5, 25),  (15, 35), (55, 78), (78, 96), 23, 32, "B"),
-    "aging_legend":   ((68, 85), (52, 72), (40, 70), (45, 70), (50, 72), (40, 60), 33, 37, "GWB"),
+    "rim_protector":  ((20, 38), (57, 77), (5, 25),  (15, 35), (55, 78), (80, 96), 23, 32, "B"),
+    # aging_legend skill ranges are PEAK values; efficiency/ball_security/defense are scaled
+    # by C.age_level(age) at generation so the sticker already shows the fade and the
+    # -11%/yr prev_ trail is honest. Usage stays at peak: legends keep chucking.
+    "aging_legend":   ((68, 85), (56, 74), (40, 70), (45, 70), (55, 75), (48, 68), 33, 37, "GWB"),
     "young_riser":    ((38, 60), (44, 62), (40, 70), (40, 65), (45, 70), (45, 70), 19, 23, "GWB"),
     "journeyman":     ((30, 60), (38, 58), (25, 60), (25, 60), (40, 70), (35, 65), 23, 34, "GWB"),
 }
@@ -30,7 +33,16 @@ POS_STL_F = {"G": 1.15, "W": 1.0, "B": 0.7}
 POS_BLK_F = {"G": 0.12, "W": 0.45, "B": 1.15}
 POS_FG_BONUS = {"G": 0.0, "W": 0.01, "B": 0.035}
 
-PPS_SCALE = None   # set once from the main pool; shared by all later mini-populations
+# League PPS anchor: computed ONCE from the main 175-player pool, then reused by every
+# later mini-population (history rosters). Order-dependence is guarded: generate_players
+# raises if a mini-population would set it, and reset_anchors() is the only reset path.
+PPS_SCALE = None
+MAIN_POOL_MIN = 100   # any population smaller than this is a mini-population
+
+
+def reset_anchors():
+    global PPS_SCALE
+    PPS_SCALE = None
 
 
 @dataclass
@@ -58,29 +70,76 @@ class Player:
 
 
 def _expected_stats(attrs, position):
+    """Arithmetically consistent box score. Shot mix and shooting splits are generated,
+    everything else is DERIVED, so every line is possible basketball by construction:
+        pts    == 2*fgm2 + 3*fgm3 + ft_pts
+        fg_pct == (fgm2 + fgm3) / fga
+        pps    == pts / fga            <- the TrueImpact anchor (finalize_expected)
+    Percentages here are pre-anchor; finalize_expected applies the league PPS_SCALE."""
     u, e, t3 = attrs["usage"] / 100, attrs["efficiency"] / 100, attrs["three_pt"] / 100
     pl, sec, d = attrs["playmaking"] / 100, attrs["ball_security"] / 100, attrs["defense"] / 100
     fga = 2.0 + 22.0 * u
-    pps = 0.75 + 0.45 * e + 0.08 * t3            # normalized league-wide later; 3pt skill kept
-                                                 # modest here so Barrage is what weaponizes it
-    fg = np.clip(0.36 + 0.16 * e + POS_FG_BONUS[position] - 0.02 * t3, 0.38, 0.62)
-    p3 = np.clip(0.20 + 0.21 * t3, 0.20, 0.45)
-    reb = POS_REB_BASE[position] * (0.55 + 0.9 * d)
+    share3 = float(np.clip(0.12 + 0.24 * t3, 0.05, 0.55))      # 3-point attempt share
+    fg2 = float(np.clip(0.31 + 0.20 * e + POS_FG_BONUS[position] - 0.02 * t3, 0.30, 0.64))
+    p3 = float(np.clip(0.20 + 0.12 * t3, 0.15, 0.43))          # slopes kept modest so 3pt skill
+                                                               # doesn't out-scale efficiency:
+                                                               # Barrage is what weaponizes it
+    ftr = 0.12 + 0.10 * e                                      # FT points per FGA (max 0.22).
+                                                               # efficiency's share kept small: FT
+                                                               # points are invisible to the rate
+                                                               # columns, and a big hidden channel
+                                                               # lets hype proxy wins (check 1)
+    reb = POS_REB_BASE[position] * (0.70 + 0.6 * d)   # mostly positional (keeps the rebounds
+                                                      # column from being fully collinear with
+                                                      # stl/blk) but with enough defense slope
+                                                      # that team rebounding varies (INSxREB)
     ast = (0.5 + 8.5 * pl) * POS_AST_F[position]
     stl = (0.2 + 1.9 * d) * POS_STL_F[position]
     blk = 2.4 * d * POS_BLK_F[position]
     tov = 0.5 + 3.4 * u * (1.25 - sec)
     mins = 8.0 + 30.0 * (0.55 * u + 0.45 * (0.5 * e + 0.5 * d))
-    return dict(fga=fga, pps=pps, fg_pct=fg, three_pt_pct=p3, rebounds=reb, assists=ast,
-                steals=stl, blocks=blk, turnovers=tov, mins=mins)
+    return dict(fga=fga, share3=share3, fg2_pct=fg2, three_pt_pct=p3, ft_rate=ftr,
+                rebounds=reb, assists=ast, steals=stl, blocks=blk, turnovers=tov, mins=mins)
+
+
+def finalize_expected(exp):
+    """Apply the league PPS anchor to the make-components and derive the box-score line.
+    Scaling fg2_pct / three_pt_pct / ft_rate by the same factor scales pts (and pps)
+    linearly while keeping the arithmetic identities exact."""
+    assert PPS_SCALE is not None, "PPS_SCALE unset: generate the main pool first"
+    exp["fg2_pct"] *= PPS_SCALE
+    exp["three_pt_pct"] *= PPS_SCALE
+    exp["ft_rate"] *= PPS_SCALE
+    fga = exp["fga"]
+    exp["fga3"] = fga * exp["share3"]
+    exp["fga2"] = fga - exp["fga3"]
+    exp["fgm2"] = exp["fga2"] * exp["fg2_pct"]
+    exp["fgm3"] = exp["fga3"] * exp["three_pt_pct"]
+    exp["ft_pts"] = fga * exp["ft_rate"]
+    exp["pts"] = 2 * exp["fgm2"] + 3 * exp["fgm3"] + exp["ft_pts"]
+    exp["pps"] = exp["pts"] / fga
+    exp["fg_pct"] = (exp["fgm2"] + exp["fgm3"]) / fga
+    return exp
+
+
+def _raw_pps(exp):
+    """Pre-anchor points per shot, used only to compute PPS_SCALE from the main pool."""
+    return (2 * (1 - exp["share3"]) * exp["fg2_pct"]
+            + 3 * exp["share3"] * exp["three_pt_pct"] + exp["ft_rate"])
 
 
 def generate_players(rng: np.random.Generator, id_start=1001):
+    global PPS_SCALE
     players, pid = [], id_start
     order = []
     for arch, n in C.ARCHETYPE_COUNTS.items():
         order += [arch] * n
     rng.shuffle(order)
+    if PPS_SCALE is None and len(order) < MAIN_POOL_MIN:
+        raise RuntimeError(
+            f"generate_players called with a mini-population ({len(order)} players) before the "
+            "main pool set PPS_SCALE — league anchors would be garbage. Generate the main "
+            "175-player pool first (see generate.py main()).")
 
     # position bookkeeping to respect global mix on flexible archetypes
     target = {p: int(round(share * len(order))) for p, share in C.POSITION_MIX.items()}
@@ -100,6 +159,12 @@ def generate_players(rng: np.random.Generator, id_start=1001):
         position = cands[0]
         count[position] += 1
         age = int(rng.integers(alo, ahi + 1))
+        if arch == "aging_legend":
+            # peak skills -> current skills via the cumulative aging level: the sticker
+            # stats already show the fade the prev_ trail describes (honest breadcrumb)
+            lvl = C.age_level(age)
+            for key in ("efficiency", "ball_security", "defense"):
+                attrs[key] = float(np.clip(attrs[key] * lvl, 2, 98))
         years_pro = max(0, age - 19 - int(rng.integers(0, 3)))
         while True:
             name = f"{rng.choice(FIRST)} {rng.choice(LAST)}"
@@ -112,18 +177,17 @@ def generate_players(rng: np.random.Generator, id_start=1001):
         players.append(p)
         pid += 1
 
-    # normalize pps so the FGA-weighted league mean is exactly PPS_LEAGUE_AVG.
+    # anchor pps so the FGA-weighted league mean is exactly PPS_LEAGUE_AVG.
     # The scale is computed ONCE (main 175-player pool) and reused for every later
     # mini-population (history rosters) — otherwise each roster would be re-centered
     # to its own average and roster quality differences would vanish.
-    global PPS_SCALE
     if PPS_SCALE is None:
         tot_fga = sum(p.exp["fga"] for p in players)
-        mean_pps = sum(p.exp["fga"] * p.exp["pps"] for p in players) / tot_fga
+        mean_pps = sum(p.exp["fga"] * _raw_pps(p.exp) for p in players) / tot_fga
         PPS_SCALE = C.PPS_LEAGUE_AVG / mean_pps
+        assert 0.80 < PPS_SCALE < 1.25, f"PPS_SCALE {PPS_SCALE:.3f} out of sane range"
     for p in players:
-        p.exp["pps"] *= PPS_SCALE
-        p.exp["pts"] = p.exp["fga"] * p.exp["pps"]
+        finalize_expected(p.exp)
 
     for p in players:
         _fill_components(p)
@@ -133,9 +197,8 @@ def generate_players(rng: np.random.Generator, id_start=1001):
 
 def _fill_components(p: Player):
     e = p.exp
-    t3 = p.attrs["three_pt"] / 100
     sv_total = e["fga"] * (e["pps"] - C.PPS_LEAGUE_AVG) + C.W_CREATION * e["fga"]
-    sv_three = e["fga"] * 0.08 * t3 * 0.9          # the 3pt slice of scoring value
+    sv_three = 3 * e["fgm3"] - e["fga3"] * C.PPS_LEAGUE_AVG   # value of the 3pt attempts vs avg
     sv_interior = sv_total - sv_three
     play = C.W_PLAYMAKING * e["assists"]
     dfc = C.W_STEAL * e["steals"] + C.W_BLOCK * e["blocks"] + C.W_REBOUND * e["rebounds"]
@@ -154,14 +217,26 @@ def _fill_components(p: Player):
 
 
 def _fill_published(p: Player, rng):
+    """Observation noise enters through the COMPONENTS (attempts, shooting splits, FT rate);
+    pts and fg_pct are re-derived from the noisy components, so every published line stays
+    arithmetically possible: 2*fga*fg_pct <= pts <= 3*fga*fg_pct + 0.35*fga."""
     e = p.exp
     n = lambda sd: rng.normal(0, sd)
     pub = {}
-    pub["fga"] = float(np.clip(e["fga"] + n(0.7), 2, 24))
-    pub["pts"] = float(np.clip(e["pts"] + n(0.9), 2, 30))
-    pub["fg_pct"] = float(np.clip(e["fg_pct"] + n(0.012), 0.38, 0.62))
-    pub["three_pt_pct"] = float(np.clip(e["three_pt_pct"] + n(0.012), 0.20, 0.45))
-    pub["ft_pct"] = float(np.clip(0.55 + 0.30 * rng.random() + 0.10 * p.attrs["efficiency"] / 100, 0.55, 0.95))
+    fga = float(np.clip(e["fga"] + n(0.7), 2, 24))
+    fg2 = float(np.clip(e["fg2_pct"] + n(0.012), 0.25, 0.65))
+    p3 = float(np.clip(e["three_pt_pct"] + n(0.012), 0.15, 0.45))
+    ftr = float(np.clip(e["ft_rate"] + n(0.020), 0.02, 0.34))
+    fgm2 = fga * (1 - e["share3"]) * fg2
+    fgm3 = fga * e["share3"] * p3
+    pub["fga"] = fga
+    pub["pts"] = 2 * fgm2 + 3 * fgm3 + fga * ftr
+    pub["fg_pct"] = (fgm2 + fgm3) / fga
+    pub["three_pt_pct"] = p3
+    # ft_pct carries a moderate efficiency echo: enough that the FT-points channel in team
+    # scoring is visible to the rate-based student model (otherwise hype proxies it and the
+    # payroll/hype nulls wobble), not so strong that it steals fg_pct's efficiency credit
+    pub["ft_pct"] = float(np.clip(0.60 + 0.18 * p.attrs["efficiency"] / 100 + n(0.050), 0.55, 0.95))
     pub["rebounds"] = float(np.clip(e["rebounds"] + n(0.35), 1, 13))
     pub["assists"] = float(np.clip(e["assists"] + n(0.30), 0.5, 10))
     pub["steals"] = float(np.clip(e["steals"] + n(0.08), 0.2, 2.5))

@@ -11,7 +11,13 @@ import math
 import numpy as np
 import config as C
 
-NORMS = None   # set once from the main pool
+NORMS = None       # set once from the main pool (see reset_norms / the guard in apply_market)
+MAIN_POOL_MIN = 100
+
+
+def reset_norms():
+    global NORMS
+    NORMS = None
 
 
 def _phi(z):
@@ -22,13 +28,20 @@ def _features(players):
     pts = np.array([p.pub["pts"] for p in players])
     fga = np.array([p.pub["fga"] for p in players])
     ast = np.array([p.pub["assists"] for p in players])
-    skill = np.array([p.comps["play"] + 0.5 * p.comps["defense"] for p in players])
+    # quarter-credit defense: the market must stay blind ENOUGH that the wider defense
+    # spread across history teams can't drag payroll/hype into significance vs wins
+    skill = np.array([p.comps["play"] + 0.25 * p.comps["defense"] for p in players])
     ti = np.array([p.ti_raw for p in players])
     return dict(pts=pts, fga=fga, ast=ast, skill=skill, ti=ti)
 
 
 def apply_market(players, rng):
     global NORMS
+    if NORMS is None and len(players) < MAIN_POOL_MIN:
+        raise RuntimeError(
+            f"apply_market called with a mini-population ({len(players)} players) before the "
+            "main pool set the salary/hype NORMS — prices would be anchored to a random "
+            "mini-roster. Run the main 175-player pool through apply_market first.")
     f = _features(players)
 
     if NORMS is None:
@@ -78,8 +91,17 @@ def _zn(x, key):
     return (np.asarray(x, float) - mu) / sd
 
 
+AUCTION_POS_TARGET = {"G": 9, "W": 8, "B": 8}   # ~pool mix (36/34/30) over 25 stars
+
+
 def assign_auction(players, rng):
-    """Pick the 25 auction-class stars: mostly legit high-TI names, seeded with traps."""
+    """Pick the 25 auction-class stars: mostly legit high-TI names, seeded with traps.
+
+    Guarantees (asserted here and re-checked by harness check 11):
+      * exactly 5 stars per wave;
+      * every wave contains at least one trap;
+      * every wave contains at least one G, one W and one B;
+      * the 25 lean toward the pool's position mix (>= 4 of each position)."""
     by = {a: [p for p in players if p.archetype == a] for a in
           ("volume_trap", "aging_legend", "efficient_star", "two_way_wing",
            "sharpshooter", "rim_protector", "floor_general", "elite_defender")}
@@ -89,32 +111,52 @@ def assign_auction(players, rng):
     picks = []
     picks += by["volume_trap"][:4]
     picks += by["aging_legend"][:2]
+    # the two planted low-hype gems: elite defenders picked on TRUTH, not hype
+    wildcards = [p for p in sorted(by["elite_defender"], key=lambda p: -p.ti) if p not in picks]
+    picks += wildcards[:2]
+
+    # position-aware legit fill: honor the pool-mix targets before pure appeal
     legit_pool = sorted(
         (p for a in ("efficient_star", "two_way_wing", "sharpshooter", "rim_protector", "floor_general")
          for p in by[a] if p not in picks),
         key=lambda p: -(0.6 * p.ti + 0.4 * p.hype * 4))
-    picks += legit_pool[:17]
-    wildcards = [p for p in sorted(by["elite_defender"], key=lambda p: -p.ti) if p not in picks]
-    picks += wildcards[:2]
-    picks = picks[:C.N_AUCTION]
-
-    picks.sort(key=lambda p: (-p.hype, -p.pub["pts"]))
-    waves = {w: [] for w in range(1, C.AUCTION_WAVES + 1)}
-    order = list(range(1, C.AUCTION_WAVES + 1)) + list(range(C.AUCTION_WAVES, 0, -1))
-    for i, p in enumerate(picks):
-        waves[order[i % len(order)]].append(p)
-    trapless = [w for w, ps in waves.items() if not any(p.is_trap for p in ps)]
-    doubled = [w for w, ps in waves.items() if sum(p.is_trap for p in ps) > 1]
-    for w in trapless:
-        if not doubled:
+    have = {q: sum(1 for p in picks if p.position == q) for q in "GWB"}
+    for p in legit_pool:
+        if len(picks) == C.N_AUCTION:
             break
-        src = doubled.pop()
-        trap = next(p for p in waves[src] if p.is_trap)
-        give = next(p for p in waves[w] if not p.is_trap)
-        waves[src].remove(trap); waves[w].remove(give)
-        waves[src].append(give); waves[w].append(trap)
+        if have[p.position] < AUCTION_POS_TARGET[p.position]:
+            picks.append(p)
+            have[p.position] += 1
+    for p in legit_pool:                       # top up if targets were unreachable
+        if len(picks) == C.N_AUCTION:
+            break
+        if p not in picks:
+            picks.append(p)
+            have[p.position] += 1
+    assert len(picks) == C.N_AUCTION
+    assert all(have[q] >= 4 for q in "GWB"), f"auction class position mix too skewed: {have}"
 
-    for w, ps in waves.items():
+    # wave assignment: randomized search for a deal satisfying the hard constraints,
+    # preferring hype-balanced waves. Constraints are re-validated at fixed point every
+    # draw (no one-shot repair — see the trapless/doubled bug this replaces).
+    n_w = C.AUCTION_WAVES
+    best, best_spread = None, None
+    for _ in range(4000):
+        perm = [picks[i] for i in rng.permutation(len(picks))]
+        waves = {w: perm[(w - 1) * 5: w * 5] for w in range(1, n_w + 1)}
+        if not all(any(p.is_trap for p in ps) for ps in waves.values()):
+            continue
+        if not all({p.position for p in ps} >= {"G", "W", "B"} for ps in waves.values()):
+            continue
+        means = [float(np.mean([p.hype for p in ps])) for ps in waves.values()]
+        spread = max(means) - min(means)
+        if best is None or spread < best_spread:
+            best, best_spread = waves, spread
+            if spread < 0.35:
+                break
+    assert best is not None, "no wave assignment satisfied trap+position constraints"
+    for w, ps in best.items():
+        assert len(ps) == 5 and any(p.is_trap for p in ps) and {p.position for p in ps} >= {"G", "W", "B"}
         for p in ps:
             p.auction_round = w
             p.salary = 0.0

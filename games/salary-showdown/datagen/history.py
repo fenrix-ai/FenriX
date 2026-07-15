@@ -43,12 +43,14 @@ def _make_roster(rng, pid_start):
     # shooting): widens the win spread without letting payroll track quality — the
     # "money doesn't buy wins" scatter stays flat by construction.
     tilts = {key: rng.normal(0, sd) for key, sd in C.HISTORY_QUALITY_TILT.items()}
+    # independent perimeter/interior defense tilts (see C.DEFENSE_TILT_SD)
+    d_per, d_int = rng.normal(0, C.DEFENSE_TILT_SD), rng.normal(0, C.DEFENSE_TILT_SD)
+    d_by_pos = {"G": d_per, "W": 0.5 * (d_per + d_int), "B": d_int}
     for p in roster:
         for key, t in tilts.items():
             p.attrs[key] = float(np.clip(p.attrs[key] + t, 2, 98))
-        p.exp = A._expected_stats(p.attrs, p.position)
-        p.exp["pps"] *= A.PPS_SCALE
-        p.exp["pts"] = p.exp["fga"] * p.exp["pps"]
+        p.attrs["defense"] = float(np.clip(p.attrs["defense"] + d_by_pos[p.position], 2, 98))
+        p.exp = A.finalize_expected(A._expected_stats(p.attrs, p.position))
         A._fill_components(p)
         A._fill_published(p, rng)
     for pos, need in (("G", 2), ("W", 2), ("B", 1)):
@@ -57,9 +59,7 @@ def _make_roster(rng, pid_start):
             for p in roster:
                 if sum(1 for q in roster if q.position == p.position) > 2 and p.position != pos:
                     p.position = pos
-                    p.exp = A._expected_stats(p.attrs, pos)
-                    p.exp["pps"] *= A.PPS_SCALE
-                    p.exp["pts"] = p.exp["fga"] * p.exp["pps"]
+                    p.exp = A.finalize_expected(A._expected_stats(p.attrs, pos))
                     A._fill_components(p)
                     A._fill_published(p, rng)
                     break
@@ -67,7 +67,10 @@ def _make_roster(rng, pid_start):
 
 
 def build_history(rng, k):
-    """Returns (rows, style_params)."""
+    """Returns (rows, style_params, best_styles, syn_flags)."""
+    assert A.PPS_SCALE is not None and M.NORMS is not None, (
+        "league anchors unset: history must REUSE the main pool's PPS_SCALE / market NORMS, "
+        "never recompute them — generate the main pool first (see generate.py main())")
     n = C.N_HISTORY_TEAMS
     all_teams = []
     for season in range(1, C.N_HISTORY_SEASONS + 1):
@@ -75,8 +78,10 @@ def build_history(rng, k):
             roster = _make_roster(rng, pid_start=90000 + season * 1000 + t * 20)
             M.apply_market(roster, rng)
             starters, sixth, bench = E.pick_lineup(roster, metric=lambda p: p.ti_raw)
+            viol = (E._shooters(starters) < 2
+                    or E._rim_score(starters, sixth) < C.RIM_BLOCK_SKILL)
             all_teams.append(dict(season=season, idx=t, name=HISTORY_TEAMS[t], roster=roster,
-                                  lineup=(starters, sixth, bench)))
+                                  lineup=(starters, sixth, bench), syn_viol=viol))
 
     params = E.calibrate_style_params([tm["lineup"] for tm in all_teams])
 
@@ -88,15 +93,40 @@ def build_history(rng, k):
         scores = {s: E.team_strength(st, sx, bn, s, params, use_drift=False) for s in C.PLAYSTYLES}
         best_styles.append(max(scores, key=scores.get))
 
-    # randomized, exactly-balanced style assignment across all team-seasons
-    styles = (C.PLAYSTYLES * (len(all_teams) // len(C.PLAYSTYLES) + 1))[: len(all_teams)]
-    styles = list(np.array(styles)[rng.permutation(len(styles))])
-    for tm, style in zip(all_teams, styles):
+    # randomized, exactly-balanced style assignment across all team-seasons:
+    #  * BLOCKED on pre-style (Balanced) strength — teams are sorted by talent and each
+    #    consecutive block of 5 gets a random permutation of the 5 styles, so talent luck
+    #    can't tilt a style's cell mean;
+    #  * RERANDOMIZED on fit (Morgan & Rubin style) — among STYLE_ASSIGN_TRIES blocked
+    #    draws, keep the one whose per-style cell-mean deltas are closest to zero. Cell
+    #    MEANS are constrained (flat main effects by construction, check 8); within-cell
+    #    delta VARIATION — what identifies the check-9 interactions — is untouched.
+    base_strength = {id(tm): E.team_strength(*tm["lineup"], "Balanced", params, use_drift=False)
+                     for tm in all_teams}
+    by_talent = sorted(all_teams, key=lambda tm: base_strength[id(tm)])
+    delta = {id(tm): {s: E.style_delta(E.component_sums(*tm["lineup"], use_drift=False), s, params)
+                      for s in C.PLAYSTYLES} for tm in all_teams}
+    n_styles = len(C.PLAYSTYLES)
+    best_assign, best_score = None, None
+    for _ in range(C.STYLE_ASSIGN_TRIES):
+        assign = {}
+        for b in range(0, len(by_talent), n_styles):
+            block = by_talent[b: b + n_styles]
+            perm = rng.permutation(n_styles)[: len(block)]
+            for tm, si in zip(block, perm):
+                assign[id(tm)] = C.PLAYSTYLES[int(si)]
+        score = max(abs(float(np.mean([delta[tid][s] for tid, st_ in assign.items() if st_ == s])))
+                    for s in C.PLAYSTYLES)
+        if best_score is None or score < best_score:
+            best_assign, best_score = assign, score
+            if score < 0.25:
+                break
+    for tm in all_teams:
         st, sx, bn = tm["lineup"]
-        tm["style"] = style
-        tm["strength"] = E.team_strength(st, sx, bn, style, params, use_drift=False)
+        tm["style"] = best_assign[id(tm)]
+        tm["strength"] = E.team_strength(st, sx, bn, tm["style"], params, use_drift=False)
 
-    rows = []
+    rows, syn_flags = [], []
     for season in range(1, C.N_HISTORY_SEASONS + 1):
         teams = [tm for tm in all_teams if tm["season"] == season]
 
@@ -117,8 +147,9 @@ def build_history(rng, k):
         for tm, w in zip(teams, wins):
             st, sx, bn = tm["lineup"]
             pace = C.PACE[tm["style"]]
-            slots = [(p, 1.0) for p in st] + ([(sx, 0.6)] if sx else []) + [(p, 0.35) for p in bn[:2]]
+            slots = E._slots(st, sx, bn)   # same tier weights as the strength model (C.TIER_WEIGHTS)
             tw = sum(wt for _, wt in slots)
+            syn_flags.append(dict(viol=bool(tm["syn_viol"]), wins=int(w)))
             agg = lambda key: sum(p.exp[key] * wt for p, wt in slots)
             wavg = lambda key: agg(key) / tw
             cnoise = lambda: 1 + rng.normal(0, C.TEAM_STAT_NOISE)
@@ -138,4 +169,4 @@ def build_history(rng, k):
                 avg_hype=round(float(np.mean([p.hype for p in tm["roster"]])), 2),
                 playstyle=tm["style"],
             ))
-    return rows, params, best_styles
+    return rows, params, best_styles, syn_flags

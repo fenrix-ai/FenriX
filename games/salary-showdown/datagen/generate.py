@@ -2,8 +2,8 @@
 
 Usage:  python3 generate.py [--force]
 
-Pipeline: players -> market -> auction waves -> style calibration -> provisional history
--> student model -> tune k -> final history -> harness (9 checks) -> write outputs.
+Pipeline: players -> market -> auction waves -> tune k (per-k provisional history + refit
+student model) -> final history -> harness (11 checks + diagnostics) -> write outputs.
 Fails closed: without --force nothing is written unless every check passes.
 """
 import csv
@@ -79,29 +79,43 @@ def main(force=False):
     rng = np.random.default_rng(C.SEED)
     print(f"seed={C.SEED} schema=v{C.SCHEMA_VERSION}")
 
+    # league anchors are ORDER-DEPENDENT module globals: reset explicitly, then require
+    # that the main pool (and nothing else) sets them. history/mini-populations REUSE them;
+    # attributes.generate_players / market.apply_market raise if a mini-population would
+    # anchor them first.
+    A.reset_anchors()
+    M.reset_norms()
+    assert A.PPS_SCALE is None and M.NORMS is None
+
     players = A.generate_players(rng)
     M.apply_market(players, rng)
+    assert A.PPS_SCALE is not None, "main pool failed to set PPS_SCALE"
+    assert M.NORMS is not None and "hype_raw" in M.NORMS, "main pool failed to set market NORMS"
+    pps_scale_main, norms_main = A.PPS_SCALE, M.NORMS
     M.assign_auction(players, rng)
     fa_pool = [p for p in players if p.auction_round == 0]
     print(f"pool: {len(players)} players ({len(fa_pool)} FA, {len(players)-len(fa_pool)} auction)")
 
-    print("provisional history + student model ...")
-    hist0, constants, _ = H.build_history(rng, C.LOGISTIC_K)
-    print("style params:", {s: {kk: round(vv, 2) for kk, vv in v.items()} for s, v in constants.items()})
-    weights = F.student_model(hist0)
+    print("tuning k (per-k provisional history + refit student model) ...")
 
-    print("tuning k ...")
-    k, _ = F.tune_k(fa_pool, weights, rng, constants)
+    def fit_for_k(k):
+        hist_k, constants_k, _, _ = H.build_history(rng, k)
+        return F.student_model(hist_k), constants_k
+
+    k, _ = F.tune_k(fa_pool, rng, fit_for_k)
     print(f"k={k}")
 
     print("final history ...")
-    history, constants, best_styles = H.build_history(rng, k)
+    history, constants, best_styles, syn_flags = H.build_history(rng, k)
     weights = F.student_model(history)
+    assert A.PPS_SCALE is pps_scale_main and M.NORMS is norms_main, (
+        "league anchors were recomputed after the main pool — history must reuse, never recompute")
 
     print("fairness sims ...")
     fairness_res = F.run_fairness(fa_pool, weights, rng, k, constants)
 
-    ok, report = harness.run_all(players, fa_pool, history, best_styles, fairness_res, k, constants, rng)
+    ok, report = harness.run_all(players, fa_pool, history, best_styles, syn_flags,
+                                 fairness_res, k, constants, rng)
     lines = [f"Salary Showdown data harness — seed {C.SEED}, schema v{C.SCHEMA_VERSION}", ""]
     for name, detail, passed in report:
         lines.append(f"[{'PASS' if passed else 'FAIL'}] {name}: {detail}")
