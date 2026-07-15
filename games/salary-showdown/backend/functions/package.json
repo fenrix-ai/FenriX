@@ -1,0 +1,20 @@
+{
+  "name": "salary-showdown-functions",
+  "type": "module",
+  "engines": { "node": "20" },
+  "scripts": {
+    "test": "vitest run",
+    "test:unit": "vitest run --exclude '**/{rules,lifecycle,smoke}.test.js'",
+    "emu": "cd .. && firebase emulators:start --project salary-showdown-dev"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.0.0",
+    "firebase-functions": "^5.0.0"
+  },
+  "devDependencies": {
+    "vitest": "^2.0.0",
+    "@firebase/rules-unit-testing": "^3.0.0",
+    "firebase-functions-test": "^3.1.0",
+    "node-fetch": "^3.3.0"
+  }
+}
