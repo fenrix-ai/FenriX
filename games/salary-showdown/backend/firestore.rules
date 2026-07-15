@@ -30,6 +30,8 @@ service cloud.firestore {
       match /market/{round} { allow read: if isMember(gameId); allow write: if false; }
       match /auctions/{round} { allow read: if isMember(gameId); allow write: if false; }
       match /rounds/{r}     { allow read: if isMember(gameId); allow write: if false; }
+      // server-only idempotency log for phase hooks — never client-accessible
+      match /hooklog/{key}  { allow read, write: if false; }
       match /reveal/{doc} {
         allow read: if isMember(gameId)
           && get(/databases/$(database)/documents/games/$(gameId)).data.status == 'finished';

@@ -82,17 +82,30 @@ export const startSeason = onCall(async (req) => {
   return { phase: 'FREE_AGENCY' };
 });
 
+// Idempotency guard: each hook firing is recorded in games/{gameId}/hooklog so a
+// professor retry after a mid-advance failure (entry hook or final update threw,
+// game doc still shows the old phase) never re-fires a hook that already resolved
+// — no double auction resolution, no double hardship signings. Missing hooks are
+// no-ops and leave no log entry.
+async function runHookOnce(gameId, key, hook, round) {
+  if (!hook) return;
+  const logRef = db().doc(`games/${gameId}/hooklog/${key}`);
+  if ((await logRef.get()).exists) return;        // already resolved on a prior attempt
+  await hook(gameId, round);
+  await logRef.set({ at: FieldValue.serverTimestamp() });
+}
+
 export const advancePhase = onCall(async (req) => {
   const { gameId } = req.data;
   const g = await assertProfessor(gameId, req.auth?.uid);
   if (g.status === 'finished') throw new HttpsError('failed-precondition', 'game over');
-  const hook = HOOKS[g.phase];
-  if (hook) await hook(gameId, g.round);          // resolve the phase we are LEAVING
+  // resolve the phase we are LEAVING
+  await runHookOnce(gameId, `${g.round}-${g.phase}`, HOOKS[g.phase], g.round);
   const nxt = nextPhase(g.round, g.phase, g.config.totalRounds);
   const update = { round: nxt.round, phase: nxt.phase, timerEndsAt: null };
   if (nxt.phase === 'FINALE') update.status = 'finished';
-  const entry = HOOKS[`enter:${nxt.phase}`];
-  if (entry) await entry(gameId, nxt.round);      // e.g. market draw on FREE_AGENCY entry
+  // e.g. market draw on FREE_AGENCY entry
+  await runHookOnce(gameId, `enter-${nxt.round}-${nxt.phase}`, HOOKS[`enter:${nxt.phase}`], nxt.round);
   await db().doc(`games/${gameId}`).update(update);
   return nxt;
 });

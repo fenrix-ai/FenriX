@@ -18,6 +18,7 @@ beforeAll(async () => {
     await db.doc('games/g1/teams/t1/private/auction').set({ bids: {} });
     await db.doc('games/g1/teams/t2/private/auction').set({ bids: {} });
     await db.doc('games/g1/reveal/latest').set({ secret: true });
+    await db.doc('games/g1/hooklog/1-FREE_AGENCY').set({ at: new Date() });
     // g2: a finished game, for the POSITIVE reveal-gate direction (kept separate
     // from g1 so the blocked-direction test stays valid regardless of test order).
     await db.doc('games/g2').set({ status: 'finished', phase: 'FINALE', round: 5 });
@@ -55,6 +56,11 @@ describe('firestore rules', () => {
   it('reveal readable by member once game is finished (positive gate)', async () => {
     const db = env.authenticatedContext('alice').firestore();
     await assertSucceeds(db.doc('games/g2/reveal/latest').get());
+  });
+  it('hooklog is server-only: members can neither read nor write it', async () => {
+    const db = env.authenticatedContext('alice').firestore();
+    await assertFails(db.doc('games/g1/hooklog/1-FREE_AGENCY').get());
+    await assertFails(db.doc('games/g1/hooklog/1-AUCTION').set({ at: new Date() }));
   });
   it('authenticated user cannot create own membership doc directly', async () => {
     const db = env.authenticatedContext('mallory').firestore();

@@ -16,9 +16,11 @@ games/{gameId}/market/{round}         # { available: [pid], resignExempt: true }
 games/{gameId}/auctions/{round}       # { stars: [pid], results: [{pid, teamId|null, rate, years, guaranteed}] } — results field added at resolution
 games/{gameId}/rounds/{r}             # { games: [{home, away, homeScore, awayScore}], awards: {...}, boxCsv: string, standings: [...] }
 games/{gameId}/reveal/latest          # written ONLY after round 5 RESULTS (finale payload)
+games/{gameId}/hooklog/{key}          # phase-hook idempotency log; key "{round}-{phase}" (exit) or "enter-{round}-{phase}" (entry): { at: ts }
+                                      # server-only: makes advancePhase retries safe (a resolved hook is never re-fired); explicit deny-all in rules
 
 RULES POLICY
-- authenticated members of a game may READ everything under their game EXCEPT teams/*/private/* of other teams and reveal/* before status=finished.
+- authenticated members of a game may READ everything under their game EXCEPT teams/*/private/* of other teams, reveal/* before status=finished, and hooklog/* (server-only, always denied).
 - players/{uid}: membership CREATE is server-only (joinGame callable via Admin SDK); the only client write is updating one's own displayName.
 - ALL other writes: server only (callables use Admin SDK, which bypasses rules).
 - hidden.json / engine_params.json are NOT in Firestore at all.
