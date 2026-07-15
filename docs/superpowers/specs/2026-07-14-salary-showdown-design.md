@@ -286,6 +286,8 @@ Historical teams in `league_history.csv` ran assorted playstyles. **Mean wins by
     - Simulate: league-wide scoreboard flood
     - Post-simulate: **the Standings Shuffle** — rows re-rank bottom-up one at a time, ▲/▼ movement arrows, green/red flashes, first place reveals last; callout badges (🔥 Biggest Climber, 📉 Hardest Fall, W-streak flames); holds until professor advances. Round 5: shuffle slows for the top three = the championship reveal, then hands off to Finale.
     - Implementation: `previousRank → newRank` computed server-side at simulate close; projector is pure playback.
+    - Approved animation (mocked 2026-07-14): rows land bottom-up one per ~0.8s with slide + green/red flash; top three shrouded until last (first place reveals last); round 5 slows the final three reveals to ~3s each and hands off to the Finale podium. Callout badges after settle: Biggest Climber, Hardest Fall, Win Streak.
+    - **Viewer-aware highlight:** the standings/shuffle component takes an optional `highlightTeamId`. Team-facing surfaces (Results snapshot, Standings page) pass the viewer's franchise — their row is visually highlighted. The projector passes none: the wall shows no team preference.
 13. **Cheat sheet** (printable page).
 
 Two-screen principle: private detail (your box scores) on team laptops; shared drama (the Shuffle) on the wall.
