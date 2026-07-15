@@ -333,6 +333,19 @@ HOOKS['AUCTION'] = async (gameId, round) => {   // exit hook: resolve sealed bid
 // — autoRepair silently reordering an already-legal lineup's bench (it rebuilds
 // `rest` sorted by public mins_per_game desc, not the coach's submitted order) —
 // never triggers here because autoRepair only runs on lineups that failed to validate.
+//
+// Why autoRepair can always succeed here — the position-floor invariant chain: by the
+// time LINEUP exits, every team's active roster holds >=8 players covering >=2G/2W/1B,
+// because (1) cuts are phase-restricted to FRONT_OFFICE/FREE_AGENCY (cutRosterPlayer),
+// so nothing is removed between FREE_AGENCY exit and here; (2) validateSigning's
+// POSITION_LOCK guard (market.js) keeps ordinary signings from ever locking a roster
+// out of covering the 2G/2W/1B starting-five need under the 10-man max; (3) the
+// FREE_AGENCY exit hook's runHardship closes the 2G/2W/1B + >=8 floor from the full
+// FA_POOL for any team still short; and (4) auction resolution (HOOKS['AUCTION']) is
+// strictly additive — it only pushes contracts onto rosters, never removes them.
+// That chain spans four files, so defense-in-depth below: the repaired lineup is
+// re-validated before it is written, and a failure crashes the hook loudly at the
+// source instead of silently persisting broken data into SIMULATE.
 HOOKS['LINEUP'] = async (gameId, round) => {
   const teams = await db().collection(`games/${gameId}/teams`).get();
   for (const t of teams.docs) {
@@ -340,7 +353,13 @@ HOOKS['LINEUP'] = async (gameId, round) => {
     const active = activePidsOf(team, round);
     let lineup = team.lineup;
     try { validateLineup({ lineup, activePids: active, catalogById: CATALOG }); }
-    catch { lineup = autoRepair({ prevLineup: team.lineup, activePids: active, catalogById: CATALOG }); }
+    catch {
+      lineup = autoRepair({ prevLineup: team.lineup, activePids: active, catalogById: CATALOG });
+      try { validateLineup({ lineup, activePids: active, catalogById: CATALOG }); }
+      catch (e) {
+        throw new Error(`lineup auto-repair produced an illegal lineup (${e.message}) for team ${t.id} round ${round} — position-floor invariant violated upstream`);
+      }
+    }
     await t.ref.update({ lineup, lineupLockedRound: round });
   }
 };

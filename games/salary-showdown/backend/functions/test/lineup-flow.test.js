@@ -61,6 +61,24 @@ describe('lineup flow (submission, Coach-only, auto-repair on LINEUP exit)', () 
     await expect(call(submitLineup, { gameId, lineup }, 'gmA')).rejects.toThrow(/Coach only/i);
   });
 
+  it('rejects an illegal template through the callable (invalid-argument BAD_TEMPLATE)', async () => {
+    const team = (await db.doc(`games/${gameId}/teams/${teamA}`).get()).data();
+    const lineup = legalLineupFrom(team.roster.map((c) => c.pid), 'Balanced');
+    // break the 2G/2W/1B template deterministically: swap the sixth man with any
+    // starter of a DIFFERENT position (one always exists — starters cover all three
+    // positions). Set membership is unchanged, so only BAD_TEMPLATE can fire.
+    const spare = lineup.sixth;
+    const victim = lineup.starters.find((pid) => byId[pid].position !== byId[spare].position);
+    const bad = {
+      ...lineup,
+      starters: lineup.starters.map((pid) => (pid === victim ? spare : pid)),
+      sixth: victim,
+    };
+    await expect(call(submitLineup, { gameId, lineup: bad }, 'coachA')).rejects.toThrow('BAD_TEMPLATE');
+    await expect(call(submitLineup, { gameId, lineup: bad }, 'coachA'))
+      .rejects.toMatchObject({ code: 'invalid-argument' });
+  });
+
   it('advancing out of LINEUP leaves the Coach-submitted lineup untouched and auto-repairs teamB, which never submitted', async () => {
     const submittedA = (await db.doc(`games/${gameId}/teams/${teamA}`).get()).data().lineup;
     const teamBBefore = (await db.doc(`games/${gameId}/teams/${teamB}`).get()).data();
@@ -78,5 +96,15 @@ describe('lineup flow (submission, Coach-only, auto-repair on LINEUP exit)', () 
     expect(teamBAfter.lineupLockedRound).toBe(1);
     const activeB = teamBAfter.roster.map((c) => c.pid);
     validateLineup({ lineup: teamBAfter.lineup, activePids: activeB, catalogById: byId }); // repaired lineup is legal
+  });
+
+  it('rejects submitLineup outside the LINEUP phase (failed-precondition)', async () => {
+    // the previous test advanced the game to SIMULATE(1) — even a perfectly legal
+    // resubmission from the Coach must now bounce off the phase gate.
+    const team = (await db.doc(`games/${gameId}/teams/${teamA}`).get()).data();
+    await expect(call(submitLineup, { gameId, lineup: team.lineup }, 'coachA'))
+      .rejects.toThrow(/lineups are locked/i);
+    await expect(call(submitLineup, { gameId, lineup: team.lineup }, 'coachA'))
+      .rejects.toMatchObject({ code: 'failed-precondition' });
   });
 });
