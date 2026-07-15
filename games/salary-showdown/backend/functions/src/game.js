@@ -6,6 +6,7 @@ import { drawMarket, validateSigning, runHardship } from './market.js';
 import { cutPlayer, expiringPids, hypeCurve } from './payroll.js';
 import { validateBids, resolveAuction } from './auction.js';
 import { validateLineup, autoRepair } from './lineup.js';
+import { simulateRound, toCsv } from './sim.js';
 
 const ROLES = ['GM', 'Scout', 'Coach'];
 const db = () => getFirestore();
@@ -362,4 +363,33 @@ HOOKS['LINEUP'] = async (gameId, round) => {
     }
     await t.ref.update({ lineup, lineupLockedRound: round });
   }
+};
+
+// enter: simulate the round-robin, persist the round doc (games/awards/standings/CSV),
+// and roll each team's record forward.
+// Internally idempotent beyond runHookOnce's log: games/{gameId}/rounds/{round} is
+// this hook's own completion marker, checked before any writes happen — the same
+// pattern as HOOKS['AUCTION']'s `wave?.results` guard. A retry that lost the hooklog
+// write (hook body ran, but the log write itself failed) must not re-simulate: the
+// per-game rng seed is fixed by gameId+round+teamId pair, so a re-run would recompute
+// byte-identical games/box scores, but the team-doc write is an incremental += on
+// wins/losses/pointDiff/pointsFor, not an overwrite — a second run would double-count
+// every team's record. The rounds/{round} doc existing is proof those team-doc
+// updates already landed once.
+HOOKS['enter:SIMULATE'] = async (gameId, round) => {
+  const roundRef = db().doc(`games/${gameId}/rounds/${round}`);
+  if ((await roundRef.get()).exists) return;
+  const teamDocs = await db().collection(`games/${gameId}/teams`).get();
+  const teams = teamDocs.docs.map((t) => ({ teamId: t.id, ...t.data() }));
+  const out = simulateRound({ gameId, round, teams, catalogById: CATALOG });
+  const batch = db().batch();
+  for (const s of out.standings) {
+    batch.update(db().doc(`games/${gameId}/teams/${s.teamId}`),
+      { wins: s.wins, losses: s.losses, pointDiff: s.pointDiff, pointsFor: s.pointsFor });
+  }
+  batch.set(roundRef, {
+    games: out.games, awards: out.awards, standings: out.standings,
+    boxCsv: toCsv(out.boxRows),
+  });
+  await batch.commit();
 };
