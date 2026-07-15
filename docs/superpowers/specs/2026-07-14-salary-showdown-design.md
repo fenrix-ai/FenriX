@@ -173,7 +173,7 @@ Hidden per-player attributes (never shipped to any client): `usage`, `efficiency
    - **Lockdown** — loads on **steals + blocks (stocks)**, mildly negative on scoring; possessions −15% → *higher* game variance (fewer possessions → more upsets — the rational underdog play)
    The student-facing one-sentence style descriptions (§4.4) are unchanged; none of this mechanism is shown in-app.
 3. **Games:** logistic win probability on strength gap; game-level steepness scales with the two teams' average pace factor (more possessions → fewer upsets). Tuned high-variance per game (any team can win any night) because the ~95-game season smooths records to skill: *chaos per game, justice per season.* Scores generated around league norm (~102) with margin from the gap.
-4. **Box scores:** team output allocated by usage × tier minutes; shooting lines shaped by true efficiency; counting stats emitted from attributes + noise. Team-level aggregates must be consistent with the history-file scaling (§7.1 aggregation-method note). **Age drift applies progressively (1/5 of season drift per round)** so decline/improvement is visible in the feed by round 3.
+4. **Box scores:** team output allocated by usage × tier minutes; shooting lines shaped by true efficiency; counting stats emitted from attributes + noise. Team-level aggregates must be consistent with the history-file scaling (§7.1 aggregation-method note). **Age drift applies as a constant one-season multiplier** (amended at backend implementation: the harness-validated reference engine uses a single per-season drift step, and the honest-aging redesign already bakes the decline into legends' sticker stats and the prev_ trail — those carry the in-game aging evidence; a round-by-round fade would double-count the decline and break engine parity).
 5. **Schedule:** full round-robin each round (no scheduler logic, no strength-of-schedule luck). Odd team count → the **Expansion Franchise** absorbs the bye: a house team with a fixed median-strength roster drawn from unsigned FAs at game generation, always Balanced, generating box scores like any team, excluded from standings and prizes (§13). If the class exceeds ~21 teams, the schedule switches to a **deterministic rotating balanced partial round-robin** — every team plays the same number of games each round; never random sampling (§13).
 
 All game state transitions and resolution are Cloud Functions-only (server-authoritative), same security philosophy as Bakery Bash rules.
@@ -184,7 +184,7 @@ All game state transitions and resolution are Cloud Functions-only (server-autho
 |---|---|
 | Moneyball mispricing | pre-game: league table regression (**wins model**) + salary residuals (see §9.1 instructor note) |
 | Trap stars | pre-game: pts÷attempts vs. the 0.94 break-even; in-game: box score bleed; finale reveal |
-| Aging curve | pre-game: `prev_` columns vs. age; in-game: progressive fade |
+| Aging curve | pre-game: `prev_` columns vs. age (trail extrapolates the engine exactly); in-game: aged players' box scores run at their drifted level all season |
 | Lineup synergy | in-game: lineup experiments; finale reveal (no roster columns ship in league_history — §9.4) |
 | Turnover poison | pre-game: league regression; in-game: losses pile up |
 | Playstyle fit | pre-game: interaction terms in league table; in-game: box-score `playstyle` column |
