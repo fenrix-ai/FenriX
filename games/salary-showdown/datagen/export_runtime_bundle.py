@@ -110,6 +110,10 @@ def main():
     # through the tier/scoring/style-scale weights) and can never be matched to 1e-9 by any
     # correct port. (Discovered during Task 4 parity debugging: the JS port reproduced the
     # rounded-input recompute bit-for-bit, proving the fixture — not the port — was wrong.)
+    #
+    # The fixture certifies the JS port against hidden.json's shipped (rounded) values; the
+    # assertion below bounds the residual between shipped-data strengths and full-precision
+    # engine truth.
     def hidden_view(pid):
         h = hidden[str(pid)]
         return SimpleNamespace(pid=pid, position=h["position"], ti=h["ti"], ti_raw=h["ti_raw"],
@@ -119,6 +123,7 @@ def main():
     by = {q: [p for p in players if p.position == q] for q in "GWB"}
     constants = {s: dict(v) for s, v in params["style_constants"].items()}
     cases, lineups = [], []
+    max_gap = 0.0
     for _ in range(200):
         roster = (list(rng.choice(by["G"], 3, replace=False))
                   + list(rng.choice(by["W"], 3, replace=False))
@@ -127,9 +132,16 @@ def main():
         lineups.append((st, sx, bn))
         style = C.PLAYSTYLES[int(rng.integers(0, 5))]
         st_v, sx_v, bn_v = [hidden_view(p.pid) for p in st], hidden_view(sx.pid), [hidden_view(p.pid) for p in bn]
+        strength = E.team_strength(st_v, sx_v, bn_v, style, constants, use_drift=True)
+        # Full-precision truth: same style, same lineup, but the ORIGINAL in-memory Player
+        # objects (pre-rounding) rather than the hidden.json-rounded views above. Measures
+        # how far shipped-data (rounded) strength has drifted from engine truth.
+        true_strength = E.team_strength(st, sx, bn, style, constants, use_drift=True)
+        max_gap = max(max_gap, abs(true_strength - strength))
         cases.append(dict(starters=[p.pid for p in st], sixth=sx.pid,
                           bench=[p.pid for p in bn[:2]], style=style,
-                          strength=E.team_strength(st_v, sx_v, bn_v, style, constants, use_drift=True)))
+                          strength=strength))
+    assert max_gap < 5e-4, f"hidden.json rounding drifts engine strength by {max_gap}"
     winprobs = []
     for _ in range(100):
         i, j = int(rng.integers(0, 200)), int(rng.integers(0, 200))
@@ -145,7 +157,8 @@ def main():
     json.dump(dict(cases=cases, winprobs=winprobs, lineup_picks=picks),
               open(os.path.join(FIX_OUT, "engine_parity.json"), "w"))
 
-    print(f"exported {len(rows)} players, {len(cases)} parity cases")
+    print(f"exported {len(rows)} players, {len(cases)} parity cases, "
+          f"max hidden.json rounding gap: {max_gap:.3e}")
 
 
 if __name__ == "__main__":
