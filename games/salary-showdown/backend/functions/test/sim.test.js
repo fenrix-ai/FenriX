@@ -104,15 +104,36 @@ describe('toCsv escaping', () => {
 describe('bargain award is per rostered copy (non-exclusive FA)', () => {
   const gs = (r) => r.pts + 1.2 * r.rebounds + 1.5 * r.assists + 3 * r.steals
                   + 3 * r.blocks - 2.5 * r.turnovers;
-  function mkTeamRated(id, offset, rate) {
+  function mkTeamRated(id, offset, rate, overrides = {}) {
     const g = fa.filter((p) => p.position === 'G').slice(offset, offset + 3);
     const w = fa.filter((p) => p.position === 'W').slice(offset, offset + 3);
     const b = fa.filter((p) => p.position === 'B').slice(offset, offset + 2);
-    const roster = [...g, ...w, ...b].map((p) => ({ pid: p.pid, rate, startRound: 1, years: 5 }));
+    const roster = [...g, ...w, ...b]
+      .map((p) => ({ pid: p.pid, rate: overrides[p.pid] ?? rate, startRound: 1, years: 5 }));
     const lineup = autoRepair({ prevLineup: null, activePids: roster.map((c) => c.pid), catalogById: byId });
     return { teamId: id, name: id, lineup, roster, wins: 0, losses: 0, pointDiff: 0, pointsFor: 0 };
   }
-  const pair = [mkTeamRated('x1', 0, 5), mkTeamRated('x2', 2, 12)];
+  // Discrimination-canary tuning (load-bearing — do not flatten back to uniform
+  // per-team rates). With offsets 0/2, pids 1005 (G) and 1012 (W) are the shared
+  // copies; pid 1017 (x1's B) is unshared and has the single highest raw gamescore
+  // of any row this fixture produces. Box-score gamescores are independent of
+  // `rate` (rate only feeds the bargain denominator), so at a team-uniform rate the
+  // naive (pid-pooled) and per-copy argmax always coincide on pid 1017 regardless of
+  // scale — a regression of sim.js's byCopy keying to naive pid-pooling would go
+  // undetected. To force the two folds apart: give shared pid 1005 a minimal rate
+  // (2) on team x1 only, and give the true best-unshared candidate 1017 a low but
+  // distinct rate (3); every other roster slot keeps a high rate (20) so its
+  // perDollar is negligible. That makes naive perDollar(x1,1005) — which divides
+  // BOTH copies' pooled gamescore by x1's tiny rate — the largest value in the whole
+  // fold, while per-copy perDollar(x1,1005) — x1's own rows only — falls below
+  // per-copy perDollar(x1,1017). So naive's argmax is the SHARED pid 1005, but the
+  // true per-copy argmax is the UNSHARED pid 1017: the folds provably disagree, and
+  // any accidental pool-by-pid regression flips the computed award (see canary
+  // below).
+  const pair = [
+    mkTeamRated('x1', 0, 20, { 1005: 2, 1017: 3 }),
+    mkTeamRated('x2', 2, 20, {}),
+  ];
   const shared = pair[0].roster.map((c) => c.pid)
     .filter((pid) => pair[1].roster.some((c) => c.pid === pid));
   const out2 = simulateRound({ gameId: 'g2', round: 1, teams: pair, catalogById: byId });
@@ -153,16 +174,26 @@ describe('bargain award is per rostered copy (non-exclusive FA)', () => {
     // one sum (a shared pid's naive numerator is always >= its true per-copy
     // numerator, since it additionally includes the other copy's rows), so every
     // shared pid's naive perDollar must exceed its correct per-copy perDollar. This
-    // holds by construction regardless of which player ends up the overall argmax —
-    // unlike comparing `naive.best` to `perCopy.best` directly, which only differs
-    // when a shared pid's inflated score happens to overtake the pool's true top
-    // scorer (a data/scaling-dependent coincidence, not the invariant under test).
+    // holds by construction regardless of which player ends up the overall argmax,
+    // so — on its own — it is a tautology that never exercises sim.js's award
+    // computation. Harmless to keep, but the canary below is what actually proves
+    // the byCopy keying, by forcing the two folds' argmaxes to provably diverge.
     expect(shared.length).toBeGreaterThan(0);
     for (const pid of shared) {
       for (const teamId of ['x1', 'x2']) {
         expect(naive.all[`${teamId}|${pid}`]).toBeGreaterThan(perCopy.all[`${teamId}|${pid}`]);
       }
     }
+    // Discrimination canary: the fixture's rate tuning (see mkTeamRated call above)
+    // makes the naive (pid-pooled) argmax land on the SHARED pid 1005 — inflated by
+    // pooling x2's rows into x1's minimal-rate denominator — while the true per-copy
+    // argmax is the UNSHARED pid 1017. These must differ; if sim.js's byCopy keying
+    // ever regressed to pooling by player_id alone, its computed award would match
+    // naive.best instead of perCopy.best and this assertion would fail.
+    expect(shared).toContain(naive.best.pid);
+    expect(naive.best.pid).not.toEqual(perCopy.best.pid);
+    // Load-bearing: with the canary above proving the two folds diverge, this proves
+    // sim.js actually keys its award computation by (teamId, pid), not by pooled pid.
     expect(out2.awards.bargain).toEqual(perCopy.best);
   });
 });
