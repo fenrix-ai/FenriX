@@ -362,6 +362,28 @@ HOOKS['enter:FREE_AGENCY'] = async (gameId, round) => {
     unsoldPids.push(pid);
     unsoldPrices[pid] = doc.data().price;
   }
+  // Released stars walk back into the rotation (spec §5/§13: an expired-and-declined
+  // or cut star "walks and joins the rotation"). Any auction star from an already-held
+  // wave with no active contract on any team and no existing unsold claim gets a fresh
+  // claim token at the standard hype-curve list price — the same exclusive-claim
+  // machinery unsold stars use (signPlayer tx.get+delete, STAR_TAKEN for the loser).
+  // Idempotent: re-running recomputes the same set and set() writes the same price.
+  const teamsSnap = await db().collection(`games/${gameId}/teams`).get();
+  const activePids = new Set();
+  for (const t of teamsSnap.docs) {
+    for (const c of t.data().roster) {
+      if (c.startRound + c.years - 1 >= round) activePids.add(c.pid);
+    }
+  }
+  for (const p of players) {
+    if (!p.auction_round || +p.auction_round >= round) continue; // wave not held yet
+    if (activePids.has(p.pid)) continue;                          // still under contract
+    if (unsoldPrices[p.pid] != null) continue;                    // claim already exists
+    const price = Math.round(hypeCurve(+p.hype) * 10) / 10;
+    await db().doc(`games/${gameId}/unsold/${p.pid}`).set({ price });
+    unsoldPids.push(p.pid);
+    unsoldPrices[p.pid] = price;
+  }
   // Non-exclusive FA (spec §4.2): the draw always runs over the FULL catalog —
   // players under contract to some team still appear (other teams may sign their
   // own copies). A team re-upping its own still-active copy is what ALREADY_SIGNED
