@@ -19,8 +19,8 @@ const call = (fn, data, uid) => t.wrap(fn)({ data, auth: { uid, token: {} } });
 // floor, nobody bids at AUCTION (both stars go unsold), and the LINEUP exit hook
 // auto-repairs both teams' still-null lineups. The advancePhase call that leaves
 // LINEUP and enters SIMULATE is the SAME call that fires enter:SIMULATE (game.js
-// resolves the entry hook for the phase it is stepping INTO before writing the new
-// round/phase), so by the time it resolves, games/{gameId}/rounds/1 already exists.
+// flips the phase first, then resolves the exit and entry hooks before returning),
+// so by the time it resolves, games/{gameId}/rounds/1 already exists.
 describe('sim flow (round-robin sim fires on LINEUP -> SIMULATE, rounds/{r} persisted)', () => {
   let gameId, teamA, teamB;
 

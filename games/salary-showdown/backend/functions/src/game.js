@@ -121,10 +121,16 @@ export const startSeason = onCall(async (req) => {
 });
 
 // Idempotency guard: each hook firing is recorded in games/{gameId}/hooklog so a
-// professor retry after a mid-advance failure (entry hook or final update threw,
-// game doc still shows the old phase) never re-fires a hook that already resolved
-// — no double auction resolution, no double hardship signings. Missing hooks are
-// no-ops and leave no log entry.
+// resumed advance (the `transition` marker in advancePhase below) never re-fires a
+// hook that already resolved — no double auction resolution, no double hardship
+// signings. Run-then-log is deliberately non-transactional: the flip-first
+// advancePhase guarantees at most one live caller per transition (rivals lose the
+// flip transaction race), so the only way two invocations ever reach the same key
+// is a crash-adoption overlap — and every hook is additionally internally
+// idempotent for exactly that case (auction `results`, sim `rounds/{r}`, reveal
+// `latest`, hardship `hardshipUsed`; the market draw is seeded-deterministic). A
+// hook that ran but lost its log write is re-run on resume and bails on its own
+// completion marker. Missing hooks are no-ops and leave no log entry.
 async function runHookOnce(gameId, key, hook, round) {
   if (!hook) return;
   const logRef = db().doc(`games/${gameId}/hooklog/${key}`);
@@ -140,21 +146,51 @@ async function runHookOnce(gameId, key, hook, round) {
 // hooks. Omitting them preserves old-client/test behavior exactly.
 export const advancePhase = onCall(async (req) => {
   const { gameId, expectedPhase, expectedRound } = req.data;
-  const g = await assertProfessor(gameId, req.auth?.uid);
-  if (g.status === 'finished') throw new HttpsError('failed-precondition', 'game over');
-  if (g.phase === 'LOBBY') throw new HttpsError('failed-precondition', 'season not started');
-  if ((expectedPhase != null && expectedPhase !== g.phase)
-      || (expectedRound != null && expectedRound !== g.round))
-    throw new HttpsError('failed-precondition', 'PHASE_MISMATCH');
-  // resolve the phase we are LEAVING
-  await runHookOnce(gameId, `${g.round}-${g.phase}`, HOOKS[g.phase], g.round);
-  const nxt = nextPhase(g.round, g.phase, g.config.totalRounds);
-  const update = { round: nxt.round, phase: nxt.phase, timerEndsAt: null };
-  if (nxt.phase === 'FINALE') update.status = 'finished';
-  // e.g. market draw on FREE_AGENCY entry
-  await runHookOnce(gameId, `enter-${nxt.round}-${nxt.phase}`, HOOKS[`enter:${nxt.phase}`], nxt.round);
-  await db().doc(`games/${gameId}`).update(update);
-  return nxt;
+  await assertProfessor(gameId, req.auth?.uid);
+  const gameRef = db().doc(`games/${gameId}`);
+  // Phase flip happens FIRST, inside a transaction — closing the phase before any
+  // resolution work. Firestore serializability then guarantees: (a) a concurrent
+  // advancePhase loses the transaction race and gets PHASE_MISMATCH; (b) any
+  // signPlayer/cut/submit transaction that read the old phase and commits after
+  // this flip is retried by the SDK and sees the closed phase. Both races die here.
+  const t = await db().runTransaction(async (tx) => {
+    const g = (await tx.get(gameRef)).data();
+    if (g.phase === 'LOBBY') throw new HttpsError('failed-precondition', 'season not started');
+    // Mismatch check BEFORE adoption, against the CURRENT (possibly already-flipped)
+    // round/phase: a concurrent loser carries the stale pre-flip expectations, so it
+    // deterministically lands here with PHASE_MISMATCH instead of adopting a
+    // transition the live winner is still resolving. Adoption below is reachable
+    // only by callers whose expectations match the post-flip state (a crash-retry:
+    // the professor's client reads the live game doc, so its retry sends the NEW
+    // phase) or by callers that omit expectations (old-client/test behavior).
+    if ((expectedPhase != null && expectedPhase !== g.phase)
+        || (expectedRound != null && expectedRound !== g.round))
+      throw new HttpsError('failed-precondition', 'PHASE_MISMATCH');
+    // A crashed prior call left hooks unfinished: adopt and finish them instead of
+    // advancing again. (Adoption overlap with a still-live caller is confined to
+    // expectation-less callers and is tolerable: every hook is internally
+    // idempotent — auction `results`, sim `rounds/{r}`, reveal `latest`, hardship
+    // `hardshipUsed`, and the market draw is seeded-deterministic.) This check
+    // stays BEFORE the finished check: the final RESULTS->FINALE flip sets
+    // status: 'finished' in the same transaction, so a crashed finale advance must
+    // remain adoptable by a matching/expectation-less retry, not rejected as
+    // "game over".
+    if (g.transition) return { resume: true, ...g.transition };
+    if (g.status === 'finished') throw new HttpsError('failed-precondition', 'game over');
+    const nxt = nextPhase(g.round, g.phase, g.config.totalRounds);
+    const transition = { fromRound: g.round, fromPhase: g.phase,
+                         toRound: nxt.round, toPhase: nxt.phase };
+    const update = { round: nxt.round, phase: nxt.phase, timerEndsAt: null, transition };
+    if (nxt.phase === 'FINALE') update.status = 'finished';
+    tx.update(gameRef, update);
+    return { resume: false, ...transition };
+  });
+  // Only one live caller reaches here per transition (rivals lost the tx race);
+  // hooks resolve the phase we LEFT, then seed the phase we are IN.
+  await runHookOnce(gameId, `${t.fromRound}-${t.fromPhase}`, HOOKS[t.fromPhase], t.fromRound);
+  await runHookOnce(gameId, `enter-${t.toRound}-${t.toPhase}`, HOOKS[`enter:${t.toPhase}`], t.toRound);
+  await gameRef.update({ transition: FieldValue.delete() });
+  return { round: t.toRound, phase: t.toPhase };
 });
 
 async function memberWithRole(gameId, uid, role) {
@@ -248,16 +284,22 @@ export const cutRosterPlayer = onCall(async (req) => {
 export const submitBids = onCall(async (req) => {
   const { gameId, bids } = req.data;
   const { teamId } = await memberWithRole(gameId, req.auth?.uid, 'Scout');
-  const g = (await db().doc(`games/${gameId}`).get()).data();
-  if (g.phase !== 'AUCTION') throw new HttpsError('failed-precondition', 'auction is closed');
-  const wave = (await db().doc(`games/${gameId}/auctions/${g.round}`).get()).data();
-  try { validateBids({ bids, round: g.round, starPids: wave?.stars ?? [] }); }
-  catch (e) { throw new HttpsError('invalid-argument', e.message); }
-  // A full overwrite (not merge): resubmitting replaces the whole bid set, so a
-  // Scout can freely revise before the professor closes the phase. Once AUCTION's
-  // exit hook has read this doc there is no further write path back into it.
-  await db().doc(`games/${gameId}/teams/${teamId}/private/auction`).set({ bids, round: g.round });
-  return { accepted: Object.keys(bids).length };
+  // Transactional so the phase check and the bid write are one atomic unit against
+  // advancePhase's flip-first transaction: a last-second submit either commits
+  // BEFORE the flip (and is visible to the closing hook) or is retried by the SDK,
+  // re-reads the closed phase, and throws — never "accepted" yet invisible.
+  return db().runTransaction(async (tx) => {
+    const g = (await tx.get(db().doc(`games/${gameId}`))).data();
+    if (g.phase !== 'AUCTION') throw new HttpsError('failed-precondition', 'auction is closed');
+    const wave = (await tx.get(db().doc(`games/${gameId}/auctions/${g.round}`))).data();
+    try { validateBids({ bids, round: g.round, starPids: wave?.stars ?? [] }); }
+    catch (e) { throw new HttpsError('invalid-argument', e.message); }
+    // A full overwrite (not merge): resubmitting replaces the whole bid set, so a
+    // Scout can freely revise before the professor closes the phase. Once AUCTION's
+    // exit hook has read this doc there is no further write path back into it.
+    tx.set(db().doc(`games/${gameId}/teams/${teamId}/private/auction`), { bids, round: g.round });
+    return { accepted: Object.keys(bids).length };
+  });
 });
 
 const activePidsOf = (team, round) =>
@@ -271,19 +313,25 @@ const activePidsOf = (team, round) =>
 export const submitLineup = onCall(async (req) => {
   const { gameId, lineup } = req.data;
   const { teamId } = await memberWithRole(gameId, req.auth?.uid, 'Coach');
-  const g = (await db().doc(`games/${gameId}`).get()).data();
-  if (g.phase !== 'LINEUP') throw new HttpsError('failed-precondition', 'lineups are locked');
-  const teamRef = db().doc(`games/${gameId}/teams/${teamId}`);
-  const team = (await teamRef.get()).data();
-  try { validateLineup({ lineup, activePids: activePidsOf(team, g.round), catalogById: CATALOG }); }
-  catch (e) { throw new HttpsError('invalid-argument', e.message); }
-  // Persist ONLY the known shape — a validated lineup still might carry extra
-  // client-supplied keys (validateLineup destructures what it needs and never
-  // objects to siblings), so strip anything beyond {starters, sixth, bench, playstyle}
-  // before it lands in the public team doc.
-  const { starters, sixth, bench, playstyle } = lineup;
-  await teamRef.update({ lineup: { starters, sixth, bench, playstyle }, lineupLockedRound: g.round });
-  return { ok: true };
+  // Transactional for the same reason as submitBids: the phase check and the
+  // lineup write are atomic against advancePhase's flip — a last-second submit
+  // either lands before the flip (visible to the LINEUP exit hook) or retries,
+  // sees the closed phase, and throws the mapped error.
+  return db().runTransaction(async (tx) => {
+    const g = (await tx.get(db().doc(`games/${gameId}`))).data();
+    if (g.phase !== 'LINEUP') throw new HttpsError('failed-precondition', 'lineups are locked');
+    const teamRef = db().doc(`games/${gameId}/teams/${teamId}`);
+    const team = (await tx.get(teamRef)).data();
+    try { validateLineup({ lineup, activePids: activePidsOf(team, g.round), catalogById: CATALOG }); }
+    catch (e) { throw new HttpsError('invalid-argument', e.message); }
+    // Persist ONLY the known shape — a validated lineup still might carry extra
+    // client-supplied keys (validateLineup destructures what it needs and never
+    // objects to siblings), so strip anything beyond {starters, sixth, bench, playstyle}
+    // before it lands in the public team doc.
+    const { starters, sixth, bench, playstyle } = lineup;
+    tx.update(teamRef, { lineup: { starters, sixth, bench, playstyle }, lineupLockedRound: g.round });
+    return { ok: true };
+  });
 });
 
 // -------- phase hooks
@@ -463,9 +511,11 @@ HOOKS['enter:SIMULATE'] = async (gameId, round) => {
 
 // enter: publish the Reveal payload — the ONLY moment hidden truth (ti, archetype,
 // isTrap) leaves the server. Written exclusively here, never earlier; the rules
-// (Task 6) also gate reads on status == 'finished', which advancePhase sets in the
-// same call right after this hook resolves, so there is no read-before-write leak
-// window and no leak-after-write window either.
+// (Task 6) also gate reads on status == 'finished', which the flip-first
+// advancePhase now sets BEFORE this hook resolves — the gate opens onto a
+// not-yet-written doc (a harmless empty read for the brief hook window), and the
+// hidden truth itself is only ever written after the gate is already legitimately
+// open, so there is still no leak window in either direction.
 // Internally idempotent beyond runHookOnce's log (brief's explicit requirement,
 // mirroring HOOKS['AUCTION']'s `wave?.results` / HOOKS['enter:SIMULATE']'s
 // `roundRef.get()).exists` pattern): reveal/latest existing is this hook's own

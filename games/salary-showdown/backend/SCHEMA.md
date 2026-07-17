@@ -2,7 +2,14 @@
 
 games/{gameId}
   joinCode, status: lobby|active|finished, phase: LOBBY|FRONT_OFFICE|FREE_AGENCY|AUCTION|LINEUP|SIMULATE|RESULTS|FINALE,
-  round: 0-5, timerEndsAt: ts|null, teamCount, standingsSeed, config: {cap, totalRounds, timers{...}}
+  round: 0-5, timerEndsAt: ts|null, teamCount, standingsSeed, config: {cap, totalRounds, timers{...}},
+  transition: {fromRound, fromPhase, toRound, toPhase}  # OPTIONAL — present only while an advancePhase's
+                                      # phase hooks are resolving: the flip-first transaction writes it alongside
+                                      # the new round/phase, and the same call deletes it once both hooks land.
+                                      # A leftover marker means a crashed advance; the next advancePhase call
+                                      # adopts and finishes that transition instead of advancing again.
+                                      # Member-readable like the rest of the game doc — it names rounds/phases
+                                      # only and leaks nothing.
 games/{gameId}/players/{uid}          # membership: { teamId, role: GM|Scout|Coach, displayName }
 games/{gameId}/teams/{teamId}         # PUBLIC team state (rosters are public like real NBA):
   name, wins, losses, pointDiff, pointsFor,
