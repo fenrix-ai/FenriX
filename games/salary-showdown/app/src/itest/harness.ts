@@ -39,6 +39,60 @@ export interface Seeded {
   bots: { teamId: string; gm: Client; scout: Client; coach: Client }[];
 }
 
+// Drive an existing seeded game onward to `to`. Starts the season if still in
+// lobby. RULING unchanged: advancePhase always carries expectedPhase + expectedRound.
+export async function driveTo(seeded: Seeded, to: string): Promise<void> {
+  let g = (await adminDb().doc(`games/${seeded.gameId}`).get()).data()!;
+  if (g.status === 'lobby') {
+    await seeded.prof.call('startSeason', { gameId: seeded.gameId });
+    g = (await adminDb().doc(`games/${seeded.gameId}`).get()).data()!;
+  }
+  const [, rS, ph] = to === 'FINALE' ? [null, '5', 'FINALE'] : /^R([1-5]):([A-Z_]+)$/.exec(to)!;
+  let guard = 0;
+  while (!(g.phase === ph && (ph === 'FINALE' || g.round === Number(rS)))) {
+    if (g.phase === 'FREE_AGENCY' && g.round === 1) {
+      const market = (await adminDb().doc(`games/${seeded.gameId}/market/1`).get()).data()!;
+      const cat = await adminDb().collection(`games/${seeded.gameId}/catalog`).get();
+      const byPid = Object.fromEntries(cat.docs.map((d) => [Number(d.id), d.data()]));
+      for (const bot of seeded.bots) {
+        const t = (await adminDb().doc(
+          `games/${seeded.gameId}/teams/${bot.teamId}`).get()).data()!;
+        if (t.roster.length > 0) continue; // already built (repeated driveTo call)
+        const pool: Record<string, { pid: number; sal: number }[]> = { G: [], W: [], B: [] };
+        for (const pid of market.available as number[]) {
+          const p = byPid[pid];
+          if (p.salary_per_round !== '') {
+            pool[p.position].push({ pid, sal: Number(p.salary_per_round) });
+          }
+        }
+        for (const q of ['G', 'W', 'B']) pool[q].sort((a, b) => a.sal - b.sal);
+        const used = new Set<number>();
+        let i = 0;
+        for (const pos of SIGN_ORDER) { // interleaved → can never trip POSITION_LOCK
+          const p = pool[pos].find((x) => !used.has(x.pid))!;
+          used.add(p.pid);
+          await bot.gm.call('signPlayer',
+            { gameId: seeded.gameId, pid: p.pid, years: (i % 4) + 1 });
+          i += 1;
+        }
+      }
+    }
+    if (g.phase === 'AUCTION') {
+      const wave = (await adminDb().doc(
+        `games/${seeded.gameId}/auctions/${g.round}`).get()).data()!;
+      for (const [i, bot] of seeded.bots.entries()) {
+        await bot.scout.call('submitBids', { gameId: seeded.gameId, bids: {
+          [wave.stars[i % wave.stars.length]]: { rate: minBid(g.round), years: 1 } } });
+      }
+    }
+    // LINEUP: nothing — the exit hook's auto-repair carries every team.
+    await seeded.prof.call('advancePhase',
+      { gameId: seeded.gameId, expectedPhase: g.phase, expectedRound: g.round });
+    g = (await adminDb().doc(`games/${seeded.gameId}`).get()).data()!;
+    if (++guard > 40) throw new Error(`stuck at R${g.round}:${g.phase}`);
+  }
+}
+
 // Drives a game to `to` (e.g. 'R1:FREE_AGENCY', 'R3:FRONT_OFFICE', 'FINALE') with
 // bots on every team except index 0 (fill: 'others') or on all (fill: 'all').
 // RULING (restated): advancePhase always carries expectedPhase + expectedRound.
@@ -62,50 +116,8 @@ export async function seedToPhase(opts: {
     await coach.call('joinGame', { joinCode, teamId: teamIds[i], role: 'Coach', displayName: `C${i}` });
     bots.push({ teamId: teamIds[i], gm, scout, coach });
   }
-  if (opts.to === 'LOBBY') return { gameId, joinCode, teamIds, prof, bots };
 
-  await prof.call('startSeason', { gameId });
-  const [, rS, ph] = opts.to === 'FINALE'
-    ? [null, '5', 'FINALE'] : /^R([1-5]):([A-Z_]+)$/.exec(opts.to)!;
-  let g = (await adminDb().doc(`games/${gameId}`).get()).data()!;
-  let guard = 0;
-  while (!(g.phase === ph && (ph === 'FINALE' || g.round === Number(rS)))) {
-    if (g.phase === 'FREE_AGENCY' && g.round === 1) {
-      const market = (await adminDb().doc(`games/${gameId}/market/1`).get()).data()!;
-      const cat = await adminDb().collection(`games/${gameId}/catalog`).get();
-      const byPid = Object.fromEntries(cat.docs.map((d) => [Number(d.id), d.data()]));
-      for (const bot of bots) {
-        const pool: Record<string, { pid: number; sal: number }[]> = { G: [], W: [], B: [] };
-        for (const pid of market.available as number[]) {
-          const p = byPid[pid];
-          if (p.salary_per_round !== '') {
-            pool[p.position].push({ pid, sal: Number(p.salary_per_round) });
-          }
-        }
-        for (const q of ['G', 'W', 'B']) pool[q].sort((a, b) => a.sal - b.sal);
-        const used = new Set<number>();
-        let i = 0;
-        for (const pos of SIGN_ORDER) { // interleaved → can never trip POSITION_LOCK
-          const p = pool[pos].find((x) => !used.has(x.pid))!;
-          used.add(p.pid);
-          await bot.gm.call('signPlayer', { gameId, pid: p.pid, years: (i % 4) + 1 });
-          i += 1;
-        }
-      }
-    }
-    if (g.phase === 'AUCTION') {
-      const wave = (await adminDb().doc(`games/${gameId}/auctions/${g.round}`).get()).data()!;
-      for (const [i, bot] of bots.entries()) {
-        await bot.scout.call('submitBids', { gameId, bids: {
-          [wave.stars[i % wave.stars.length]]: { rate: minBid(g.round), years: 1 } } });
-      }
-    }
-    // LINEUP: submit nothing — the exit hook's auto-repair carries every team
-    // (proven by the backend smoke test); bots only need rosters and bids.
-    await prof.call('advancePhase',
-      { gameId, expectedPhase: g.phase, expectedRound: g.round });
-    g = (await adminDb().doc(`games/${gameId}`).get()).data()!;
-    if (++guard > 40) throw new Error(`stuck at R${g.round}:${g.phase}`);
-  }
-  return { gameId, joinCode, teamIds, prof, bots };
+  const seeded: Seeded = { gameId, joinCode, teamIds, prof, bots };
+  if (opts.to !== 'LOBBY') await driveTo(seeded, opts.to);
+  return seeded;
 }

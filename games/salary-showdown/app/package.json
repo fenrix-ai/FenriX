@@ -9,7 +9,8 @@
     "preview": "vite preview --port 5176 --strictPort",
     "test": "vitest run",
     "test:watch": "vitest",
-    "seed": "node scripts/seed-demo.mjs"
+    "seed": "node scripts/seed-demo.mjs",
+    "audit:ui": "node scripts/audit-ui-rules.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.1.0",
