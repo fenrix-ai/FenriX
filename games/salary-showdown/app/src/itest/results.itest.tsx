@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 import { adminDb, seedToPhase } from './harness';
@@ -27,10 +28,18 @@ test('results: record, box lines, awards without perDollar, highlighted snapshot
   });
   // The bargain award never shows the computed per-dollar number.
   const rd = (await adminDb().doc(`games/${seeded.gameId}/rounds/1`).get()).data()!;
-  if (rd.awards.bargain) {
-    expect(screen.getByTestId('awards').textContent)
-      .not.toContain(String(rd.awards.bargain.perDollar));
-  }
+  // The bargain exists in this fixture (every team fields 8 rostered players).
+  expect(rd.awards.bargain).toBeTruthy();
+  // Advance the carousel to the bargain slide (index 2) and pin the boundary:
+  // raw line + salary render; the computed perDollar figure NEVER does.
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('button', { name: 'next award' }));
+  await user.click(screen.getByRole('button', { name: 'next award' }));
+  await waitFor(() => expect(screen.getByTestId('awards'))
+    .toHaveTextContent('Bargain of the Round'), { timeout: 15000 });
+  const awardsText = screen.getByTestId('awards').textContent!;
+  expect(awardsText).toMatch(/\$\d+\.\dM\/rd/);                     // raw salary present
+  expect(awardsText).not.toContain(String(rd.awards.bargain.perDollar)); // ratio absent
   // Snapshot highlights the viewer's row.
   const sel = screen.getByTestId('standings').querySelector('tr.sel');
   expect(sel?.textContent).toContain('Alpha');
