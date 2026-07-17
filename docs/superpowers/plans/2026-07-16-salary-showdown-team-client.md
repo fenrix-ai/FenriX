@@ -660,7 +660,7 @@ const {gameId}=require('./.demo-game.json');
 admin.firestore().collection('games/'+gameId+'/teams').get().then(s=>{
   s.forEach(d=>console.log(d.data().name, 'roster', d.data().roster.length));
   process.exit(0);});"`
-Expected: `Alpha roster 0` (open team — hardship staffs it at FA close) and `Beta/Gamma/Delta roster 8`.
+Expected: all four teams at `roster 8` — Beta/Gamma/Delta from bot signings, Alpha from hardship, whose 8 entries all carry `hardship: true` (hardship runs at the FREE_AGENCY **exit** hook, so it has already fired by the time AUCTION opens — spec §13). To observe Alpha genuinely empty, seed `--to R1:FREE_AGENCY` instead. *(Corrected during execution: the original line expected `Alpha roster 0` at R1:AUCTION, which contradicts the spec's hardship timing and this plan's own Task 9 rationale.)*
 
 - [ ] **Step 4: Run a full-season seed**
 
