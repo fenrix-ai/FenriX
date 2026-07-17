@@ -35,6 +35,13 @@
       "runtimeArgs": ["run", "dev"],
       "cwd": "website",
       "port": 5175
+    },
+    {
+      "name": "salary-showdown-app",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "games/salary-showdown/app",
+      "port": 5176
     }
   ]
 }
