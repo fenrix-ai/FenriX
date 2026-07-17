@@ -1906,7 +1906,7 @@ const ROLES = ['GM', 'Scout', 'Coach'] as const;
 export default function LandingPage() {
   const { call, setGameId } = useGame();
   const [code, setCode] = useState(
-    () => new URLSearchParams(window.location.search).get('code') ?? '');
+    () => (new URLSearchParams(window.location.search).get('code') ?? '').toUpperCase().slice(0, 6));
   const [name, setName] = useState('');
   const [lobby, setLobby] = useState<LobbyInfo | null>(null);
   const [err, setErr] = useState<unknown>(null);
@@ -1915,16 +1915,20 @@ export default function LandingPage() {
 
   // No realtime pre-membership (rules deny reads until joinGame lands), so the
   // team list refreshes by polling getLobby every 3s while the picker is open.
-  const lookup = useCallback(async (c: string) => {
+  // clearErr=false for background refreshes (poll, post-failure picker refresh):
+  // a refresh must never wipe a displayed error — React batches setErr(e) with a
+  // subsequent setErr(null) into err=null, silently suppressing seat-taken copy
+  // (defect found at review; the flag is the fix).
+  const lookup = useCallback(async (c: string, clearErr = true) => {
     try {
-      setErr(null);
+      if (clearErr) setErr(null);
       setLobby(await call<LobbyInfo>('getLobby', { joinCode: c.trim().toUpperCase() }));
     } catch (e) { setLobby(null); setErr(e); }
   }, [call]);
 
   useEffect(() => {
     if (!lobby) return;
-    timer.current = setInterval(() => void lookup(code), 3000);
+    timer.current = setInterval(() => void lookup(code, false), 3000);
     return () => { if (timer.current) clearInterval(timer.current); };
   }, [lobby !== null, code, lookup]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1935,8 +1939,8 @@ export default function LandingPage() {
         displayName: name.trim() || 'Anonymous' });
       setGameId(lobby!.gameId); // membership listener + PhaseRouter take it from here
     } catch (e) {
-      setErr(e);              // "seat taken" etc. — refresh the picker immediately
-      void lookup(code);
+      setErr(e);              // "seat taken" etc. — refresh the picker immediately,
+      void lookup(code, false); // WITHOUT clearing the error we just set
     } finally { setBusy(false); }
   };
 
@@ -2018,9 +2022,11 @@ test('landing: code → team list with taken seats → claim → lobby', async (
 }, 90000);
 ```
 
+*(Execution amendment: a second integration test — the seat-taken race, where a rival client claims the seat between picker render and click, asserting the mapped copy renders AND the picker refreshes — was added during review; see `src/itest/landing.itest.tsx`. Note for multi-test itest files: tests in one file share the jsdom window, so clear `sessionStorage` at the top of tests that must start unjoined.)*
+
 - [ ] **Step 3: Run integration + browser check**
 
-Run the integration command (Global Constraints). Expected: 2 files, 2 tests pass.
+Run the integration command (Global Constraints). Expected: 2 files, 3 tests pass.
 Browser: with emulators up, `npm run seed -- --to R1:FREE_AGENCY` — wait, Landing is best seen in a lobby: `node scripts/seed-demo.mjs --to R1:FREE_AGENCY` advances past it, so seed a lobby-only game instead by running the script with `--to R1:FREE_AGENCY` **replaced by** the lobby stop: `npm run seed -- --to LOBBY` is not a script target — use the harness game from the itest OR create one manually: `node -e` with createGame is overkill; simplest: run `npm run seed -- --to R1:FREE_AGENCY`, copy the printed joinCode, open `http://localhost:5176/?code=<joinCode>` — the picker renders with "Season in progress — you can still claim an open seat."
 What you should see: navy page, gold SALARY SHOWDOWN, code prefilled; after Find game: four team cards; Beta/Gamma/Delta's chips read "GM · taken / Scout · taken / Coach · taken", Alpha's three chips gold-outlined and clickable. Claiming GM navigates to the Free Agency stub (PhaseRouter following the live phase).
 
