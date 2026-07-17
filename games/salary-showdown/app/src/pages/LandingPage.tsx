@@ -11,7 +11,7 @@ const ROLES = ['GM', 'Scout', 'Coach'] as const;
 export default function LandingPage() {
   const { call, setGameId } = useGame();
   const [code, setCode] = useState(
-    () => new URLSearchParams(window.location.search).get('code') ?? '');
+    () => (new URLSearchParams(window.location.search).get('code') ?? '').toUpperCase().slice(0, 6));
   const [name, setName] = useState('');
   const [lobby, setLobby] = useState<LobbyInfo | null>(null);
   const [err, setErr] = useState<unknown>(null);
@@ -20,16 +20,16 @@ export default function LandingPage() {
 
   // No realtime pre-membership (rules deny reads until joinGame lands), so the
   // team list refreshes by polling getLobby every 3s while the picker is open.
-  const lookup = useCallback(async (c: string) => {
+  const lookup = useCallback(async (c: string, clearErr = true) => {
     try {
-      setErr(null);
+      if (clearErr) setErr(null);
       setLobby(await call<LobbyInfo>('getLobby', { joinCode: c.trim().toUpperCase() }));
     } catch (e) { setLobby(null); setErr(e); }
   }, [call]);
 
   useEffect(() => {
     if (!lobby) return;
-    timer.current = setInterval(() => void lookup(code), 3000);
+    timer.current = setInterval(() => void lookup(code, false), 3000);
     return () => { if (timer.current) clearInterval(timer.current); };
   }, [lobby !== null, code, lookup]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -41,7 +41,7 @@ export default function LandingPage() {
       setGameId(lobby!.gameId); // membership listener + PhaseRouter take it from here
     } catch (e) {
       setErr(e);              // "seat taken" etc. — refresh the picker immediately
-      void lookup(code);
+      void lookup(code, false);
     } finally { setBusy(false); }
   };
 
