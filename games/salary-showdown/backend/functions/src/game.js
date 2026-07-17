@@ -167,14 +167,21 @@ export const advancePhase = onCall(async (req) => {
         || (expectedRound != null && expectedRound !== g.round))
       throw new HttpsError('failed-precondition', 'PHASE_MISMATCH');
     // A crashed prior call left hooks unfinished: adopt and finish them instead of
-    // advancing again. (Adoption overlap with a still-live caller is confined to
-    // expectation-less callers and is tolerable: every hook is internally
+    // advancing again. Adoption is reachable by expectation-less callers (old-client/
+    // test behavior) AND matching-expectation callers — quick re-click or crash-retry
+    // alike. The flip commit above already updated the professor client's own
+    // snapshot to the post-flip phase, so a caller whose expectations MATCH that
+    // post-flip state can also adopt mid-hook-window: a quick second click sends the
+    // NEW phase, passes the mismatch check above, adopts, and gets the in-flight
+    // target back as a benign no-op — not only genuine crash-retries land here.
+    // Overlap with a still-live caller's hooks (either adopter kind racing the winner
+    // while its hooks are still running) is safe because every hook is internally
     // idempotent — auction `results`, sim `rounds/{r}`, reveal `latest`, hardship
-    // `hardshipUsed`, and the market draw is seeded-deterministic.) This check
-    // stays BEFORE the finished check: the final RESULTS->FINALE flip sets
-    // status: 'finished' in the same transaction, so a crashed finale advance must
-    // remain adoptable by a matching/expectation-less retry, not rejected as
-    // "game over".
+    // `hardshipUsed`, and the market draw is seeded-deterministic (see runHookOnce
+    // above). That overlap window is the accepted residual. This check stays BEFORE
+    // the finished check: the final RESULTS->FINALE flip sets status: 'finished' in
+    // the same transaction, so a crashed finale advance must remain adoptable by a
+    // matching/expectation-less retry, not rejected as "game over".
     if (g.transition) return { resume: true, ...g.transition };
     if (g.status === 'finished') throw new HttpsError('failed-precondition', 'game over');
     const nxt = nextPhase(g.round, g.phase, g.config.totalRounds);
@@ -336,6 +343,11 @@ export const submitLineup = onCall(async (req) => {
 
 // -------- phase hooks
 
+// Conscious post-flip seeding window: clients see FREE_AGENCY the instant the flip
+// commits, before this hook writes market/{round} — a signPlayer that lands in that
+// sub-second gap fails validation cleanly against the not-yet-written doc, and the
+// UI simply renders its null-market state until the write lands; self-healing by
+// design, same as the enter:FINALE gate-window below.
 HOOKS['enter:FREE_AGENCY'] = async (gameId, round) => {
   if (round === 1) return; // startSeason already drew round 1
   const prev = (await db().doc(`games/${gameId}/market/${round - 1}`).get()).data();
@@ -391,6 +403,11 @@ HOOKS['FREE_AGENCY'] = async (gameId, round) => {   // exit hook: hardship
   }
 };
 
+// Conscious post-flip seeding window: clients see AUCTION the instant the flip
+// commits, before this hook writes auctions/{round} — a submitBids that lands in
+// that sub-second gap fails validation cleanly against the not-yet-written doc, and
+// the UI simply renders its null-auction state until the write lands; self-healing
+// by design, same as the enter:FINALE gate-window below.
 HOOKS['enter:AUCTION'] = async (gameId, round) => {
   const stars = players.filter((p) => +p.auction_round === round).map((p) => p.pid);
   await db().doc(`games/${gameId}/auctions/${round}`).set({ stars });

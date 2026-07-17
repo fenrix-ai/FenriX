@@ -120,6 +120,43 @@ describe('crash-resume via the transition marker', () => {
     expect(g).toMatchObject({ round: 1, phase: 'LINEUP' });
     expect(g.transition).toBeUndefined(); // marker cleaned up
   });
+
+  // Companion to the expectation-less variant above: the professor's client re-reads
+  // the live game doc after any call, so its own retry of a crashed advance — or a
+  // quick second click landing after that re-read — sends expectations MATCHING the
+  // post-flip state (LINEUP/1, what the crashed call already committed), not the
+  // stale pre-flip AUCTION/1. That must adopt too, not bounce off PHASE_MISMATCH.
+  it('finishes a crashed advance when the retry supplies MATCHING expectations (quick re-click / crash-retry)', async () => {
+    const res = await call(createGame, { teamNames: ['Eta', 'Theta'] }, 'prof-resume-2');
+    const gameId = res.gameId;
+    const teams = await db.collection(`games/${gameId}/teams`).get();
+    const [tA] = teams.docs.map((d) => d.id);
+    await call(joinGame, { joinCode: res.joinCode, teamId: tA, role: 'Scout', displayName: 'S' }, 'scout-resume-2');
+    await call(startSeason, { gameId }, 'prof-resume-2');
+    await call(advancePhase, { gameId }, 'prof-resume-2'); // FREE_AGENCY(1) -> AUCTION(1)
+    await call(submitBids, { gameId, bids: { [wave1[0]]: { rate: 5.0, years: 1 } } }, 'scout-resume-2');
+
+    // Simulate the crash: flip committed (phase already LINEUP, marker present),
+    // process died before ANY hook ran — the auction was never resolved.
+    await db.doc(`games/${gameId}`).update({
+      phase: 'LINEUP',
+      transition: { fromRound: 1, fromPhase: 'AUCTION', toRound: 1, toPhase: 'LINEUP' },
+    });
+
+    const out = await call(advancePhase,
+      { gameId, expectedPhase: 'LINEUP', expectedRound: 1 }, 'prof-resume-2');
+    expect(out).toEqual({ round: 1, phase: 'LINEUP' }); // finished the crashed advance — did NOT step further
+
+    // the missed AUCTION exit hook ran on resume: sealed bids are now resolved
+    const auction = (await db.doc(`games/${gameId}/auctions/1`).get()).data();
+    expect(auction.results).toBeTruthy();
+    expect(auction.results.find((r) => r.pid === wave1[0]))
+      .toMatchObject({ pid: wave1[0], teamId: tA, rate: 5.0, years: 1 });
+
+    const g = (await db.doc(`games/${gameId}`).get()).data();
+    expect(g).toMatchObject({ round: 1, phase: 'LINEUP' });
+    expect(g.transition).toBeUndefined(); // marker cleaned up
+  });
 });
 
 // Defect 2 regression (the minor half): once the flip lands, the door is closed —
