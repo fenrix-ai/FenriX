@@ -34,13 +34,21 @@ function apportionMins(rawMins, total = 240) {
   return mins;
 }
 
-function teamBox(rng, lineup, pace) {
+export function teamBox(rng, lineup, pace) {
   const slots = playerSlots(lineup);
   const minsBySlot = apportionMins(slots.map(([, tier]) => TIER_MINS[tier]));
   return slots.map(([pid, tier], i) => {
     const e = hidden[pid].exp;
     const mins = minsBySlot[i];
-    const mf = Math.min(1.6, Math.max(0.5, mins / e.mins));
+    // History-parity slot factor (spec §7.1 binding note): history.py's team-stat
+    // aggregation scales each slot's expected per-game output by 1.25 * tier_weight
+    // (history.py agg()/pts_per_game etc., datagen/config.py TIER_WEIGHTS), then
+    // multiplies by pace on top — exactly mirrored here so live box aggregates line
+    // up with league_history.csv fingerprints. This REPLACES the old minutes-ratio
+    // factor (mins / e.mins, clamped to [0.5, 1.6]), which gave ~1.48/1.12/0.73 for
+    // starter/sixth/bench instead of the binding 1.25/0.75/0.4375 and pushed live
+    // team totals (e.g. turnovers) systematically above the history mean.
+    const mf = 1.25 * params.tier_weights[tier];
     const fga = Math.max(1, Math.round(e.fga * pace * mf + rng.normal(0, 1.1)));
     const fga3 = Math.min(fga, Math.round(fga * e.fga3_share));
     const fga2 = fga - fga3;

@@ -118,7 +118,9 @@ describe('bargain award is per rostered copy (non-exclusive FA)', () => {
   const out2 = simulateRound({ gameId: 'g2', round: 1, teams: pair, catalogById: byId });
 
   // replicate sim.js's bargain fold exactly (same iteration order, same
-  // compare-unrounded-vs-rounded behavior), parameterized by aggregation key
+  // compare-unrounded-vs-rounded behavior), parameterized by aggregation key.
+  // Returns both the argmax ("best") and the full per-(team,pid) perDollar map
+  // ("all"), keyed the same way as the caller's keyOf.
   function foldBargain(keyOf) {
     const sums = {};
     for (const r of out2.boxRows) {
@@ -126,13 +128,15 @@ describe('bargain award is per rostered copy (non-exclusive FA)', () => {
       sums[k] = (sums[k] ?? 0) + gs(r);
     }
     let best = null;
+    const all = {};
     for (const t of pair) for (const c of t.roster) {
-      const s = sums[keyOf(t.teamId, c.pid)]; if (s == null) continue;
-      const pd = s / Math.max(2, c.rate);
-      if (!best || pd > best.perDollar)
-        best = { pid: c.pid, teamId: t.teamId, perDollar: Math.round(pd * 100) / 100 };
+      const k = keyOf(t.teamId, c.pid);
+      const s = sums[k]; if (s == null) continue;
+      const pd = Math.round((s / Math.max(2, c.rate)) * 100) / 100;
+      all[`${t.teamId}|${c.pid}`] = pd;
+      if (!best || pd > best.perDollar) best = { pid: c.pid, teamId: t.teamId, perDollar: pd };
     }
-    return best;
+    return { best, all };
   }
 
   it('both copies of a shared pid play and generate independent rows', () => {
@@ -145,7 +149,20 @@ describe('bargain award is per rostered copy (non-exclusive FA)', () => {
   it("each copy's perDollar uses only its own team's rows, never the other copy's", () => {
     const perCopy = foldBargain((tid, pid) => `${tid}|${pid}`);
     const naive = foldBargain((_tid, pid) => `${pid}`);
-    expect(naive).not.toEqual(perCopy);       // shared-key math is detectably wrong here
-    expect(out2.awards.bargain).toEqual(perCopy);
+    // Structural check, per shared pid: naive keying pools BOTH teams' box rows into
+    // one sum (a shared pid's naive numerator is always >= its true per-copy
+    // numerator, since it additionally includes the other copy's rows), so every
+    // shared pid's naive perDollar must exceed its correct per-copy perDollar. This
+    // holds by construction regardless of which player ends up the overall argmax —
+    // unlike comparing `naive.best` to `perCopy.best` directly, which only differs
+    // when a shared pid's inflated score happens to overtake the pool's true top
+    // scorer (a data/scaling-dependent coincidence, not the invariant under test).
+    expect(shared.length).toBeGreaterThan(0);
+    for (const pid of shared) {
+      for (const teamId of ['x1', 'x2']) {
+        expect(naive.all[`${teamId}|${pid}`]).toBeGreaterThan(perCopy.all[`${teamId}|${pid}`]);
+      }
+    }
+    expect(out2.awards.bargain).toEqual(perCopy.best);
   });
 });
