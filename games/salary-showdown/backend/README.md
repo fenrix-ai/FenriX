@@ -39,6 +39,7 @@ Coach / professor) are enforced server-side per callable, not by the client.
 | --- | --- |
 | `createGame({ teamNames })` | Professor creates a game, seeds teams + the full player catalog, returns `{ gameId, joinCode }`. |
 | `joinGame({ joinCode, teamId, role, displayName })` | Claims a GM/Scout/Coach seat on a team by join code; one uid per role per team. |
+| `getLobby({ joinCode })` | Lobby discovery for non-members: team list + claimed roles, by join code. |
 | `startSeason({ gameId })` | Professor-only: locks the lobby, draws the round-1 free-agency market, moves `LOBBY → FREE_AGENCY`. |
 | `advancePhase({ gameId })` | Professor-only: resolves the exit hook for the current phase, the entry hook for the next, and advances `phase`/`round` (idempotent via `hooklog`). |
 | `signPlayer({ gameId, pid, years })` | GM-only: signs a free agent (or re-signs an expiring contract in `FRONT_OFFICE`); claims unsold auction stars exclusively. |

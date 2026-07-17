@@ -78,6 +78,33 @@ export const joinGame = onCall(async (req) => {
   });
 });
 
+// Lobby discovery for clients that hold only a join code. Rules (correctly) deny
+// every Firestore read to non-members, so the Landing screen cannot list teams or
+// open roles on its own — joinGame demands a teamId the client has no legal way to
+// learn. Read-only, lobby-safe facts only: names + which roles are taken. Anyone
+// signed-in may call it (that is the point — callers are not members yet).
+export const getLobby = onCall(async (req) => {
+  if (!req.auth) throw new HttpsError('unauthenticated', 'sign in first');
+  const joinCode = String(req.data.joinCode ?? '').toUpperCase();
+  const games = await db().collection('games').where('joinCode', '==', joinCode).limit(1).get();
+  if (games.empty) throw new HttpsError('not-found', 'bad join code');
+  const g = games.docs[0];
+  const [teams, members] = await Promise.all(
+    [g.ref.collection('teams').get(), g.ref.collection('players').get()]);
+  const claimed = {};
+  for (const m of members.docs) {
+    const d = m.data();
+    (claimed[d.teamId] ??= []).push(d.role);
+  }
+  const { status, phase, round } = g.data();
+  return {
+    gameId: g.id, status, phase, round,
+    teams: teams.docs.map((t) => ({
+      teamId: t.id, name: t.data().name, claimedRoles: claimed[t.id] ?? [],
+    })),
+  };
+});
+
 export const startSeason = onCall(async (req) => {
   const { gameId } = req.data;
   const g = await assertProfessor(gameId, req.auth?.uid);

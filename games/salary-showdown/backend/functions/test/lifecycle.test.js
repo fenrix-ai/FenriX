@@ -9,7 +9,7 @@ const t = fft({ projectId: 'salary-showdown-dev' });
 initializeApp({ projectId: 'salary-showdown-dev' });
 const db = getFirestore();
 
-const { createGame, joinGame, startSeason, advancePhase } = await import('../src/game.js');
+const { createGame, joinGame, startSeason, advancePhase, getLobby } = await import('../src/game.js');
 const { HOOKS } = await import('../src/phases.js');
 const call = (fn, data, uid) => t.wrap(fn)({ data, auth: { uid, token: {} } });
 
@@ -110,5 +110,22 @@ describe('lifecycle', () => {
     } finally {
       delete HOOKS.AUCTION; // cleanup so other tests are unaffected
     }
+  });
+  it('getLobby returns teams and claimed roles for a join code, without membership', async () => {
+    const { gameId, joinCode } = await call(createGame, { teamNames: ['Home', 'Away'] }, 'prof-gl');
+    const teamsSnap = await db.collection(`games/${gameId}/teams`).get();
+    const teamId = teamsSnap.docs.find((d) => d.data().name === 'Home').id;
+    await call(joinGame, { joinCode, teamId, role: 'GM', displayName: 'Dana' }, 'stranger-1');
+    const lobby = await call(getLobby, { joinCode }, 'stranger-2'); // NOT a member
+    expect(lobby.gameId).toBe(gameId);
+    expect(lobby.status).toBe('lobby');
+    const home = lobby.teams.find((t) => t.name === 'Home');
+    expect(home.teamId).toBe(teamId);
+    expect(home.claimedRoles).toEqual(['GM']);
+    expect(lobby.teams.find((t) => t.name === 'Away').claimedRoles).toEqual([]);
+  });
+  it('getLobby rejects a bad join code', async () => {
+    await expect(call(getLobby, { joinCode: 'ZZZZZZ' }, 'stranger-3'))
+      .rejects.toThrow('bad join code');
   });
 });
