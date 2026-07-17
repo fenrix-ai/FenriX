@@ -57,14 +57,16 @@ export default function AuctionPage() {
 
   const problems = useMemo(() => {
     const out: Record<number, string> = {};
-    for (const [pid, b] of Object.entries(bids)) {
-      if (b.rate < floor - 1e-9) out[Number(pid)] = `Minimum tonight is ${fmtM(floor)}.`;
-      else if (Math.abs(b.rate * 10 - Math.round(b.rate * 10)) > 1e-6) {
+    for (const [pid, d] of Object.entries(draft)) {
+      const raw = Number(d.rate);
+      if (d.rate === '' || !Number.isFinite(raw) || raw <= 0) continue;
+      if (raw < floor - 1e-9) out[Number(pid)] = `Minimum tonight is ${fmtM(floor)}.`;
+      else if (Math.abs(raw * 10 - Math.round(raw * 10)) > 1e-6) {
         out[Number(pid)] = 'Bids move in $0.1M steps.';
       }
     }
     return out;
-  }, [bids, floor]);
+  }, [draft, floor]);
 
   // Exposure: worst case if EVERY bid wins — peak payroll across covered rounds.
   // Over-cap exposure is LEGAL (spec §4.3); the meter informs, it does not block.

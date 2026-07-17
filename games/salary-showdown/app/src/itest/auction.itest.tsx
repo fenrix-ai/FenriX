@@ -28,6 +28,12 @@ test('auction: five cards, min-bid gate, exposure meter, revisable overwrite', a
   expect(await screen.findByText('Minimum tonight is $2.0M.')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Lock in bids' })).toBeDisabled();
 
+  // Off-step bids surface the exact copy and disable Lock in (never silent coercion).
+  await user.clear(inputs[0]);
+  await user.type(inputs[0], '2.35');
+  expect(await screen.findByText('Bids move in $0.1M steps.')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Lock in bids' })).toBeDisabled();
+
   await user.clear(inputs[0]);
   await user.type(inputs[0], '8.0');
   const card0 = inputs[0].closest('.card')!;
