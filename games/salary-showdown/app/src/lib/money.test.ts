@@ -1,4 +1,4 @@
-import { askPrice, contractRate, fmtM, maxYears, minBid, r01 } from './money';
+import { askPrice, contractRate, fmtM, hypeCurve, maxYears, minBid, r01 } from './money';
 
 test('askPrice: round 1 is the CSV base exactly; 8% compounds per round', () => {
   expect(askPrice(4.8, 1)).toBe(4.8);
@@ -23,6 +23,11 @@ test('maxYears is rounds remaining', () => {
 test('r01 and fmtM', () => {
   expect(r01(4.416)).toBe(4.4);
   expect(fmtM(4.4)).toBe('$4.4M');
+});
+test('hypeCurve endpoints match payroll.js', () => {
+  expect(hypeCurve(1.0)).toBe(2.0);
+  expect(hypeCurve(5.0)).toBe(26.0);
+  expect(r01(hypeCurve(3.5))).toBe(14.7); // 2 + (0.625^1.35)*24 = 14.726…
 });
 
 import { capOkWith, expiringPids, payrollAt, payrollSplitAt, spendThroughRound } from './contracts';

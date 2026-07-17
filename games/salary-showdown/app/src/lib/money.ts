@@ -9,3 +9,4 @@ export const contractRate = (ask: number, years: number) => r01(ask * DISCOUNTS[
 export const minBid = (round: number) => r01(2.0 * INFLATION ** (round - 1));
 export const maxYears = (round: number) => TOTAL_ROUNDS - round + 1;
 export const fmtM = (x: number) => `$${x.toFixed(1)}M`;
+export const hypeCurve = (hype: number) => 2.0 + ((hype - 1.0) / 4.0) ** 1.35 * 24.0;
