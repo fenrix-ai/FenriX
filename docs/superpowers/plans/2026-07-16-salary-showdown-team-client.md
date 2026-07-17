@@ -2392,6 +2392,8 @@ export default function FrontOfficePage() {
 ```
 Replace the `/game/office` stub in `App.tsx`.
 
+*(Execution amendment: the decided-count code above has a bug found during implementation — `signPlayer` REPLACES the pid's roster entry on re-sign, so `expiringPids` loses the pid and the denominator shrinks ("0 of 7") instead of the numerator growing ("1 of 8"). The shipped page computes the section list as a union of still-expiring pids + pids newly active this round (`startRound === round` during FRONT_OFFICE is provably always a re-sign: FO is the round's first phase and every other signing path stamps a later-phase round). See `FrontOfficePage.tsx` — reviewer-verified.)*
+
 - [ ] **Step 4: Write the integration test**
 
 `src/itest/frontoffice.itest.tsx` — Alpha (the open team) reaches R2 Front Office with 8 expired hardship contracts, which is exactly the screen's hard case:
