@@ -5,6 +5,7 @@ import { PhaseRouter } from './components/PhaseRouter';
 import LandingPage from './pages/LandingPage';
 import LobbyPage from './pages/LobbyPage';
 import FrontOfficePage from './pages/FrontOfficePage';
+import FreeAgencyPage from './pages/FreeAgencyPage';
 
 const Stub = ({ name }: { name: string }) => (
   <main style={{ color: '#f2f5fa', padding: 24 }}>
@@ -24,7 +25,7 @@ export default function App() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/lobby" element={<LobbyPage />} />
           <Route path="/game/office" element={<FrontOfficePage />} />
-          <Route path="/game/market" element={<Stub name="Free Agency" />} />
+          <Route path="/game/market" element={<FreeAgencyPage />} />
           <Route path="/game/auction" element={<Stub name="Star Auction" />} />
           <Route path="/game/lineup" element={<Stub name="Set Lineup" />} />
           <Route path="/game/simulate" element={<Stub name="Simulate" />} />

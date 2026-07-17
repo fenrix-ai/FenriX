@@ -24,6 +24,6 @@ test('membership + phase router: joined client lands on /lobby, follows startSea
   await waitFor(() => expect(screen.getByRole('heading', { name: /Lobby/ })).toBeInTheDocument(),
     { timeout: 15000 });
   await seeded.prof.call('startSeason', { gameId: seeded.gameId });
-  await waitFor(() => expect(screen.getByTestId('stub')).toHaveTextContent('Free Agency'),
+  await waitFor(() => expect(screen.getByRole('heading', { name: /Draft Night/ })).toBeInTheDocument(),
     { timeout: 15000 });
 }, 90000);
