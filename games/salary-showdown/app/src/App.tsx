@@ -1,4 +1,7 @@
 import { Route, Routes } from 'react-router-dom';
+import { AuthProvider } from './contexts/AuthContext';
+import { GameProvider } from './contexts/GameContext';
+import { PhaseRouter } from './components/PhaseRouter';
 
 const Stub = ({ name }: { name: string }) => (
   <main style={{ color: '#f2f5fa', padding: 24 }}>
@@ -11,17 +14,22 @@ const Stub = ({ name }: { name: string }) => (
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/" element={<Stub name="Landing" />} />
-      <Route path="/lobby" element={<Stub name="Lobby" />} />
-      <Route path="/game/office" element={<Stub name="Front Office" />} />
-      <Route path="/game/market" element={<Stub name="Free Agency" />} />
-      <Route path="/game/auction" element={<Stub name="Star Auction" />} />
-      <Route path="/game/lineup" element={<Stub name="Set Lineup" />} />
-      <Route path="/game/simulate" element={<Stub name="Simulate" />} />
-      <Route path="/game/results" element={<Stub name="Results" />} />
-      <Route path="/game/conclusion" element={<Stub name="Finale (Plan 3)" />} />
-      <Route path="/standings" element={<Stub name="Standings" />} />
-    </Routes>
+    <AuthProvider>
+      <GameProvider>
+        <PhaseRouter />
+        <Routes>
+          <Route path="/" element={<Stub name="Landing" />} />
+          <Route path="/lobby" element={<Stub name="Lobby" />} />
+          <Route path="/game/office" element={<Stub name="Front Office" />} />
+          <Route path="/game/market" element={<Stub name="Free Agency" />} />
+          <Route path="/game/auction" element={<Stub name="Star Auction" />} />
+          <Route path="/game/lineup" element={<Stub name="Set Lineup" />} />
+          <Route path="/game/simulate" element={<Stub name="Simulate" />} />
+          <Route path="/game/results" element={<Stub name="Results" />} />
+          <Route path="/game/conclusion" element={<Stub name="Finale (Plan 3)" />} />
+          <Route path="/standings" element={<Stub name="Standings" />} />
+        </Routes>
+      </GameProvider>
+    </AuthProvider>
   );
 }
