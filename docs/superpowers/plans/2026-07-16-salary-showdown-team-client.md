@@ -3729,12 +3729,19 @@ test('results: record, box lines, awards without perDollar, highlighted snapshot
     const table = screen.getAllByRole('table')[0];
     expect(table.querySelectorAll('tbody tr').length).toBe(3 * 8);
   });
-  // The bargain award never shows the computed per-dollar number.
+  // The bargain award never shows the computed per-dollar number. Pin it on the
+  // ACTUAL bargain slide — only slides[slide] is mounted, so asserting on slide 0
+  // (MVP) is vacuous (defect found at review; carousel-advance is the fix).
   const rd = (await adminDb().doc(`games/${seeded.gameId}/rounds/1`).get()).data()!;
-  if (rd.awards.bargain) {
-    expect(screen.getByTestId('awards').textContent)
-      .not.toContain(String(rd.awards.bargain.perDollar));
-  }
+  expect(rd.awards.bargain).toBeTruthy();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('button', { name: 'next award' }));
+  await user.click(screen.getByRole('button', { name: 'next award' }));
+  await waitFor(() => expect(screen.getByTestId('awards'))
+    .toHaveTextContent('Bargain of the Round'), { timeout: 15000 });
+  const awardsText = screen.getByTestId('awards').textContent!;
+  expect(awardsText).toMatch(/\$\d+\.\dM\/rd/);                          // raw salary present
+  expect(awardsText).not.toContain(String(rd.awards.bargain.perDollar)); // ratio absent
   // Snapshot highlights the viewer's row.
   const sel = screen.getByTestId('standings').querySelector('tr.sel');
   expect(sel?.textContent).toContain('Alpha');
