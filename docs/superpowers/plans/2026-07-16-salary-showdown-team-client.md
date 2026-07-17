@@ -1559,7 +1559,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
       if (u) setState({ uid: u.uid, ready: true });
-      else void signInAnonymously(auth); // anonymous by design — no accounts in a classroom
+      else signInAnonymously(auth).catch(() => {}); // anonymous by design — no accounts in a
+      // classroom; .catch: the unit sanity test renders App with no emulator running
     });
     return unsub;
   }, []);
@@ -1838,12 +1839,13 @@ import { MemoryRouter } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 import { seedToPhase } from './harness';
 import { auth, functions } from '../lib/firebase';
+import { signInAnonymously } from 'firebase/auth';
 import App from '../App';
 
 test('membership + phase router: joined client lands on /lobby, follows startSeason', async () => {
   const seeded = await seedToPhase({ to: 'LOBBY' });
   // The app under test has its own anonymous uid — join Team 1 AS that uid.
-  await waitFor(() => expect(auth.currentUser).toBeTruthy(), { timeout: 15000 });
+  await signInAnonymously(auth); // explicit: AuthProvider only signs in once rendered (Task 6 finding)
   await httpsCallable(functions, 'joinGame')({
     joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'GM', displayName: 'IT GM',
   });
@@ -1990,11 +1992,12 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { seedToPhase } from './harness';
 import { auth } from '../lib/firebase';
+import { signInAnonymously } from 'firebase/auth';
 import App from '../App';
 
 test('landing: code → team list with taken seats → claim → lobby', async () => {
   const seeded = await seedToPhase({ to: 'LOBBY' }); // bots on Beta/Gamma/Delta
-  await waitFor(() => expect(auth.currentUser).toBeTruthy(), { timeout: 15000 });
+  await signInAnonymously(auth); // explicit: AuthProvider only signs in once rendered (Task 6 finding)
   const user = userEvent.setup();
   render(<MemoryRouter initialEntries={['/']}><App /></MemoryRouter>);
 
@@ -2121,11 +2124,12 @@ import { MemoryRouter } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 import { seedToPhase } from './harness';
 import { auth, functions } from '../lib/firebase';
+import { signInAnonymously } from 'firebase/auth';
 import App from '../App';
 
 test('lobby shows live role claims and own-team highlight', async () => {
   const seeded = await seedToPhase({ to: 'LOBBY' });
-  await waitFor(() => expect(auth.currentUser).toBeTruthy(), { timeout: 15000 });
+  await signInAnonymously(auth); // explicit: AuthProvider only signs in once rendered (Task 6 finding)
   await httpsCallable(functions, 'joinGame')({
     joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'Coach', displayName: 'Casey',
   });
@@ -2392,11 +2396,12 @@ import { MemoryRouter } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 import { adminDb, seedToPhase } from './harness';
 import { auth, functions } from '../lib/firebase';
+import { signInAnonymously } from 'firebase/auth';
 import App from '../App';
 
 test('front office: expiring re-sign, then a mid-contract cut with dead money', async () => {
   const seeded = await seedToPhase({ to: 'R2:FRONT_OFFICE' });
-  await waitFor(() => expect(auth.currentUser).toBeTruthy(), { timeout: 15000 });
+  await signInAnonymously(auth); // explicit: AuthProvider only signs in once rendered (Task 6 finding)
   await httpsCallable(functions, 'joinGame')({
     joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'GM', displayName: 'IT GM',
   });
@@ -2668,11 +2673,12 @@ import { MemoryRouter } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 import { adminDb, seedToPhase } from './harness';
 import { auth, functions } from '../lib/firebase';
+import { signInAnonymously } from 'firebase/auth';
 import App from '../App';
 
 test('draft night: analyst table, sign drawer, non-exclusive row persists, ALREADY_SIGNED', async () => {
   const seeded = await seedToPhase({ to: 'R1:FREE_AGENCY' });
-  await waitFor(() => expect(auth.currentUser).toBeTruthy(), { timeout: 15000 });
+  await signInAnonymously(auth); // explicit: AuthProvider only signs in once rendered (Task 6 finding)
   await httpsCallable(functions, 'joinGame')({
     joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'GM', displayName: 'IT GM',
   });
@@ -2921,11 +2927,12 @@ import { MemoryRouter } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 import { adminDb, seedToPhase } from './harness';
 import { auth, functions } from '../lib/firebase';
+import { signInAnonymously } from 'firebase/auth';
 import App from '../App';
 
 test('auction: five cards, min-bid gate, exposure meter, revisable overwrite', async () => {
   const seeded = await seedToPhase({ to: 'R1:AUCTION' });
-  await waitFor(() => expect(auth.currentUser).toBeTruthy(), { timeout: 15000 });
+  await signInAnonymously(auth); // explicit: AuthProvider only signs in once rendered (Task 6 finding)
   await httpsCallable(functions, 'joinGame')({
     joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'Scout', displayName: 'IT Scout',
   });
@@ -3287,11 +3294,12 @@ import { MemoryRouter } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 import { adminDb, seedToPhase } from './harness';
 import { auth, functions } from '../lib/firebase';
+import { signInAnonymously } from 'firebase/auth';
 import App from '../App';
 
 test('lineup: pre-arranged legal, playstyle pick, submit locks the round', async () => {
   const seeded = await seedToPhase({ to: 'R1:LINEUP' });
-  await waitFor(() => expect(auth.currentUser).toBeTruthy(), { timeout: 15000 });
+  await signInAnonymously(auth); // explicit: AuthProvider only signs in once rendered (Task 6 finding)
   await httpsCallable(functions, 'joinGame')({
     joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'Coach', displayName: 'IT Coach',
   });
@@ -3439,11 +3447,12 @@ import { MemoryRouter } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 import { seedToPhase } from './harness';
 import { auth, functions } from '../lib/firebase';
+import { signInAnonymously } from 'firebase/auth';
 import App from '../App';
 
 test('simulate: my three games cascade to a terminal state', async () => {
   const seeded = await seedToPhase({ to: 'R1:SIMULATE' });
-  await waitFor(() => expect(auth.currentUser).toBeTruthy(), { timeout: 15000 });
+  await signInAnonymously(auth); // explicit: AuthProvider only signs in once rendered (Task 6 finding)
   await httpsCallable(functions, 'joinGame')({
     joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'GM', displayName: 'IT GM',
   });
@@ -3685,11 +3694,12 @@ import { MemoryRouter } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 import { adminDb, seedToPhase } from './harness';
 import { auth, functions } from '../lib/firebase';
+import { signInAnonymously } from 'firebase/auth';
 import App from '../App';
 
 test('results: record, box lines, awards without perDollar, highlighted snapshot', async () => {
   const seeded = await seedToPhase({ to: 'R1:RESULTS' });
-  await waitFor(() => expect(auth.currentUser).toBeTruthy(), { timeout: 15000 });
+  await signInAnonymously(auth); // explicit: AuthProvider only signs in once rendered (Task 6 finding)
   await httpsCallable(functions, 'joinGame')({
     joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'Scout', displayName: 'IT S',
   });
@@ -3841,11 +3851,12 @@ import { MemoryRouter } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 import { adminDb, seedToPhase } from './harness';
 import { auth, functions } from '../lib/firebase';
+import { signInAnonymously } from 'firebase/auth';
 import App from '../App';
 
 test('standings: server rank order, viewer highlight, W/$M column', async () => {
   const seeded = await seedToPhase({ to: 'R2:FRONT_OFFICE' }); // round 1 played
-  await waitFor(() => expect(auth.currentUser).toBeTruthy(), { timeout: 15000 });
+  await signInAnonymously(auth); // explicit: AuthProvider only signs in once rendered (Task 6 finding)
   await httpsCallable(functions, 'joinGame')({
     joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'GM', displayName: 'IT GM',
   });
@@ -3961,11 +3972,12 @@ import { MemoryRouter } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 import { driveTo, seedToPhase } from './harness';
 import { auth, functions } from '../lib/firebase';
+import { signInAnonymously } from 'firebase/auth';
 import App from '../App';
 
 test('a joined client follows a whole season, lobby to finale', async () => {
   const seeded = await seedToPhase({ to: 'LOBBY' });
-  await waitFor(() => expect(auth.currentUser).toBeTruthy(), { timeout: 15000 });
+  await signInAnonymously(auth); // explicit: AuthProvider only signs in once rendered (Task 6 finding)
   await httpsCallable(functions, 'joinGame')({
     joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'GM', displayName: 'E2E GM',
   });
