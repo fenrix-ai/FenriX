@@ -24,7 +24,7 @@ test('landing: code → team list with taken seats → claim → lobby', async (
   const alphaCard = screen.getByText('Alpha').closest('.card')!;
   await user.click(Array.from(alphaCard.querySelectorAll('button'))
     .find((b) => b.textContent === 'GM')!);
-  await waitFor(() => expect(screen.getByTestId('stub')).toHaveTextContent('Lobby'),
+  await waitFor(() => expect(screen.getByRole('heading', { name: /Lobby/ })).toBeInTheDocument(),
     { timeout: 15000 });
 }, 90000);
 

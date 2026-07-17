@@ -21,7 +21,7 @@ test('membership + phase router: joined client lands on /lobby, follows startSea
   });
   sessionStorage.setItem('ss.gameId', seeded.gameId);
   render(<MemoryRouter initialEntries={['/']}><App /></MemoryRouter>);
-  await waitFor(() => expect(screen.getByTestId('stub')).toHaveTextContent('Lobby'),
+  await waitFor(() => expect(screen.getByRole('heading', { name: /Lobby/ })).toBeInTheDocument(),
     { timeout: 15000 });
   await seeded.prof.call('startSeason', { gameId: seeded.gameId });
   await waitFor(() => expect(screen.getByTestId('stub')).toHaveTextContent('Free Agency'),

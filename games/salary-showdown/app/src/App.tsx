@@ -3,6 +3,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { GameProvider } from './contexts/GameContext';
 import { PhaseRouter } from './components/PhaseRouter';
 import LandingPage from './pages/LandingPage';
+import LobbyPage from './pages/LobbyPage';
 
 const Stub = ({ name }: { name: string }) => (
   <main style={{ color: '#f2f5fa', padding: 24 }}>
@@ -20,7 +21,7 @@ export default function App() {
         <PhaseRouter />
         <Routes>
           <Route path="/" element={<LandingPage />} />
-          <Route path="/lobby" element={<Stub name="Lobby" />} />
+          <Route path="/lobby" element={<LobbyPage />} />
           <Route path="/game/office" element={<Stub name="Front Office" />} />
           <Route path="/game/market" element={<Stub name="Free Agency" />} />
           <Route path="/game/auction" element={<Stub name="Star Auction" />} />
