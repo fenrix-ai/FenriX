@@ -20,8 +20,9 @@ const COLS = [
 ] as const;
 
 export default function FreeAgencyPage() {
-  const { game, team, catalog, market, call, gameId } = useGame();
+  const { game, team, catalog, market, call, gameId, membership } = useGame();
   const { form } = useSeasonForm();
+  const isGM = membership?.role === 'GM';
   const [chip, setChip] = useState<'tonight' | 'all'>('tonight');
   const [pos, setPos] = useState<'' | 'G' | 'W' | 'B'>('');
   const [cheap, setCheap] = useState(false);
@@ -177,8 +178,9 @@ export default function FreeAgencyPage() {
                   ? <span className="ok">Fits — peak payroll stays under {fmtM(100)}.</span>
                   : <span className="neg">Exceeds cap in round {cap!.worstRound}: {fmtM(cap!.worstPayroll!)}.</span>}
             </div>
+            {!isGM && <p className="dim" style={{ fontSize: 13 }}>The GM signs this phase.</p>}
             <button className="btn green" style={{ width: '100%' }}
-              disabled={busy || full || !cap!.ok} onClick={() => void sign()}>
+              disabled={busy || full || !cap!.ok || !isGM} onClick={() => void sign()}>
               Confirm signing
             </button>
           </aside>

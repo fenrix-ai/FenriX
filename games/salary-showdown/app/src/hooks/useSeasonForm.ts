@@ -12,12 +12,16 @@ export function useSeasonForm() {
   const [rows, setRows] = useState<BoxRow[]>([]);
   useEffect(() => {
     if (!gameId || !membership) return;
+    let cancelled = false;
     void getDocs(collection(db, 'games', gameId, 'rounds')).then((snap) => {
       const all: BoxRow[] = [];
       snap.forEach((d) => all.push(...parseBoxCsv((d.data() as { boxCsv: string }).boxCsv)));
-      setRows(all);
-      setForm(seasonForm(all));
-    });
-  }, [gameId, membership, game?.round]);
+      if (!cancelled) {
+        setRows(all);
+        setForm(seasonForm(all));
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [gameId, !!membership, game?.round]);
   return { form, rows };
 }

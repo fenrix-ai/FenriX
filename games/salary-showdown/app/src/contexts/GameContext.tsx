@@ -49,29 +49,32 @@ export function GameProvider({ children }: { children: ReactNode }) {
   }, [gameId, uid]);
 
   useEffect(() => { // all team docs (public to members) — Lobby, Standings, Results need them
-    if (!gameId || !membership) { setTeams(new Map()); return; }
+    if (!gameId || !membership?.teamId) { setTeams(new Map()); return; }
     return onSnapshot(collection(db, 'games', gameId, 'teams'), (snap) => {
       const m = new Map<string, TeamDoc>();
       snap.forEach((d) => m.set(d.id, d.data() as TeamDoc));
       setTeams(m);
-    });
-  }, [gameId, membership]);
+    }, () => {});
+  }, [gameId, membership?.teamId]);
 
   useEffect(() => { // catalog: 175 static docs — fetch once per game
-    if (!gameId || !membership) { setCatalog(new Map()); return; }
+    if (!gameId || !membership?.teamId) { setCatalog(new Map()); return; }
+    let cancelled = false;
     void getDocs(collection(db, 'games', gameId, 'catalog')).then((snap) => {
       const m = new Map<number, CatalogPlayer>();
       snap.forEach((d) => m.set(Number(d.id), d.data() as CatalogPlayer));
-      setCatalog(m);
-    });
-  }, [gameId, membership]);
+      if (!cancelled) setCatalog(m);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [gameId, membership?.teamId]);
 
   useEffect(() => { // this round's market doc
     const round = game?.round ?? 0;
-    if (!gameId || !membership || round < 1) { setMarket(null); return; }
+    if (!gameId || !membership?.teamId || round < 1) { setMarket(null); return; }
     return onSnapshot(doc(db, 'games', gameId, 'market', String(round)),
-      (s) => setMarket(s.exists() ? (s.data() as MarketDoc) : null));
-  }, [gameId, membership, game?.round]);
+      (s) => setMarket(s.exists() ? (s.data() as MarketDoc) : null),
+      () => {});
+  }, [gameId, membership?.teamId, game?.round]);
 
   const call = useCallback(async <T,>(name: string, data: unknown): Promise<T> => {
     const res = await httpsCallable(functions, name)(data);

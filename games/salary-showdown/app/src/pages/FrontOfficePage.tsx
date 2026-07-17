@@ -26,15 +26,16 @@ function StatLine({ p, form }: {
 }
 
 export default function FrontOfficePage() {
-  const { game, team, catalog, call, gameId } = useGame();
+  const { game, team, catalog, call, gameId, membership } = useGame();
   const { form } = useSeasonForm();
+  const isGM = membership?.role === 'GM';
   const [err, setErr] = useState<unknown>(null);
   const [walked, setWalked] = useState<Set<number>>(new Set());
   const [resignYears, setResignYears] = useState<Record<number, number>>({});
   const [cutTarget, setCutTarget] = useState<Contract | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const round = game?.round ?? 0;
+  const round = game?.round ?? 1;
   const actives = useMemo(
     () => (team ? activeContracts(team, round) : []), [team, round]);
   const stillExpiring = useMemo(
@@ -68,6 +69,7 @@ export default function FrontOfficePage() {
     <main className="page">
       <PhaseHeader title="Front Office" round={round} timerEndsAt={game.timerEndsAt} />
       <PayrollBar team={team} round={round} />
+      {!isGM && <p className="dim">The GM acts this phase — decisions shown are read-only.</p>}
       <ErrorNotice error={err} />
 
       <SectionCard num={1} title="Expiring deals" status={`${decidedCount} of ${expiring.length} decided`}>
@@ -90,18 +92,18 @@ export default function FrontOfficePage() {
                 <StatLine p={p} form={form} />
               </div>
               <span className="mono">asks {fmtM(ask)}/rd</span>
-              <select className="inset" style={{ color: 'inherit' }} value={yrs} disabled={done || busy}
+              <select className="inset" style={{ color: 'inherit' }} value={yrs} disabled={done || busy || !isGM}
                 aria-label={`years for ${p.name}`}
                 onChange={(e) => setResignYears((m) => ({ ...m, [pid]: Number(e.target.value) }))}>
                 {Array.from({ length: maxYears(round) }, (_, i) => i + 1).map((y) => (
                   <option key={y} value={y}>{y} rd — {fmtM(contractRate(ask, y))}/rd</option>
                 ))}
               </select>
-              <button className="btn green" disabled={done || busy}
+              <button className="btn green" disabled={done || busy || !isGM}
                 onClick={() => void act(() => call('signPlayer', { gameId, pid, years: yrs }))}>
                 Re-sign
               </button>
-              <button className="btn" disabled={done || busy}
+              <button className="btn" disabled={done || busy || !isGM}
                 onClick={() => setWalked((s) => new Set(s).add(pid))}>Let walk</button>
             </div>
           );
@@ -122,7 +124,7 @@ export default function FrontOfficePage() {
                 <StatLine p={p} form={form} />
               </div>
               <span className="mono">{fmtM(c.rate)} × {last - round + 1} rd{c.hardship ? ' · hardship' : ''}</span>
-              <button className="btn cut" disabled={busy} onClick={() => setCutTarget(c)}>Cut</button>
+              <button className="btn cut" disabled={busy || !isGM} onClick={() => setCutTarget(c)}>Cut</button>
             </div>
           );
         })}
@@ -155,7 +157,7 @@ export default function FrontOfficePage() {
               His roster spot opens now. {fmtM(cutTarget.rate)}/rd stays on your cap as dead money
               for {roundsCharged} round{roundsCharged === 1 ? '' : 's'} — {fmtM(cutTarget.rate * roundsCharged)} total.
             </p>
-            <button className="btn cut" disabled={busy} onClick={() => void act(async () => {
+            <button className="btn cut" disabled={busy || !isGM} onClick={() => void act(async () => {
               await call('cutRosterPlayer', { gameId, pid: cutTarget.pid });
               setCutTarget(null);
             })}>Confirm cut</button>{' '}

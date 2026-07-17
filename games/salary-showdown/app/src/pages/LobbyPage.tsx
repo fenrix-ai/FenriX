@@ -23,10 +23,11 @@ export default function LobbyPage() {
   const [slide, setSlide] = useState(0);
 
   useEffect(() => {
-    if (!gameId || !membership) return;
+    if (!gameId || !membership?.teamId) return;
     return onSnapshot(collection(db, 'games', gameId, 'players'),
-      (s) => setMembers(s.docs.map((d) => d.data() as Member)));
-  }, [gameId, membership]);
+      (s) => setMembers(s.docs.map((d) => d.data() as Member)),
+      () => {});
+  }, [gameId, membership?.teamId]);
 
   useEffect(() => {
     const id = setInterval(() => setSlide((s) => (s + 1) % RULES.length), 5000);

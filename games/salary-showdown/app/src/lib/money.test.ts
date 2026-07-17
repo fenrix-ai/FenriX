@@ -9,6 +9,7 @@ test('contractRate applies the discount then rounds to $0.1M', () => {
   expect(contractRate(4.8, 1)).toBe(4.8);
   expect(contractRate(4.8, 2)).toBe(4.4); // 4.416 — the mock’s $4.42M is a sample-number error
   expect(contractRate(4.8, 3)).toBe(4.1); // 4.08 → 4.1
+  expect(contractRate(10, 4)).toBe(8);
   expect(contractRate(10, 5)).toBe(7.5);
 });
 test('minBid inflates the $2.0M league minimum', () => {

@@ -1,4 +1,5 @@
 import { errorCopy } from './errors';
+import { FirebaseError } from 'firebase/app';
 
 test('CAP_EXCEEDED parses round and payroll into copy', () => {
   expect(errorCopy(new Error('CAP_EXCEEDED:3:104.2')).headline)
@@ -19,4 +20,8 @@ test('unknown errors fall back with the raw message attached', () => {
   const r = errorCopy(new Error('some new server string'));
   expect(r.headline).toBe('That did not go through — try again.');
   expect(r.raw).toBe('some new server string');
+});
+test('already-exists kind maps to the seat-taken copy', () => {
+  expect(errorCopy(new FirebaseError('functions/already-exists', 'GM role already taken on that team')).headline)
+    .toBe('That seat was just taken — pick another role.');
 });

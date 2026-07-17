@@ -72,7 +72,7 @@ export default function LandingPage() {
               {ROLES.map((r) => {
                 const taken = t.claimedRoles.includes(r);
                 return (
-                  <button key={r} className={taken ? 'chip' : 'chip on'} disabled={taken || busy}
+                  <button key={r} className={taken ? 'chip' : 'chip on'} disabled={busy}
                     onClick={() => void claim(t.teamId, r)}>
                     {r}{taken ? ' · taken' : ''}
                   </button>

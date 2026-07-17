@@ -53,4 +53,12 @@ test('seat-taken race shows the mapped copy and refreshes the picker', async () 
     const refreshed = screen.getByText('Alpha').closest('.card')!;
     expect(refreshed.textContent).toContain('GM · taken');
   }, { timeout: 15000 });
+
+  // Taken chips stay clickable — the server arbitrates. A rival's seat rejects again.
+  const takenGm = Array.from(screen.getByText('Alpha').closest('.card')!.querySelectorAll('button'))
+    .find((b) => b.textContent === 'GM · taken')!;
+  expect(takenGm).not.toBeDisabled();
+  await user.click(takenGm);
+  await waitFor(() => expect(screen.getByRole('alert'))
+    .toHaveTextContent('That seat was just taken — pick another role.'), { timeout: 15000 });
 }, 120000);

@@ -25,6 +25,8 @@ export default function ResultsPage() {
     return () => clearInterval(id);
   }, []);
 
+  const allRows = useMemo(() => (rd ? parseBoxCsv(rd.boxCsv) : []), [rd]);
+
   const my = useMemo(() => {
     if (!rd || !membership || !team) return null;
     const games = rd.games
@@ -39,8 +41,8 @@ export default function ResultsPage() {
     const best = wins.sort((a, b) => (b.us - b.them) - (a.us - a.them))[0] ?? null;
     const worst = losses.sort((a, b) => (b.them - b.us) - (a.them - a.us))[0] ?? null;
     return { record: `${wins.length}–${losses.length}`, best, worst,
-      box: teamRows(parseBoxCsv(rd.boxCsv), team.name) };
-  }, [rd, membership, team, teams]);
+      box: teamRows(allRows, team.name) };
+  }, [rd, membership, team, teams, allRows]);
 
   const wpd = useMemo(() => {
     const m = new Map<string, number>();
@@ -69,7 +71,7 @@ export default function ResultsPage() {
       ?? teams.get(bargain.teamId)?.spendLog.slice().reverse().find((c) => c.pid === bargain.pid)
     : null;
   const bargainRows = bargain
-    ? teamRows(parseBoxCsv(rd.boxCsv), awardTeam(bargain.teamId))
+    ? teamRows(allRows, awardTeam(bargain.teamId))
         .filter((r) => r.player_id === bargain.pid)
     : [];
   const bargainLine = bargainRows.length

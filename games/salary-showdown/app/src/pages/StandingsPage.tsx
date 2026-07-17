@@ -14,6 +14,7 @@ export default function StandingsPage() {
 
   useEffect(() => { // most recently played round's standings snapshot
     if (!game || !membership || !gameId) return;
+    let cancelled = false;
     void getDocs(collection(db, 'games', gameId, 'rounds'))
       .then((snap) => {
         let best: { round: number; rows: StandingsRow[] } | null = null;
@@ -21,8 +22,10 @@ export default function StandingsPage() {
           const r = Number(d.id);
           if (!best || r > best.round) best = { round: r, rows: (d.data() as RoundDoc).standings };
         });
-        setLatest(best);
-      });
+        if (!cancelled) setLatest(best);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
   }, [game?.round, game?.phase, membership, gameId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const wpd = useMemo(() => {
