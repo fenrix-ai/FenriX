@@ -10,6 +10,7 @@ import AuctionPage from './pages/AuctionPage';
 import LineupPage from './pages/LineupPage';
 import SimulatePage from './pages/SimulatePage';
 import ResultsPage from './pages/ResultsPage';
+import StandingsPage from './pages/StandingsPage';
 
 const Stub = ({ name }: { name: string }) => (
   <main style={{ color: '#f2f5fa', padding: 24 }}>
@@ -35,7 +36,7 @@ export default function App() {
           <Route path="/game/simulate" element={<SimulatePage />} />
           <Route path="/game/results" element={<ResultsPage />} />
           <Route path="/game/conclusion" element={<Stub name="Finale (Plan 3)" />} />
-          <Route path="/standings" element={<Stub name="Standings" />} />
+          <Route path="/standings" element={<StandingsPage />} />
         </Routes>
       </GameProvider>
     </AuthProvider>
