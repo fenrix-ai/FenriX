@@ -4038,7 +4038,8 @@ test('a joined client follows a whole season, lobby to finale', async () => {
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-const EMOJI = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE0F}]/u;
+// U+2605 (★) is the sanctioned hype glyph — carved out of the 2600 block on purpose.
+const EMOJI = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{2604}\u{2606}-\u{26FF}\u{2700}-\u{27BF}\u{FE0F}]/u;
 const JUDGMENT = /(['"`])[^'"`]*\b(underperforming|declining|washed|a steal|overpaid|overpriced|elite pick|great value)\b[^'"`]*\1/i;
 
 const files = [];
