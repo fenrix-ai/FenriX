@@ -9,6 +9,7 @@ import FreeAgencyPage from './pages/FreeAgencyPage';
 import AuctionPage from './pages/AuctionPage';
 import LineupPage from './pages/LineupPage';
 import SimulatePage from './pages/SimulatePage';
+import ResultsPage from './pages/ResultsPage';
 
 const Stub = ({ name }: { name: string }) => (
   <main style={{ color: '#f2f5fa', padding: 24 }}>
@@ -32,7 +33,7 @@ export default function App() {
           <Route path="/game/auction" element={<AuctionPage />} />
           <Route path="/game/lineup" element={<LineupPage />} />
           <Route path="/game/simulate" element={<SimulatePage />} />
-          <Route path="/game/results" element={<Stub name="Results" />} />
+          <Route path="/game/results" element={<ResultsPage />} />
           <Route path="/game/conclusion" element={<Stub name="Finale (Plan 3)" />} />
           <Route path="/standings" element={<Stub name="Standings" />} />
         </Routes>
