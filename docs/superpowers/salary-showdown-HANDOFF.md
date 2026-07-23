@@ -42,7 +42,7 @@ top-3 in **86%** of simulated seasons and wins the title in **48%**.
 | Local `main` vs `origin/main` | **69 commits ahead — NOTHING has ever been pushed to GitHub** |
 | Backend test suite (hardening branch) | **19 files / 115 tests green** |
 | App unit suite | **7 files / 30 tests green** |
-| App integration suite | **11 files / 12 tests** — ⚠️ intermittently fails, see §3 |
+| App integration suite | **12 files / 13 tests green** (was 11/12 — §3's fix adds a transport tripwire) |
 | UI-rules audit | clean, 37 files |
 
 Unrelated pre-existing dirt in the working tree (NOT yours, leave alone): `quant_finance/README.md`
@@ -82,39 +82,129 @@ bf06e50 fix: sim box emission — history-parity 1.25×tier-weight scaling (spec
 
 ---
 
-## 3. ⚠️ THE ONE OPEN THREAD — start here
+## 3. ✅ RESOLVED (2026-07-23) — the season-E2E listener stall
 
-**The app integration suite intermittently fails on `src/itest/season.itest.tsx`.**
+**Root cause: the integration suite was driving a transport the product never ships, and that
+transport is broken against the Firestore emulator. Nothing in our code was at fault.**
 
-Symptom: the rendered client's Firestore `onSnapshot` goes stale — the DOM stays on an old phase
-(e.g. "Simulate · Round 2") while an admin read confirms the **server** already advanced to
-`R3:FRONT_OFFICE`. The checkpoint `waitFor` then times out. No error callback fires. Reproduces
-roughly **1 in 4** runs in isolation; it is always a *late* file in the serial run order.
+The causal chain, proven end to end:
 
-A debug agent was dispatched with three ranked hypotheses and **died mid-investigation** (session
-limit) after confirming the ~1-in-4 isolation repro. Its leading hypothesis, unproven:
+1. **Wrong transport.** Vitest resolves modules with Vite's *server* conditions, which drop
+   `browser`; and `@firebase/firestore`'s exports map lists `node` **before** `browser`. So
+   `firebase/firestore` resolved to `dist/index.node.mjs` — the **gRPC** build. Students' laptops
+   run the browser build over **WebChannel**. (A `resolve.conditions` tweak cannot fix this: `node`
+   wins on order. Only an explicit alias can.)
+2. **The emulator emits a malformed frame.** `cloud-firestore-emulator v1.20.4` loses a
+   `ListenResponse` framing race on the commit→notify path. Its own log carries the proof:
+   `INTERNAL: Failed to frame message` caused by
+   `java.lang.IllegalStateException: knownLengthPendingAllocation reached 0`, at
+   `ListenStreamManager.notifyDocumentListeners → CloudFirestoreV1ListenStream.notify →
+   MessageFramer.writeKnownLengthUncompressed` (i.e. the proto's serialized size changed between
+   `getSerializedSize()` and `writeTo()`). Timestamps match client-side failures to the second.
+3. **The client stream desynchronises.** Its gRPC `StreamDecoder` reads protobuf payload bytes as a
+   length prefix: `RESOURCE_EXHAUSTED: Received message larger than max (704834055 vs 4194304)` —
+   a different garbage value every time (`0x2A02EA07`, `0x170A0C70`, … all protobuf field tags).
+4. **Firestore then goes silent, by design.** Stream-level failures are classified retryable: the
+   `onSnapshot` **error callback is never invoked** (only server-sent per-target errors reach it),
+   backoff climbs to its **60 s maximum**, and there is **no watchdog for an open-but-silent
+   stream**. Snapshot delivery simply stops. The 20–30 s `waitFor` expires first.
 
-- **H1 (favored):** `src/itest/harness.ts`'s `newClient()` creates ~9–12 Firebase client apps per
-  seeded game and **never disposes them** (a `dispose()` exists but is unused). Across 11 serial
-  itest files in one jsdom worker that is 100+ live apps with open WebChannel connections —
-  late files' listeners starve. H-A's extra per-advance write volume (two game-doc writes instead
-  of one) may have tipped an already-marginal condition.
-- **H2:** something in H-A's write pattern itself breaks snapshot delivery under jsdom. **If the
-  evidence points here, STOP and escalate** — that would implicate the hardening design and needs
-  adjudication, not a patch.
-- **H3:** jsdom + Firestore WebChannel needs long-polling. The pre-authorized fix is adding
-  `experimentalAutoDetectLongPolling: true` (or `experimentalForceLongPolling`) to
-  `initializeFirestore` in the **DEV branch only** of `src/lib/firebase.ts`.
+`season.itest.tsx` was the sole victim because it is the only test holding one long-lived,
+multi-target Listen stream across a whole season of rapid commits.
 
-**Discriminating test:** run `season.itest.tsx` **alone**, repeatedly. If it passes reliably alone
-but fails in the full serial suite, H1 is confirmed → fix by disposing clients (a vitest
-`setupFiles` teardown or a `disposeAll()` the harness returns is cleaner than editing 11 files).
+**Direct evidence** (instrumented run): `[DIAG +635ms] game-doc SNAP 0:LOBBY` was the *only*
+game-doc snapshot ever delivered; then `RESOURCE_EXHAUSTED` + `Using maximum backoff delay`; then
+silence, with **no** `game-doc ERROR` line.
 
-**Do not** "fix" this with a longer timeout or a retry wrapper. Root-cause it.
+All three prior hypotheses are dead:
 
-**Definition of done for this thread:** root cause identified and fixed; full app integration suite
-green **three consecutive runs**; backend suite still 115 green; then merge the hardening branch to
-`main`.
+- **H1 (undisposed harness clients) — FALSE.** Each itest file runs in its **own forked process**
+  (distinct PIDs verified in the logs; vitest pool `forks` + `isolate: true`), so apps cannot
+  accumulate across files. `newClient()` creates **no Firestore instance at all** (Auth + Functions
+  only). `season.itest.tsx` run alone passed **8/8** with zero stream errors.
+- **H2 (the hardening design) — cleared *for this failure mode*.** Zero app files changed on this
+  branch, and the defect is in the emulator's gRPC framing on the generic commit→notify path, which
+  any write can trigger. (A first `main`-vs-branch A/B appeared to confirm this at 3/8 vs 5/9, but
+  that run was **contaminated** — swapping backend sources hot-reloads the functions emulator and
+  those three `main` failures were `FirebaseError: INTERNAL` callable errors, a different signature.
+  **That comparison is retracted.** The transport fix's 10/10 + 3/3 result stands on its own.)
+  H2 is *not* cleared for the separate defect in §3a below.
+- **H3 (long-polling) — MOOT twice over.** The WebChannel build was never loaded, and
+  `experimentalAutoDetectLongPolling` **already defaults to `true`** in this SDK version.
+
+**The fix** (`games/salary-showdown/app/vitest.integration.config.ts`): pin the browser build with
+an explicit alias plus `server.deps.inline` (the alias only bites if Vite, not Node's own ESM
+loader, resolves). The suite now drives the **same WebChannel transport the classroom uses**.
+**Test-config only — no product code changed.** `vite.config.ts` (dev server + unit tests) is
+untouched; the browser already resolved the browser build naturally.
+
+Result: **10/10 green**, then **3/3 consecutive green** on the final tree, versus 5/9 failing before.
+`src/itest/transport.itest.ts` is a permanent tripwire that fails loudly if the pin ever stops
+matching (e.g. a firebase upgrade renaming a dist file) — otherwise the suite would silently slide
+back onto gRPC and the flake would return looking like a fresh mystery.
+
+**Not a classroom risk.** Production talks to real Firestore over WebChannel; this defect is
+emulator-only, on a transport the product never uses.
+
+## 3a. ⚠️ NEW OPEN THREAD — flip-first makes a phase visible before its data exists
+
+**Found while verifying §3's fix. Needs a design decision, not a patch. DO NOT MERGE this branch
+until it is adjudicated.**
+
+H-A rewrote `advancePhase` as **flip-first**: one transaction writes the new `round`/`phase` (plus
+the `transition` marker), and *only then* do the exit and enter hooks run
+(`games/salary-showdown/backend/functions/src/game.js:188-199`). `main` did the opposite —
+exit hook → enter hook → **then** write the phase (`git show 9e9cc80:…/game.js:149-156`).
+
+Consequence: the enter hook is what *creates the phase's data* — `auctions/{round}` for AUCTION,
+the `market/{round}` draw for FREE_AGENCY, `rounds/{r}` for SIMULATE. Under flip-first every client
+is routed to the new screen **before that document exists**, and must rely on receiving the
+creation snapshot afterwards.
+
+**Measured, clean A/B** (emulator fully restarted per arm — no hot-reload contamination; measured
+directly via the wave listener, so it does not depend on the rare failure reproducing):
+
+| backend | wave-listener subscribes | saw `auctions/{round}` **missing** | season.itest failures |
+|---|---|---|---|
+| `main` (hooks-then-flip) | 25 | **0** | 0 |
+| this branch (flip-first) | 21 | **14 (67%)** | 1 |
+
+**Why it bites.** `AuctionPage`'s wave listener
+(`games/salary-showdown/app/src/pages/AuctionPage.tsx:30-34`) has **no error callback**, and its
+deps are `[gameId, round]` — so it never re-subscribes. If the creation snapshot is missed, `wave`
+stays `null` and `AuctionPage` returns `null` forever: **a permanently blank screen with nothing
+logged.** Confirmed directly — instrumented run showed `SNAP exists=false`, then silence for 20 s,
+while an admin read proved the server had `auctions/1` with all five stars, `enter-1-AUCTION` in
+the hooklog, and `transition: null` (i.e. the backend did everything correctly).
+
+**Severity — read carefully, do not over-read.**
+- Against **real Firestore**, a listener on a missing document reliably receives the later creation
+  (that is what read-times/resume-tokens are for), so the expected production symptom is a **brief
+  blank screen**, not a permanent one. The permanent case here is the emulator's weaker watch
+  implementation — the same family as §3's framing race. This has **not** been verified against
+  real Firestore.
+- But the *window itself* is created by our design and is real in production: students will be
+  routed to Star Auction / Draft Night / Simulate before that phase's data exists.
+- The missing error callbacks are a genuine product resilience gap regardless of who is at fault.
+
+**Options to adjudicate (Dylan's call):**
+1. **Re-order inside flip-first** — flip, run the enter hook, *then* clear the `transition` marker,
+   and have clients gate rendering on `transition == null` (or on the data itself) rather than on
+   `phase`. Keeps every race H-A closed; removes the visible window.
+2. **Keep flip-first; harden the clients** — add error callbacks + re-subscribe/retry to the wave,
+   round, market and catalog reads, and render an explicit "setting up this phase…" state instead
+   of `null`. Cheapest, and valuable anyway, but leaves the window.
+3. **Revert to hooks-then-flip** — reopens the double-advance races H-A was written to close.
+   Not recommended.
+
+### Known residue: the emulator degrades under sustained load
+
+The same emulator throws `10 ABORTED: Transaction lock timeout` under back-to-back suite runs, which
+makes the **backend** suite intermittently red (measured **2 of 6** consecutive runs; 115/115 green
+on the other four). This is **pre-existing, not new**: the emulator log carries 18 such timeouts
+dated Jul 17 (the original hardening session) alongside 345 from the 2026-07-23 stress runs. It is
+also emulator-side, not a logic regression — the failures are lock timeouts, never assertion
+failures. If the backend suite goes red, **restart the emulator and re-run before investigating.**
 
 ---
 
@@ -247,7 +337,7 @@ cd games/salary-showdown/backend && PATH="/opt/homebrew/opt/openjdk/bin:$PATH" \
 cd games/salary-showdown/app
 npm run dev                        # Vite on port 5176 (--strictPort; 5173-5175 belong to other projects)
 npx vitest run                     # unit: 7 files / 30 tests
-npx vitest run -c vitest.integration.config.ts   # integration: 11 files / 12 tests (needs live emulators)
+npx vitest run -c vitest.integration.config.ts   # integration: 12 files / 13 tests (needs live emulators)
 npm run audit:ui                   # UI-rules tripwire (emoji / config.timers / judgment language)
 npx tsc -b
 
@@ -266,7 +356,14 @@ cd games/salary-showdown/datagen && python3 generate.py   # expect all 11 checks
   Prefer running tests directly against a long-lived emulator instance and only use `exec` when
   ports are free.
 - **The functions emulator hot-reloads on source change** — a test run immediately after an edit
-  can flake once; re-run before investigating.
+  can flake once; re-run before investigating. (Verified again 2026-07-23: 4 files "failed"
+  immediately after a source swap, then 19/19 green on a clean re-run.)
+- **A long-lived emulator degrades.** The instance behind the 2026-07-23 investigation had been up
+  **six days**. It throws `Transaction lock timeout` under sustained load (§3 residue) and its
+  `ListenResponse` framing race is load-sensitive. Restart it before any measurement you intend to
+  trust, and prefer a fresh instance for pre-class rehearsals.
+- **The integration suite must stay on the browser Firestore build** — `src/itest/transport.itest.ts`
+  enforces it. See §3 for why; do not "simplify" the alias out of `vitest.integration.config.ts`.
 - **Browser-pane raw-coordinate clicks are unreliable** across tabs (a verified-center click landed
   on a `<p>`). Drive UI verification with `javascript_tool` and `element.click()` instead.
 - **This machine has no LibreOffice and no `pdftoppm`** — pptx visual QA must be analytical.
