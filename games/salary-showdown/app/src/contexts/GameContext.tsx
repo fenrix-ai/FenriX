@@ -37,7 +37,21 @@ export function GameProvider({ children }: { children: ReactNode }) {
   useEffect(() => { // game doc
     if (!gameId) { setGame(null); return; }
     return onSnapshot(doc(db, 'games', gameId),
-      (s) => setGame(s.exists() ? (s.data() as GameDoc) : null),
+      (s) => {
+        if (!s.exists()) { setGame(null); return; }
+        const d = s.data() as GameDoc;
+        // Flip-first advance (backend H-A) publishes the new round/phase BEFORE
+        // the enter hook has created that phase's data (auctions/{r}, the
+        // market/{r} draw, rounds/{r}). The `transition` marker brackets exactly
+        // that window. Until it clears, keep presenting the phase we are
+        // LEAVING — its data is fully materialised — instead of routing every
+        // screen to documents that do not exist yet. A leftover marker after a
+        // crashed advance parks clients on the old phase until the professor's
+        // next advance adopts and finishes it, which is the correct behavior.
+        setGame(d.transition
+          ? { ...d, round: d.transition.fromRound, phase: d.transition.fromPhase }
+          : d);
+      },
       () => setGame(null)); // permission error pre-membership: stay null, Landing owns the flow
   }, [gameId]);
 

@@ -10,6 +10,10 @@ games/{gameId}
                                       # adopts and finishes that transition instead of advancing again.
                                       # Member-readable like the rest of the game doc — it names rounds/phases
                                       # only and leaks nothing.
+                                      # CLIENT CONTRACT: while present, the destination phase's data
+                                      # (auctions/{r}, market/{r}, rounds/{r}) may not exist yet — clients
+                                      # must present fromRound/fromPhase until the marker clears (the app's
+                                      # GameContext does; new surfaces must follow suit).
 games/{gameId}/players/{uid}          # membership: { teamId, role: GM|Scout|Coach, displayName }
 games/{gameId}/teams/{teamId}         # PUBLIC team state (rosters are public like real NBA):
   name, wins, losses, pointDiff, pointsFor,

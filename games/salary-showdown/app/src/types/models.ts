@@ -15,10 +15,20 @@ export interface TeamDoc {
   roster: Contract[]; deadMoney: DeadMoney[]; spendLog: Contract[];
   lineup: Lineup | null; lineupLockedRound: number; hardshipUsed: number[];
 }
+// Present on the game doc only while an advancePhase's hooks are resolving: the
+// flip-first transaction writes it alongside the new round/phase, and the same
+// call deletes it once both hooks land (backend SCHEMA.md). While it is present,
+// the destination phase's data (auctions/{r}, market/{r}, rounds/{r}) may not
+// exist yet — GameContext therefore keeps presenting fromRound/fromPhase until
+// the marker clears.
+export interface TransitionMarker {
+  fromRound: number; fromPhase: Phase; toRound: number; toPhase: Phase;
+}
 export interface GameDoc {
   joinCode: string; status: 'lobby' | 'active' | 'finished'; phase: Phase; round: number;
   timerEndsAt: { toMillis(): number } | null; teamCount: number;
   config: { cap: number; totalRounds: number }; professorUid: string;
+  transition?: TransitionMarker;
 }
 // The 26 players.csv columns arrive as strings (catalog docs mirror the CSV); pid is a number.
 export interface CatalogPlayer {

@@ -42,7 +42,7 @@ top-3 in **86%** of simulated seasons and wins the title in **48%**.
 | Local `main` vs `origin/main` | **69 commits ahead — NOTHING has ever been pushed to GitHub** |
 | Backend test suite (hardening branch) | **19 files / 115 tests green** |
 | App unit suite | **7 files / 30 tests green** |
-| App integration suite | **12 files / 13 tests green** (was 11/12 — §3's fix adds a transport tripwire) |
+| App integration suite | **13 files / 14 tests green** (was 11/12 — §3 adds a transport tripwire, §3a a transition-gate pin) |
 | UI-rules audit | clean, 37 files |
 
 Unrelated pre-existing dirt in the working tree (NOT yours, leave alone): `quant_finance/README.md`
@@ -146,10 +146,15 @@ back onto gRPC and the flake would return looking like a fresh mystery.
 **Not a classroom risk.** Production talks to real Firestore over WebChannel; this defect is
 emulator-only, on a transport the product never uses.
 
-## 3a. ⚠️ NEW OPEN THREAD — flip-first makes a phase visible before its data exists
+## 3a. ✅ RESOLVED (2026-07-23) — flip-first made a phase visible before its data existed
 
-**Found while verifying §3's fix. Needs a design decision, not a patch. DO NOT MERGE this branch
-until it is adjudicated.**
+**Found while verifying §3's fix. Adjudicated by Dylan: option 1 — clients gate on the
+`transition` marker.** Implemented in `GameContext.tsx` (the game-doc listener presents
+`transition.fromRound/fromPhase` while the marker is set, so every screen keeps rendering the
+fully-materialised phase until both hooks land); `transition.itest.tsx` pins the contract by
+writing the exact mid-flight wire states and asserting hold-then-follow, with a mutation canary
+proving the test fails against the ungated client. No backend change — flip-first and every race
+it closed are untouched. Original investigation record follows.
 
 H-A rewrote `advancePhase` as **flip-first**: one transaction writes the new `round`/`phase` (plus
 the `transition` marker), and *only then* do the exit and enter hooks run
@@ -187,15 +192,15 @@ the hooklog, and `transition: null` (i.e. the backend did everything correctly).
   routed to Star Auction / Draft Night / Simulate before that phase's data exists.
 - The missing error callbacks are a genuine product resilience gap regardless of who is at fault.
 
-**Options to adjudicate (Dylan's call):**
-1. **Re-order inside flip-first** — flip, run the enter hook, *then* clear the `transition` marker,
-   and have clients gate rendering on `transition == null` (or on the data itself) rather than on
-   `phase`. Keeps every race H-A closed; removes the visible window.
-2. **Keep flip-first; harden the clients** — add error callbacks + re-subscribe/retry to the wave,
-   round, market and catalog reads, and render an explicit "setting up this phase…" state instead
-   of `null`. Cheapest, and valuable anyway, but leaves the window.
-3. **Revert to hooks-then-flip** — reopens the double-advance races H-A was written to close.
-   Not recommended.
+**Options adjudicated (Dylan chose 1):**
+1. **CHOSEN — gate on the `transition` marker.** The backend already writes the marker with the
+   flip and deletes it after the enter hook; the client now treats `transition != null` as "this
+   phase is still being set up" and holds the previous screen. Keeps every race H-A closed;
+   removes the visible window. (`startSeason` needs no gate — its market draw and phase flip
+   commit in one batch.)
+2. Keep flip-first; harden the clients only (error callbacks + re-subscribe + explicit "setting
+   up…" states). Not chosen as the fix; the listener-resilience gap remains a Plan 3 polish item.
+3. Revert to hooks-then-flip — reopens the races H-A closed. Rejected.
 
 ### Known residue: the emulator degrades under sustained load
 
@@ -337,7 +342,7 @@ cd games/salary-showdown/backend && PATH="/opt/homebrew/opt/openjdk/bin:$PATH" \
 cd games/salary-showdown/app
 npm run dev                        # Vite on port 5176 (--strictPort; 5173-5175 belong to other projects)
 npx vitest run                     # unit: 7 files / 30 tests
-npx vitest run -c vitest.integration.config.ts   # integration: 12 files / 13 tests (needs live emulators)
+npx vitest run -c vitest.integration.config.ts   # integration: 13 files / 14 tests (needs live emulators)
 npm run audit:ui                   # UI-rules tripwire (emoji / config.timers / judgment language)
 npx tsc -b
 
@@ -420,6 +425,10 @@ The full map with student-facing copy is in `app/src/lib/errors.ts` and the Plan
 **New schema field from H-A:** `games/{gameId}.transition = {fromRound, fromPhase, toRound, toPhase}`
 — present only while an advance's hooks are resolving; a leftover marker means a crashed advance and
 the next `advancePhase` call adopts and finishes it. Documented in `SCHEMA.md`.
+**Client contract (§3a):** while the marker is present, `GameContext` presents
+`fromRound`/`fromPhase` — screens keep rendering the phase whose data exists, and follow only when
+the marker clears. Any new client surface (professor panel, projector) must do the same or read the
+marker deliberately.
 
 **Scale envelope:** ~6 snapshot listeners per client; the heaviest payload is `rounds/{r}` (~300–400KB
 at 20 teams). Sealed bids mean **no live shared bid state** — never add a cross-team bid signal
