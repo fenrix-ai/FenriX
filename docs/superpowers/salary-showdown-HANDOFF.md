@@ -37,13 +37,22 @@ top-3 in **86%** of simulated seasons and wins the title in **48%**.
 
 | Fact | Value |
 |---|---|
-| Current branch | `salary-showdown-backend-hardening` @ **`d72a377`** |
-| `main` | **`9e9cc80`** (Plan 1 + Plan 2 merged) |
-| Local `main` vs `origin/main` | **69 commits ahead — NOTHING has ever been pushed to GitHub** |
+| Current branch | `main` (hardening branch merged fast-forward and deleted 2026-07-23) |
+| `main` | **`378e8cd`** (Plan 1 + Plan 2 + backend hardening + §3/§3a debug fixes) |
+| `main` vs `origin/main` | **Pushed to GitHub 2026-07-24** (`fenrix-ai/FenriX`, PUBLIC — Dylan's explicit call, made knowing the repo carries `datagen/private/` answer key + the full spec; see §2a) |
 | Backend test suite (hardening branch) | **19 files / 115 tests green** |
 | App unit suite | **7 files / 30 tests green** |
 | App integration suite | **13 files / 14 tests green** (was 11/12 — §3 adds a transport tripwire, §3a a transition-gate pin) |
 | UI-rules audit | clean, 37 files |
+
+### 2a. Publication note (2026-07-24)
+
+`main` was pushed to the **public** repo `fenrix-ai/FenriX` at Dylan's explicit direction, with the
+trade-off surfaced first: the push includes `games/salary-showdown/datagen/private/`
+(`engine_params.json`, `hidden_attributes.csv` — the answer key), the design spec, and the
+generator, all of which reveal the hidden model. Dylan accepted the exposure. If that stance ever
+changes, treat the content as already seen — rotating the dataset seed/dials in `datagen/config.py`
+and regenerating is the honest remediation, not deleting files from history.
 
 Unrelated pre-existing dirt in the working tree (NOT yours, leave alone): `quant_finance/README.md`
 modified, plus untracked files under `games/bakery-bash/`, `quant_finance/local_llm/`, and a stray
