@@ -1,5 +1,5 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import players from './data/players.json' with { type: 'json' };
 import hiddenData from './data/hidden.json' with { type: 'json' };
 import engineParams from './data/engine_params.json' with { type: 'json' };
@@ -31,7 +31,7 @@ export const createGame = onCall(async (req) => {
   const joinCode = gameRef.id.slice(0, 6).toUpperCase();
   const batch = db().batch();
   batch.set(gameRef, {
-    joinCode, status: 'lobby', phase: 'LOBBY', round: 0, timerEndsAt: null,
+    joinCode, status: 'lobby', phase: 'LOBBY', round: 0, timerEndsAt: null, timerPausedMs: null,
     professorUid: req.auth.uid, teamCount: teamNames.length,
     standingsSeed: gameRef.id, createdAt: FieldValue.serverTimestamp(),
     config: { cap: 100.0, totalRounds: 5 },
@@ -187,7 +187,7 @@ export const advancePhase = onCall(async (req) => {
     const nxt = nextPhase(g.round, g.phase, g.config.totalRounds);
     const transition = { fromRound: g.round, fromPhase: g.phase,
                          toRound: nxt.round, toPhase: nxt.phase };
-    const update = { round: nxt.round, phase: nxt.phase, timerEndsAt: null, transition };
+    const update = { round: nxt.round, phase: nxt.phase, timerEndsAt: null, timerPausedMs: null, transition };
     if (nxt.phase === 'FINALE') update.status = 'finished';
     tx.update(gameRef, update);
     return { resume: false, ...transition };
@@ -198,6 +198,67 @@ export const advancePhase = onCall(async (req) => {
   await runHookOnce(gameId, `enter-${t.toRound}-${t.toPhase}`, HOOKS[`enter:${t.toPhase}`], t.toRound);
   await gameRef.update({ transition: FieldValue.delete() });
   return { round: t.toRound, phase: t.toPhase };
+});
+
+// Timers are ADVISORY pacing only (parent spec §13): expiry never blocks a
+// submission server-side — advancing is what closes a phase. This callable moves
+// exactly two display fields on the game doc and nothing anywhere enforces them.
+// State machine: running (timerEndsAt set, timerPausedMs null) · paused (endsAt
+// null, pausedMs set) · off (both null). Every advancePhase flip nulls BOTH.
+//
+// Callers ALWAYS send expectedPhase + expectedRound (panel contract, same as
+// advancePhase): a mismatch against the live doc means the phase advanced under
+// the caller's feet, so the stale timer command must not land — PHASE_MISMATCH,
+// identical semantics and null-tolerant check shape as advancePhase (game.js:166).
+// Errors carry the bare code string as the message (clients match on MESSAGE):
+// BAD_TIMER as invalid-argument for a bad `seconds` or unknown action, and as
+// failed-precondition for a pause/resume/extend against the wrong timer state.
+export const setTimer = onCall(async (req) => {
+  const { gameId, action, expectedPhase, expectedRound } = req.data;
+  await assertProfessor(gameId, req.auth?.uid);
+  const gameRef = db().doc(`games/${gameId}`);
+  return db().runTransaction(async (tx) => {
+    const g = (await tx.get(gameRef)).data();
+    if ((expectedPhase != null && expectedPhase !== g.phase)
+        || (expectedRound != null && expectedRound !== g.round))
+      throw new HttpsError('failed-precondition', 'PHASE_MISMATCH');
+    const running = g.timerEndsAt != null;
+    const paused = g.timerPausedMs != null;
+    let endsAt = g.timerEndsAt ?? null;      // Timestamp | null
+    let pausedMs = g.timerPausedMs ?? null;  // number | null
+    // Coerce at the callable boundary (same posture as signPlayer's `years`):
+    // Number(undefined) and non-numeric strings become NaN, which the integer
+    // range checks below reject as BAD_TIMER — no client-supplied non-number
+    // ever reaches the Timestamp arithmetic.
+    const seconds = Number(req.data.seconds);
+    if (action === 'start') {
+      if (!Number.isInteger(seconds) || seconds < 1 || seconds > 3600)
+        throw new HttpsError('invalid-argument', 'BAD_TIMER');
+      endsAt = Timestamp.fromMillis(Date.now() + seconds * 1000);
+      pausedMs = null;
+    } else if (action === 'pause') {
+      if (!running) throw new HttpsError('failed-precondition', 'BAD_TIMER');
+      pausedMs = Math.max(0, endsAt.toMillis() - Date.now());
+      endsAt = null;
+    } else if (action === 'resume') {
+      if (!paused) throw new HttpsError('failed-precondition', 'BAD_TIMER');
+      endsAt = Timestamp.fromMillis(Date.now() + pausedMs);
+      pausedMs = null;
+    } else if (action === 'extend') {
+      if (!Number.isInteger(seconds) || seconds < 1 || seconds > 600)
+        throw new HttpsError('invalid-argument', 'BAD_TIMER');
+      if (running) endsAt = Timestamp.fromMillis(endsAt.toMillis() + seconds * 1000);
+      else if (paused) pausedMs = pausedMs + seconds * 1000;
+      else throw new HttpsError('failed-precondition', 'BAD_TIMER');
+    } else if (action === 'clear') {
+      endsAt = null;   // always succeeds (post-expectation-check)
+      pausedMs = null;
+    } else {
+      throw new HttpsError('invalid-argument', 'BAD_TIMER');
+    }
+    tx.update(gameRef, { timerEndsAt: endsAt, timerPausedMs: pausedMs });
+    return { timerEndsAt: endsAt ? endsAt.toMillis() : null, timerPausedMs: pausedMs };
+  });
 });
 
 async function memberWithRole(gameId, uid, role) {

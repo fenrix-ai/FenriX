@@ -2,7 +2,16 @@
 
 games/{gameId}
   joinCode, status: lobby|active|finished, phase: LOBBY|FRONT_OFFICE|FREE_AGENCY|AUCTION|LINEUP|SIMULATE|RESULTS|FINALE,
-  round: 0-5, timerEndsAt: ts|null, teamCount, standingsSeed, config: {cap, totalRounds, timers{...}},
+  round: 0-5, timerEndsAt: ts|null, timerPausedMs: number|null, teamCount, standingsSeed, config: {cap, totalRounds},
+                                      # timerEndsAt/timerPausedMs — the setTimer state machine (professor-only callable):
+                                      #   running: timerEndsAt = ts,   timerPausedMs = null
+                                      #   paused:  timerEndsAt = null, timerPausedMs = remaining ms (number)
+                                      #   off:     both null
+                                      # Every advancePhase flip nulls BOTH fields — a timer never survives a phase change.
+                                      # CLIENT CONTRACT: timers are ADVISORY pacing only (spec §13). Expiry never blocks a
+                                      # submission server-side; advancing is what closes a phase. Clients render these
+                                      # fields, nothing enforces them. There is NO config.timers — per-phase defaults live
+                                      # in the professor panel's localStorage, not in the game doc.
   transition: {fromRound, fromPhase, toRound, toPhase}  # OPTIONAL — present only while an advancePhase's
                                       # phase hooks are resolving: the flip-first transaction writes it alongside
                                       # the new round/phase, and the same call deletes it once both hooks land.
