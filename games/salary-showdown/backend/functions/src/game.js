@@ -649,6 +649,19 @@ HOOKS['enter:SIMULATE'] = async (gameId, round) => {
   const teamDocs = await db().collection(`games/${gameId}/teams`).get();
   const teams = teamDocs.docs.map((t) => ({ teamId: t.id, ...t.data() }));
   const out = simulateRound({ gameId, round, teams, catalogById: CATALOG });
+  // previousRank: the rank each team held after LAST round's sim, read from
+  // rounds/{round-1}.standings; null on every row in round 1 (no prior round).
+  // Explicit null, never undefined — Firestore's admin SDK rejects undefined
+  // field values in set() (same constraint as isTrap in enter:FINALE). This is
+  // a READ only: the stamped rows still land via the single batch.set below,
+  // and the rounds/{round} existence guard above remains this hook's sole
+  // idempotency marker — no writes are added outside the one existing batch.
+  const prevRanks = new Map();
+  if (round > 1) {
+    const prev = await db().doc(`games/${gameId}/rounds/${round - 1}`).get();
+    for (const row of prev.data()?.standings ?? []) prevRanks.set(row.teamId, row.rank);
+  }
+  for (const s of out.standings) s.previousRank = prevRanks.get(s.teamId) ?? null;
   const batch = db().batch();
   for (const s of out.standings) {
     batch.update(db().doc(`games/${gameId}/teams/${s.teamId}`),

@@ -69,7 +69,12 @@ games/{gameId}/unsold/{pid}           # { price } — auction-class player that 
                                       # ever signs the star and later draws no longer include him.
                                       # server-only: never client-accessible, explicit deny-all in rules.
 games/{gameId}/rounds/{r}             # { games: [{home, away, homeScore, awayScore}], awards: {...}, boxCsv: string,
-                                      #   standings: [{teamId, name, wins, losses, pointDiff, pointsFor, tiebreakCoin, rank}] }
+                                      #   standings: [{teamId, name, wins, losses, pointDiff, pointsFor, tiebreakCoin, rank,
+                                      #                previousRank}] }
+                                      # previousRank: number|null — this team's rank in rounds/{r-1}.standings, null for
+                                      # r=1 (no prior round exists). Stamped by enter:SIMULATE inside the same single
+                                      # batch that writes the round doc; consumed by the bigscreen standings shuffle
+                                      # (delta glyphs: up/down/flat, NEW when null).
                                       # tiebreakCoin is the seeded per-round coin-flip value used as the LAST link in the
                                       # tiebreak chain (wins > pointDiff > pointsFor > tiebreakCoin) — kept on the stored
                                       # row (not stripped) so the tiebreak is auditable from the round doc itself; team
