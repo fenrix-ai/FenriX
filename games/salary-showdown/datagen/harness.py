@@ -227,8 +227,12 @@ def check11_auction_waves(players, report):
 
 def run_all(players, fa_pool, history, best_styles, syn_flags, fairness_res, k, constants, rng):
     report = []
+    # check 1's fit is also the provenance for reveal_weights.json (Plan 3a §4.5):
+    # keep the fit object and hand it back so generate.py exports the SAME numbers
+    # the harness gated on — never a re-typed copy.
+    ok1, wins_fit = check1_regression(history, report)
     results = [
-        check1_regression(history, report)[0],
+        ok1,
         check2_bargains(players, fa_pool, report),
         check3_traps(players, report),
         check4_fairness(fairness_res, k, report),
@@ -258,4 +262,4 @@ def run_all(players, fa_pool, history, best_styles, syn_flags, fairness_res, k, 
     gr = pearson_r([-{g: i for i, g in enumerate(C.GRADES)}[p.scout_grade] for p in players], [p.ti for p in players])
     report.append(("diag", f"salary~TI R2: all={r2_all:.2f}, ordinary players={r2_ord:.2f} "
                            f"(market sane for ordinary, blind to traps/defense) | scout_grade~TI r={gr:.2f}", True))
-    return all(results), report
+    return all(results), report, wins_fit

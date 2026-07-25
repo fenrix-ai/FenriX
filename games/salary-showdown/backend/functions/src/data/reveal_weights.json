@@ -1,0 +1,18 @@
+{
+  "engine": {
+    "base": 6.0,
+    "scoring": 1.6,
+    "playmaking": 0.55,
+    "steal": 1.05,
+    "block": 1.0,
+    "rebound": 0.25,
+    "turnover": 1.5
+  },
+  "regression": {
+    "winsR2": 0.7,
+    "turnoverCoef": -3.84,
+    "turnoverP": "<0.001",
+    "payrollT": -0.03,
+    "hypeT": 1.37
+  }
+}

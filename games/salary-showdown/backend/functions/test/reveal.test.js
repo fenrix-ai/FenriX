@@ -3,6 +3,8 @@ import { initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import fft from 'firebase-functions-test';
 import hiddenData from '../src/data/hidden.json' with { type: 'json' };
+import engineParamsData from '../src/data/engine_params.json' with { type: 'json' };
+import revealWeightsFile from '../src/data/reveal_weights.json' with { type: 'json' };
 
 process.env.FIRESTORE_EMULATOR_HOST = 'localhost:8180';
 process.env.GCLOUD_PROJECT = 'salary-showdown-dev';
@@ -85,6 +87,35 @@ describe('reveal', () => {
     );
     expect(after.trueWeights.defenseVisible).toBe(true);
     expect(typeof after.trueWeights.turnoverWeight).toBe('number');
+
+    // trueWeights extension (Plan 3a §4.5): both sides of the finale comparison
+    // chart land verbatim from src/data/reveal_weights.json — a GENERATED file
+    // (datagen: engine = ti_weights; regression = the harness's own check-1 OLS
+    // on league_history.csv). The finale is the sanctioned reveal: these values
+    // are supposed to ship here.
+    expect(after.trueWeights.engine).toEqual(revealWeightsFile.engine);
+    expect(after.trueWeights.regression).toEqual(revealWeightsFile.regression);
+    // the committed file itself: engine mirrors engine_params.json exactly
+    // (generate.py serializes the same dict into both) and carries the designed
+    // seed-310 vector...
+    expect(revealWeightsFile.engine).toEqual(engineParamsData.ti_weights);
+    expect(revealWeightsFile.engine).toEqual({
+      base: 6.0, scoring: 1.6, playmaking: 0.55, steal: 1.05,
+      block: 1.0, rebound: 0.25, turnover: 1.5,
+    });
+    // ...and the regression block has the contract shape and designed properties:
+    // turnoverP is the STRING '<0.001'; turnover coefficient is negative (the
+    // poison shows up); payroll/hype are null effects (|t| < 2 by harness check 1).
+    expect(Object.keys(revealWeightsFile.regression).sort()).toEqual(
+      ['hypeT', 'payrollT', 'turnoverCoef', 'turnoverP', 'winsR2']);
+    expect(revealWeightsFile.regression.turnoverP).toBe('<0.001');
+    expect(revealWeightsFile.regression.winsR2).toBeGreaterThan(0);
+    expect(revealWeightsFile.regression.winsR2).toBeLessThan(1);
+    expect(revealWeightsFile.regression.turnoverCoef).toBeLessThan(0);
+    expect(Math.abs(revealWeightsFile.regression.payrollT)).toBeLessThan(2);
+    expect(Math.abs(revealWeightsFile.regression.hypeT)).toBeLessThan(2);
+    // compat: the old turnoverWeight field survives and agrees with the new vector
+    expect(after.trueWeights.turnoverWeight).toBe(after.trueWeights.engine.turnover);
 
     // idempotency: a second enter:FINALE-style write attempt must not clobber the doc
     const { HOOKS } = await import('../src/phases.js');

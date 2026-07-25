@@ -24,6 +24,7 @@ import harness
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.normpath(os.path.join(HERE, "..", "data"))
 PRIVATE = os.path.join(HERE, "private")
+BACKEND_DATA = os.path.normpath(os.path.join(HERE, "..", "backend", "functions", "src", "data"))
 
 PLAYER_COLS = ["player_id", "name", "position", "age", "years_pro", "hype", "salary_per_round",
                "auction_round", "personality", "scout_grade", "social_media_followers",
@@ -114,8 +115,8 @@ def main(force=False):
     print("fairness sims ...")
     fairness_res = F.run_fairness(fa_pool, weights, rng, k, constants)
 
-    ok, report = harness.run_all(players, fa_pool, history, best_styles, syn_flags,
-                                 fairness_res, k, constants, rng)
+    ok, report, wins_fit = harness.run_all(players, fa_pool, history, best_styles, syn_flags,
+                                           fairness_res, k, constants, rng)
     lines = [f"Salary Showdown data harness — seed {C.SEED}, schema v{C.SCHEMA_VERSION}", ""]
     for name, detail, passed in report:
         lines.append(f"[{'PASS' if passed else 'FAIL'}] {name}: {detail}")
@@ -131,6 +132,9 @@ def main(force=False):
     write_csv(os.path.join(DATA, "league_history.csv"), HISTORY_COLS, history)
     hidden_cols = list(hidden_row(players[0]).keys())
     write_csv(os.path.join(PRIVATE, "hidden_attributes.csv"), hidden_cols, [hidden_row(p) for p in players])
+    ti_weights = dict(base=C.TI_BASE, scoring=C.W_SCORING, playmaking=C.W_PLAYMAKING,
+                      steal=C.W_STEAL, block=C.W_BLOCK, rebound=C.W_REBOUND,
+                      turnover=C.W_TURNOVER)
     with open(os.path.join(PRIVATE, "engine_params.json"), "w") as f:
         json.dump(dict(schema_version=C.SCHEMA_VERSION, seed=C.SEED, logistic_k=k,
                        style_constants=constants, tier_weights=C.TIER_WEIGHTS,
@@ -139,12 +143,35 @@ def main(force=False):
                                     spacing_penalty=C.SPACING_PENALTY, spacing_bonus=C.SPACING_BONUS,
                                     rim_penalty=C.RIM_PENALTY, rim_bonus=C.RIM_BONUS, rim_elite=C.RIM_ELITE,
                                     barrage_misfire=C.BARRAGE_MISFIRE),
-                       ti_weights=dict(base=C.TI_BASE, scoring=C.W_SCORING, playmaking=C.W_PLAYMAKING,
-                                       steal=C.W_STEAL, block=C.W_BLOCK, rebound=C.W_REBOUND,
-                                       turnover=C.W_TURNOVER)), f, indent=2)
+                       ti_weights=ti_weights), f, indent=2)
     with open(os.path.join(PRIVATE, "harness_report.txt"), "w") as f:
         f.write("\n".join(lines) + "\n")
+
+    # Plan 3a §4.5 — additive export: both sides of the finale's weights-comparison
+    # chart. `engine` is the SAME ti_weights dict serialized into engine_params.json
+    # above (shared object => the files cannot drift); `regression` is the harness's
+    # OWN check-1 OLS on league_history.csv (wins_fit) — the exact analysis a student
+    # would run — NEVER hand-typed numbers. Verify the designed properties before
+    # shipping the card so the reveal can never overstate the data:
+    assert wins_fit["p"]["turnovers_per_game"] < 0.001, (
+        f"turnover p={wins_fit['p']['turnovers_per_game']:.6f} not <0.001 — "
+        "reveal_weights.json turnoverP='<0.001' would overstate significance")
+    assert abs(wins_fit["t"]["payroll"]) < 2.0 and abs(wins_fit["t"]["hype"]) < 2.0, (
+        "payroll/hype are not null effects — check 1 should have failed before this")
+    reveal_weights = dict(
+        engine=ti_weights,
+        regression=dict(winsR2=round(float(wins_fit["r2"]), 2),
+                        turnoverCoef=round(float(wins_fit["beta"]["turnovers_per_game"]), 2),
+                        turnoverP="<0.001",
+                        payrollT=round(float(wins_fit["t"]["payroll"]), 2),
+                        hypeT=round(float(wins_fit["t"]["hype"]), 2)))
+    with open(os.path.join(PRIVATE, "reveal_weights.json"), "w") as f:
+        json.dump(reveal_weights, f, indent=2)
+    os.makedirs(BACKEND_DATA, exist_ok=True)
+    with open(os.path.join(BACKEND_DATA, "reveal_weights.json"), "w") as f:
+        json.dump(reveal_weights, f, indent=2)
     print(f"\nWrote {DATA}/players.csv, {DATA}/league_history.csv, private files -> {PRIVATE}/")
+    print(f"Wrote reveal_weights.json -> {PRIVATE}/ and {BACKEND_DATA}/")
     return 0
 
 
