@@ -47,6 +47,7 @@ const team = {
     { pid: 3, rate: 10, startRound: 1, years: 3, viaAuction: false, hardship: false },
   ],
   lineup: null, lineupLockedRound: 0, hardshipUsed: [],
+  doneRound: 0, donePhase: '', // createGame init (backend game.js:46)
 } satisfies TeamDoc;
 
 test('payrollAt = active rates + dead money per round', () => {

@@ -14,6 +14,10 @@ export interface TeamDoc {
   name: string; wins: number; losses: number; pointDiff: number; pointsFor: number;
   roster: Contract[]; deadMoney: DeadMoney[]; spendLog: Contract[];
   lineup: Lineup | null; lineupLockedRound: number; hardshipUsed: number[];
+  // markDone status flag (backend T2; init 0/'' in createGame). A status light,
+  // NEVER a lock — signing/cutting stays open until the phase closes. Staleness
+  // is implicit in the (doneRound, donePhase) pair; nothing ever clears it.
+  doneRound: number; donePhase: string;
 }
 // Present on the game doc only while an advancePhase's hooks are resolving: the
 // flip-first transaction writes it alongside the new round/phase, and the same
@@ -27,6 +31,14 @@ export interface TransitionMarker {
 export interface GameDoc {
   joinCode: string; status: 'lobby' | 'active' | 'finished'; phase: Phase; round: number;
   timerEndsAt: { toMillis(): number } | null; teamCount: number;
+  // Timer state trio (backend setTimer, T1): running = endsAt set + pausedMs null ·
+  // paused = endsAt null + pausedMs set · off = both null. Timers are advisory
+  // pacing only (parent spec §13): expiry never blocks a submission server-side.
+  timerPausedMs: number | null;
+  // Written ONLY by the professor's setRevealStep callable — the FINALE flip does
+  // NOT initialize it (spec §4.3), so it is absent on every game until the first
+  // step. Readers default with `revealStep ?? 0` (podium).
+  revealStep?: number;
   config: { cap: number; totalRounds: number }; professorUid: string;
   transition?: TransitionMarker;
 }
@@ -63,9 +75,37 @@ export interface Awards {
 export interface StandingsRow {
   teamId: string; name: string; wins: number; losses: number;
   pointDiff: number; pointsFor: number; tiebreakCoin: number; rank: number;
+  // Last round's rank for this team, stamped by enter:SIMULATE (T4); null in
+  // round 1 (and on the wire only for rounds simulated after T4 ships).
+  previousRank: number | null;
 }
 export interface RoundDoc {
   games: GameResult[]; awards: Awards; boxCsv: string; standings: StandingsRow[];
+}
+
+// A claimed seat: one games/{id}/players/{uid} membership doc (professor panel +
+// bigscreen lobby wall read the whole collection; team clients only read their own).
+export interface PlayerSeat { teamId: string; role: Role; displayName: string }
+
+// games/{id}/reveal/latest — written ONLY by the enter:FINALE hook. THE FINALE IS
+// THE SANCTIONED REVEAL (parent spec §11.14): value-per-dollar, wins-per-dollar,
+// trap labels and weights live here on purpose. In-game team screens still never
+// render perDollar-style numbers.
+export interface RevealDoc {
+  scatter: { pid: number; name: string; hype: number; salary: number | null;
+    ti: number; isTrap: boolean; archetype: string }[];
+  // bestSigning/worstSigning stay nullable — verified against the actual
+  // enter:FINALE writer (game.js: `bestSigning: vals[0] ?? null` over
+  // `team.spendLog ?? []`): a team that never signed anyone gets null.
+  perTeam: { teamId: string;
+    bestSigning: { pid: number; valuePerDollar: number } | null;
+    worstSigning: { pid: number; valuePerDollar: number } | null }[];
+  winsPerDollar: { teamId: string; wins: number; totalSpend: number; ratio: number }[];
+  trueWeights: { narrative: string; defenseVisible: boolean; turnoverWeight: number;
+    engine: { base: number; scoring: number; playmaking: number; steal: number;
+      block: number; rebound: number; turnover: number };
+    regression: { winsR2: number; turnoverCoef: number; turnoverP: string;
+      payrollT: number; hypeT: number } };
 }
 
 // Verbatim strings — spec §4.4. Never abbreviate, never re-word.

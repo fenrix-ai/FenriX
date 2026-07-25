@@ -1,6 +1,7 @@
 import { Route, Routes } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { GameProvider } from './contexts/GameContext';
+import { ProfessorProvider } from './contexts/ProfessorContext';
 import { PhaseRouter } from './components/PhaseRouter';
 import LandingPage from './pages/LandingPage';
 import LobbyPage from './pages/LobbyPage';
@@ -11,6 +12,7 @@ import LineupPage from './pages/LineupPage';
 import SimulatePage from './pages/SimulatePage';
 import ResultsPage from './pages/ResultsPage';
 import StandingsPage from './pages/StandingsPage';
+import ProfessorPage from './pages/professor/ProfessorPage';
 
 const Stub = ({ name }: { name: string }) => (
   <main style={{ color: '#f2f5fa', padding: 24 }}>
@@ -37,6 +39,8 @@ export default function App() {
           <Route path="/game/results" element={<ResultsPage />} />
           <Route path="/game/conclusion" element={<Stub name="Finale (Plan 3)" />} />
           <Route path="/standings" element={<StandingsPage />} />
+          <Route path="/professor"
+            element={<ProfessorProvider><ProfessorPage /></ProfessorProvider>} />
         </Routes>
       </GameProvider>
     </AuthProvider>

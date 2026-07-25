@@ -20,6 +20,7 @@ test('PayrollBar computes label and segment widths from the roster', () => {
     roster: [{ pid: 1, rate: 78.2, startRound: 1, years: 5, viaAuction: false, hardship: false }],
     deadMoney: [{ pid: 2, rate: 9.1, startRound: 1, endRound: 5 }],
     spendLog: [], lineup: null, lineupLockedRound: 0, hardshipUsed: [],
+    doneRound: 0, donePhase: '', // createGame init (backend game.js:46)
   } satisfies TeamDoc;
   const { container } = render(<PayrollBar team={team} round={3} />);
   expect(screen.getByTestId('payroll-bar')).toHaveTextContent(
