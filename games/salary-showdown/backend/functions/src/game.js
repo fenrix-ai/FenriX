@@ -264,6 +264,32 @@ export const setTimer = onCall(async (req) => {
   });
 });
 
+// Professor's projector remote: which FINALE reveal step the bigscreen shows.
+// Professor-only; phase must be FINALE (PHASE_MISMATCH otherwise — bare code
+// string in the message, game.js house style: clients match on the MESSAGE).
+// step is a hard integer 0..8 with NO coercion: a numeric-string '3' is BAD_STEP,
+// same for 1.5 / -1 / 9 / NaN / missing. This callable is revealStep's ONLY
+// writer (spec §4.3): the field is ABSENT from the game doc until the first
+// successful call here — the FINALE flip does not initialize it, and the
+// wall/stepper default a missing value via `?? 0`. The phase check lives
+// inside a transaction so a stale call racing some hypothetical future phase
+// change still reads the committed phase, mirroring the flip-first discipline
+// of advancePhase.
+export const setRevealStep = onCall(async (req) => {
+  const { gameId, step } = req.data;
+  await assertProfessor(gameId, req.auth?.uid);
+  if (!Number.isInteger(step) || step < 0 || step > 8)
+    throw new HttpsError('invalid-argument', 'BAD_STEP');
+  const gameRef = db().doc(`games/${gameId}`);
+  return db().runTransaction(async (tx) => {
+    const g = (await tx.get(gameRef)).data();
+    if (g.phase !== 'FINALE')
+      throw new HttpsError('failed-precondition', 'PHASE_MISMATCH');
+    tx.update(gameRef, { revealStep: step });
+    return { revealStep: step };
+  });
+});
+
 async function memberWithRole(gameId, uid, role) {
   if (!uid) throw new HttpsError('unauthenticated', 'sign in first');
   const m = await db().doc(`games/${gameId}/players/${uid}`).get();

@@ -12,6 +12,10 @@ games/{gameId}
                                       # submission server-side; advancing is what closes a phase. Clients render these
                                       # fields, nothing enforces them. There is NO config.timers — per-phase defaults live
                                       # in the professor panel's localStorage, not in the game doc.
+  revealStep: number                  # FINALE projector step (integer 0..8). ABSENT until the first setRevealStep
+                                      # call: the RESULTS(5)->FINALE flip does NOT write it (spec §4.3 — setRevealStep
+                                      # is its only writer; walls/steppers default a missing value via `?? 0`).
+                                      # setRevealStep is professor-only, FINALE-only. Member-readable like the rest of the doc.
   transition: {fromRound, fromPhase, toRound, toPhase}  # OPTIONAL — present only while an advancePhase's
                                       # phase hooks are resolving: the flip-first transaction writes it alongside
                                       # the new round/phase, and the same call deletes it once both hooks land.
