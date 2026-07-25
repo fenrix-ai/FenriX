@@ -40,6 +40,9 @@ export const createGame = onCall(async (req) => {
     batch.set(gameRef.collection('teams').doc(), {
       name, wins: 0, losses: 0, pointDiff: 0, pointsFor: 0,
       roster: [], deadMoney: [], lineup: null, lineupLockedRound: 0, hardshipUsed: [],
+      // "We're done" STATUS FLAG (markDone below): stamped {round, phase} for the
+      // professor panel's submission lights. Never a lock — gates nothing.
+      doneRound: 0, donePhase: '',
       // append-only ledger of every contract ever acquired (signPlayer incl. re-signs,
       // auction wins, hardship signings) — cuts never remove an entry here, since
       // committed money is never recovered. FINALE's totalSpend/best-worst signing
@@ -343,6 +346,29 @@ export const cutRosterPlayer = onCall(async (req) => {
     catch (e) { throw new HttpsError('failed-precondition', e.message); }
     tx.update(teamRef, { roster: after.roster, deadMoney: after.deadMoney });
     return { deadMoney: after.deadMoney };
+  });
+});
+
+// GM-only "We're done" STATUS FLAG — NEVER a lock (plan-3 design spec §4.2). It
+// stamps the caller's team doc with the game's current {round, phase} so the
+// professor panel's submission lights can show who considers themselves finished,
+// and it gates NOTHING: signPlayer / cutRosterPlayer / every other callable stays
+// fully open until the professor closes the phase. No callable may ever read
+// doneRound/donePhase as a precondition. Re-pressing is a harmless idempotent
+// overwrite of the same values. Transactional so the phase check and the stamp are
+// one atomic unit against advancePhase's flip-first transaction (same pattern as
+// submitBids/submitLineup): a press racing the flip either lands before it or is
+// retried by the SDK, re-reads the closed phase, and throws PHASE_MISMATCH.
+export const markDone = onCall(async (req) => {
+  const { gameId } = req.data;
+  const { teamId } = await memberWithRole(gameId, req.auth?.uid, 'GM');
+  return db().runTransaction(async (tx) => {
+    const g = (await tx.get(db().doc(`games/${gameId}`))).data();
+    if (g.phase !== 'FRONT_OFFICE' && g.phase !== 'FREE_AGENCY')
+      throw new HttpsError('failed-precondition', 'PHASE_MISMATCH');
+    tx.update(db().doc(`games/${gameId}/teams/${teamId}`),
+      { doneRound: g.round, donePhase: g.phase });
+    return { ok: true };
   });
 });
 

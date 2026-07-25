@@ -38,7 +38,14 @@ games/{gameId}/teams/{teamId}         # PUBLIC team state (rosters are public li
                                       # cut or expired contract still counts and stays eligible for
                                       # "worst signing".
   lineup: {starters[5], sixth, bench[], playstyle} | null,
-  lineupLockedRound, hardshipUsed: [round]
+  lineupLockedRound, hardshipUsed: [round],
+  doneRound: 0-5, donePhase: ''|FRONT_OFFICE|FREE_AGENCY   # "We're done" STATUS FLAG, NEVER a lock:
+                                      # markDone (GM-only callable, valid only in FRONT_OFFICE/FREE_AGENCY)
+                                      # stamps the game's current {round, phase} here. Professor-panel
+                                      # submission lights read doneRound === round && donePhase === phase.
+                                      # Initialized 0 / '' at createGame. Gates NOTHING — signing/cutting
+                                      # stays open until the professor closes the phase, and no callable
+                                      # may ever read these fields as a precondition.
 games/{gameId}/teams/{teamId}/private/auction    # { bids: { [pid]: {rate, years} } } — Scout writes via callable
 games/{gameId}/catalog/{pid}          # public player card (26 CSV cols), seeded at createGame
 games/{gameId}/market/{round}         # { available: [pid], absentCounts: {pid: n}, unsoldPrices: {pid: rate} }  (public, server-written)
