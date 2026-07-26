@@ -1953,7 +1953,7 @@
     "functions": { "source": "functions", "runtime": "nodejs20" },
     "firestore": { "rules": "firestore.rules", "indexes": "firestore.indexes.json" },
     "hosting": {
-      "public": "../app/dist",
+      "public": "dist",
       "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
       "rewrites": [{ "source": "**", "destination": "/index.html" }]
     },
@@ -2023,7 +2023,7 @@
   EXPECTED OUTPUT:
 
   ```
-  hosting public: ../app/dist | rewrites: [{"source":"**","destination":"/index.html"}]
+  hosting public: dist | rewrites: [{"source":"**","destination":"/index.html"}]
   default: salary-showdown-dev | prod: salary-showdown
   ```
 
@@ -2075,7 +2075,7 @@
     recovery); all 13 itest pre-seed sites across 12 files + finale remover +
     landing isolation flipped to match (14 rewrites, node sweep + tsc gate);
     per-tab identity unchanged (session-persisted anonymous auth).
-  - backend/firebase.json gains the hosting block (../app/dist, SPA rewrite);
+  - backend/firebase.json gains the hosting block (dist, SPA rewrite);
     .firebaserc gains prod alias -> salary-showdown (default untouched —
     emulator workflow depends on it).
   - app/.env.production.example committed as template; .env.production added
@@ -2096,7 +2096,7 @@
 - `games/salary-showdown/app/scripts/_prod-verify.mjs` — TEMPORARY verification script, deleted before the task ends, never committed
 
 **Interfaces:**
-- Consumes (from Task 3, already on the branch): `backend/firebase.json` hosting block (`"public": "../app/dist"`, SPA rewrite to `/index.html`); functions pinned to region `us-west1`; client `getFunctions(app, 'us-west1')`; `app/.env.production.example` template; `app/.gitignore` entry for `.env.production`.
+- Consumes (from Task 3, already on the branch): `backend/firebase.json` hosting block (`"public": "dist"`, SPA rewrite to `/index.html`); functions pinned to region `us-west1`; client `getFunctions(app, 'us-west1')`; `app/.env.production.example` template; `app/.gitignore` entry for `.env.production`.
 - Consumes (external): Firebase project **salary-showdown** (project number 713437533994), created by Dylan in the console. Planning-time state: NO apps, Firestore API disabled, no resource location. Dylan flips Blaze billing (Step 1's gate).
 - Consumes (callables, deployed as-is): `createGame({teamNames: string[]}) → {gameId, joinCode}` and `getLobby({joinCode}) → {gameId, status, phase, round, teams: [{teamId, name, claimedRoles}]}` (v2 `onCall`, `firebase-functions/v2/https`, both require auth).
 - Produces (consumed by Tasks 5/6/7): a fully live prod deployment — hosting at `https://salary-showdown.web.app`, 12 callables in `us-west1`, `(default)` Firestore database in `us-west1` with deployed rules + indexes, anonymous auth enabled, $10 email budget alert armed, and the untracked `app/.env.production` that `scripts/prod-smoke.mjs` (T5) and `scripts/load-drill.mjs` (T6) will read.
@@ -2136,7 +2136,7 @@ This is an **ops task**: no TDD, no test suites. Verification is exact commands 
     salary-showdown-dev so the emulator workflow is untouched."
     cd games/salary-showdown/backend
     ```
-  - `grep -A4 '"hosting"'` → shows `"public": "../app/dist"` and the `**` → `/index.html` rewrite. If missing, STOP: Task 3 is not on this branch — do not improvise a hosting block here.
+  - `grep -A4 '"hosting"'` → shows `"public": "dist"` and the `**` → `/index.html` rewrite. If missing, STOP: Task 3 is not on this branch — do not improvise a hosting block here.
   - `ls` → the `.env.production.example` path prints. `grep` → `.env.production` prints. If either fails, STOP: Task 3 incomplete.
 
 - [ ] **Step 1 — THE BLAZE GATE.** Attempt the functions deploy against prod. On Spark this fails fast with an upgrade-required error and deploys nothing; that failure IS the gate.
@@ -2309,8 +2309,8 @@ This is an **ops task**: no TDD, no test suites. Verification is exact commands 
   ```
   vite v<x> building for production...
   ✓ <n> modules transformed.
-  dist/index.html  <size>
-  dist/assets/index-<hash>.js  <size>
+  ../backend/dist/index.html  <size>
+  ../backend/dist/assets/index-<hash>.js  <size>
   ...
   ✓ built in <time>
   ```
@@ -2318,9 +2318,9 @@ This is an **ops task**: no TDD, no test suites. Verification is exact commands 
   Verify the REAL config was baked into the bundle (not the dev fallback):
   ```bash
   KEY=$(grep '^VITE_FIREBASE_API_KEY=' .env.production | cut -d= -f2-)
-  grep -rl "$KEY" dist/assets
+  grep -rl "$KEY" ../backend/dist/assets
   ```
-  EXPECTED: at least one `dist/assets/index-<hash>.js` path prints. If nothing prints, the env file was not picked up (check its filename and that you ran the build from `app/`) — do NOT deploy a bundle pointing at `salary-showdown-dev`.
+  EXPECTED: at least one `../backend/dist/assets/index-<hash>.js` path prints. If nothing prints, the env file was not picked up (check its filename and that you ran the build from `app/`) — do NOT deploy a bundle pointing at `salary-showdown-dev`.
 
 - [ ] **Step 6 — Deploy Firestore rules + indexes.**
 
@@ -2357,7 +2357,7 @@ This is an **ops task**: no TDD, no test suites. Verification is exact commands 
   === Deploying to 'salary-showdown'...
 
   i  hosting[salary-showdown]: beginning deploy...
-  i  hosting[salary-showdown]: found <n> files in ../app/dist
+  i  hosting[salary-showdown]: found <n> files in dist
   +  hosting[salary-showdown]: file upload complete
   i  hosting[salary-showdown]: finalizing version...
   +  hosting[salary-showdown]: version finalized
