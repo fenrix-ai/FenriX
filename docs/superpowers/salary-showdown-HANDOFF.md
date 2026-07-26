@@ -38,8 +38,8 @@ top-3 in **86%** of simulated seasons and wins the title in **48%**.
 | Fact | Value |
 |---|---|
 | Current branch | `salary-showdown-plan3b` (Plan 3b, exit battery 2026-07-26; Plan 3a merged to `main` @ `92c7616` + handoff sync `7c659f3` on 2026-07-25) |
-| Plan 3b HEAD | **`9c0140e`** (3a-backlog fixes + prod wiring + first production deploy + prod smoke + load drill + professor runbook) |
-| `main` vs `origin/main` | **Pushed to GitHub 2026-07-24** (`fenrix-ai/FenriX`, PUBLIC — Dylan's explicit call, made knowing the repo carries `datagen/private/` answer key + the full spec; see §2a) |
+| Plan 3b HEAD | **`4f57e0e`** + this docs-sync commit (3a-backlog fixes + prod wiring + first production deploy + prod smoke + load drill + professor runbook + exit battery) |
+| `main` vs `origin/main` | **Pushed through `7c659f3` (2026-07-25, 3a merge + handoff sync)**; the 3b plan commit `1b4a64c` and branch `salary-showdown-plan3b` are local, pending Dylan's merge + push decision (repo `fenrix-ai/FenriX` is PUBLIC — §2a posture unchanged; 3b adds no new sensitive content) |
 | Production | **LIVE** — Firebase project `salary-showdown` (Blaze), Hosting `https://salary-showdown.web.app`, 12 callables + `(default)` Firestore in `us-west1`, anonymous auth on, $10 email budget alert armed (Dylan to verify, §4) |
 | Backend test suite | **23 files / 150 tests green** |
 | App unit suite | **13 files / 65 tests green** |
@@ -235,7 +235,7 @@ lives in `.superpowers/sdd/progress.md` (top items: resolve-stuck-advance afford
 Clear-session button, useRoundDoc error callback, FinaleWall type-scale rewrap, RoundContext
 rounds/{r-1} sourcing during decision phases).
 
-**Plan 3b (production) is COMPLETE (2026-07-26)** — 8 gated tasks on `salary-showdown-plan3b` @ `9c0140e`:
+**Plan 3b (production) is COMPLETE (2026-07-26)** — 8 gated tasks on `salary-showdown-plan3b` @ `4f57e0e`:
 the triaged 3a-start backlog (stuck-advance resolve button, Clear session, RoundContext
 rounds/{r-1} sourcing during decision phases, FinaleWall bs-* rewrap, shared STEP_TITLES,
 useRoundDoc error callback, CSV anchor fix, armed-key persistence), prod wiring (functions +
@@ -285,6 +285,19 @@ use an explicit `prod` alias.
 5. **Load drill — DONE (3b).** 63 web-SDK clients (21 franchises × 3 roles) against prod on
    classroom pacing; per-criterion verdicts in `docs/superpowers/loadtests/2026-07-26-load-drill.md`.
 
+**Ops notes (learned during the 3b deploy/drill — durable):**
+- `firebase functions:artifacts:setpolicy` MUST carry `--location us-west1` — the flag defaults to
+  `us-central1`, so the bare command silently sets the cleanup policy on the wrong, empty region and
+  leaves the real `gcf-artifacts` repo unmanaged (this is what keeps "$0 idle" true).
+- `firebase firestore:databases:list --project prod` can return a spurious `403 … API has not been
+  used` on a cold call — retry once before diagnosing; the API is enabled.
+- firebase-tools 15.12.0's functions-emulator hot reload compares only entryPoint+eventTrigger, so a
+  REGION change never re-binds routes on a live emulator — a region edit requires an emulator restart.
+- Load-drill report reading note (`docs/superpowers/loadtests/2026-07-26-load-drill.md`): the per-flip
+  p95 excludes clients that missed the 15s ack window — read the max/missed columns for the tail (two
+  round-4 flips had recovered stragglers at 7.9s/13.9s). The drill's 3s pacing stresses burst fan-out,
+  not 90-minute listener longevity — watch longevity at the deployed dress rehearsal and on class day.
+
 ---
 
 ## 5. Pre-class checklist (small, tracked, not yet done)
@@ -294,13 +307,6 @@ use an explicit `prod` alias.
   un-automatable** (4 independent attempts across 2 agents; synthetic pointer events don't satisfy
   its sensors). The underlying `place()` slot model is exhaustively unit-tested; only the gesture
   is unverified.
-- **Prod `ss.gameId` persistence** — currently sessionStorage (per-tab). In production, auth
-  persists in localStorage but `ss.gameId` does not, so a crashed laptop can't auto-resume. Decide
-  localStorage persistence, paired with the taken-seat rejoin flow (already enabled: taken chips
-  are clickable and the server arbitrates).
-- **UI copy fix** — `app/src/lib/errors.ts` maps `STAR_TAKEN` to "Another team claimed this star
-  first." That's wrong when a star's **own new owner** double-clicks sign (the claim gate fires
-  unconditionally for everyone, by design). Better: "This star's claim has already been used this round."
 - **Cap sessions at 21 franchises.** The `rounds/{r}` doc approaches Firestore's 1 MiB limit around
   28+ teams, and the >21-team balanced partial round-robin scheduler is **descoped**. A 70-student
   class at 3/team ≈ 23 franchises — so this is a real operational instruction for the professor
