@@ -22,6 +22,9 @@ test('prose messages: cut prefix and phase-closed strings', () => {
     .toBe('That player is not on your roster.');
   expect(errorCopy(new Error('market is closed')).headline).toBe('Free agency is closed.');
 });
+test('PHASE_MISMATCH maps to the phase-closed copy', () => {
+  expect(errorCopy(new Error('PHASE_MISMATCH')).headline).toBe('The phase just closed.');
+});
 test('unknown errors fall back with the raw message attached', () => {
   const r = errorCopy(new Error('some new server string'));
   expect(r.headline).toBe('That did not go through — try again.');

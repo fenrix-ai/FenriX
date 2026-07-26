@@ -207,8 +207,10 @@ Single-page layout, phase-aware. Sections:
    `doneRound/donePhase` match · Auction: `private/auction.round === round` · Lineup:
    `lineupLockedRound === round` · Simulate/Results: no lights. Lights only; never bid
    contents.
-6. **Round/standings context:** compact current standings and last-round scores (from
-   `rounds/{r}`), read-only.
+6. **Round/standings context:** compact standings and scores from the last **completed**
+   round, read-only — sourced from `rounds/{round}` during SIMULATE/RESULTS/FINALE and
+   `rounds/{round-1}` during FRONT_OFFICE/FREE_AGENCY/AUCTION/LINEUP (hidden while no
+   round is complete), with headers naming the round shown (`contextRound`).
 7. **Export:** "Download season CSV" — client-side concatenation of `rounds/1..current`
    `boxCsv` (single header row), Blob download. 23-column format is frozen; no reformatting.
 8. **Finale controls:** when phase is FINALE, chart stepper (‹ › + step names) driving

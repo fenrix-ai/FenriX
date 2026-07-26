@@ -6,7 +6,7 @@ import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../lib/firebase';
 import { useAuth } from './AuthContext';
 import type {
-  AuctionDoc, GameDoc, PlayerSeat, RevealDoc, RoundDoc, TeamDoc,
+  AuctionDoc, GameDoc, Phase, PlayerSeat, RevealDoc, RoundDoc, TeamDoc,
 } from '../types/models';
 
 // Data layer for /professor and /bigscreen (design spec §3.1). Deliberately NOT
@@ -21,9 +21,15 @@ interface ProfessorCtx {
   setGameId(id: string | null): void;      // persists localStorage 'ss.profGameId'
   game: GameDoc | null;                    // transition-GATED (see game-doc effect)
   settling: boolean;                       // raw doc has transition != null
+  // UNGATED round/phase straight off the doc; null when no doc. Sole consumer
+  // today: AdvanceControl's stuck-advance resolve, whose expectations MUST be
+  // raw — the ONE sanctioned exception to the gated-expectations rule (see
+  // the inline note there). Everything else keeps reading `game`.
+  raw: { round: number; phase: Phase } | null;
   teams: Map<string, TeamDoc>;
   players: Map<string, PlayerSeat>;        // key = uid
-  round: RoundDoc | null;                  // rounds/{game.round}, round >= 1
+  round: RoundDoc | null;                  // rounds/{contextRound} (see contextRound memo)
+  contextRound: number | null;             // the round `round` mirrors; null while none complete
   auctionWave: AuctionDoc | null;          // auctions/{game.round}
   bidsSubmitted: Set<string>;              // teamIds with private/auction.round === game.round
   reveal: RevealDoc | null;                // only fetched when phase === 'FINALE'
@@ -39,6 +45,7 @@ export function ProfessorProvider({ children }: { children: ReactNode }) {
     () => localStorage.getItem('ss.profGameId'));
   const [game, setGame] = useState<GameDoc | null>(null);
   const [settling, setSettling] = useState(false);
+  const [raw, setRaw] = useState<{ round: number; phase: Phase } | null>(null);
   const [teams, setTeams] = useState<Map<string, TeamDoc>>(new Map());
   const [players, setPlayers] = useState<Map<string, PlayerSeat>>(new Map());
   const [round, setRound] = useState<RoundDoc | null>(null);
@@ -55,10 +62,10 @@ export function ProfessorProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => { // game doc: gated view + raw settling flag
-    if (!gameId || !uid) { setGame(null); setSettling(false); return; }
+    if (!gameId || !uid) { setGame(null); setSettling(false); setRaw(null); return; }
     return onSnapshot(doc(db, 'games', gameId),
       (s) => {
-        if (!s.exists()) { setGame(null); setSettling(false); return; }
+        if (!s.exists()) { setGame(null); setSettling(false); setRaw(null); return; }
         const d = s.data() as GameDoc;
         // §3a transition gate — same mapping as GameContext.tsx:37-56. The
         // flip-first advance publishes the new round/phase BEFORE the enter
@@ -70,6 +77,7 @@ export function ProfessorProvider({ children }: { children: ReactNode }) {
           ? { ...d, round: d.transition.fromRound, phase: d.transition.fromPhase }
           : d);
         setSettling(d.transition != null);
+        setRaw({ round: d.round, phase: d.phase });
       },
       (e) => console.error('[professor] games/{id} listener', e));
   }, [gameId, uid]);
@@ -96,13 +104,30 @@ export function ProfessorProvider({ children }: { children: ReactNode }) {
       (e) => console.error('[professor] players listener', e));
   }, [gameId, uid]);
 
-  useEffect(() => { // current round doc (gated round: its data is materialised)
-    const r = game?.round ?? 0;
-    if (!gameId || !uid || r < 1) { setRound(null); return; }
-    return onSnapshot(doc(db, 'games', gameId, 'rounds', String(r)),
+  // Which rounds/{r} doc gives useful context (3b T1 sourcing fix, spec §5.6):
+  // rounds/{r} is only written by the enter:SIMULATE hook, so during round
+  // r's DECISION phases it does not exist yet — the last completed round is
+  // r-1. SIMULATE/RESULTS/FINALE read the current round (materialised before
+  // the gated phase renders — §3a gate). SimulateFlood, StandingsShuffle and
+  // FinaleWall consume `round` in exactly those phases, so for them
+  // contextRound === game.round and their behavior is UNCHANGED — do not
+  // "simplify" them onto contextRound-aware logic. `game` here is the GATED
+  // view, so during settling this keeps showing the leaving phase's context.
+  const contextRound = useMemo(() => {
+    if (!game) return null;
+    if (game.phase === 'SIMULATE' || game.phase === 'RESULTS' || game.phase === 'FINALE') {
+      return game.round >= 1 ? game.round : null;
+    }
+    if (game.phase === 'LOBBY') return null;
+    return game.round - 1 >= 1 ? game.round - 1 : null; // FO / FA / AUCTION / LINEUP
+  }, [game]);
+
+  useEffect(() => { // context round doc (see contextRound memo above)
+    if (!gameId || !uid || contextRound == null) { setRound(null); return; }
+    return onSnapshot(doc(db, 'games', gameId, 'rounds', String(contextRound)),
       (s) => setRound(s.exists() ? (s.data() as RoundDoc) : null),
       (e) => console.error('[professor] rounds listener', e));
-  }, [gameId, uid, game?.round]);
+  }, [gameId, uid, contextRound]);
 
   useEffect(() => { // current auction wave
     const r = game?.round ?? 0;
@@ -154,9 +179,9 @@ export function ProfessorProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(() => ({
-    gameId, setGameId, game, settling, teams, players, round, auctionWave,
-    bidsSubmitted, reveal, call,
-  }), [gameId, setGameId, game, settling, teams, players, round, auctionWave,
-    bidsSubmitted, reveal, call]);
+    gameId, setGameId, game, settling, raw, contextRound, teams, players,
+    round, auctionWave, bidsSubmitted, reveal, call,
+  }), [gameId, setGameId, game, settling, raw, contextRound, teams, players,
+    round, auctionWave, bidsSubmitted, reveal, call]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

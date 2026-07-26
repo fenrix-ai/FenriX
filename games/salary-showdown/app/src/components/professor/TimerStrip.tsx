@@ -20,6 +20,7 @@ import type { Phase } from '../../types/models';
 const DEFAULTS_KEY = 'ss.profTimerDefaults';
 const AUTO_ARM_KEY = 'ss.profAutoArm';         // '1' | '0' — default '1' (on)
 const AUTO_ADVANCE_KEY = 'ss.profAutoAdvance'; // '1' | '0' — default '0' (off)
+const ARMED_KEY = 'ss.profArmedKey';           // `${gameId}:${round}:${phase}` — see ref below
 
 export const FALLBACK_TIMER_DEFAULTS: Record<string, number> = {
   FRONT_OFFICE: 180, FREE_AGENCY: 150, AUCTION: 120, LINEUP: 90, SIMULATE: 60, RESULTS: 90,
@@ -58,7 +59,12 @@ export function TimerStrip() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<unknown>(null);
   const [now, setNow] = useState(() => Date.now());
-  const armedKeyRef = useRef<string | null>(null);      // one auto-arm per (round, phase)
+  // One auto-arm per (game, round, phase) — PERSISTED (3b T1): a panel-tab
+  // reload mid-phase must not restart a timer the professor already saw
+  // armed (or deliberately cleared). gameId is part of the VALUE so a new
+  // game reaching the same (round, phase) still auto-arms — the storage key
+  // name stays 'ss.profArmedKey' (contract; T2's itest hygiene lists it).
+  const armedKeyRef = useRef<string | null>(localStorage.getItem(ARMED_KEY));
   const advancedForRef = useRef<number | null>(null);   // one auto-advance per deadline
 
   const running = game != null && game.timerEndsAt != null;
@@ -93,9 +99,10 @@ export function TimerStrip() {
   useEffect(() => {
     if (!game || !gameId || settling) return;
     if (!(game.phase in FALLBACK_TIMER_DEFAULTS)) return; // LOBBY/FINALE: no timers
-    const key = `${game.round}:${game.phase}`;
+    const key = `${gameId}:${game.round}:${game.phase}`;
     if (armedKeyRef.current === key) return;
     armedKeyRef.current = key;
+    localStorage.setItem(ARMED_KEY, key);
     if (!autoArm) return;
     if (game.timerEndsAt != null || game.timerPausedMs != null) return; // not off
     void call('setTimer', {

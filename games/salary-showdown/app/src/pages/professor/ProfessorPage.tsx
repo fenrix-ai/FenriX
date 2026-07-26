@@ -18,7 +18,7 @@ import type { RoundDoc } from '../../types/models';
 // the header: SessionSetup + AdvanceControl (T7), TimerStrip (T8),
 // SubmissionGrid (T9), RevealStepper (T13).
 export default function ProfessorPage() {
-  const { gameId, game, settling } = useProfessor();
+  const { gameId, game, settling, setGameId } = useProfessor();
   return (
     <main className="page">
       <div className="phase-head">
@@ -47,11 +47,26 @@ export default function ProfessorPage() {
           <div className="muted" style={{ marginTop: 4 }}>
             Cap {fmtM(game.config.cap)} · {game.config.totalRounds} rounds
           </div>
+          <button type="button" className="btn" style={{ marginTop: 8 }}
+            onClick={() => setGameId(null)}>
+            Clear session
+          </button>
+        </section>
+      ) : gameId ? (
+        <section className="card" style={{ marginTop: 10 }} aria-label="Session">
+          <p className="muted" style={{ margin: 0 }}>Connecting to session…</p>
+          {/* Bad-gameId dead-end fix (3b T1): a mistyped or foreign gameId
+              never produces a game doc (rules deny the read), so without
+              this button the panel sits on "Connecting" forever. Clearing
+              drops ss.profGameId + state and SessionSetup's create/resume
+              view returns. */}
+          <button type="button" className="btn" style={{ marginTop: 8 }}
+            onClick={() => setGameId(null)}>
+            Clear session
+          </button>
         </section>
       ) : (
-        <p className="muted" style={{ marginTop: 10 }}>
-          {gameId ? 'Connecting to session…' : 'No active session.'}
-        </p>
+        <p className="muted" style={{ marginTop: 10 }}>No active session.</p>
       )}
       <SessionSetup />
       <AdvanceControl />
@@ -89,8 +104,15 @@ function ExportSeasonButton() {
       const a = document.createElement('a');
       a.href = url;
       a.download = `salary-showdown-season-${joinCode}.csv`;
+      // 3b T1: the anchor must be IN the document for the click to download
+      // reliably (Firefox no-ops clicks on unattached anchors), and the
+      // object URL must outlive the click — a synchronous revoke can cancel
+      // a download the browser starts asynchronously. 10s is comfortably
+      // past any download start.
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
     } catch (e) {
       setError(e);
     } finally {

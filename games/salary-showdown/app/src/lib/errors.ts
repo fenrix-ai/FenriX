@@ -19,6 +19,7 @@ const TABLE: Record<string, string> = {
   BAD_SHAPE: 'The lineup did not submit cleanly — rearrange and resubmit.',
   BAD_TIMER: "Timer request was invalid — check the phase hasn't changed.",
   BAD_STEP: "That reveal step doesn't exist.",
+  PHASE_MISMATCH: 'The phase just closed.',
   'market is closed': 'Free agency is closed.',
   'auction is closed': 'The auction is closed.',
   'lineups are locked': 'Lineups are locked for this round.',
