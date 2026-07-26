@@ -10,6 +10,12 @@ test('coded messages map to student copy', () => {
     .toBe('That contract length is not available this round.');
   expect(errorCopy(new Error('ROSTER_FULL')).headline)
     .toBe('Your roster is full — 10 players is the maximum.');
+  expect(errorCopy(new Error('STAR_TAKEN')).headline)
+    .toBe("This star's claim has already been used this round.");
+  expect(errorCopy(new Error('BAD_TIMER')).headline)
+    .toBe("Timer request was invalid — check the phase hasn't changed.");
+  expect(errorCopy(new Error('BAD_STEP')).headline)
+    .toBe("That reveal step doesn't exist.");
 });
 test('prose messages: cut prefix and phase-closed strings', () => {
   expect(errorCopy(new Error('cut: pid 1104 not on roster')).headline)

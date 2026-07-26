@@ -19,7 +19,7 @@ This boots the Emulator UI at `http://127.0.0.1:4100`, Functions at
 running for manual poking; `Ctrl-C` to stop.
 
 Run the test suite headless against a fresh Firestore emulator (this is what CI /
-you should run before every commit — 16 files, 102 tests):
+you should run before every commit — 23 files, 150 tests):
 
 ```bash
 cd games/salary-showdown/backend && firebase emulators:exec --project salary-showdown-dev --only firestore "cd functions && npx vitest run"
@@ -41,11 +41,14 @@ Coach / professor) are enforced server-side per callable, not by the client.
 | `joinGame({ joinCode, teamId, role, displayName })` | Claims a GM/Scout/Coach seat on a team by join code; one uid per role per team. |
 | `getLobby({ joinCode })` | Lobby discovery for non-members: team list + claimed roles, by join code. |
 | `startSeason({ gameId })` | Professor-only: locks the lobby, draws the round-1 free-agency market, moves `LOBBY → FREE_AGENCY`. |
-| `advancePhase({ gameId })` | Professor-only: resolves the exit hook for the current phase, the entry hook for the next, and advances `phase`/`round` (idempotent via `hooklog`). |
+| `advancePhase({ gameId, expectedPhase, expectedRound })` | Professor-only: flips `phase`/`round` first (losers of a race get `PHASE_MISMATCH`), then resolves the exit + entry hooks (idempotent via `hooklog`). Callers ALWAYS send both expectations. |
 | `signPlayer({ gameId, pid, years })` | GM-only: signs a free agent (or re-signs an expiring contract in `FRONT_OFFICE`); claims unsold auction stars exclusively. |
 | `cutRosterPlayer({ gameId, pid })` | GM-only: cuts a rostered player in `FRONT_OFFICE`/`FREE_AGENCY`, adding dead money per the payroll rules. |
 | `submitBids({ gameId, bids })` | Scout-only: overwrites this team's sealed bids for the round's auction stars (private subcollection, freely revisable until auction close). |
 | `submitLineup({ gameId, lineup })` | Coach-only: validates and locks `{starters, sixth, bench, playstyle}` against the team's currently-active roster. |
+| `setTimer({ gameId, action, seconds?, expectedPhase, expectedRound })` | Professor-only pacing timer: `start`/`pause`/`resume`/`extend`/`clear` over `timerEndsAt`/`timerPausedMs`. Advisory only — expiry never blocks a submission server-side. |
+| `markDone({ gameId })` | GM-only "we're done" status flag during `FRONT_OFFICE`/`FREE_AGENCY`: stamps `doneRound`/`donePhase` on the caller's team doc. Status light only, never a lock. |
+| `setRevealStep({ gameId, step })` | Professor-only during `FINALE`: sets `revealStep` (integer 0-8) on the game doc to step the projector's reveal charts. |
 
 Error handling is via `HttpsError` (`unauthenticated`, `permission-denied`,
 `failed-precondition`, `invalid-argument`, `not-found`) with a short message; see

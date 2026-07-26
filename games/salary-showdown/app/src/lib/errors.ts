@@ -3,7 +3,7 @@ import { fmtM } from './money';
 
 const TABLE: Record<string, string> = {
   POSITION_LOCK: 'Signing him would leave too few open slots to field 2 G / 2 W / 1 B.',
-  STAR_TAKEN: 'Another team claimed this star first.',
+  STAR_TAKEN: "This star's claim has already been used this round.",
   ALREADY_SIGNED: 'He is already under contract with your team.',
   NOT_IN_MARKET: 'He is not signable tonight.',
   ROSTER_FULL: 'Your roster is full — 10 players is the maximum.',
@@ -17,6 +17,8 @@ const TABLE: Record<string, string> = {
   NOT_ON_ROSTER: 'Your lineup does not match your current roster — it has been refreshed.',
   BAD_TEMPLATE: 'Starters must be exactly 2 Guards, 2 Wings, 1 Big, plus a Sixth Man.',
   BAD_SHAPE: 'The lineup did not submit cleanly — rearrange and resubmit.',
+  BAD_TIMER: "Timer request was invalid — check the phase hasn't changed.",
+  BAD_STEP: "That reveal step doesn't exist.",
   'market is closed': 'Free agency is closed.',
   'auction is closed': 'The auction is closed.',
   'lineups are locked': 'Lineups are locked for this round.',
