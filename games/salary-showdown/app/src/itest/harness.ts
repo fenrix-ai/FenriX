@@ -18,7 +18,10 @@ export async function newClient(name: string) {
     { apiKey: 'fake-api-key', projectId: 'salary-showdown-dev' }, `${name}-${n++}`);
   const auth = getAuth(app);
   connectAuthEmulator(auth, 'http://127.0.0.1:9199', { disableWarnings: true });
-  const fns = getFunctions(app);
+  // us-west1 matches the backend's setGlobalOptions pin: the functions
+  // emulator registers callables under their declared region, and the
+  // emulator URL's path segment (/{project}/{region}/{fn}) must agree.
+  const fns = getFunctions(app, 'us-west1');
   connectFunctionsEmulator(fns, '127.0.0.1', 5101);
   const cred = await signInAnonymously(auth);
   return {

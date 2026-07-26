@@ -1,4 +1,5 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { setGlobalOptions } from 'firebase-functions/v2';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import players from './data/players.json' with { type: 'json' };
 import hiddenData from './data/hidden.json' with { type: 'json' };
@@ -10,6 +11,14 @@ import { cutPlayer, expiringPids, hypeCurve } from './payroll.js';
 import { validateBids, resolveAuction } from './auction.js';
 import { validateLineup, autoRepair } from './lineup.js';
 import { simulateRound, toCsv } from './sim.js';
+
+// All 12 callables deploy to us-west1, co-located with the Firestore
+// database (locked decision 2026-07-25). This MUST execute before the first
+// onCall() below evaluates — which is why it lives at the top of this, the
+// sole trigger-defining module, and NOT in index.js (ESM runs imported
+// modules before the importer's body; from index.js it would fire after
+// every callable had already bound the default us-central1 region).
+setGlobalOptions({ region: 'us-west1' });
 
 const ROLES = ['GM', 'Scout', 'Coach'];
 const db = () => getFirestore();

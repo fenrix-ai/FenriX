@@ -13,7 +13,7 @@ test('results: record, box lines, awards without perDollar, highlighted snapshot
   await httpsCallable(functions, 'joinGame')({
     joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'Scout', displayName: 'IT S',
   });
-  sessionStorage.setItem('ss.gameId', seeded.gameId);
+  localStorage.setItem('ss.gameId', seeded.gameId);
   render(<MemoryRouter initialEntries={['/game/results']}><App /></MemoryRouter>);
 
   await waitFor(() => expect(screen.getByRole('heading', { level: 2 })).toBeInTheDocument(),

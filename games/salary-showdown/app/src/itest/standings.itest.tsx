@@ -12,7 +12,7 @@ test('standings: server rank order, viewer highlight, W/$M column', async () => 
   await httpsCallable(functions, 'joinGame')({
     joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'GM', displayName: 'IT GM',
   });
-  sessionStorage.setItem('ss.gameId', seeded.gameId);
+  localStorage.setItem('ss.gameId', seeded.gameId);
   render(<MemoryRouter initialEntries={['/standings']}><App /></MemoryRouter>);
 
   await waitFor(() => expect(screen.getByTestId('standings')).toBeInTheDocument(),

@@ -20,8 +20,14 @@ export const useGame = () => useContext(Ctx);
 
 export function GameProvider({ children }: { children: ReactNode }) {
   const { uid } = useAuth();
+  // 'ss.gameId' lives in localStorage (spec §10.4): a student's crashed or
+  // closed laptop must recover its game in one click after reopening the
+  // browser, and sessionStorage dies with the tab. Multi-tab dev playtesting
+  // still works: sharing one gameId across tabs is CORRECT (same game), and
+  // per-tab IDENTITY still comes from session-persisted anonymous auth
+  // (browserSessionPersistence in lib/firebase.ts), which stays per-tab.
   const [gameId, setGameIdState] = useState<string | null>(
-    () => sessionStorage.getItem('ss.gameId'));
+    () => localStorage.getItem('ss.gameId'));
   const [game, setGame] = useState<GameDoc | null>(null);
   const [membership, setMembership] = useState<Membership | null>(null);
   const [teams, setTeams] = useState<Map<string, TeamDoc>>(new Map());
@@ -29,8 +35,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const [market, setMarket] = useState<MarketDoc | null>(null);
 
   const setGameId = useCallback((id: string | null) => {
-    if (id) sessionStorage.setItem('ss.gameId', id);
-    else sessionStorage.removeItem('ss.gameId');
+    if (id) localStorage.setItem('ss.gameId', id);
+    else localStorage.removeItem('ss.gameId');
     setGameIdState(id);
   }, []);
 

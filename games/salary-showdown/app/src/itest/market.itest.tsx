@@ -13,7 +13,7 @@ test('draft night: analyst table, sign drawer, non-exclusive row persists, ALREA
   await httpsCallable(functions, 'joinGame')({
     joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'GM', displayName: 'IT GM',
   });
-  sessionStorage.setItem('ss.gameId', seeded.gameId);
+  localStorage.setItem('ss.gameId', seeded.gameId);
   const user = userEvent.setup();
   render(<MemoryRouter initialEntries={['/game/market']}><App /></MemoryRouter>);
 

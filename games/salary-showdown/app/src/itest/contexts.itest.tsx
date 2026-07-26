@@ -19,7 +19,7 @@ test('membership + phase router: joined client lands on /lobby, follows startSea
   await httpsCallable(functions, 'joinGame')({
     joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'GM', displayName: 'IT GM',
   });
-  sessionStorage.setItem('ss.gameId', seeded.gameId);
+  localStorage.setItem('ss.gameId', seeded.gameId);
   render(<MemoryRouter initialEntries={['/']}><App /></MemoryRouter>);
   await waitFor(() => expect(screen.getByRole('heading', { name: /Lobby/ })).toBeInTheDocument(),
     { timeout: 15000 });

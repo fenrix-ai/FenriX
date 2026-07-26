@@ -12,7 +12,7 @@ test('a joined client follows a whole season, lobby to finale', async () => {
   await httpsCallable(functions, 'joinGame')({
     joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'GM', displayName: 'E2E GM',
   });
-  sessionStorage.setItem('ss.gameId', seeded.gameId);
+  localStorage.setItem('ss.gameId', seeded.gameId);
   render(<MemoryRouter initialEntries={['/']}><App /></MemoryRouter>);
   await waitFor(() => expect(screen.getByText(/Waiting for the professor/)).toBeInTheDocument(),
     { timeout: 20000 });

@@ -30,7 +30,14 @@ export const db = (() => {
 })();
 
 export const auth = getAuth(app);
-export const functions = getFunctions(app);
+// Callables live in us-west1, co-located with the Firestore database (locked
+// decision 2026-07-25). In PROD the region shapes the callable URL
+// (https://us-west1-<project>.cloudfunctions.net/<fn>). In DEV,
+// connectFunctionsEmulator below still overrides the origin — the SDK builds
+// ${emulatorOrigin}/${projectId}/${region}/${fn}, so the region only has to
+// match what the functions emulator registered, which it does now that
+// game.js pins setGlobalOptions({ region: 'us-west1' }).
+export const functions = getFunctions(app, 'us-west1');
 
 declare global {
   // eslint-disable-next-line no-var

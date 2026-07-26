@@ -12,7 +12,7 @@ test('lobby shows live role claims and own-team highlight', async () => {
   await httpsCallable(functions, 'joinGame')({
     joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'Coach', displayName: 'Casey',
   });
-  sessionStorage.setItem('ss.gameId', seeded.gameId);
+  localStorage.setItem('ss.gameId', seeded.gameId);
   render(<MemoryRouter initialEntries={['/lobby']}><App /></MemoryRouter>);
   await waitFor(() => {
     expect(screen.getByText(/Coach: Casey/)).toBeInTheDocument();  // own claim, live

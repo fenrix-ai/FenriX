@@ -1,1 +1,1 @@
-{ "projects": { "default": "salary-showdown-dev" } }
+{ "projects": { "default": "salary-showdown-dev", "prod": "salary-showdown" } }

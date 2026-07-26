@@ -13,7 +13,7 @@ test('lineup: pre-arranged legal, playstyle pick, submit locks the round', async
   await httpsCallable(functions, 'joinGame')({
     joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'Coach', displayName: 'IT Coach',
   });
-  sessionStorage.setItem('ss.gameId', seeded.gameId);
+  localStorage.setItem('ss.gameId', seeded.gameId);
   const user = userEvent.setup();
   render(<MemoryRouter initialEntries={['/game/lineup']}><App /></MemoryRouter>);
 

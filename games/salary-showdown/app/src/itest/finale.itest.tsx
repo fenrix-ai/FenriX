@@ -17,7 +17,7 @@ test('finale: joined GM sees podium, four SVG charts, own signings, narrative', 
   await httpsCallable(functions, 'joinGame')({
     joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'GM', displayName: 'IT GM',
   });
-  sessionStorage.setItem('ss.gameId', seeded.gameId);
+  localStorage.setItem('ss.gameId', seeded.gameId);
 
   // Alpha (team 0) has no bot, so the harness never signs for it — give it two
   // contracts (one cheap Guard, one pricey Wing) so the reveal's perTeam entry
@@ -107,10 +107,10 @@ describe('T13: finale wall + reveal stepper', () => {
   beforeAll(async () => {
     seeded = await seedProfFinale(['Alpha', 'Beta']);
     // Earlier tests in this file join the default user into THEIR game and
-    // set sessionStorage 'ss.gameId'; with it set, GameContext wakes up and
+    // set localStorage 'ss.gameId'; with it set, GameContext wakes up and
     // PhaseRouter would yank /professor and /bigscreen to /game/conclusion.
     // Clear it so GameProvider stays dormant on the new surfaces.
-    sessionStorage.removeItem('ss.gameId');
+    localStorage.removeItem('ss.gameId');
     localStorage.setItem('ss.profGameId', seeded.gameId);
   }, 600000);
 

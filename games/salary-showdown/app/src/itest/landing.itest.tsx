@@ -29,7 +29,8 @@ test('landing: code → team list with taken seats → claim → lobby', async (
 }, 90000);
 
 test('seat-taken race shows the mapped copy and refreshes the picker', async () => {
-  sessionStorage.clear(); // isolation: prior test's successful claim left ss.gameId behind
+  localStorage.removeItem('ss.gameId'); // isolation: prior test's claim left it behind (localStorage since 3b)
+  sessionStorage.clear(); // auth/session hygiene from the original isolation fix stays
   const seeded = await seedToPhase({ to: 'LOBBY' });
   await signInAnonymously(auth);
   const user = userEvent.setup();

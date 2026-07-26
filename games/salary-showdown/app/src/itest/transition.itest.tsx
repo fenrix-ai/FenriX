@@ -20,7 +20,7 @@ test('a mid-advance transition marker holds the client on the fully-built phase'
   await httpsCallable(functions, 'joinGame')({
     joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'GM', displayName: 'T GM',
   });
-  sessionStorage.setItem('ss.gameId', seeded.gameId);
+  localStorage.setItem('ss.gameId', seeded.gameId);
   render(<MemoryRouter initialEntries={['/']}><App /></MemoryRouter>);
   await waitFor(() => expect(screen.getByText(/Draft Night · Round 1/)).toBeInTheDocument(),
     { timeout: 20000 });

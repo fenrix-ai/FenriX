@@ -13,7 +13,7 @@ test('front office: expiring re-sign, then a mid-contract cut with dead money', 
   await httpsCallable(functions, 'joinGame')({
     joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'GM', displayName: 'IT GM',
   });
-  sessionStorage.setItem('ss.gameId', seeded.gameId);
+  localStorage.setItem('ss.gameId', seeded.gameId);
   const user = userEvent.setup();
   render(<MemoryRouter initialEntries={['/game/office']}><App /></MemoryRouter>);
 
@@ -47,7 +47,7 @@ test("we're done: GM sees the button, click stamps {doneRound, donePhase}", asyn
   await httpsCallable(functions, 'joinGame')({
     joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'GM', displayName: 'IT GM',
   });
-  sessionStorage.setItem('ss.gameId', seeded.gameId);
+  localStorage.setItem('ss.gameId', seeded.gameId);
   const user = userEvent.setup();
   render(<MemoryRouter initialEntries={['/game/office']}><App /></MemoryRouter>);
 

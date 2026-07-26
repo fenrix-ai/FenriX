@@ -12,7 +12,7 @@ test('simulate: my three games cascade to a terminal state', async () => {
   await httpsCallable(functions, 'joinGame')({
     joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'GM', displayName: 'IT GM',
   });
-  sessionStorage.setItem('ss.gameId', seeded.gameId);
+  localStorage.setItem('ss.gameId', seeded.gameId);
   render(<MemoryRouter initialEntries={['/game/simulate']}><App /></MemoryRouter>);
 
   // 4 teams → Alpha plays 3 games; cards appear over ~a few seconds of pacing.
