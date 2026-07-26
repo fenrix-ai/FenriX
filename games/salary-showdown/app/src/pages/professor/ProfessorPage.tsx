@@ -7,6 +7,8 @@ import { PHASE_NAMES } from '../../lib/phaseNames';
 import { SessionSetup } from '../../components/professor/SessionSetup';
 import { AdvanceControl } from '../../components/professor/AdvanceControl';
 import { TimerStrip } from '../../components/professor/TimerStrip';
+import { SubmissionGrid } from '../../components/professor/SubmissionGrid';
+import { RoundContext } from '../../components/professor/RoundContext';
 import { ErrorNotice } from '../../components/ui/ErrorNotice';
 import { concatBoxCsv } from '../../lib/exportSeason';
 import type { RoundDoc } from '../../types/models';
@@ -53,6 +55,8 @@ export default function ProfessorPage() {
       <SessionSetup />
       <AdvanceControl />
       <TimerStrip />
+      <SubmissionGrid />
+      <RoundContext />
       <ExportSeasonButton />
     </main>
   );

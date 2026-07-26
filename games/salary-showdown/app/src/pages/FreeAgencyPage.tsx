@@ -33,6 +33,7 @@ export default function FreeAgencyPage() {
   const [err, setErr] = useState<unknown>(null);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  const [doneNote, setDoneNote] = useState('');
 
   const round = game?.round ?? 1;
   const rows = useMemo<Row[]>(() => {
@@ -87,6 +88,16 @@ export default function FreeAgencyPage() {
     } catch (e) { setErr(e); } finally { setBusy(false); }
   };
 
+  // markDone is a status flag, never a lock (spec §4.2): signing stays open
+  // after pressing it and re-pressing is idempotent.
+  const markDone = async () => {
+    setBusy(true); setErr(null);
+    try {
+      await call('markDone', { gameId });
+      setDoneNote('Marked done — you can still make changes until the phase closes.');
+    } catch (e) { setErr(e); } finally { setBusy(false); }
+  };
+
   return (
     <main className="page" style={{ maxWidth: 960 }}>
       <PhaseHeader title={round === 1 ? 'Draft Night' : 'Free Agency'} round={round}
@@ -113,6 +124,16 @@ export default function FreeAgencyPage() {
       </div>
       <ErrorNotice error={err} />
       {note && <p className="ok" data-testid="sign-note">{note}</p>}
+      {isGM && (
+        <div style={{ margin: '10px 0' }}>
+          <button className="btn gold" disabled={busy} onClick={() => void markDone()}>
+            {"We're done"}
+          </button>
+          {doneNote && (
+            <p className="ok" data-testid="done-note" style={{ margin: '6px 0 0' }}>{doneNote}</p>
+          )}
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
         <div style={{ flex: 1, overflowX: 'auto' }}>

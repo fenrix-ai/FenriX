@@ -40,3 +40,27 @@ test('front office: expiring re-sign, then a mid-contract cut with dead money', 
     expect(t.deadMoney[0].endRound).toBe(3);
   }, { timeout: 15000 });
 }, 120000);
+
+test("we're done: GM sees the button, click stamps {doneRound, donePhase}", async () => {
+  const seeded = await seedToPhase({ to: 'R2:FRONT_OFFICE' });
+  await signInAnonymously(auth); // explicit: AuthProvider only signs in once rendered (Task 6 finding)
+  await httpsCallable(functions, 'joinGame')({
+    joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'GM', displayName: 'IT GM',
+  });
+  sessionStorage.setItem('ss.gameId', seeded.gameId);
+  const user = userEvent.setup();
+  render(<MemoryRouter initialEntries={['/game/office']}><App /></MemoryRouter>);
+
+  const btn = await screen.findByRole('button', { name: "We're done" }, { timeout: 20000 });
+  await user.click(btn);
+
+  await waitFor(() => expect(screen.getByTestId('done-note')).toHaveTextContent(
+    'Marked done — you can still make changes until the phase closes.'), { timeout: 15000 });
+  // Status flag, NEVER a lock: the button must still be pressable after success.
+  expect(screen.getByRole('button', { name: "We're done" })).toBeEnabled();
+
+  const t = (await adminDb().doc(
+    `games/${seeded.gameId}/teams/${seeded.teamIds[0]}`).get()).data()!;
+  expect(t.doneRound).toBe(2);
+  expect(t.donePhase).toBe('FRONT_OFFICE');
+}, 120000);

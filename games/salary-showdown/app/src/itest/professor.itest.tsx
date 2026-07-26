@@ -265,3 +265,107 @@ test('auto-advance: 2s timer at LINEUP advances to SIMULATE without a click', as
     expect(g.round).toBe(1);
   }, { timeout: 30000 });
 }, 240000);
+
+// ——— Task 9: SubmissionGrid + RoundContext ———
+// The rendered panel's call() goes through the default app, so the DEFAULT
+// app's anonymous user must BE the professor (contracts: the itest client that
+// calls createGame IS the professor). seedToPhase() can't be used here — its
+// professor is a separate harness client. The prof shim below satisfies the
+// harness Client shape so driveTo() works unchanged (it always sends
+// expectedPhase + expectedRound to advancePhase — RULING unchanged).
+async function seedProfGame(names: string[]): Promise<Seeded> {
+  const cred = await signInAnonymously(auth);
+  const { gameId, joinCode } = (await httpsCallable(functions, 'createGame')({
+    teamNames: names })).data as { gameId: string; joinCode: string };
+  const teamsSnap = await adminDb().collection(`games/${gameId}/teams`).get();
+  const teamIds = names.map((nm) => teamsSnap.docs.find((d) => d.data().name === nm)!.id);
+  const prof: Client = {
+    uid: cred.user.uid,
+    call: <T,>(fn: string, data: unknown) =>
+      httpsCallable(functions, fn)(data).then((r) => r.data as T),
+    dispose: async () => {},
+  };
+  const bots: Seeded['bots'] = [];
+  for (const [i, teamId] of teamIds.entries()) {
+    const gm = await newClient(`pgm${i}`);
+    const scout = await newClient(`psc${i}`);
+    const coach = await newClient(`pco${i}`);
+    await gm.call('joinGame', { joinCode, teamId, role: 'GM', displayName: `GM${i}` });
+    await scout.call('joinGame', { joinCode, teamId, role: 'Scout', displayName: `S${i}` });
+    await coach.call('joinGame', { joinCode, teamId, role: 'Coach', displayName: `C${i}` });
+    bots.push({ teamId, gm, scout, coach });
+  }
+  return { gameId, joinCode, teamIds, prof, bots };
+}
+
+test('submission grid: lights track markDone, bids, lineup locks; absent in SIMULATE; round context at RESULTS', async () => {
+  const seeded = await seedProfGame(['Alpha', 'Beta']);
+  // Round 1 has NO FRONT_OFFICE — startSeason enters at R1:FREE_AGENCY
+  // (FRONT_OFFICE exists only rounds 2+). markDone and the doneRound/donePhase
+  // light rule apply identically in FREE_AGENCY.
+  await driveTo(seeded, 'R1:FREE_AGENCY');
+  localStorage.setItem('ss.profGameId', seeded.gameId);
+  render(<MemoryRouter initialEntries={['/professor']}><App /></MemoryRouter>);
+  const [alphaId, betaId] = seeded.teamIds;
+
+  // FREE_AGENCY: grid renders, both lights empty.
+  await waitFor(() => {
+    expect(screen.getByTestId(`light-${alphaId}`)).toHaveTextContent('○ Alpha');
+    expect(screen.getByTestId(`light-${betaId}`)).toHaveTextContent('○ Beta');
+  }, { timeout: 20000 });
+
+  // Harness GM marks done → only Alpha's light fills.
+  await seeded.bots[0].gm.call('markDone', { gameId: seeded.gameId });
+  await waitFor(() => expect(screen.getByTestId(`light-${alphaId}`))
+    .toHaveTextContent('● Alpha'), { timeout: 15000 });
+  expect(screen.getByTestId(`light-${betaId}`)).toHaveTextContent('○ Beta');
+
+  // AUCTION: lights reset (phase-scoped), then a Scout's bid fills Alpha's.
+  await driveTo(seeded, 'R1:AUCTION');
+  await waitFor(() => expect(screen.getByTestId(`light-${alphaId}`))
+    .toHaveTextContent('○ Alpha'), { timeout: 20000 });
+  const wave = (await adminDb().doc(
+    `games/${seeded.gameId}/auctions/1`).get()).data()!;
+  await seeded.bots[0].scout.call('submitBids', { gameId: seeded.gameId,
+    bids: { [wave.stars[0]]: { rate: 2.0, years: 1 } } });
+  await waitFor(() => expect(screen.getByTestId(`light-${alphaId}`))
+    .toHaveTextContent('● Alpha'), { timeout: 15000 });
+  // Lights only — the grid must NEVER surface bid contents.
+  expect(screen.getByTestId('submission-grid').textContent).not.toContain('2.0');
+
+  // LINEUP: harness leaves lineups to the exit hook's auto-repair, so the
+  // light needs an explicit Coach submitLineup (full 5+sixth+rest assignment;
+  // validateLineup requires EVERY active pid assigned and 2G/2W/1B starters).
+  await driveTo(seeded, 'R1:LINEUP');
+  await waitFor(() => expect(screen.getByTestId(`light-${alphaId}`))
+    .toHaveTextContent('○ Alpha'), { timeout: 20000 });
+  const cat = await adminDb().collection(`games/${seeded.gameId}/catalog`).get();
+  const posOf = new Map(cat.docs.map((d) => [Number(d.id), d.data().position as string]));
+  const alpha = (await adminDb().doc(
+    `games/${seeded.gameId}/teams/${alphaId}`).get()).data()!;
+  const pids: number[] = alpha.roster
+    .filter((c: { startRound: number; years: number }) => c.startRound + c.years - 1 >= 1)
+    .map((c: { pid: number }) => c.pid);
+  const byPos: Record<string, number[]> = { G: [], W: [], B: [] };
+  for (const pid of pids) byPos[posOf.get(pid)!].push(pid);
+  const starters = [byPos.G[0], byPos.G[1], byPos.W[0], byPos.W[1], byPos.B[0]];
+  const rest = pids.filter((p) => !starters.includes(p));
+  await seeded.bots[0].coach.call('submitLineup', { gameId: seeded.gameId,
+    lineup: { starters, sixth: rest[0], bench: rest.slice(1), playstyle: 'Balanced' } });
+  await waitFor(() => expect(screen.getByTestId(`light-${alphaId}`))
+    .toHaveTextContent('● Alpha'), { timeout: 15000 });
+
+  // SIMULATE: no lights section at all.
+  await driveTo(seeded, 'R1:SIMULATE');
+  await waitFor(() =>
+    expect(screen.queryByTestId('submission-grid')).toBeNull(), { timeout: 20000 });
+
+  // RESULTS: RoundContext renders facts from rounds/1 — a standings row
+  // (rank · name · W-L · point diff) and a score line (names, not teamIds).
+  await driveTo(seeded, 'R1:RESULTS');
+  await waitFor(() => {
+    const ctx = screen.getByTestId('round-context');
+    expect(ctx.textContent).toMatch(/1 · (Alpha|Beta) · \d+-\d+ · [+-]?\d+/);
+    expect(ctx.textContent).toMatch(/(Alpha|Beta) \d+–\d+ (Alpha|Beta)/);
+  }, { timeout: 20000 });
+}, 240000);

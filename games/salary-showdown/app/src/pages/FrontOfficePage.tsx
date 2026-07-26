@@ -34,6 +34,7 @@ export default function FrontOfficePage() {
   const [resignYears, setResignYears] = useState<Record<number, number>>({});
   const [cutTarget, setCutTarget] = useState<Contract | null>(null);
   const [busy, setBusy] = useState(false);
+  const [doneNote, setDoneNote] = useState('');
 
   const round = game?.round ?? 1;
   const actives = useMemo(
@@ -71,6 +72,23 @@ export default function FrontOfficePage() {
       <PayrollBar team={team} round={round} />
       {!isGM && <p className="dim">The GM acts this phase — decisions shown are read-only.</p>}
       <ErrorNotice error={err} />
+      {isGM && (
+        <div style={{ margin: '10px 0' }}>
+          {/* markDone is a status flag, NEVER a lock (spec §4.2): the GM keeps
+              acting after pressing it, and re-pressing is idempotent — so the
+              button stays enabled after success. Non-GM sees nothing here. */}
+          <button className="btn gold" disabled={busy}
+            onClick={() => void act(async () => {
+              await call('markDone', { gameId });
+              setDoneNote('Marked done — you can still make changes until the phase closes.');
+            })}>
+            {"We're done"}
+          </button>
+          {doneNote && (
+            <p className="ok" data-testid="done-note" style={{ margin: '6px 0 0' }}>{doneNote}</p>
+          )}
+        </div>
+      )}
 
       <SectionCard num={1} title="Expiring deals" status={`${decidedCount} of ${expiring.length} decided`}>
         {expiring.length === 0 && <p className="dim">No contracts expired this round.</p>}
