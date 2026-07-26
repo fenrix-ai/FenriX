@@ -1,0 +1,31 @@
+/* Bigscreen (projector) — Plan 3a Task 10. Display-only wall: dark, high-contrast,
+   big type, zero interactivity. Color tokens come from arena.css :root; this file
+   adds bs-* layout only. Type sizes use clamp() so the same wall reads on a 720p
+   classroom projector and a 4K panel. */
+.bigscreen { min-height: 100vh; padding: 4vh 5vw; display: flex; flex-direction: column;
+  gap: 3vh; }
+.bs-center { align-items: center; justify-content: center; text-align: center; }
+/* Chips on the wall are status labels, not controls — kill the pointer affordance. */
+.bigscreen .chip { cursor: default; font-size: clamp(14px, 1.6vw, 24px); padding: 6px 16px; }
+.bs-brand { font-size: clamp(22px, 3vw, 44px); }
+.bs-joincode { font-size: clamp(72px, 16vw, 220px); font-weight: 800; color: var(--gold);
+  letter-spacing: 0.12em; line-height: 1; }
+.bs-joinline { font-size: clamp(18px, 2.4vw, 36px); color: var(--text); margin: 0; }
+.bs-seats { font-size: clamp(16px, 2vw, 30px); color: var(--muted); margin: 0; }
+.bs-teamgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px; width: 100%; }
+.bs-teamcard { background: linear-gradient(180deg, var(--card-a), var(--card-b));
+  border: 1px solid var(--border); border-radius: 12px; padding: 16px; text-align: left; }
+.bs-teamcard h2 { margin: 0 0 10px; font-size: clamp(18px, 2vw, 30px); }
+.bs-chips { display: flex; gap: 10px; flex-wrap: wrap; }
+.bs-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; }
+.bs-phase-title { margin: 4px 0 0; font-size: clamp(40px, 7vw, 96px);
+  text-transform: uppercase; letter-spacing: 0.04em; }
+.bs-sub { font-size: clamp(20px, 2.6vw, 40px); color: var(--muted); margin: 4px 0 0; }
+.bs-led .led { font-size: clamp(56px, 9vw, 140px); padding: 12px 32px; border-width: 3px;
+  border-radius: 12px; }
+.bs-lights { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 12px 28px; }
+.bs-light-row { display: flex; align-items: center; gap: 14px;
+  font-size: clamp(22px, 3vw, 44px); }
+.bs-dot { font-size: 0.9em; line-height: 1; }

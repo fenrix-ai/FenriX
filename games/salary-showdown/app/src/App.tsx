@@ -13,6 +13,7 @@ import SimulatePage from './pages/SimulatePage';
 import ResultsPage from './pages/ResultsPage';
 import StandingsPage from './pages/StandingsPage';
 import ProfessorPage from './pages/professor/ProfessorPage';
+import BigscreenPage from './pages/bigscreen/BigscreenPage';
 
 const Stub = ({ name }: { name: string }) => (
   <main style={{ color: '#f2f5fa', padding: 24 }}>
@@ -41,6 +42,8 @@ export default function App() {
           <Route path="/standings" element={<StandingsPage />} />
           <Route path="/professor"
             element={<ProfessorProvider><ProfessorPage /></ProfessorProvider>} />
+          <Route path="/bigscreen"
+            element={<ProfessorProvider><BigscreenPage /></ProfessorProvider>} />
         </Routes>
       </GameProvider>
     </AuthProvider>
