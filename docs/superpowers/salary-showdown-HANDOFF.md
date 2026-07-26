@@ -222,10 +222,20 @@ failures. If the backend suite goes red, **restart the emulator and re-run befor
 
 ---
 
-## 4. What's left after that — Plan 3 (not started)
+## 4. Plan 3 status — 3a DONE (2026-07-25), 3b remaining
 
-This is the real remaining body of work. **The game cannot be run in a classroom without it** —
-today phases only advance via a script; there is no professor UI, no projector, no finale.
+**Plan 3a (classroom surfaces) is COMPLETE and merged** — `main` @ `92c7616`, 14 gated tasks
+(spec: `docs/superpowers/specs/2026-07-24-salary-showdown-plan3-classroom-design.md`, plan:
+`docs/superpowers/plans/2026-07-24-salary-showdown-plan3a-classroom.md`). The professor panel
+(`/professor`), projector (`/bigscreen`), and the Finale/Reveal all exist, are itest-covered
+(backend 23 files/150 · unit 60 · integration 16 files/26), and passed a controller-driven
+full-season dress rehearsal in real Chrome. The whole-branch review's triaged 3b-start backlog
+lives in `.superpowers/sdd/progress.md` (top items: resolve-stuck-advance affordance,
+Clear-session button, useRoundDoc error callback, FinaleWall type-scale rewrap, RoundContext
+rounds/{r-1} sourcing during decision phases).
+
+**Remaining (Plan 3b — production):** items 4-5 below plus the pre-class checklist in §5.
+Gated on Dylan creating the Blaze Firebase project (console work only he can do).
 
 1. **Professor control panel** (`/professor`) — phase advance/pause, timers, per-team submission
    lights, force-advance (applies the same defaults as a §13 timeout), config knobs editable only
