@@ -82,3 +82,62 @@ test('bigscreen: lobby wall fills seats live, then flips to the decision wall', 
   await new Promise((resolve) => setTimeout(resolve, 2000));
   expect(screen.getByTestId('led').textContent).toBe(frozen);
 }, 180000);
+
+// Task 11: SIMULATE flood + RESULTS shuffle. 4 teams -> 6 games per round, so
+// interval = min(3000, 45000/6) = 3000ms and the full flood takes ~18s of real
+// time (real timers; generous waitFor timeouts bound it).
+test('bigscreen: score-card flood, then standings shuffle with NEW and delta glyphs', async () => {
+  await signInAnonymously(auth); // explicit: AuthProvider only signs in once rendered (Task 6 finding)
+  const created = await httpsCallable(functions, 'createGame')(
+    { teamNames: ['Alpha', 'Beta', 'Gamma', 'Delta'] });
+  const { gameId, joinCode } = created.data as { gameId: string; joinCode: string };
+  const teamsSnap = await adminDb().collection(`games/${gameId}/teams`).get();
+  const teamIds = ['Alpha', 'Beta', 'Gamma', 'Delta'].map(
+    (nm) => teamsSnap.docs.find((d) => d.data().name === nm)!.id);
+  const prof: Seeded['prof'] = {
+    uid: auth.currentUser!.uid,
+    call: <T,>(fn: string, data: unknown) =>
+      httpsCallable(functions, fn)(data).then((r) => r.data as T),
+    dispose: () => Promise.resolve(),
+  };
+  const seeded: Seeded = { gameId, joinCode, teamIds, prof, bots: [] };
+
+  localStorage.setItem('ss.profGameId', gameId);
+  render(<MemoryRouter initialEntries={['/bigscreen']}><App /></MemoryRouter>);
+
+  // R1:SIMULATE — all 6 score cards flood in, then the terminal line.
+  await driveTo(seeded, 'R1:SIMULATE');
+  await waitFor(() => {
+    expect(screen.getAllByTestId('bs-scorecard')).toHaveLength(6);
+    expect(screen.getByRole('status')).toHaveTextContent('Round complete.');
+  }, { timeout: 60000 });
+
+  // R1:RESULTS — round 1 has no previous round: every previousRank is null,
+  // so the rest-state table is 4 rows, all marked NEW.
+  await driveTo(seeded, 'R1:RESULTS');
+  const rd1 = (await adminDb().doc(`games/${gameId}/rounds/1`).get()).data()!;
+  expect((rd1.standings as { previousRank: number | null }[])
+    .every((r) => r.previousRank === null)).toBe(true);
+  await waitFor(() => {
+    expect(screen.getAllByTestId('bs-shuffle-row')).toHaveLength(4);
+    for (const r of rd1.standings as { teamId: string }[]) {
+      expect(screen.getByTestId(`bs-delta-${r.teamId}`)).toHaveTextContent('NEW');
+    }
+  }, { timeout: 30000 });
+
+  // R2:RESULTS — every delta glyph must agree with the stored previousRank:
+  // delta = previousRank - rank; positive -> '▲ d', negative -> '▼ |d|', zero -> '—'.
+  await driveTo(seeded, 'R2:RESULTS');
+  const rd2 = (await adminDb().doc(`games/${gameId}/rounds/2`).get()).data()!;
+  expect((rd2.standings as { previousRank: number | null }[])
+    .every((r) => r.previousRank !== null)).toBe(true);
+  await waitFor(() => {
+    expect(screen.getAllByTestId('bs-shuffle-row')).toHaveLength(4);
+    for (const r of rd2.standings as
+      { teamId: string; rank: number; previousRank: number }[]) {
+      const d = r.previousRank - r.rank;
+      const expected = d > 0 ? `▲ ${d}` : d < 0 ? `▼ ${-d}` : '—';
+      expect(screen.getByTestId(`bs-delta-${r.teamId}`)).toHaveTextContent(expected);
+    }
+  }, { timeout: 30000 });
+}, 300000);

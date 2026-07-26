@@ -2,12 +2,13 @@ import { useProfessor } from '../../contexts/ProfessorContext';
 import { PHASE_NAMES } from '../../lib/phaseNames';
 import { LobbyWall } from '../../components/bigscreen/LobbyWall';
 import { DecisionWall } from '../../components/bigscreen/DecisionWall';
+import { SimulateFlood } from '../../components/bigscreen/SimulateFlood';
+import { StandingsShuffle } from '../../components/bigscreen/StandingsShuffle';
 import '../../styles/bigscreen.css';
 
-// Minimal full-screen phase-title card. Task 10 renders it for SIMULATE, RESULTS
-// and FINALE; Task 11 replaces the SIMULATE/RESULTS cases with SimulateFlood /
-// StandingsShuffle and Task 13 replaces the FINALE case with FinaleWall. The
-// switch below is complete and final — later tasks swap CASE BODIES only.
+// Minimal full-screen phase-title card — now only the FINALE placeholder;
+// Task 13 replaces that case body with FinaleWall. The switch below is
+// complete and final — later tasks swap CASE BODIES only.
 function PhaseTitleCard({ title, round }: { title: string; round: number | null }) {
   return (
     <main className="bigscreen bs-center">
@@ -41,9 +42,9 @@ export default function BigscreenPage() {
     case 'LINEUP':
       return <DecisionWall />;
     case 'SIMULATE':
-      return <PhaseTitleCard title={PHASE_NAMES.SIMULATE} round={game.round} />;
+      return <SimulateFlood />;
     case 'RESULTS':
-      return <PhaseTitleCard title={PHASE_NAMES.RESULTS} round={game.round} />;
+      return <StandingsShuffle />;
     case 'FINALE':
       return <PhaseTitleCard title={PHASE_NAMES.FINALE} round={null} />;
   }
