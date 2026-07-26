@@ -94,7 +94,7 @@ export default function AuctionPage() {
 
   return (
     <main className="page" style={{ maxWidth: 960 }}>
-      <PhaseHeader title="Star Auction" round={round} timerEndsAt={game.timerEndsAt} />
+      <PhaseHeader title="Star Auction" round={round} timerEndsAt={game.timerEndsAt} timerPausedMs={game.timerPausedMs} />
       <PayrollBar team={team} round={round} />
       <div className="inset" style={{ border: '1.5px dashed var(--gold)', margin: '10px 0' }}>
         Sealed contract offers: salary per round × years. The most guaranteed money wins.

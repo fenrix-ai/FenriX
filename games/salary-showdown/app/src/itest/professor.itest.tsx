@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
@@ -148,4 +148,120 @@ test('panel advance: all-lights-on skips the modal; a missing submission names t
     "1 teams haven't submitted: Gamma. Advance anyway? Server defaults will apply.");
   await user.click(screen.getByRole('button', { name: 'Advance anyway' }));
   await screen.findByRole('button', { name: 'Advance → Simulate · R1' }, { timeout: 30000 });
+}, 240000);
+
+// ——— Task 8: timer strip + auto-arm/auto-advance ———
+// The panel professor must be the DEFAULT app's signed-in user (the itest
+// client that calls createGame IS the professor). seedToPhase() builds its own
+// isolated prof client, so we assemble a Seeded by hand around the default app
+// and reuse driveTo() for the season driving.
+async function seedTimerGame(to: string): Promise<Seeded> {
+  const cred = await signInAnonymously(auth);
+  const prof = {
+    uid: cred.user.uid,
+    call: <T,>(fn: string, data: unknown) =>
+      httpsCallable(functions, fn)(data).then((r) => r.data as T),
+    dispose: async () => {},
+  };
+  const names = ['Alpha', 'Beta', 'Gamma', 'Delta'];
+  const { gameId, joinCode } = await prof.call<{ gameId: string; joinCode: string }>(
+    'createGame', { teamNames: names });
+  const teamsSnap = await adminDb().collection(`games/${gameId}/teams`).get();
+  const teamIds = names.map((nm) => teamsSnap.docs.find((d) => d.data().name === nm)!.id);
+  const bots: Seeded['bots'] = [];
+  for (const i of [1, 2, 3]) {
+    const gm = await newClient(`t8gm${i}`);
+    const scout = await newClient(`t8sc${i}`);
+    const coach = await newClient(`t8co${i}`);
+    await gm.call('joinGame', { joinCode, teamId: teamIds[i], role: 'GM', displayName: `GM${i}` });
+    await scout.call('joinGame', { joinCode, teamId: teamIds[i], role: 'Scout', displayName: `S${i}` });
+    await coach.call('joinGame', { joinCode, teamId: teamIds[i], role: 'Coach', displayName: `C${i}` });
+    bots.push({ teamId: teamIds[i], gm, scout, coach });
+  }
+  const seeded: Seeded = { gameId, joinCode, teamIds, prof, bots };
+  await driveTo(seeded, to);
+  return seeded;
+}
+
+test('timer strip: UI-start 90s counts down, UI-pause freezes the led', async () => {
+  // R2, not R1: round 1 has no FRONT_OFFICE (startSeason enters at R1:FREE_AGENCY;
+  // FRONT_OFFICE exists only as the entry phase of rounds 2+). R2:FRONT_OFFICE keeps
+  // the FRONT_OFFICE:90 default below, so the button reads "Start 01:30".
+  const seeded = await seedTimerGame('R2:FRONT_OFFICE');
+  localStorage.setItem('ss.profGameId', seeded.gameId);
+  localStorage.setItem('ss.profAutoArm', '0');      // this test drives the timer by hand
+  localStorage.setItem('ss.profAutoAdvance', '0');
+  localStorage.setItem('ss.profTimerDefaults', JSON.stringify(
+    { FRONT_OFFICE: 90, FREE_AGENCY: 150, AUCTION: 120, LINEUP: 90, SIMULATE: 60, RESULTS: 90 }));
+  const user = userEvent.setup();
+  render(<MemoryRouter initialEntries={['/professor']}><App /></MemoryRouter>);
+  await screen.findByTestId('timer-strip', {}, { timeout: 20000 });
+  const strip = () => within(screen.getByTestId('timer-strip'));
+
+  // Start uses the per-phase default read from ss.profTimerDefaults (90s here).
+  await user.click(await strip().findByRole('button', { name: 'Start 01:30' }, { timeout: 10000 }));
+  await waitFor(async () => {
+    const g = (await adminDb().doc(`games/${seeded.gameId}`).get()).data()!;
+    expect(g.timerEndsAt).not.toBeNull();
+    expect(g.timerPausedMs).toBeNull();
+    const ends = g.timerEndsAt.toMillis();
+    expect(ends).toBeGreaterThan(Date.now() + 60_000);   // a ~90s deadline, not garbage
+    expect(ends).toBeLessThanOrEqual(Date.now() + 91_000);
+  }, { timeout: 15000 });
+
+  // The panel led mirrors the countdown: it leaves --:-- and then ticks down.
+  await waitFor(() => {
+    expect(strip().getByTestId('led')).not.toHaveTextContent('--:--');
+  }, { timeout: 15000 });
+  const first = strip().getByTestId('led').textContent;
+  await waitFor(() => {
+    expect(strip().getByTestId('led').textContent).not.toBe(first);
+  }, { timeout: 5000 });
+
+  await user.click(strip().getByRole('button', { name: 'Pause' }));
+  await waitFor(async () => {
+    const g = (await adminDb().doc(`games/${seeded.gameId}`).get()).data()!;
+    expect(g.timerEndsAt).toBeNull();
+    expect(g.timerPausedMs).toBeGreaterThan(0);
+    expect(g.timerPausedMs).toBeLessThanOrEqual(90_000);
+  }, { timeout: 15000 });
+
+  // Frozen while paused — bounded-negative pattern: the led text must NOT
+  // change across a 1.2s wait (the running tick is 500ms / 1s resolution, so a
+  // still-running clock would have moved at least once in that window).
+  await waitFor(() => expect(strip().getByText('paused')).toBeInTheDocument(), { timeout: 10000 });
+  const frozen = strip().getByTestId('led').textContent;
+  await new Promise((r) => setTimeout(r, 1200));
+  expect(strip().getByTestId('led').textContent).toBe(frozen);
+}, 180000);
+
+test('auto-advance: 2s timer at LINEUP advances to SIMULATE without a click', async () => {
+  const seeded = await seedTimerGame('R1:LINEUP');
+  // Lineups "locked" via the harness (admin status-flag writes) so every light
+  // is green. This is only the doneness flag: the LINEUP exit hook still
+  // validates/auto-repairs actual lineups server-side, so the flag alone is
+  // safe — timers are advisory and expiry never blocks anything server-side.
+  for (const teamId of seeded.teamIds) {
+    await adminDb().doc(`games/${seeded.gameId}/teams/${teamId}`)
+      .update({ lineupLockedRound: 1 });
+  }
+  localStorage.setItem('ss.profGameId', seeded.gameId);
+  localStorage.setItem('ss.profAutoArm', '0');       // deterministic: we arm via the Start button
+  localStorage.setItem('ss.profAutoAdvance', '1');   // the toggle under test
+  localStorage.setItem('ss.profTimerDefaults', JSON.stringify(
+    { FRONT_OFFICE: 180, FREE_AGENCY: 150, AUCTION: 120, LINEUP: 2, SIMULATE: 60, RESULTS: 90 }));
+  const user = userEvent.setup();
+  render(<MemoryRouter initialEntries={['/professor']}><App /></MemoryRouter>);
+  await screen.findByTestId('timer-strip', {}, { timeout: 20000 });
+  const strip = () => within(screen.getByTestId('timer-strip'));
+
+  await user.click(await strip().findByRole('button', { name: 'Start 00:02' }, { timeout: 10000 }));
+
+  // No Advance click anywhere in this test: the strip itself fires advancePhase
+  // (with expectedPhase/expectedRound from the gated game) when the timer hits 0.
+  await waitFor(async () => {
+    const g = (await adminDb().doc(`games/${seeded.gameId}`).get()).data()!;
+    expect(g.phase).toBe('SIMULATE');
+    expect(g.round).toBe(1);
+  }, { timeout: 30000 });
 }, 240000);

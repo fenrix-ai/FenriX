@@ -67,7 +67,7 @@ export default function FrontOfficePage() {
 
   return (
     <main className="page">
-      <PhaseHeader title="Front Office" round={round} timerEndsAt={game.timerEndsAt} />
+      <PhaseHeader title="Front Office" round={round} timerEndsAt={game.timerEndsAt} timerPausedMs={game.timerPausedMs} />
       <PayrollBar team={team} round={round} />
       {!isGM && <p className="dim">The GM acts this phase — decisions shown are read-only.</p>}
       <ErrorNotice error={err} />

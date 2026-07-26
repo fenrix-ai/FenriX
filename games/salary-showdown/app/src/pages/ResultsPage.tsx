@@ -94,7 +94,7 @@ export default function ResultsPage() {
 
   return (
     <main className="page">
-      <PhaseHeader title="Results" round={round} timerEndsAt={game.timerEndsAt} />
+      <PhaseHeader title="Results" round={round} timerEndsAt={game.timerEndsAt} timerPausedMs={game.timerPausedMs} />
       <h2 className="mono" style={{ fontSize: 34, margin: '4px 0' }}>{my.record}</h2>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         {my.best && <div className="card" style={{ flex: 1, minWidth: 180 }}>

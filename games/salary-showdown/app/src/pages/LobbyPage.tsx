@@ -37,7 +37,7 @@ export default function LobbyPage() {
   if (!game || !membership) return null;
   return (
     <main className="page">
-      <PhaseHeader title="Lobby" round={0} timerEndsAt={game.timerEndsAt} />
+      <PhaseHeader title="Lobby" round={0} timerEndsAt={game.timerEndsAt} timerPausedMs={game.timerPausedMs} />
       <div className="ticker" role="status">
         <span className="tag">HOUSE RULES</span><span>{RULES[slide]}</span>
       </div>

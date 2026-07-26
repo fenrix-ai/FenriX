@@ -79,7 +79,7 @@ export default function LineupPage() {
 
   return (
     <main className="page">
-      <PhaseHeader title="Set Lineup" round={round} timerEndsAt={game.timerEndsAt} />
+      <PhaseHeader title="Set Lineup" round={round} timerEndsAt={game.timerEndsAt} timerPausedMs={game.timerPausedMs} />
       <ErrorNotice error={err} />
       {note && <p className="ok" role="status">{note}</p>}
       <DndContext onDragEnd={onDragEnd}>

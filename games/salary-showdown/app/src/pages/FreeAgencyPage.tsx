@@ -90,7 +90,7 @@ export default function FreeAgencyPage() {
   return (
     <main className="page" style={{ maxWidth: 960 }}>
       <PhaseHeader title={round === 1 ? 'Draft Night' : 'Free Agency'} round={round}
-        timerEndsAt={game.timerEndsAt} />
+        timerEndsAt={game.timerEndsAt} timerPausedMs={game.timerPausedMs} />
       <PayrollBar team={team} round={round} />
       {round === 1 && (
         <p className="mono" role="status">

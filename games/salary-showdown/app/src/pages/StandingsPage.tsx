@@ -41,7 +41,7 @@ export default function StandingsPage() {
   if (!game || !membership) return null;
   return (
     <main className="page">
-      <PhaseHeader title="Standings" round={latest?.round ?? 0} timerEndsAt={game.timerEndsAt} />
+      <PhaseHeader title="Standings" round={latest?.round ?? 0} timerEndsAt={game.timerEndsAt} timerPausedMs={game.timerPausedMs} />
       {latest
         ? <StandingsTable rows={latest.rows} highlightTeamId={membership.teamId} wpd={wpd} />
         : <p className="muted">No games in the books yet.</p>}

@@ -39,7 +39,7 @@ export default function SimulatePage() {
   const done = mine.length > 0 && shown >= mine.length;
   return (
     <main className="page">
-      <PhaseHeader title="Simulate" round={round} timerEndsAt={game.timerEndsAt} />
+      <PhaseHeader title="Simulate" round={round} timerEndsAt={game.timerEndsAt} timerPausedMs={game.timerPausedMs} />
       {mine.length === 0 && <p className="muted">Crunching the round…</p>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {mine.slice(0, shown).map((g) => (

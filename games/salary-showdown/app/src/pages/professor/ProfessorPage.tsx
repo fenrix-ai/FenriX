@@ -6,6 +6,7 @@ import { fmtM } from '../../lib/money';
 import { PHASE_NAMES } from '../../lib/phaseNames';
 import { SessionSetup } from '../../components/professor/SessionSetup';
 import { AdvanceControl } from '../../components/professor/AdvanceControl';
+import { TimerStrip } from '../../components/professor/TimerStrip';
 import { ErrorNotice } from '../../components/ui/ErrorNotice';
 import { concatBoxCsv } from '../../lib/exportSeason';
 import type { RoundDoc } from '../../types/models';
@@ -51,6 +52,7 @@ export default function ProfessorPage() {
       )}
       <SessionSetup />
       <AdvanceControl />
+      <TimerStrip />
       <ExportSeasonButton />
     </main>
   );

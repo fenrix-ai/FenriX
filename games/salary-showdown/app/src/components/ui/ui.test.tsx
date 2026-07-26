@@ -4,7 +4,7 @@ import { LedTimer } from './LedTimer';
 import { PayrollBar } from './PayrollBar';
 import type { TeamDoc } from '../../types/models';
 
-test('LedTimer renders the steady null state (Plan 2 has no professor timers)', () => {
+test('LedTimer renders the steady null state (timer off)', () => {
   render(<LedTimer endsAt={null} />);
   expect(screen.getByTestId('led')).toHaveTextContent('--:--');
 });
@@ -28,4 +28,14 @@ test('PayrollBar computes label and segment widths from the roster', () => {
   expect((container.querySelector('.cash') as HTMLElement).style.width)
     .toBe('78.2%');  // computed, not the mock’s hard-coded 70%
   expect((container.querySelector('.dead') as HTMLElement).style.width).toBe('9.1%');
+});
+test('LedTimer paused state renders the frozen clock plus plain "paused" text', () => {
+  render(<LedTimer endsAt={null} pausedMs={95000} />);
+  expect(screen.getByTestId('led')).toHaveTextContent('01:35');
+  expect(screen.getByText('paused')).toBeInTheDocument();
+});
+test('LedTimer off state (both null) never shows "paused"', () => {
+  render(<LedTimer endsAt={null} pausedMs={null} />);
+  expect(screen.getByTestId('led')).toHaveTextContent('--:--');
+  expect(screen.queryByText('paused')).toBeNull();
 });
