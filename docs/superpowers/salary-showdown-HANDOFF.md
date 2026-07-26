@@ -37,13 +37,14 @@ top-3 in **86%** of simulated seasons and wins the title in **48%**.
 
 | Fact | Value |
 |---|---|
-| Current branch | `main` (hardening branch merged fast-forward and deleted 2026-07-23) |
-| `main` | **`378e8cd`** (Plan 1 + Plan 2 + backend hardening + §3/§3a debug fixes) |
+| Current branch | `salary-showdown-plan3b` (Plan 3b, exit battery 2026-07-26; Plan 3a merged to `main` @ `92c7616` + handoff sync `7c659f3` on 2026-07-25) |
+| Plan 3b HEAD | **`9c0140e`** (3a-backlog fixes + prod wiring + first production deploy + prod smoke + load drill + professor runbook) |
 | `main` vs `origin/main` | **Pushed to GitHub 2026-07-24** (`fenrix-ai/FenriX`, PUBLIC — Dylan's explicit call, made knowing the repo carries `datagen/private/` answer key + the full spec; see §2a) |
-| Backend test suite (hardening branch) | **19 files / 115 tests green** |
-| App unit suite | **7 files / 30 tests green** |
-| App integration suite | **13 files / 14 tests green** (was 11/12 — §3 adds a transport tripwire, §3a a transition-gate pin) |
-| UI-rules audit | clean, 37 files |
+| Production | **LIVE** — Firebase project `salary-showdown` (Blaze), Hosting `https://salary-showdown.web.app`, 12 callables + `(default)` Firestore in `us-west1`, anonymous auth on, $10 email budget alert armed (Dylan to verify, §4) |
+| Backend test suite | **23 files / 150 tests green** |
+| App unit suite | **13 files / 65 tests green** |
+| App integration suite | **17 files / 29 tests green ×3 consecutive** (live emulators; browser-transport pin per §3) |
+| UI-rules audit | clean, 64 files |
 
 ### 2a. Publication note (2026-07-24)
 
@@ -58,7 +59,7 @@ Unrelated pre-existing dirt in the working tree (NOT yours, leave alone): `quant
 modified, plus untracked files under `games/bakery-bash/`, `quant_finance/local_llm/`, and a stray
 `image (2).png`.
 
-### Hardening branch commits (not yet merged)
+### Hardening branch commits (merged to `main` fast-forward 2026-07-23)
 
 ```
 d72a377 fix: sim test — restore bargain-award discrimination canary with shared-pid fixture
@@ -79,7 +80,7 @@ bf06e50 fix: sim box emission — history-parity 1.25×tier-weight scaling (spec
 3. **Team-facing React client** — `games/salary-showdown/app/` (React 19 + TS + Vite + Firebase JS
    SDK). All nine screens built, reviewed, and browser-verified.
 
-### What is DONE but NOT merged (this branch)
+### What was DONE on the hardening branch (merged to `main` 2026-07-23)
 
 4. **Backend hardening** — the four "fix-before-class" items from the original review:
    - **H-A**: `advancePhase` rewritten as **transactional flip-first with a `transition` resume
@@ -222,7 +223,7 @@ failures. If the backend suite goes red, **restart the emulator and re-run befor
 
 ---
 
-## 4. Plan 3 status — 3a DONE (2026-07-25), 3b remaining
+## 4. Plan 3 status — 3a DONE (2026-07-25), 3b DONE (2026-07-26)
 
 **Plan 3a (classroom surfaces) is COMPLETE and merged** — `main` @ `92c7616`, 14 gated tasks
 (spec: `docs/superpowers/specs/2026-07-24-salary-showdown-plan3-classroom-design.md`, plan:
@@ -234,7 +235,27 @@ lives in `.superpowers/sdd/progress.md` (top items: resolve-stuck-advance afford
 Clear-session button, useRoundDoc error callback, FinaleWall type-scale rewrap, RoundContext
 rounds/{r-1} sourcing during decision phases).
 
-**Remaining (Plan 3b — production):** items 4-5 below plus the pre-class checklist in §5.
+**Plan 3b (production) is COMPLETE (2026-07-26)** — 8 gated tasks on `salary-showdown-plan3b` @ `9c0140e`:
+the triaged 3a-start backlog (stuck-advance resolve button, Clear session, RoundContext
+rounds/{r-1} sourcing during decision phases, FinaleWall bs-* rewrap, shared STEP_TITLES,
+useRoundDoc error callback, CSV anchor fix, armed-key persistence), prod wiring (functions +
+client + itest harness pinned to `us-west1`, hosting block, `.env.production.example`,
+team-client `ss.gameId` sessionStorage → localStorage), first production deploy (project
+`salary-showdown`, Blaze, `https://salary-showdown.web.app`, anonymous auth, $10 budget
+alert), scripted prod smoke (`games/salary-showdown/app/scripts/prod-smoke.mjs`, all checks
+PASS; manual checklist in `docs/superpowers/salary-showdown-prod-smoke.md`), the 63-client
+load drill (report: `docs/superpowers/loadtests/2026-07-26-load-drill.md` — the class-date
+gate), and the one-page professor runbook (`docs/superpowers/salary-showdown-RUNBOOK.md`).
+Exit battery: backend 23/150 · unit 13/65 · integration 17/29 ×3 consecutive · `tsc -b`
+clean · `audit:ui` clean (64 files).
+
+**Still MANUAL for Dylan (nothing else remains):** (1) the 30-second drag QA at
+`/game/lineup` on the DEPLOYED app — the dnd-kit gesture is provably un-automatable (§5);
+(2) a deployed dress rehearsal — panel on the laptop, projector via Open projector, phones
+joining over `https://salary-showdown.web.app`; (3) verifying the $10 budget alert is armed
+in the Billing console and the alert email arrives; (4) the class-date decision, gated on
+the load-drill report's verdict.
+
 **3b facts locked 2026-07-25:** Firebase project **`salary-showdown`** (number 713437533994)
 exists and **Blaze billing is PAID/ON** (Dylan confirmed). Region decision: **us-west1** for
 Firestore AND Functions (co-located; client pins `getFunctions(app, 'us-west1')`). Console state
@@ -259,9 +280,10 @@ use an explicit `prod` alias.
    debrief. **Note:** `trueWeights` in the payload currently ships only `{narrative,
    turnoverWeight, defenseVisible}` — the spec (§11.14) wants the full engine-weights-vs-regression
    comparison. Extend the payload before building the chart.
-4. **Deploy** — real Firebase project, **Blaze plan required** (Cloud Functions aren't on Spark),
-   anonymous auth, hosting. Everything today is emulator-only.
-5. **Load drill** — actually stress 60–70 concurrent clients before betting a class on it.
+4. **Deploy — DONE (3b).** Firebase project `salary-showdown` (Blaze), functions + Firestore in
+   `us-west1`, anonymous auth, rules + indexes deployed, hosting at `https://salary-showdown.web.app`.
+5. **Load drill — DONE (3b).** 63 web-SDK clients (21 franchises × 3 roles) against prod on
+   classroom pacing; per-criterion verdicts in `docs/superpowers/loadtests/2026-07-26-load-drill.md`.
 
 ---
 
