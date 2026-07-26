@@ -312,7 +312,9 @@ Mode follows the (transition-gated) phase. Dark, high-contrast, big type; no int
    Dylan's 30-second manual drag QA at `/game/lineup` (un-automatable gesture); one-page
    professor runbook — join instructions, per-phase script with timer defaults, force-advance
    guidance, **hard 21-franchise cap**, failure playbook (panel tab dies → reopen and resume
-   by joinCode; wall dies → read joinCode from panel).
+   by game id — the Resume field takes the game id, which the runbook has the professor
+   write down pre-class; the panel header itself shows the joinCode; wall dies → read
+   joinCode from panel).
 
 ## 11. Out of scope
 
