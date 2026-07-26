@@ -1,7 +1,8 @@
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
-import { adminDb, driveTo, seedToPhase } from './harness';
+import { adminDb, driveTo, newClient, seedToPhase, type Client, type Seeded } from './harness';
 import { auth, functions } from '../lib/firebase';
 import { signInAnonymously } from 'firebase/auth';
 import App from '../App';
@@ -65,3 +66,95 @@ test('finale: joined GM sees podium, four SVG charts, own signings, narrative', 
   // The narrative string from trueWeights, verbatim from the wire.
   expect(screen.getByTestId('narrative')).toHaveTextContent(rev.trueWeights.narrative);
 }, 300000);
+
+// T13 — FinaleWall (projector) + RevealStepper (panel). The rendered
+// surfaces read via ProfessorProvider and call setRevealStep through the
+// default app, so the DEFAULT app's anonymous user must BE the professor
+// (contracts: the itest client that calls createGame IS the professor; the
+// professor has NO players/{uid} membership doc — joinGame is never called
+// for it). The prof shim satisfies the harness Client shape so driveTo()
+// works unchanged (it always sends expectedPhase + expectedRound to
+// advancePhase — RULING unchanged).
+async function seedProfFinale(names: string[]): Promise<Seeded> {
+  const cred = await signInAnonymously(auth);
+  const { gameId, joinCode } = (await httpsCallable(functions, 'createGame')({
+    teamNames: names })).data as { gameId: string; joinCode: string };
+  const teamsSnap = await adminDb().collection(`games/${gameId}/teams`).get();
+  const teamIds = names.map((nm) => teamsSnap.docs.find((d) => d.data().name === nm)!.id);
+  const prof: Client = {
+    uid: cred.user.uid,
+    call: <T,>(fn: string, data: unknown) =>
+      httpsCallable(functions, fn)(data).then((r) => r.data as T),
+    dispose: async () => {},
+  };
+  const bots: Seeded['bots'] = [];
+  for (const [i, teamId] of teamIds.entries()) {
+    const gm = await newClient(`fgm${i}`);
+    const scout = await newClient(`fsc${i}`);
+    const coach = await newClient(`fco${i}`);
+    await gm.call('joinGame', { joinCode, teamId, role: 'GM', displayName: `GM${i}` });
+    await scout.call('joinGame', { joinCode, teamId, role: 'Scout', displayName: `S${i}` });
+    await coach.call('joinGame', { joinCode, teamId, role: 'Coach', displayName: `C${i}` });
+    bots.push({ teamId, gm, scout, coach });
+  }
+  const seeded: Seeded = { gameId, joinCode, teamIds, prof, bots };
+  await driveTo(seeded, 'FINALE');
+  return seeded;
+}
+
+describe('T13: finale wall + reveal stepper', () => {
+  let seeded: Seeded;
+  beforeAll(async () => {
+    seeded = await seedProfFinale(['Alpha', 'Beta']);
+    // Earlier tests in this file join the default user into THEIR game and
+    // set sessionStorage 'ss.gameId'; with it set, GameContext wakes up and
+    // PhaseRouter would yank /professor and /bigscreen to /game/conclusion.
+    // Clear it so GameProvider stays dormant on the new surfaces.
+    sessionStorage.removeItem('ss.gameId');
+    localStorage.setItem('ss.profGameId', seeded.gameId);
+  }, 600000);
+
+  test('panel stepper: › advances revealStep 0→1 via setRevealStep', async () => {
+    render(<MemoryRouter initialEntries={['/professor']}><App /></MemoryRouter>);
+    // revealStep is absent until the first setRevealStep call (T3); the
+    // stepper's `?? 0` default still shows step 1 of 5.
+    await waitFor(() => expect(screen.getByTestId('reveal-step-name'))
+      .toHaveTextContent('1 of 5 · Podium'), { timeout: 20000 });
+    expect(screen.getByRole('button', { name: 'previous step' })).toBeDisabled();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'next step' }));
+    await waitFor(async () => {
+      const g = (await adminDb().doc(`games/${seeded.gameId}`).get()).data()!;
+      expect(g.revealStep).toBe(1);
+    }, { timeout: 15000 });
+    await waitFor(() => expect(screen.getByTestId('reveal-step-name'))
+      .toHaveTextContent('2 of 5 · Hype vs Reality'), { timeout: 15000 });
+  }, 120000);
+
+  test('wall: renders the revealStep chart; podium at 0; clamps 8 to the last step', async () => {
+    // revealStep is 1 after the stepper test above → the wall opens on the
+    // hype-vs-TrueImpact scatter, not the podium.
+    render(<MemoryRouter initialEntries={['/bigscreen']}><App /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByTestId('finale-scatter')).toBeInTheDocument(),
+      { timeout: 20000 });
+    expect(screen.queryByTestId('finale-podium')).toBeNull();
+
+    // Harness professor steps back to 0 → podium = top three of the FINAL
+    // standings (rounds/5 — game.round is 5 at FINALE).
+    await seeded.prof.call('setRevealStep', { gameId: seeded.gameId, step: 0 });
+    await waitFor(() => expect(screen.getByTestId('finale-podium')).toBeInTheDocument(),
+      { timeout: 15000 });
+    expect(screen.getByTestId('finale-step-title')).toHaveTextContent('Podium');
+    const rd = (await adminDb().doc(`games/${seeded.gameId}/rounds/5`).get()).data()!;
+    const first = rd.standings.find((r: { rank: number }) => r.rank === 1)!;
+    expect(screen.getByTestId('finale-podium')).toHaveTextContent(first.name);
+
+    // Server accepts 0..8; the wall clamps to its 5 steps → 8 parks on the
+    // last chart, never a blank wall.
+    await seeded.prof.call('setRevealStep', { gameId: seeded.gameId, step: 8 });
+    await waitFor(() => expect(screen.getByTestId('finale-bestworst')).toBeInTheDocument(),
+      { timeout: 15000 });
+    expect(screen.getByTestId('finale-step-title')).toHaveTextContent('Best & worst signings');
+  }, 120000);
+});

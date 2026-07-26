@@ -8,6 +8,7 @@ import { SessionSetup } from '../../components/professor/SessionSetup';
 import { AdvanceControl } from '../../components/professor/AdvanceControl';
 import { TimerStrip } from '../../components/professor/TimerStrip';
 import { SubmissionGrid } from '../../components/professor/SubmissionGrid';
+import { RevealStepper } from '../../components/professor/RevealStepper';
 import { RoundContext } from '../../components/professor/RoundContext';
 import { ErrorNotice } from '../../components/ui/ErrorNotice';
 import { concatBoxCsv } from '../../lib/exportSeason';
@@ -56,6 +57,7 @@ export default function ProfessorPage() {
       <AdvanceControl />
       <TimerStrip />
       <SubmissionGrid />
+      <RevealStepper />
       <RoundContext />
       <ExportSeasonButton />
     </main>
