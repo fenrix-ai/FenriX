@@ -1,20 +1,14 @@
 import { useState } from 'react';
 import { useProfessor } from '../../contexts/ProfessorContext';
 import { ErrorNotice } from '../ui/ErrorNotice';
+import { STEP_TITLES } from '../../lib/stepTitles';
 
 // Finale reveal stepper (design spec §5.8): FINALE-only professor control
 // walking the projector wall through the five reveal steps via setRevealStep
 // (professor-only callable; phase must be FINALE server-side too). Renders
 // null outside FINALE, so ProfessorPage mounts it unconditionally.
-// ‹ › are sanctioned glyphs, not emojis. Step names are contract-fixed,
-// verbatim — shared with FinaleWall. Never re-word them.
-const STEPS = [
-  'Podium',
-  'Hype vs Reality',
-  'What the engine paid for',
-  'Wins per dollar',
-  'Best & worst signings',
-] as const;
+// ‹ › are sanctioned glyphs, not emojis. Step names come from the ONE shared
+// module (src/lib/stepTitles.ts) — same array FinaleWall renders.
 
 export function RevealStepper() {
   const { gameId, game, call } = useProfessor();
@@ -25,9 +19,9 @@ export function RevealStepper() {
   // wire, but this panel only addresses the 5 steps the wall renders.
   // revealStep is absent until the first setRevealStep call (T3) — the `?? 0`
   // default shows "1 of 5 · Podium" on a freshly finished game.
-  const step = Math.min(STEPS.length - 1, Math.max(0, game.revealStep ?? 0));
+  const step = Math.min(STEP_TITLES.length - 1, Math.max(0, game.revealStep ?? 0));
   const go = async (next: number) => {
-    const target = Math.min(STEPS.length - 1, Math.max(0, next));
+    const target = Math.min(STEP_TITLES.length - 1, Math.max(0, next));
     if (target === step) return;
     setBusy(true); setErr(null);
     try {
@@ -46,10 +40,10 @@ export function RevealStepper() {
         </button>
         <span data-testid="reveal-step-name"
           style={{ minWidth: 230, textAlign: 'center' }}>
-          {step + 1} of {STEPS.length} · {STEPS[step]}
+          {step + 1} of {STEP_TITLES.length} · {STEP_TITLES[step]}
         </span>
         <button type="button" className="btn" aria-label="next step"
-          disabled={busy || step === STEPS.length - 1} onClick={() => void go(step + 1)}>
+          disabled={busy || step === STEP_TITLES.length - 1} onClick={() => void go(step + 1)}>
           {'›'}
         </button>
       </div>

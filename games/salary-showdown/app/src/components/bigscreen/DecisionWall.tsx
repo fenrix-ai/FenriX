@@ -33,7 +33,11 @@ export function DecisionWall() {
         </div>
       </header>
       <div className="bs-lights" data-testid="bs-lights">
-        {[...teams.entries()].map(([tid, t]) => (
+        {/* Sorted by name — the SAME order as the panel's SubmissionGrid, so
+            the professor and the wall read the room identically. */}
+        {[...teams.entries()]
+          .sort((a, b) => a[1].name.localeCompare(b[1].name))
+          .map(([tid, t]) => (
           <div key={tid} className="bs-light-row">
             <span className={lit.has(tid) ? 'bs-dot ok' : 'bs-dot dim'} aria-hidden="true">
               {lit.has(tid) ? '●' : '○'}

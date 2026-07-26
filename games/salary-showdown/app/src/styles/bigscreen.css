@@ -51,3 +51,17 @@
 .bs-shuffle-record { color: var(--muted); }
 .bs-delta { min-width: 3.2em; text-align: right; }
 .bs-shuffle-shroud { color: var(--gold); letter-spacing: 0.06em; }
+
+/* --- Plan 3b Task 2: FinaleWall on the bs-* clamp scale --- */
+.bs-finale-kicker { font-size: clamp(16px, 2vw, 30px); letter-spacing: 0.2em;
+  text-transform: uppercase; }
+.bs-step-title { font-size: clamp(36px, 5.5vw, 84px); margin: 8px 0 28px; }
+.bs-podium { display: flex; justify-content: center; align-items: flex-end; gap: 28px; }
+.bs-podium-card { padding: 26px 32px; min-width: 220px; }
+.bs-podium-card.champ { padding: 40px 44px; }
+.bs-podium-rank { font-size: clamp(28px, 3.5vw, 56px); color: var(--gold); }
+.bs-podium-card.champ .bs-podium-rank { font-size: clamp(40px, 5vw, 80px); }
+.bs-podium-name { font-size: clamp(20px, 2.4vw, 38px); font-weight: 800; }
+.bs-podium-card.champ .bs-podium-name { font-size: clamp(26px, 3.2vw, 50px); }
+.bs-podium-record { font-size: clamp(16px, 1.8vw, 30px); }
+.bs-finale-loading { font-size: clamp(18px, 2.2vw, 34px); }

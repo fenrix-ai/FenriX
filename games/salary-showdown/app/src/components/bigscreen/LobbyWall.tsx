@@ -19,7 +19,10 @@ export function LobbyWall() {
       <p className="bs-joinline">join at {window.location.origin}/?code={game.joinCode}</p>
       <p className="bs-seats">{claimed.length} of {seatTotal} seats filled</p>
       <div className="bs-teamgrid">
-        {[...teams.entries()].map(([tid, t]) => (
+        {/* Sorted by name — same ordering as SubmissionGrid on the panel. */}
+        {[...teams.entries()]
+          .sort((a, b) => a[1].name.localeCompare(b[1].name))
+          .map(([tid, t]) => (
           <section key={tid} className="bs-teamcard">
             <h2>{t.name}</h2>
             <div className="bs-chips">

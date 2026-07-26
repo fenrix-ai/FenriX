@@ -14,9 +14,10 @@ import { ErrorNotice } from '../../components/ui/ErrorNotice';
 import { concatBoxCsv } from '../../lib/exportSeason';
 import type { RoundDoc } from '../../types/models';
 
-// /professor control-panel shell (design spec §5.1). Later tasks mount below
-// the header: SessionSetup + AdvanceControl (T7), TimerStrip (T8),
-// SubmissionGrid (T9), RevealStepper (T13).
+// /professor control-panel shell (design spec §5.1). Mounted below the
+// header: SessionSetup, AdvanceControl, TimerStrip, SubmissionGrid,
+// RevealStepper, RoundContext and the season CSV export — each renders null
+// outside the phases it serves.
 export default function ProfessorPage() {
   const { gameId, game, settling, setGameId } = useProfessor();
   return (

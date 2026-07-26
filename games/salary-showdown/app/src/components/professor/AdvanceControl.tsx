@@ -3,27 +3,10 @@ import { useProfessor } from '../../contexts/ProfessorContext';
 import { PHASE_NAMES } from '../../lib/phaseNames';
 import { LIGHT_PHASES, submittedTeamIds } from '../../lib/submissionLights';
 import { ErrorNotice } from '../ui/ErrorNotice';
-import type { Phase } from '../../types/models';
+import { nextOf, TOTAL_ROUNDS } from '../../lib/phaseOrder';
 
-// Phase order within a round (contracts): FRONT_OFFICE → FREE_AGENCY →
-// AUCTION → LINEUP → SIMULATE → RESULTS → (next round's FRONT_OFFICE, or
-// FINALE after round 5). Round 1 enters at FREE_AGENCY via startSeason; the
-// order still applies from there.
-const ORDER: Phase[] = ['FRONT_OFFICE', 'FREE_AGENCY', 'AUCTION', 'LINEUP', 'SIMULATE', 'RESULTS'];
-// config.totalRounds is decorative (Plan 1 ruling: display read-only, never
-// editable, never authoritative). The season is 5 rounds, hard-coded.
-const TOTAL_ROUNDS = 5;
-
-function nextOf(phase: Phase, round: number): { phase: Phase; round: number } | null {
-  const i = ORDER.indexOf(phase);
-  if (i === -1) return null; // LOBBY / FINALE: no advance control
-  if (phase === 'RESULTS') {
-    return round >= TOTAL_ROUNDS
-      ? { phase: 'FINALE', round }
-      : { phase: 'FRONT_OFFICE', round: round + 1 };
-  }
-  return { phase: ORDER[i + 1], round };
-}
+// Phase order + nextOf live in src/lib/phaseOrder.ts (client mirror of
+// backend phases.js, parity-pinned by phaseOrder.test.ts).
 
 type Confirm = { kind: 'missing'; names: string[] } | { kind: 'season-end' };
 

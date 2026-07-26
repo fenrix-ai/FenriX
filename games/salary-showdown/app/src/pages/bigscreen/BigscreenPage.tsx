@@ -12,14 +12,16 @@ import '../../styles/bigscreen.css';
 // Display-only surface: no controls anywhere below this line.
 export default function BigscreenPage() {
   const { game } = useProfessor();
-  if (!game) {
-    return (
-      <main className="bigscreen bs-center">
-        <div className="brand bs-brand">Salary Showdown</div>
-        <p className="bs-sub">Waiting for a session.</p>
-      </main>
-    );
-  }
+  // The no-game shell doubles as the default switch arm: the Phase union is
+  // exhaustive at compile time, but game.phase arrives off the wire untyped —
+  // a runtime-unknown value must show this shell, never a blank projector.
+  const shell = (
+    <main className="bigscreen bs-center">
+      <div className="brand bs-brand">Salary Showdown</div>
+      <p className="bs-sub">Waiting for a session.</p>
+    </main>
+  );
+  if (!game) return shell;
   switch (game.phase) {
     case 'LOBBY':
       return <LobbyWall />;
@@ -34,5 +36,7 @@ export default function BigscreenPage() {
       return <StandingsShuffle />;
     case 'FINALE':
       return <FinaleWall />;
+    default:
+      return shell;
   }
 }

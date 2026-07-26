@@ -3,25 +3,19 @@ import { BestWorst } from '../charts/BestWorst';
 import { ScatterTI } from '../charts/ScatterTI';
 import { WeightsCompare } from '../charts/WeightsCompare';
 import { WinsPerDollar } from '../charts/WinsPerDollar';
+import { STEP_TITLES } from '../../lib/stepTitles';
 import type { StandingsRow } from '../../types/models';
 
 // FINALE wall (design spec §6.5): the projector face of the sanctioned reveal
 // (parent spec §11.14) — value-per-dollar, wins-per-dollar, trap labels and the
 // weights comparison are exactly what this surface exists to show. Read-only:
 // the professor's RevealStepper is the only control; this wall just follows
-// games/{id}.revealStep. No interactivity, no emojis, big type on the dark
-// global theme.
+// games/{id}.revealStep. No interactivity, no emojis. Wrapped in the same
+// <main className="bigscreen bs-center"> shell as every other wall so it sits
+// on the bs-* clamp() type scale (720p projector ↔ 4K panel).
 //
-// Step titles are contract-fixed, verbatim — shared with RevealStepper. Never
-// re-word them.
-const STEP_TITLES = [
-  'Podium',
-  'Hype vs Reality',
-  'What the engine paid for',
-  'Wins per dollar',
-  'Best & worst signings',
-] as const;
-
+// Step titles come from the ONE shared module (src/lib/stepTitles.ts) — the
+// same array RevealStepper renders. Never re-word them.
 export function FinaleWall() {
   const { game, round, reveal, teams } = useProfessor();
   if (!game) return null;
@@ -44,34 +38,26 @@ export function FinaleWall() {
   const podiumOrder = [podium[1], podium[0], podium[2]]
     .filter((r): r is StandingsRow => r !== undefined);
   return (
-    <div data-testid="finale-wall" style={{ textAlign: 'center', padding: '24px 0' }}>
-      <div className="dim"
-        style={{ fontSize: 26, letterSpacing: '0.2em', textTransform: 'uppercase' }}>
-        Finale
-      </div>
-      <h1 data-testid="finale-step-title" style={{ fontSize: 52, margin: '8px 0 28px' }}>
+    <main className="bigscreen bs-center" data-testid="finale-wall">
+      <div className="brand bs-brand">Salary Showdown</div>
+      <div className="dim bs-finale-kicker">Finale</div>
+      <h1 className="bs-step-title" data-testid="finale-step-title">
         {STEP_TITLES[step]}
       </h1>
       {step === 0 && (
-        <div data-testid="finale-podium" style={{ display: 'flex',
-          justifyContent: 'center', alignItems: 'flex-end', gap: 28 }}>
+        <div data-testid="finale-podium" className="bs-podium">
           {podiumOrder.map((r) => (
-            <div key={r.teamId} className="card"
-              style={{ padding: r.rank === 1 ? '40px 44px' : '26px 32px', minWidth: 220 }}>
-              <div className="mono"
-                style={{ fontSize: r.rank === 1 ? 64 : 44, color: 'var(--gold)' }}>
-                #{r.rank}
-              </div>
-              <div style={{ fontSize: r.rank === 1 ? 40 : 30, fontWeight: 800 }}>
-                {r.name}
-              </div>
-              <div className="muted" style={{ fontSize: 24 }}>{r.wins}–{r.losses}</div>
+            <div key={r.teamId}
+              className={r.rank === 1 ? 'card bs-podium-card champ' : 'card bs-podium-card'}>
+              <div className="mono bs-podium-rank">#{r.rank}</div>
+              <div className="bs-podium-name">{r.name}</div>
+              <div className="muted bs-podium-record">{r.wins}–{r.losses}</div>
             </div>
           ))}
         </div>
       )}
       {step > 0 && !reveal && (
-        <p className="dim" style={{ fontSize: 28 }}>Loading the reveal…</p>
+        <p className="dim bs-finale-loading">Loading the reveal…</p>
       )}
       {step === 1 && reveal && (
         <div data-testid="finale-scatter">
@@ -94,6 +80,6 @@ export function FinaleWall() {
             playerNames={playerNames} />
         </div>
       )}
-    </div>
+    </main>
   );
 }

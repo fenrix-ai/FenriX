@@ -7,6 +7,16 @@ import { adminDb, driveTo, newClient, type Client, type Seeded } from './harness
 import { auth, functions } from '../lib/firebase';
 import App from '../App';
 
+// ss.prof* panel prefs are PANEL-LOCAL localStorage. Every test starts from a
+// clean slate and states its OWN keys explicitly — before this pass the T8
+// timer tests leaked ss.profAutoArm / ss.profAutoAdvance / ss.profTimerDefaults
+// forward into the T9 grid test (harmless only because autoArm '0' kept
+// timers off; leaked state is a flake seed, not a baseline). Task 1's
+// ss.profArmedKey is cleared here too.
+beforeEach(() => {
+  localStorage.clear();
+});
+
 test('professor panel: creator sees join code + Lobby; header follows startSeason and advance', async () => {
   // The app under test IS the professor: createGame stamps the caller's uid as
   // professorUid, and every panel listener rides that rule right. The professor
@@ -44,6 +54,8 @@ test('professor panel: creator sees join code + Lobby; header follows startSeaso
   const seeded: Seeded = { gameId, joinCode, teamIds, prof, bots };
 
   localStorage.setItem('ss.profGameId', gameId);
+  localStorage.setItem('ss.profAutoArm', '0');     // deterministic: no advisory auto-timers
+  localStorage.setItem('ss.profAutoAdvance', '0');
   render(<MemoryRouter initialEntries={['/professor']}><App /></MemoryRouter>);
   await waitFor(() => expect(screen.getByText(joinCode)).toBeInTheDocument(),
     { timeout: 20000 });
@@ -66,7 +78,9 @@ test('professor panel: creator sees join code + Lobby; header follows startSeaso
 test('panel: create enforces the 21-franchise cap, lists franchises, starts the season', async () => {
   await signInAnonymously(auth);
   await waitFor(() => expect(auth.currentUser).toBeTruthy(), { timeout: 15000 });
-  localStorage.removeItem('ss.profGameId'); // fresh panel: force the create/resume view
+  // beforeEach cleared ss.profGameId — the panel opens on the create/resume view.
+  localStorage.setItem('ss.profAutoArm', '0');
+  localStorage.setItem('ss.profAutoAdvance', '0');
   const user = userEvent.setup();
   render(<MemoryRouter initialEntries={['/professor']}><App /></MemoryRouter>);
 
@@ -119,6 +133,8 @@ test('panel advance: all-lights-on skips the modal; a missing submission names t
   for (const bot of bots) await bot.gm.call('markDone', { gameId });
 
   localStorage.setItem('ss.profGameId', gameId);
+  localStorage.setItem('ss.profAutoArm', '0');
+  localStorage.setItem('ss.profAutoAdvance', '0');
   const user = userEvent.setup();
   render(<MemoryRouter initialEntries={['/professor']}><App /></MemoryRouter>);
 
@@ -305,6 +321,8 @@ test('submission grid: lights track markDone, bids, lineup locks; absent in SIMU
   // light rule apply identically in FREE_AGENCY.
   await driveTo(seeded, 'R1:FREE_AGENCY');
   localStorage.setItem('ss.profGameId', seeded.gameId);
+  localStorage.setItem('ss.profAutoArm', '0');     // previously leaked in from the T8 tests
+  localStorage.setItem('ss.profAutoAdvance', '0');
   render(<MemoryRouter initialEntries={['/professor']}><App /></MemoryRouter>);
   const [alphaId, betaId] = seeded.teamIds;
 
