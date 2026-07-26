@@ -235,7 +235,14 @@ Clear-session button, useRoundDoc error callback, FinaleWall type-scale rewrap, 
 rounds/{r-1} sourcing during decision phases).
 
 **Remaining (Plan 3b — production):** items 4-5 below plus the pre-class checklist in §5.
-Gated on Dylan creating the Blaze Firebase project (console work only he can do).
+**3b facts locked 2026-07-25:** Firebase project **`salary-showdown`** (number 713437533994)
+exists and **Blaze billing is PAID/ON** (Dylan confirmed). Region decision: **us-west1** for
+Firestore AND Functions (co-located; client pins `getFunctions(app, 'us-west1')`). Console state
+at planning time was a clean slate: no apps, Firestore API disabled, no resource location — the
+3b plan provisions everything. Cost expectation set with Dylan: <$1 per class session or load
+drill, $0 idle, $10 budget alert as tripwire (alerts don't hard-stop spend). CLI on this machine
+is logged in and can see the project. `.firebaserc` default stays `salary-showdown-dev`; deploys
+use an explicit `prod` alias.
 
 1. **Professor control panel** (`/professor`) — phase advance/pause, timers, per-team submission
    lights, force-advance (applies the same defaults as a §13 timeout), config knobs editable only
