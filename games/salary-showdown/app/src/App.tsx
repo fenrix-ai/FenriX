@@ -12,17 +12,9 @@ import LineupPage from './pages/LineupPage';
 import SimulatePage from './pages/SimulatePage';
 import ResultsPage from './pages/ResultsPage';
 import StandingsPage from './pages/StandingsPage';
+import FinalePage from './pages/FinalePage';
 import ProfessorPage from './pages/professor/ProfessorPage';
 import BigscreenPage from './pages/bigscreen/BigscreenPage';
-
-const Stub = ({ name }: { name: string }) => (
-  <main style={{ color: '#f2f5fa', padding: 24 }}>
-    <h1 style={{ color: '#ffc94d', fontStyle: 'italic', textTransform: 'uppercase' }}>
-      Salary Showdown
-    </h1>
-    <p data-testid="stub">{name} — under construction</p>
-  </main>
-);
 
 export default function App() {
   return (
@@ -38,7 +30,7 @@ export default function App() {
           <Route path="/game/lineup" element={<LineupPage />} />
           <Route path="/game/simulate" element={<SimulatePage />} />
           <Route path="/game/results" element={<ResultsPage />} />
-          <Route path="/game/conclusion" element={<Stub name="Finale (Plan 3)" />} />
+          <Route path="/game/conclusion" element={<FinalePage />} />
           <Route path="/standings" element={<StandingsPage />} />
           <Route path="/professor"
             element={<ProfessorProvider><ProfessorPage /></ProfessorProvider>} />

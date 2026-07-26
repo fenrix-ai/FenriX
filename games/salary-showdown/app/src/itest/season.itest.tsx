@@ -34,6 +34,6 @@ test('a joined client follows a whole season, lobby to finale', async () => {
     { timeout: 30000 });
 
   await driveTo(seeded, 'FINALE');
-  await waitFor(() => expect(screen.getByTestId('stub')).toHaveTextContent('Finale (Plan 3)'),
-    { timeout: 30000 });
+  await waitFor(() => expect(screen.getByRole('heading', { name: 'Final Podium' }))
+    .toBeInTheDocument(), { timeout: 30000 });
 }, 300000);
