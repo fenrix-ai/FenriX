@@ -52,6 +52,15 @@ describe('auction flow (sealed bids -> resolution)', () => {
       .rejects.toThrow('NOT_IN_WAVE');
   });
 
+  // Shape guard: a null (or non-object) `bids` payload must fail as a named,
+  // catchable error at the callable boundary — not slip past `validateBids`'s
+  // `bids ?? {}` and crash downstream at `Object.keys(bids).length` with a raw
+  // "Cannot convert undefined or null to object" TypeError.
+  it('rejects a null bids payload with BAD_SHAPE instead of crashing at Object.keys', async () => {
+    await expect(call(submitBids, { gameId, bids: null }, 'scoutA'))
+      .rejects.toThrow('BAD_SHAPE');
+  });
+
   it('a Scout cannot bid on behalf of another team even with a spoofed teamId in the payload', async () => {
     // scoutA bids on the contested star AND a second star, with an extra `teamId`
     // field pointing at teamB tacked onto the payload — submitBids must ignore it

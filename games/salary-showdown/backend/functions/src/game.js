@@ -418,6 +418,11 @@ export const markDone = onCall(async (req) => {
 // endpoint cannot be used to bid on another team's behalf.
 export const submitBids = onCall(async (req) => {
   const { gameId, bids } = req.data;
+  // Shape guard: bids is always a plain object, never null — enforced here instead
+  // of crashing downstream at Object.keys(bids) (same rationale as signPlayer's pid
+  // guard above).
+  if (bids === null || typeof bids !== 'object' || Array.isArray(bids))
+    throw new HttpsError('invalid-argument', 'BAD_SHAPE');
   const { teamId } = await memberWithRole(gameId, req.auth?.uid, 'Scout');
   // Transactional so the phase check and the bid write are one atomic unit against
   // advancePhase's flip-first transaction: a last-second submit either commits

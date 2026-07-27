@@ -69,6 +69,20 @@ describe('market flow (signing, cutting, hardship, non-exclusive shared catalog)
       .rejects.toThrow('BAD_SHAPE');
   });
 
+  // Non-string malformed shapes must be caught too: a single-element array like
+  // [pid] stringifies to the SAME object key as the bare pid (`[1140] + '' ===
+  // '1140'`), so before this guard it sailed straight past the `catalogById[pid]`
+  // lookup as a false "hit" instead of failing immediately. `Number.isFinite`
+  // rejects it outright, regardless of what it happens to coerce to.
+  it('rejects a non-scalar pid (e.g. an array wrapping a real pid) with BAD_SHAPE', async () => {
+    const market = (await db.doc(`games/${gameId}/market/1`).get()).data();
+    const realPid = market.available[4];
+    await expect(call(signPlayer, { gameId, pid: [realPid], years: 2 }, 'gmA'))
+      .rejects.toThrow('BAD_SHAPE');
+    await expect(call(signPlayer, { gameId, pid: null, years: 2 }, 'gmA'))
+      .rejects.toThrow('BAD_SHAPE');
+  });
+
   it('another team CAN sign its own copy of the same pid (non-exclusive)', async () => {
     const { contract } = await call(signPlayer, { gameId, pid: sharedPid, years: 1 }, 'gmB');
     expect(contract.pid).toBe(sharedPid);
