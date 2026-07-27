@@ -1,5 +1,6 @@
 import { makeRng } from './rng.js';
 import { askPrice, contractRate, capOkWith, hypeCurve, CAP, TOTAL_ROUNDS } from './payroll.js';
+import { SYNTHETIC_MIN_PID } from './synthetics.js';
 
 const DRAW_SHARE = { first: 0.75, later: 0.45 };
 // Starting-five position minimum (engine.js's pickLineup uses the same 2G/2W/1B need).
@@ -20,6 +21,16 @@ export function drawMarket({ gameId, round, faPool, absentCounts, extraPids = []
 export function validateSigning({ team, pid, years, round, marketAvailable, catalogById, isResign, unsoldPrices = {} }) {
   const p = catalogById[pid];
   if (!p) throw new Error('NOT_IN_MARKET');
+  // Synthetic Default Role Players are NEVER signable through a callable (spec §2,
+  // controller ruling 2026-07-26). They are in CATALOG only so hardship contracts
+  // resolve a name, and hardship is the sole path onto a roster. Without this guard
+  // an expired DRP surfaces as an expiring contract and re-signs off the hype curve
+  // (its salary_per_round of '0.0' is falsy, so hypeCurve(1.0) = $2.0/round) as an
+  // ORDINARY contract — cheap roster filler that also sheds the `hardship` flag and
+  // becomes bargain-eligible again. Guarded here, before the roster/cap checks, so
+  // every caller (market signing AND front-office re-sign) is covered at one choke
+  // point; expiringPids additionally keeps them out of the re-sign list entirely.
+  if (pid >= SYNTHETIC_MIN_PID) throw new Error('NOT_IN_MARKET');
   const maxYears = TOTAL_ROUNDS - round + 1;
   if (!Number.isInteger(years) || years < 1 || years > maxYears) throw new Error('BAD_YEARS');
   if (!isResign && !marketAvailable.includes(pid)) throw new Error('NOT_IN_MARKET');

@@ -73,6 +73,11 @@ describe('sim flow (round-robin sim fires on LINEUP -> SIMULATE, rounds/{r} pers
     // "TypeError: Cannot read properties of undefined (reading 'comps')" out of
     // teamStrength (and 'exp' out of teamBox) and took the whole SIMULATE hook down.
     // Getting here at all is the crash pin; the rest asserts the DRP really played.
+    // toCsv only ever emits a quote when a field needs escaping (comma/quote/newline).
+    // No field in this fixture contains one — team names are 'Alpha'/'Beta' and the
+    // synthetic is 'Default Role Player' — so asserting the CSV is quote-free makes
+    // the naive split below provably column-safe rather than incidentally so.
+    expect(round.boxCsv).not.toContain('"');
     const rows = round.boxCsv.split('\n').slice(1).map((l) => l.split(','));
     const nameCol = header.indexOf('player_name');
     const pidCol = header.indexOf('player_id');

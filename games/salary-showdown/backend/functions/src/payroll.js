@@ -1,3 +1,5 @@
+import { SYNTHETIC_MIN_PID } from './synthetics.js';
+
 export const CAP = 100.0;
 export const TOTAL_ROUNDS = 5;
 export const INFLATION = 1.08;
@@ -41,8 +43,13 @@ export function cutPlayer(team, pid, currentRound) {
   return { ...team, roster: team.roster.filter((x) => x.pid !== pid), deadMoney };
 }
 
+// Synthetic Default Role Players are excluded (spec §2, controller ruling
+// 2026-07-26): their 1-round hardship deals expire every round, so without this they
+// would dominate the front-office re-sign list with $2 filler that is not supposed to
+// be signable at all. validateSigning rejects the pid range too — this keeps them from
+// ever being OFFERED, that stops them from being ACCEPTED.
 export function expiringPids(team, round) {
   return team.roster
-    .filter((c) => c.startRound + c.years - 1 === round - 1)
+    .filter((c) => c.startRound + c.years - 1 === round - 1 && c.pid < SYNTHETIC_MIN_PID)
     .map((c) => c.pid);
 }

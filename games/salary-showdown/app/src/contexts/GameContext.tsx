@@ -77,7 +77,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     }, () => {});
   }, [gameId, membership?.teamId]);
 
-  useEffect(() => { // catalog: 175 static docs — fetch once per game
+  useEffect(() => { // catalog: 183 static docs (175 players + 8 synthetics) — fetch once per game
     if (!gameId || !membership?.teamId) { setCatalog(new Map()); return; }
     let cancelled = false;
     void getDocs(collection(db, 'games', gameId, 'catalog')).then((snap) => {

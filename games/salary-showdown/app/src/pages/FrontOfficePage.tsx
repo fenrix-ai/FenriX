@@ -8,7 +8,7 @@ import { TickerBar } from '../components/ui/TickerBar';
 import { PositionBadge } from '../components/ui/PositionBadge';
 import { HypeStars } from '../components/ui/HypeStars';
 import { ErrorNotice } from '../components/ui/ErrorNotice';
-import { activeContracts, expiringPids } from '../lib/contracts';
+import { activeContracts, expiringPids, isSynthetic } from '../lib/contracts';
 import { askPrice, contractRate, fmtM, hypeCurve, maxYears } from '../lib/money';
 import type { CatalogPlayer, Contract } from '../types/models';
 
@@ -50,8 +50,13 @@ export default function FrontOfficePage() {
   const justResigned = useMemo(
     () => actives.filter((c) => c.startRound === round).map((c) => c.pid),
     [actives, round]);
+  // Synthetic Default Role Players never appear here: hardship is the only way they
+  // reach a roster and the server refuses to re-sign them (spec §2, 2026-07-26).
+  // expiringPids already strips them; the guard is repeated on the rendered list so
+  // the justResigned union can never smuggle one back in.
   const expiring = useMemo(
-    () => [...stillExpiring, ...justResigned], [stillExpiring, justResigned]);
+    () => [...stillExpiring, ...justResigned].filter((pid) => !isSynthetic(pid)),
+    [stillExpiring, justResigned]);
   const tonightStars = useMemo(
     () => [...catalog.values()].filter((p) => Number(p.auction_round) === round),
     [catalog, round]);

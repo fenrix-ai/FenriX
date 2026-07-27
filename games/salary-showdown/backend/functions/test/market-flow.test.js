@@ -4,7 +4,8 @@ import { getFirestore } from 'firebase-admin/firestore';
 import fft from 'firebase-functions-test';
 import players from '../src/data/players.json' with { type: 'json' };
 import { drawMarket } from '../src/market.js';
-import { askPrice, contractRate } from '../src/payroll.js';
+import { askPrice, contractRate, expiringPids } from '../src/payroll.js';
+import { SYNTHETICS } from '../src/synthetics.js';
 
 process.env.FIRESTORE_EMULATOR_HOST = 'localhost:8180';
 process.env.GCLOUD_PROJECT = 'salary-showdown-dev';
@@ -238,5 +239,33 @@ describe('re-sign path', () => {
     await db.doc(`games/${gid}`).update({ round: 2, phase: 'FRONT_OFFICE' });
 
     await expect(call(signPlayer, { gameId: gid, pid, years: 1 }, 'gmE')).rejects.toThrow(/expiring/i);
+  });
+
+  it('never offers or accepts an expired synthetic Default Role Player', async () => {
+    // Controller ruling 2026-07-26: hardship is the ONLY way a DRP reaches a roster.
+    // Its 1-round deal expires every round, so without the guards it would surface as
+    // an expiring contract and re-sign off the hype curve at ~$2/round as an ordinary
+    // (non-hardship, bargain-eligible) contract — cheap roster filler.
+    const res = await call(createGame, { teamNames: ['Eta', 'Theta'] }, 'prof4');
+    const gid = res.gameId;
+    const teams = await db.collection(`games/${gid}/teams`).get();
+    const teamId = teams.docs[0].id;
+    await call(joinGame, { joinCode: res.joinCode, teamId, role: 'GM', displayName: 'H' }, 'gmH');
+    const realPid = fa[22].pid;
+    const drpPid = SYNTHETICS[0].pid;
+    // both expired at the end of round 1; only the real one may be re-signed
+    await db.doc(`games/${gid}/teams/${teamId}`).update({ roster: [
+      { pid: realPid, rate: 4.0, startRound: 1, years: 1, viaAuction: false, hardship: false },
+      { pid: drpPid, rate: 0, startRound: 1, years: 1, viaAuction: false, hardship: true },
+    ] });
+    await db.doc(`games/${gid}`).update({ round: 2, phase: 'FRONT_OFFICE' });
+
+    const team = (await db.doc(`games/${gid}/teams/${teamId}`).get()).data();
+    expect(expiringPids(team, 2)).toEqual([realPid]);      // not offered
+    await expect(call(signPlayer, { gameId: gid, pid: drpPid, years: 4 }, 'gmH'))
+      .rejects.toThrow(/expiring/i);                        // and not accepted
+    // the real expiring contract still re-signs normally — the guard is targeted
+    const { contract } = await call(signPlayer, { gameId: gid, pid: realPid, years: 2 }, 'gmH');
+    expect(contract.pid).toBe(realPid);
   });
 });

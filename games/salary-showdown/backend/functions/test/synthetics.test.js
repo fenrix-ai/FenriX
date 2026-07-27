@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { SYNTHETICS, SYNTHETIC_MIN_PID, SYNTHETIC_HIDDEN } from '../src/synthetics.js';
-import { runHardship } from '../src/market.js';
+import { runHardship, validateSigning } from '../src/market.js';
+import { expiringPids } from '../src/payroll.js';
+import params from '../src/data/engine_params.json' with { type: 'json' };
 
 const CAT = Object.fromEntries(SYNTHETICS.map((p) => [p.pid, p]));
 const mk = (teamId, roster = []) => ({ teamId, roster });
@@ -76,5 +78,73 @@ describe('Default Role Player hardship (playtest-polish T2)', () => {
     const blocks = new Set(SYNTHETICS.map((p) => JSON.stringify(
       { ...SYNTHETIC_HIDDEN[p.pid], position: null })));
     expect(blocks.size).toBe(1);
+  });
+
+  // The two synergy gates are what make a DRP structurally weak rather than merely
+  // low-rated, so pin them as INEQUALITIES against engine_params.json — if either
+  // gate is ever retuned past the DRP's rating, a Default Role Player silently
+  // starts earning the spacing/rim bonus and this fails loudly.
+  it('sits below both synergy gates (read from engine_params, not hardcoded)', () => {
+    const h = SYNTHETIC_HIDDEN[SYNTHETICS[0].pid];
+    expect(h.attrs.three_pt).toBeLessThan(params.synergy.shooter_3pt_skill);
+    expect(h.attrs.defense).toBeLessThan(params.synergy.rim_block_skill);
+    expect(params.synergy.rim_block_skill).toBeLessThanOrEqual(params.synergy.rim_elite);
+  });
+
+  // Reviewer finding (2026-07-26): a real player's public card is a noisy observation
+  // of the same expectation the engine simulates from, so card/expected ratios across
+  // the real 175 cluster near 1.0. A hand-written card put the DRP at 0.417 — it
+  // understated the player the sim would actually produce. The card is now generated
+  // from the exp block; this pins that it stays generated.
+  it('publishes a card that matches the engine expectation it is generated from', () => {
+    const card = SYNTHETICS[0];
+    const e = SYNTHETIC_HIDDEN[card.pid].exp;
+    // the invariant: every per-game card field IS its exp counterpart at card
+    // precision (1dp), and every rate field at 3dp. toBeCloseTo(x, 1) == |diff| < 0.05,
+    // which is exactly what rounding to one decimal place can move a value.
+    expect(Number(card.mins_per_game)).toBeCloseTo(e.mins, 1);
+    expect(Number(card.pts_per_game)).toBeCloseTo(e.pts, 1);
+    expect(Number(card.fg_attempts_per_game)).toBeCloseTo(e.fga, 1);
+    expect(Number(card.rebounds_per_game)).toBeCloseTo(e.rebounds, 1);
+    expect(Number(card.assists_per_game)).toBeCloseTo(e.assists, 1);
+    expect(Number(card.steals_per_game)).toBeCloseTo(e.steals, 1);
+    expect(Number(card.blocks_per_game)).toBeCloseTo(e.blocks, 1);
+    expect(Number(card.turnovers_per_game)).toBeCloseTo(e.turnovers, 1);
+    expect(Number(card.fg_pct)).toBeCloseTo(e.fg_pct, 3);
+    expect(Number(card.three_pt_pct)).toBeCloseTo(e.three_pt_pct, 3);
+    expect(Number(card.ft_pct)).toBeCloseTo(e.ft_pct, 3);
+    // and the reviewer's own metric: the card/expected ratio on fg_attempts must sit
+    // inside the span the real 175 occupy ([0.753, 1.174]). The hand-written card
+    // scored 0.417 here, well outside it.
+    const ratio = Number(card.fg_attempts_per_game) / e.fga;
+    expect(ratio).toBeGreaterThan(0.753);
+    expect(ratio).toBeLessThan(1.174);
+    // prev_* mirrors current: a DRP has no season-over-season arc
+    expect(card.prev_pts_per_game).toBe(card.pts_per_game);
+    expect(card.prev_mins_per_game).toBe(card.mins_per_game);
+    expect(card.prev_fg_pct).toBe(card.fg_pct);
+  });
+
+  // Controller ruling 2026-07-26: hardship is the ONLY path onto a roster.
+  it('is never signable through validateSigning, and never offered as an expiring deal', () => {
+    const CATALOG = { ...CAT };
+    for (const p of SYNTHETICS) {
+      expect(() => validateSigning({
+        team: { roster: [], deadMoney: [] }, pid: p.pid, years: 1, round: 2,
+        marketAvailable: [p.pid], catalogById: CATALOG, isResign: false,
+      })).toThrow('NOT_IN_MARKET');
+      // the front-office re-sign path is the one that actually reached this before
+      expect(() => validateSigning({
+        team: { roster: [], deadMoney: [] }, pid: p.pid, years: 4, round: 2,
+        marketAvailable: [], catalogById: CATALOG, isResign: true,
+      })).toThrow('NOT_IN_MARKET');
+    }
+    // and a just-expired DRP is not even offered: a round-1 hardship deal alongside a
+    // real contract that expired the same round leaves only the real pid on the list.
+    const team = { roster: [
+      { pid: 9001, rate: 0, startRound: 1, years: 1, viaAuction: false, hardship: true },
+      { pid: 1001, rate: 5, startRound: 1, years: 1, viaAuction: false, hardship: false },
+    ] };
+    expect(expiringPids(team, 2)).toEqual([1001]);
   });
 });
