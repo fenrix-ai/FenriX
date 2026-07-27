@@ -3,8 +3,19 @@
 // This is a line-for-line port of datagen/engine.py — the Python module is the reference
 // implementation. Float parity to 1e-9 requires the SAME operations in the SAME order, so
 // resist the urge to "clean up" the arithmetic here; match the Python, not idiomatic JS.
-import hidden from './data/hidden.json' with { type: 'json' };
+import hiddenRaw from './data/hidden.json' with { type: 'json' };
 import params from './data/engine_params.json' with { type: 'json' };
+import { SYNTHETIC_HIDDEN } from './synthetics.js';
+
+// ADDITIVE-ONLY overlay for the hardship synthetics (spec §2, 2026-07-26): the 175
+// datagen entries are untouched, and the Python parity fixture covers exactly those.
+// The Python reference never simulates synthetics — they cannot appear in datagen
+// output — so cross-language parity holds over the entire shared domain. hidden.json
+// and datagen/export_runtime_bundle.py (which asserts exactly 175 entries) stay
+// untouched by design. NOTE this overlay is engine-local: game.js imports the RAW
+// hidden.json for the finale reveal, which is why a synthetic correctly has no
+// hiddenData entry there and drops out of best/worst-signing contention.
+const hidden = { ...hiddenRaw, ...SYNTHETIC_HIDDEN };
 
 const TIER = params.tier_weights;             // { starter, sixth, bench }
 const SYN = params.synergy;

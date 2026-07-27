@@ -43,6 +43,23 @@ games/{gameId}/teams/{teamId}         # PUBLIC team state (rosters are public li
                                       # "worst signing".
   lineup: {starters[5], sixth, bench[], playstyle} | null,
   lineupLockedRound, hardshipUsed: [round],
+                                      # HARDSHIP (spec §2, playtest-polish T2, 2026-07-26): the FREE_AGENCY
+                                      # exit hook no longer drafts real free agents. Every stranded slot gets
+                                      # a synthetic "Default Role Player" — pids 9001+ (src/synthetics.js),
+                                      # rate: 0, years: 1, hardship: true (still the marker), identical rows
+                                      # for every team and non-exclusive across teams. Nothing is cap-exempt
+                                      # anymore because nothing costs anything. The synthetic rows are seeded
+                                      # into catalog/{pid} so a hardship contract resolves a name like any
+                                      # other, but they are NEVER in players.json, FA_POOL, market draws,
+                                      # auction waves, or the finale reveal, and they are excluded from the
+                                      # bargain award (a $0 contract is not a bargain) and from best/worst
+                                      # signing. `owned` de-duplication inside runHardship matches ACTIVE
+                                      # contracts only, so the same pid is re-issued each round once its
+                                      # 1-round deal expires.
+                                      # Engine truth for these pids lives in synthetics.js's SYNTHETIC_HIDDEN
+                                      # and is merged into engine.js as an ADDITIVE overlay on hidden.json —
+                                      # the 175 datagen entries and the Python parity fixture are untouched,
+                                      # and hidden.json / the datagen exporter are never modified.
   doneRound: 0-5, donePhase: ''|FRONT_OFFICE|FREE_AGENCY   # "We're done" STATUS FLAG, NEVER a lock:
                                       # markDone (GM-only callable, valid only in FRONT_OFFICE/FREE_AGENCY)
                                       # stamps the game's current {round, phase} here. Professor-panel
@@ -59,7 +76,9 @@ games/{gameId}/teams/{teamId}/private/auction    # { bids: { [pid]: {rate, years
                                       # skippedRound is round-stamped so the client shows notes only for the
                                       # round just resolved; public auctions/{round}.results never carries
                                       # these, preserving sealed-bid privacy.
-games/{gameId}/catalog/{pid}          # public player card (26 CSV cols), seeded at createGame
+games/{gameId}/catalog/{pid}          # public player card (26 CSV cols), seeded at createGame:
+                                      # the 175 datagen players PLUS the 8 synthetic Default Role Players
+                                      # (pids 9001+, same columns) so hardship contracts resolve a name here.
 games/{gameId}/market/{round}         # { available: [pid], absentCounts: {pid: n}, unsoldPrices: {pid: rate} }  (public, server-written)
                                       # FA is NON-EXCLUSIVE (spec §4.2): available is a shared catalog of signable COPIES —
                                       # signing never removes a pid, and any number of teams may sign the same player;

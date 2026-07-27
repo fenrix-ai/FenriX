@@ -3,6 +3,7 @@ import { initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import fft from 'firebase-functions-test';
 import players from '../src/data/players.json' with { type: 'json' };
+import { SYNTHETICS } from '../src/synthetics.js';
 
 process.env.FIRESTORE_EMULATOR_HOST = 'localhost:8180';
 process.env.GCLOUD_PROJECT = 'salary-showdown-dev';
@@ -14,7 +15,9 @@ const { createGame, joinGame, startSeason, advancePhase, submitBids, submitLineu
         signPlayer, cutRosterPlayer } = await import('../src/game.js');
 const call = (fn, data, uid) => t.wrap(fn)({ data, auth: { uid, token: {} } });
 
-const byId = Object.fromEntries(players.map((p) => [p.pid, p]));
+// Mirrors game.js's CATALOG: this flow's teams are hardship-filled, so their rostered
+// pids are synthetic Default Role Players (spec §2, 2026-07-26), absent from players.json.
+const byId = Object.fromEntries([...players, ...SYNTHETICS].map((p) => [p.pid, p]));
 const wave1 = players.filter((p) => +p.auction_round === 1).map((p) => p.pid);
 
 // Builds a legal { starters[5], sixth, bench[] } (2G/2W/1B, all remaining actives on

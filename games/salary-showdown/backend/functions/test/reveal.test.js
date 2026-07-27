@@ -186,7 +186,11 @@ describe('reveal: spend accounting survives a cut (dead-money hall of shame)', (
     // is a real candidate — replicate game.js's exact fold over spendLog and confirm
     // the published best/worst match it, which only holds if spendLog (not roster,
     // which no longer contains the cut pid) is really what's being iterated.
-    const vals = teamADoc.spendLog.map((c) => ({
+    // The filter mirrors game.js: synthetic hardship contracts (spec §2, 2026-07-26)
+    // have no hiddenData entry — they are not part of the pre-released 175 — so they
+    // are excluded from best/worst-signing contention (a $0 contract is not a
+    // "signing" lesson) and would otherwise crash the ti lookup outright.
+    const vals = teamADoc.spendLog.filter((c) => hiddenData[c.pid]).map((c) => ({
       pid: c.pid, valuePerDollar: Math.round((hiddenData[c.pid].ti / Math.max(2, c.rate)) * 100) / 100 }));
     vals.sort((a, b) => b.valuePerDollar - a.valuePerDollar);
     const pt = reveal.perTeam.find((p) => p.teamId === teamA);

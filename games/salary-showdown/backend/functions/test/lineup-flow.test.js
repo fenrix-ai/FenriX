@@ -4,6 +4,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import fft from 'firebase-functions-test';
 import players from '../src/data/players.json' with { type: 'json' };
 import { validateLineup } from '../src/lineup.js';
+import { SYNTHETICS } from '../src/synthetics.js';
 
 process.env.FIRESTORE_EMULATOR_HOST = 'localhost:8180';
 process.env.GCLOUD_PROJECT = 'salary-showdown-dev';
@@ -14,7 +15,10 @@ const db = getFirestore();
 const { createGame, joinGame, startSeason, advancePhase, submitLineup } = await import('../src/game.js');
 const call = (fn, data, uid) => t.wrap(fn)({ data, auth: { uid, token: {} } });
 
-const byId = Object.fromEntries(players.map((p) => [p.pid, p]));
+// Mirrors game.js's CATALOG: both teams here are filled entirely by hardship, so every
+// rostered pid is a synthetic Default Role Player (spec §2, 2026-07-26) and a
+// players.json-only map would not resolve a single one of them.
+const byId = Object.fromEntries([...players, ...SYNTHETICS].map((p) => [p.pid, p]));
 
 // Builds a legal { starters[5], sixth, bench[] } (2G/2W/1B, all remaining actives on
 // the bench in the given roster order) out of a team's live roster pids.

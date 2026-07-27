@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { drawMarket, validateSigning, runHardship } from '../src/market.js';
 import players from '../src/data/players.json' with { type: 'json' };
 import { askPrice, contractRate, hypeCurve } from '../src/payroll.js';
+import { SYNTHETICS, SYNTHETIC_MIN_PID } from '../src/synthetics.js';
 
 const fa = players.filter((p) => !p.auction_round);
 const auctionClass = players.filter((p) => p.auction_round);
@@ -117,16 +118,24 @@ describe('validateSigning', () => {
   });
 });
 
+// The fill is synthetic "Default Role Player" rows now (spec §2, 2026-07-26), never
+// real free agents — so the catalog these tests resolve positions against must carry
+// the synthetics too, exactly like game.js's CATALOG does.
+const byIdAll = { ...byId, ...Object.fromEntries(SYNTHETICS.map((p) => [p.pid, p])) };
+
 describe('runHardship', () => {
-  it('fills a stranded team to a legal 8 with cap-exempt 1-round deals', () => {
+  it('fills a stranded team to a legal 8 with $0 synthetic 1-round deals', () => {
     const stranded = { teamId: 't1', roster: [], deadMoney: [{ rate: 99.0, startRound: 2, endRound: 5 }] };
-    const [fix] = runHardship({ teams: [stranded], faPool: fa, round: 2, catalogById: byId });
+    const [fix] = runHardship({ teams: [stranded], synthetics: SYNTHETICS, round: 2, catalogById: byIdAll });
     expect(fix.signings.length).toBe(8);
-    const pos = fix.signings.map((c) => byId[c.pid].position);
+    const pos = fix.signings.map((c) => byIdAll[c.pid].position);
     expect(pos.filter((x) => x === 'G').length).toBeGreaterThanOrEqual(2);   // LINEUP_NEED legality
     expect(pos.filter((x) => x === 'W').length).toBeGreaterThanOrEqual(2);
     expect(pos.filter((x) => x === 'B').length).toBeGreaterThanOrEqual(1);
     expect(fix.signings.every((c) => c.years === 1 && c.hardship)).toBe(true);
+    // no real FA is ever hardship-drafted, and the deals cost nothing against the cap
+    expect(fix.signings.every((c) => c.pid > SYNTHETIC_MIN_PID && c.rate === 0)).toBe(true);
+    expect(fix.signings.every((c) => byIdAll[c.pid].name === 'Default Role Player')).toBe(true);
   });
   it('leaves healthy teams alone', () => {
     // legality bar: >=2 G, >=2 W, >=1 B active and >=8 total (LINEUP_NEED + floor);
@@ -135,33 +144,46 @@ describe('runHardship', () => {
     const legalPids = [...byPos.G.slice(0, 3), ...byPos.W.slice(0, 3), ...byPos.B.slice(0, 2)].map((p) => p.pid);
     expect(legalPids.length).toBe(8);
     const ok = { teamId: 't2', roster: legalPids.map((pid) => ({ pid, rate: 3, startRound: 2, years: 2 })), deadMoney: [] };
-    const res = runHardship({ teams: [ok], faPool: fa, round: 2, catalogById: byId });
+    const res = runHardship({ teams: [ok], synthetics: SYNTHETICS, round: 2, catalogById: byIdAll });
     expect(res).toEqual([]);
   });
   it('repairs a position-skewed roster to 2G/2W/1B legality within the 10-man bound', () => {
     const sixWings = { teamId: 't3',
       roster: contractsFor(byPos.W.slice(0, 6), { startRound: 2, years: 2 }), deadMoney: [] };
-    const [fix] = runHardship({ teams: [sixWings], faPool: fa, round: 2, catalogById: byId });
+    const [fix] = runHardship({ teams: [sixWings], synthetics: SYNTHETICS, round: 2, catalogById: byIdAll });
     expect(fix.signings.length).toBe(3);   // 2 G + 1 B — deficits, not the roster floor, drive the fill
-    expect(fix.signings.map((c) => byId[c.pid].position).sort()).toEqual(['B', 'G', 'G']);
+    expect(fix.signings.map((c) => byIdAll[c.pid].position).sort()).toEqual(['B', 'G', 'G']);
   });
   it('hard-stops at 10 actives even when position deficits remain', () => {
     const nineWings = { teamId: 't4',
       roster: contractsFor(byPos.W.slice(0, 9), { startRound: 2, years: 2 }), deadMoney: [] };
-    const [fix] = runHardship({ teams: [nineWings], faPool: fa, round: 2, catalogById: byId });
+    const [fix] = runHardship({ teams: [nineWings], synthetics: SYNTHETICS, round: 2, catalogById: byIdAll });
     expect(fix.signings.length).toBe(1);   // needs 2G+1B but only 1 slot under the max
-    expect(byId[fix.signings[0].pid].position).toBe('G');   // bound spent on the first deficit
+    expect(byIdAll[fix.signings[0].pid].position).toBe('G');   // bound spent on the first deficit
     const tenWings = { teamId: 't5',
       roster: contractsFor(byPos.W.slice(0, 10), { startRound: 2, years: 2 }), deadMoney: [] };
-    expect(runHardship({ teams: [tenWings], faPool: fa, round: 2, catalogById: byId })).toEqual([]);
+    expect(runHardship({ teams: [tenWings], synthetics: SYNTHETICS, round: 2, catalogById: byIdAll })).toEqual([]);
   });
-  it('hands two identically stranded teams copies of the same players (non-exclusive FA, spec §4.2)', () => {
+  it('hands two identically stranded teams the same synthetic pids (non-exclusive, spec §4.2)', () => {
     const stranded1 = { teamId: 't1', roster: [], deadMoney: [] };
     const stranded2 = { teamId: 't2', roster: [], deadMoney: [] };
-    const fixes = runHardship({ teams: [stranded1, stranded2], faPool: fa, round: 2, catalogById: byId });
+    const fixes = runHardship({ teams: [stranded1, stranded2], synthetics: SYNTHETICS, round: 2, catalogById: byIdAll });
     expect(fixes.length).toBe(2);
-    // identical needs against the shared catalog -> identical cheapest-legal picks;
-    // each team gets its own independent copy of the same players.
+    // identical needs against one shared synthetic pool -> identical picks; each team
+    // gets its own independent copy of the same Default Role Players.
     expect(fixes[1].signings.map((c) => c.pid)).toEqual(fixes[0].signings.map((c) => c.pid));
+  });
+  it('re-issues the same synthetic pids in a later round once the 1-year deals expire', () => {
+    // regression pin: `owned` must match ACTIVE contracts only. `roster` is never
+    // pruned of expired contracts, and the synthetic pool is just 8 rows — matching
+    // the whole roster empties the pool from round 2 on and silently stops filling.
+    const r1 = runHardship({ teams: [{ teamId: 't', roster: [] }], synthetics: SYNTHETICS,
+      round: 1, catalogById: byIdAll })[0].signings;
+    expect(r1).toHaveLength(8);
+    const r2 = runHardship({ teams: [{ teamId: 't', roster: r1 }], synthetics: SYNTHETICS,
+      round: 2, catalogById: byIdAll })[0].signings;
+    expect(r2).toHaveLength(8);
+    expect(r2.map((c) => c.pid)).toEqual(r1.map((c) => c.pid));
+    expect(r2.every((c) => c.startRound === 2)).toBe(true);
   });
 });

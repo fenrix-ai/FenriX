@@ -11,6 +11,7 @@ const db = getFirestore();
 
 const { createGame, joinGame, startSeason, advancePhase, getLobby } = await import('../src/game.js');
 const { HOOKS } = await import('../src/phases.js');
+const { SYNTHETICS } = await import('../src/synthetics.js');
 const call = (fn, data, uid) => t.wrap(fn)({ data, auth: { uid, token: {} } });
 
 describe('lifecycle', () => {
@@ -21,8 +22,10 @@ describe('lifecycle', () => {
     const g = (await db.doc(`games/${gameId}`).get()).data();
     expect(g.status).toBe('lobby');
     expect(g.professorUid).toBe('prof');
+    // 175 datagen players + the 8 synthetic Default Role Players (spec §2,
+    // 2026-07-26): hardship contracts must resolve a name from catalog/{pid} too.
     const catalog = await db.collection(`games/${gameId}/catalog`).count().get();
-    expect(catalog.data().count).toBe(175);
+    expect(catalog.data().count).toBe(175 + SYNTHETICS.length);
     const teams = await db.collection(`games/${gameId}/teams`).get();
     expect(teams.size).toBe(2);
   });

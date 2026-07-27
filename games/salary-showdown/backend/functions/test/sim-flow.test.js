@@ -49,7 +49,11 @@ describe('sim flow (round-robin sim fires on LINEUP -> SIMULATE, rounds/{r} pers
 
     expect(round.awards.roundMvp.pid).toBeTruthy();
     expect(round.awards.topScorer.pid).toBeTruthy();
-    expect(round.awards.bargain.perDollar).toBeGreaterThan(0);
+    // Nobody signed anyone in this flow, so BOTH rosters are 100% synthetic $0
+    // hardship contracts — and those are never bargain-eligible (spec §2.4). null is
+    // the correct award here, and the wire type / ResultsPage already treat it as
+    // optional. sim.test.js covers the populated case on real contracts.
+    expect(round.awards.bargain).toBeNull();
 
     expect(round.standings).toHaveLength(2);
     expect(round.standings[0].rank).toBe(1);
@@ -61,6 +65,24 @@ describe('sim flow (round-robin sim fires on LINEUP -> SIMULATE, rounds/{r} pers
     const header = round.boxCsv.split('\n')[0].split(',');
     expect(header).toHaveLength(23);
     expect(header).toContain('playstyle');
+
+    // Regression pin (spec §2, 2026-07-26): both teams here are hardship-filled, so
+    // each one's only B is a synthetic Default Role Player — and validateLineup's
+    // 2G/2W/1B template FORCES that synthetic into the starting five. Before the
+    // engine.js hidden-overlay this path threw
+    // "TypeError: Cannot read properties of undefined (reading 'comps')" out of
+    // teamStrength (and 'exp' out of teamBox) and took the whole SIMULATE hook down.
+    // Getting here at all is the crash pin; the rest asserts the DRP really played.
+    const rows = round.boxCsv.split('\n').slice(1).map((l) => l.split(','));
+    const nameCol = header.indexOf('player_name');
+    const pidCol = header.indexOf('player_id');
+    const minsCol = header.indexOf('mins');
+    const drp = rows.filter((r) => r[nameCol] === 'Default Role Player');
+    expect(drp.length).toBeGreaterThan(0);
+    expect(drp.every((r) => Number(r[pidCol]) > 9000)).toBe(true);
+    expect(drp.every((r) => Number(r[minsCol]) > 0)).toBe(true);
+    // and a B synthetic specifically took the floor — the exact slot that crashed
+    expect(drp.some((r) => r[header.indexOf('position')] === 'B')).toBe(true);
 
     // team docs rolled forward: exactly one win, one loss, summing correctly
     const after = await Promise.all([teamA, teamB].map(

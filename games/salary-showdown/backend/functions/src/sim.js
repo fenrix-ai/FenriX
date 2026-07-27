@@ -139,6 +139,7 @@ export function simulateRound({ gameId, round, teams, catalogById }) {
   for (const r of boxRows) (byCopy[`${r.teamId}|${r.player_id}`] ??= []).push(r);
   let bargain = null;
   for (const t of teams) for (const c of t.roster) {
+    if (c.hardship) continue; // $0 synthetics are never bargain-eligible (spec §2.4)
     const rows = byCopy[`${t.teamId}|${c.pid}`]; if (!rows) continue;
     const perDollar = rows.reduce((s, r) => s + gamescore(r), 0) / Math.max(2, c.rate);
     if (!bargain || perDollar > bargain.perDollar)

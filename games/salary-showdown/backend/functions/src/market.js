@@ -68,15 +68,13 @@ function activeByPos(team, round, catalogById) {
   return { counts, total };
 }
 
-// Legality bar: the 2G/2W/1B starting-five minimum (LINEUP_NEED) plus a floor of
-// 8 active players, HARD-BOUNDED at the 10-man roster max — signing stops at the
-// bound even if deficits remain (validateSigning's POSITION_LOCK guard makes such
-// pathological mixes unreachable through ordinary signings anyway). Deficit
-// positions are filled first so the bound is always spent on legality.
-// Non-exclusive FA (spec §4.2): two stranded teams may each receive their own copy
-// of the same cheap player; the per-team `owned` exclusion only stops a single team
-// from holding two copies of one player.
-export function runHardship({ teams, faPool, round, catalogById }) {
+// Legality bar unchanged (2G/2W/1B minimum + 8-man floor, hard-bounded at 10) —
+// but the FILL is redesigned (spec §2, 2026-07-26): every stranded slot signs a
+// synthetic $0 "Default Role Player" (synthetics.js), identical for all teams.
+// No real FA is ever hardship-drafted anymore; there is nothing to farm and
+// payroll displays stay at-or-under the cap. Deficit positions first, flex after;
+// distinct pids per team (the same pid MAY appear on different teams).
+export function runHardship({ teams, synthetics, round, catalogById }) {
   const out = [];
   for (const team of teams) {
     const { counts, total } = activeByPos(team, round, catalogById);
@@ -88,16 +86,25 @@ export function runHardship({ teams, faPool, round, catalogById }) {
     const need = Math.max(8 - total, deficits.G + deficits.W + deficits.B);
     const fill = Math.min(need, Math.max(0, 10 - total));   // never exceed the 10-man max
     if (fill <= 0) continue;
-    const owned = new Set(team.roster.map((c) => c.pid));
-    const cheap = [...faPool].filter((p) => !owned.has(p.pid))
-      .sort((a, b) => +a.salary_per_round - +b.salary_per_round);
+    // ACTIVE contracts only. The invariant this protects is "one team never holds two
+    // copies of the same player AT ONCE" (validateLineup's DUPLICATE_PLAYER works off
+    // activePids), and `roster` is never pruned of expired contracts. Matching on the
+    // whole roster was harmless when the pool was ~150 real free agents, but the
+    // synthetic pool is only 8 rows: every DRP signed in round 1 is still sitting in
+    // `roster` (expired) in round 2, so a whole-roster match empties the pool from
+    // round 2 onward and hardship silently stops filling — leaving a stranded team
+    // with zero actives and crashing the LINEUP hook's auto-repair with BAD_TEMPLATE.
+    // Re-issuing the same DRP pid in a later round is the intended behaviour.
+    const owned = new Set(team.roster
+      .filter((c) => c.startRound + c.years - 1 >= round).map((c) => c.pid));
+    const pool = synthetics.filter((p) => !owned.has(p.pid));
     const signings = [];
     const take = (pred) => {
-      const i = cheap.findIndex(pred);
+      const i = pool.findIndex(pred);
       if (i === -1) return false;
-      const p = cheap.splice(i, 1)[0];
-      signings.push({ pid: p.pid, rate: askPrice(+p.salary_per_round, round), startRound: round,
-                      years: 1, viaAuction: false, hardship: true });   // cap-exempt by rule
+      const p = pool.splice(i, 1)[0];
+      signings.push({ pid: p.pid, rate: 0, startRound: round,
+                      years: 1, viaAuction: false, hardship: true });   // $0 by rule (spec §2)
       return true;
     };
     for (const pos of ['G', 'W', 'B'])

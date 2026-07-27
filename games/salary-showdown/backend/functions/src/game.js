@@ -11,6 +11,7 @@ import { cutPlayer, expiringPids, hypeCurve } from './payroll.js';
 import { validateBids, resolveAuction } from './auction.js';
 import { validateLineup, autoRepair } from './lineup.js';
 import { simulateRound, toCsv } from './sim.js';
+import { SYNTHETICS } from './synthetics.js';
 
 // All 12 callables deploy to us-west1, co-located with the Firestore
 // database (locked decision 2026-07-25). This MUST execute before the first
@@ -23,8 +24,10 @@ setGlobalOptions({ region: 'us-west1' });
 const ROLES = ['GM', 'Scout', 'Coach'];
 const db = () => getFirestore();
 
-const CATALOG = Object.fromEntries(players.map((p) => [p.pid, p]));
-const FA_POOL = players.filter((p) => !p.auction_round);
+// Synthetics live in the CATALOG so a hardship pid resolves everywhere a catalog row
+// is read — lineup validation/auto-repair, the sim's box rows, and name lookups.
+const CATALOG = Object.fromEntries([...players, ...SYNTHETICS].map((p) => [p.pid, p]));
+const FA_POOL = players.filter((p) => !p.auction_round);   // `players` only: synthetics are structurally excluded from every draw
 
 export async function assertProfessor(gameId, uid) {
   const g = await db().doc(`games/${gameId}`).get();
@@ -61,10 +64,13 @@ export const createGame = onCall(async (req) => {
     });
   }
   await batch.commit();
-  // catalog seed: batched in chunks of 400 (batch limit 500)
-  for (let i = 0; i < players.length; i += 400) {
+  // catalog seed: batched in chunks of 400 (batch limit 500). Synthetics are seeded
+  // alongside the real players so clients resolve the name "Default Role Player" from
+  // catalog/{pid} exactly like any other roster row.
+  const catalogRows = [...players, ...SYNTHETICS];
+  for (let i = 0; i < catalogRows.length; i += 400) {
     const b = db().batch();
-    for (const p of players.slice(i, i + 400))
+    for (const p of catalogRows.slice(i, i + 400))
       b.set(gameRef.collection('catalog').doc(String(p.pid)), p);
     await b.commit();
   }
@@ -537,11 +543,12 @@ HOOKS['FREE_AGENCY'] = async (gameId, round) => {   // exit hook: hardship
   const teams = teamsSnap.docs
     .map((t) => ({ teamId: t.id, ...t.data() }))
     .filter((t) => !(t.hardshipUsed ?? []).includes(round));
-  // Non-exclusive FA (spec §4.2): the full catalog is the hardship pool too — two
-  // stranded teams may each receive their own copy of the same cheap player.
-  // runHardship's per-team `owned` exclusion still stops a single team from holding
-  // two copies of one player.
-  const fixes = runHardship({ teams, faPool: FA_POOL, round, catalogById: CATALOG });
+  // Hardship never touches the FA pool anymore (spec §2, 2026-07-26): every stranded
+  // slot gets a synthetic $0 "Default Role Player", the same eight rows for everyone,
+  // so there is no cheap-star farming and no cap-exempt payroll blowout. The pids are
+  // non-exclusive across teams; runHardship's per-team `owned` exclusion still stops a
+  // single team from holding two copies of one synthetic.
+  const fixes = runHardship({ teams, synthetics: SYNTHETICS, round, catalogById: CATALOG });
   for (const f of fixes) {
     const ref = db().doc(`games/${gameId}/teams/${f.teamId}`);
     await db().runTransaction(async (tx) => {
@@ -738,12 +745,19 @@ HOOKS['enter:FINALE'] = async (gameId) => {
     // ever acquired, so a bad cut signing stays eligible for "worst", and totalSpend
     // counts the full committed rate*years of every contract — including one that was
     // later cut — because that money is never recovered. That is the game's lesson.
-    const spendLog = team.spendLog ?? [];
+    // Synthetic hardship contracts have no hiddenData entry (they are not part of
+    // the pre-released 175 — engine.js's overlay is deliberately engine-local) —
+    // they must not reach the ti lookup below (crash) nor best/worst-signing
+    // contention (a $0 contract is not a "signing" lesson). totalSpend keeps the
+    // FULL log: synthetic rate*years is 0, so the sum is unchanged and honest
+    // either way.
+    const spendLog = (team.spendLog ?? []).filter((c) => hiddenData[c.pid]);
+    const spendAll = team.spendLog ?? [];
     const vals = spendLog.map((c) => ({
       pid: c.pid, valuePerDollar: Math.round((hiddenData[c.pid].ti / Math.max(2, c.rate)) * 100) / 100 }));
     vals.sort((a, b) => b.valuePerDollar - a.valuePerDollar);
     perTeam.push({ teamId: t.id, bestSigning: vals[0] ?? null, worstSigning: vals.at(-1) ?? null });
-    const spend = spendLog.reduce((s, c) => s + c.rate * c.years, 0);
+    const spend = spendAll.reduce((s, c) => s + c.rate * c.years, 0);
     winsPerDollar.push({ teamId: t.id, wins: team.wins, totalSpend: Math.round(spend * 10) / 10,
       ratio: Math.round((team.wins / Math.max(1, spend)) * 1000) / 1000 });
   }
