@@ -91,3 +91,46 @@ describe('resolveAuction', () => {
     expect(r1.awards.find((a) => a.pid === unsoldPid)).toMatchObject({ pid: unsoldPid, teamId: null });
   });
 });
+
+// Playtest-polish Task 1: resolveAuction also reports which bids were passed over
+// for roster/cap reasons AT A MOMENT WHEN THEIR STAR WAS STILL UNSOLD (i.e. the bid
+// that believed it won) — the team-private "Results" note (spec §1.2). Fixtures use
+// the file's own mkTeam helper (deadMoney: []) rather than a bare {teamId, roster}
+// object, since capOkWith -> payrollAt iterates team.deadMoney directly.
+describe('resolveAuction skip records (playtest-polish T1)', () => {
+  const catalogById = {};
+  const full = Array.from({ length: 10 }, (_, i) => ({ pid: 500 + i, rate: 1, startRound: 1, years: 5, viaAuction: false, hardship: false }));
+
+  it('records a cap skip AND the fall-through winner for the same star', () => {
+    const rich = mkTeam('rich');
+    const poor = mkTeam('poor', [{ pid: 600, rate: 99.0, startRound: 1, years: 5, viaAuction: false, hardship: false }]);
+    const bids = [
+      { pid: 1, teamId: 'poor', rate: 30.0, years: 2 },   // highest guaranteed — cap-blocked
+      { pid: 1, teamId: 'rich', rate: 5.0, years: 1 },    // falls through, wins
+    ];
+    const { awards, skips } = resolveAuction({ bids, starPids: [1], teams: [rich, poor],
+      round: 1, seed: 's', catalogById });
+    expect(skips).toEqual([{ pid: 1, teamId: 'poor', reason: 'cap' }]);
+    expect(awards.find((a) => a.pid === 1)).toMatchObject({ teamId: 'rich', rate: 5.0, years: 1 });
+  });
+
+  it('records a roster skip; an already-sold star produces NO skip record', () => {
+    const fullTeam = mkTeam('full', full);
+    const other = mkTeam('other');
+    const bids = [
+      { pid: 2, teamId: 'full', rate: 20.0, years: 1 },   // roster skip (would have won)
+      { pid: 2, teamId: 'other', rate: 10.0, years: 1 },  // wins
+    ];
+    const { skips } = resolveAuction({ bids, starPids: [2], teams: [fullTeam, other],
+      round: 1, seed: 's', catalogById });
+    expect(skips).toEqual([{ pid: 2, teamId: 'full', reason: 'roster' }]);
+  });
+
+  it('clean resolution yields empty skips; un-bid stars yield no skips', () => {
+    const a = mkTeam('a');
+    const { skips, awards } = resolveAuction({ bids: [{ pid: 3, teamId: 'a', rate: 4.0, years: 1 }],
+      starPids: [3, 4], teams: [a], round: 1, seed: 's', catalogById });
+    expect(skips).toEqual([]);
+    expect(awards.find((x) => x.pid === 4)).toMatchObject({ teamId: null });
+  });
+});

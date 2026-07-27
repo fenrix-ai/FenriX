@@ -26,7 +26,10 @@ export function validateBids({ bids, round, starPids }) {
 // Contract: resolveAuction({ bids, starPids, teams, round, seed, catalogById }).
 // `starPids` is tonight's FULL wave (every pid with auction_round === round), not
 // merely the pids that received a bid — unsold = starPids - sold, so an un-bid star
-// still resolves to { teamId: null } instead of vanishing from the results.
+// still resolves to { teamId: null } instead of vanishing from the results. Also
+// returns `skips`: one entry per bid passed over for roster/cap reasons AT A MOMENT
+// WHEN ITS STAR WAS STILL UNSOLD (i.e. the bid the affected team believes won) — the
+// team-private "would-have-won" Results note (spec §1.2).
 export function resolveAuction({ bids, starPids, teams, round, seed, catalogById }) {
   const rng = makeRng(`${seed}|auction|${round}`);
   const teamsAfter = teams.map((t) => ({ ...t, roster: [...t.roster], spendLog: [...(t.spendLog ?? [])] }));
@@ -41,12 +44,17 @@ export function resolveAuction({ bids, starPids, teams, round, seed, catalogById
   expanded.sort((a, b) => b.guaranteed - a.guaranteed || a.tiebreak - b.tiebreak);
   const sold = new Set();
   const awards = [];
+  const skips = [];
   for (const bid of expanded) {
     if (sold.has(bid.pid)) continue;
     const team = byTeam[bid.teamId];
     if (!team) continue; // defensive: bid referencing an unknown team
     const active = team.roster.filter((c) => c.startRound + c.years - 1 >= round);
-    if (active.length >= 10) continue;                                   // roster skip
+    // A skip is only "you would have won" when this star is still unsold at this
+    // point in the global priority walk — that is precisely the bid the affected
+    // team believes won. Recorded for the team-private Results note (spec §1.2);
+    // the PUBLIC results never carry these, so sealed-bid privacy holds.
+    if (active.length >= 10) { skips.push({ pid: bid.pid, teamId: bid.teamId, reason: 'roster' }); continue; }
     // NOTE: POSITION_LOCK (the 2G/2W/1B feasibility guard) does NOT apply to auction
     // wins. That guard is an FA-signing rule (market.js::validateSigning) protecting
     // a team from painting itself into a corner on ordinary market moves; auction
@@ -54,7 +62,10 @@ export function resolveAuction({ bids, starPids, teams, round, seed, catalogById
     // room. A team may legally win a star that leaves it position-infeasible.
     const contract = { pid: bid.pid, rate: bid.rate, startRound: round, years: bid.years,
                        viaAuction: true, hardship: false };
-    if (!capOkWith(team, contract, CAP, TOTAL_ROUNDS).ok) continue;      // cap skip
+    if (!capOkWith(team, contract, CAP, TOTAL_ROUNDS).ok) {
+      skips.push({ pid: bid.pid, teamId: bid.teamId, reason: 'cap' });
+      continue;
+    }
     team.roster.push(contract);
     team.spendLog.push(contract);   // append-only acquisition ledger (Task: dead-money hall of shame)
     sold.add(bid.pid);
@@ -63,5 +74,5 @@ export function resolveAuction({ bids, starPids, teams, round, seed, catalogById
   }
   for (const pid of starPids) if (!sold.has(pid))
     awards.push({ pid, teamId: null, rate: null, years: null, guaranteed: null });
-  return { awards, teamsAfter };
+  return { awards, teamsAfter, skips };
 }

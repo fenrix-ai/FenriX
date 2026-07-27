@@ -592,12 +592,21 @@ HOOKS['AUCTION'] = async (gameId, round) => {   // exit hook: resolve sealed bid
     for (const [pid, b] of Object.entries(priv.data().bids ?? {}))
       bids.push({ teamId: t.teamId, pid: Number(pid), rate: Number(b.rate), years: Number(b.years) });
   }
-  const { awards, teamsAfter } = resolveAuction({ bids, starPids: wave.stars, teams,
+  const { awards, teamsAfter, skips } = resolveAuction({ bids, starPids: wave.stars, teams,
     round, seed: gameId, catalogById: CATALOG });
   const batch = db().batch();
   for (const t of teamsAfter)
     batch.update(db().doc(`games/${gameId}/teams/${t.teamId}`), { roster: t.roster, spendLog: t.spendLog });
   batch.update(auctionRef, { results: awards });
+  // Team-private would-have-won skip notes (spec §1.2): merged onto the same
+  // private bid doc the Scout wrote, so existing team-only read rules cover it.
+  // Round-stamped so the client shows notes only for the round just resolved.
+  const skipsByTeam = {};
+  for (const s of skips) (skipsByTeam[s.teamId] ??= []).push({ pid: s.pid, reason: s.reason });
+  for (const [teamId, list] of Object.entries(skipsByTeam)) {
+    batch.set(db().doc(`games/${gameId}/teams/${teamId}/private/auction`),
+      { skippedRound: round, skipped: list }, { merge: true });
+  }
   // Unsold stars fall through to next round's FA rotation. enter:FREE_AGENCY (above)
   // reads games/{gameId}/unsold/{pid} = { price } to build unsoldPrices/extraPids —
   // field name confirmed against that reader (doc.data().price), not the `listBase`

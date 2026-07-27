@@ -51,6 +51,14 @@ games/{gameId}/teams/{teamId}         # PUBLIC team state (rosters are public li
                                       # stays open until the professor closes the phase, and no callable
                                       # may ever read these fields as a precondition.
 games/{gameId}/teams/{teamId}/private/auction    # { bids: { [pid]: {rate, years} } } — Scout writes via callable
+                                      # After auction resolution the doc may also carry skippedRound: number
+                                      # and skipped: [{pid, reason: 'cap'|'roster'}] — merge-written by the
+                                      # AUCTION exit hook (playtest-polish T1, spec §1.2): team-private
+                                      # "would-have-won" feedback (a bid passed over for roster/cap reasons
+                                      # while its star was still unsold) rendered by the Results screen.
+                                      # skippedRound is round-stamped so the client shows notes only for the
+                                      # round just resolved; public auctions/{round}.results never carries
+                                      # these, preserving sealed-bid privacy.
 games/{gameId}/catalog/{pid}          # public player card (26 CSV cols), seeded at createGame
 games/{gameId}/market/{round}         # { available: [pid], absentCounts: {pid: n}, unsoldPrices: {pid: rate} }  (public, server-written)
                                       # FA is NON-EXCLUSIVE (spec §4.2): available is a shared catalog of signable COPIES —

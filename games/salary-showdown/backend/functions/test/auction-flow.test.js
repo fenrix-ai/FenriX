@@ -120,6 +120,51 @@ describe('auction flow (sealed bids -> resolution)', () => {
 // field matches the round actually being resolved (`if (!priv.exists || priv.data().round
 // !== round) continue;`). A doc left over from a prior round — e.g. a retry/race that
 // wrote a stale `round` — must be ignored entirely, not honored as a phantom bid.
+// Playtest-polish Task 1: a bid that would have won a star but was passed over for
+// roster/cap reasons produces a team-private "skip" note (spec §1.2) on the exact
+// private/auction doc the Scout wrote, round-stamped to the round just resolved.
+// NOTE: a genuine CAP block via real signPlayer callables would require engineering
+// the FA market draw's exact rates in this fixture set; per the task brief, an admin
+// pre-write that fills the roster to the 10-man max is the sanctioned equivalent —
+// this exercises the identical roster-skip/fall-through path with reason: 'roster'.
+describe('auction skip records: team-private would-have-won note (playtest-polish T1)', () => {
+  it('a roster-blocked high bid is recorded as a private skip note; the lower bid wins clean, public results carry no skip', async () => {
+    const res = await call(createGame, { teamNames: ['Full', 'Open'] }, 'profSkip');
+    const gameId = res.gameId;
+    const teams = await db.collection(`games/${gameId}/teams`).get();
+    const [teamA, teamB] = teams.docs.map((d) => d.id);
+    await call(joinGame, { joinCode: res.joinCode, teamId: teamA, role: 'Scout', displayName: 'ScoutFullA' }, 'scoutFullA');
+    await call(joinGame, { joinCode: res.joinCode, teamId: teamB, role: 'Scout', displayName: 'ScoutOpenB' }, 'scoutOpenB');
+    await call(startSeason, { gameId }, 'profSkip');
+    await call(advancePhase, { gameId }, 'profSkip'); // FREE_AGENCY(1) -> AUCTION(1)
+
+    const wave = (await db.doc(`games/${gameId}/auctions/1`).get()).data();
+    const target = wave.stars[0];
+
+    // Admin pre-write: overwrite team A's roster to the 10-man max with round-1,
+    // 5-year contracts so its bid below is roster-blocked, not cap-blocked.
+    const fullRoster = Array.from({ length: 10 }, (_, i) => ({
+      pid: 9000 + i, rate: 1.0, startRound: 1, years: 5, viaAuction: false, hardship: false,
+    }));
+    await db.doc(`games/${gameId}/teams/${teamA}`).update({ roster: fullRoster });
+
+    await call(submitBids, { gameId, bids: { [target]: { rate: 20.0, years: 1 } } }, 'scoutFullA'); // 20 gtd — would win, roster-blocked
+    await call(submitBids, { gameId, bids: { [target]: { rate: 10.0, years: 1 } } }, 'scoutOpenB'); // 10 gtd — wins
+
+    await call(advancePhase, { gameId }, 'profSkip'); // AUCTION(1) -> LINEUP(1): resolves
+
+    const auction = (await db.doc(`games/${gameId}/auctions/1`).get()).data();
+    expect(auction.results.find((a) => a.pid === target)).toMatchObject(
+      { pid: target, teamId: teamB, rate: 10.0, years: 1 });
+
+    const privA = (await db.doc(`games/${gameId}/teams/${teamA}/private/auction`).get()).data();
+    const privB = (await db.doc(`games/${gameId}/teams/${teamB}/private/auction`).get()).data();
+    expect(privA.skippedRound).toBe(1);
+    expect(privA.skipped).toEqual([{ pid: target, reason: 'roster' }]);
+    expect(privB.skipped).toBeUndefined(); // clean winner's private doc carries no skip note
+  });
+});
+
 describe('stale prior-round bid doc is ignored at resolution', () => {
   it('a private/auction doc with round: r-1 present is ignored — no phantom award, star resolves unsold', async () => {
     const res = await call(createGame, { teamNames: ['Iota', 'Kappa'] }, 'prof5');
