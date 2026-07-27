@@ -60,6 +60,15 @@ describe('market flow (signing, cutting, hardship, non-exclusive shared catalog)
       .rejects.toThrow('BAD_YEARS');
   });
 
+  // Shape guard: a non-numeric pid (e.g. a garbage/injected string) must fail as a
+  // named, catchable error at the callable boundary — not flow into salary math
+  // downstream, where it dies as an uncaught "Data cannot be encoded in JSON: NaN"
+  // instead of a proper HttpsError.
+  it('rejects a non-numeric pid with BAD_SHAPE instead of an uncaught NaN error', async () => {
+    await expect(call(signPlayer, { gameId, pid: 'abc', years: 2 }, 'gmA'))
+      .rejects.toThrow('BAD_SHAPE');
+  });
+
   it('another team CAN sign its own copy of the same pid (non-exclusive)', async () => {
     const { contract } = await call(signPlayer, { gameId, pid: sharedPid, years: 1 }, 'gmB');
     expect(contract.pid).toBe(sharedPid);

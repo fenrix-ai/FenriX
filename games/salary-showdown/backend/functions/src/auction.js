@@ -6,6 +6,11 @@ export function validateBids({ bids, round, starPids }) {
   for (const [pidStr, b] of Object.entries(bids ?? {})) {
     const pid = Number(pidStr);
     if (!starPids.includes(pid)) throw new Error('NOT_IN_WAVE');
+    // Shape guard: a malformed per-star bid entry (null, or anything not a plain
+    // object) must fail as a named, catchable error before any property read — not
+    // throw a raw TypeError (e.g. "Cannot read properties of null (reading 'rate')")
+    // that submitBids would surface as an uncontrolled 500 instead of invalid-argument.
+    if (typeof b !== 'object' || b === null) throw new Error('BAD_SHAPE');
     // Client-supplied numerics are untrusted: coerce before validating so a NaN/string
     // payload fails a named check instead of poisoning downstream arithmetic (a NaN
     // guaranteed-money sort key, e.g., silently breaks resolveAuction's priority order).

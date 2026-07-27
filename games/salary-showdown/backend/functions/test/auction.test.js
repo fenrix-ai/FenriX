@@ -41,6 +41,14 @@ describe('validateBids', () => {
     expect(() => validateBids({ bids: { [wave1[0]]: { rate: 5.0, years: '3.5' } }, round: 1, starPids: wave1 }))
       .toThrow('BAD_YEARS');
   });
+  // Shape guard: a malformed per-star bid entry (null, or anything else you can't
+  // read .rate/.years off) must fail as a named, catchable error — not throw a raw
+  // TypeError ("Cannot read properties of null (reading 'rate')") that submitBids
+  // would surface as an uncontrolled 500 instead of invalid-argument.
+  it('rejects a null per-star bid entry with BAD_SHAPE instead of crashing', () => {
+    expect(() => validateBids({ bids: { [wave1[0]]: null }, round: 1, starPids: wave1 }))
+      .toThrow('BAD_SHAPE');
+  });
 });
 
 describe('resolveAuction', () => {

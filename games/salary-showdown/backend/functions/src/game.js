@@ -316,6 +316,11 @@ async function memberWithRole(gameId, uid, role) {
 // freshest roster and trips ALREADY_SIGNED instead of stacking two copies.
 export const signPlayer = onCall(async (req) => {
   const { gameId, pid } = req.data;
+  // Shape guard: a malformed/injected pid (non-numeric, NaN, Infinity) must fail as
+  // a named, catchable error before any catalog lookup or salary math — not flow
+  // into contract arithmetic and die downstream as an uncaught NaN (same rationale
+  // as lineup.js's BAD_SHAPE guard).
+  if (!Number.isFinite(pid)) throw new HttpsError('invalid-argument', 'BAD_SHAPE');
   // Coerce at the callable boundary: a numeric-string '3' resolves deterministically
   // to the integer 3 (validateSigning's Number.isInteger check then applies to a real
   // number either way); a non-numeric or fractional payload (e.g. '3.5', NaN) becomes
