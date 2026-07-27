@@ -68,9 +68,11 @@ games/{gameId}/unsold/{pid}           # { price } — auction-class player that 
                                       # it inside the signing transaction (doc missing => STAR_TAKEN), so exactly one team
                                       # ever signs the star and later draws no longer include him.
                                       # server-only: never client-accessible, explicit deny-all in rules.
-games/{gameId}/rounds/{r}             # { games: [{home, away, homeScore, awayScore}], awards: {...}, boxCsv: string,
+games/{gameId}/rounds/{r}             # { games: [{game_id, home, away, homeScore, awayScore}], awards: {...}, boxCsv: string,
                                       #   standings: [{teamId, name, wins, losses, pointDiff, pointsFor, tiebreakCoin, rank,
                                       #                previousRank}] }
+                                      # game_id: sim.js's per-matchup id, stamped on every games[] entry — it's the join
+                                      # key back to the matching rows in boxCsv.
                                       # previousRank: number|null — this team's rank in rounds/{r-1}.standings, null for
                                       # r=1 (no prior round exists). Stamped by enter:SIMULATE inside the same single
                                       # batch that writes the round doc; consumed by the bigscreen standings shuffle

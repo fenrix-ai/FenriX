@@ -475,6 +475,8 @@ The full map with student-facing copy is in `app/src/lib/errors.ts` and the Plan
 `r01(x) = round(x*10)/10` · `askPrice(base, r) = r01(base * 1.08^(r-1))` ·
 `DISCOUNTS {1:1.0, 2:0.92, 3:0.85, 4:0.80, 5:0.75}` · `minBid(r) = r01(2.0 * 1.08^(r-1))` ·
 `hypeCurve(h) = 2.0 + ((h-1)/4)^1.35 * 24` · cap check must pass in **every covered round**.
+Max contract length is `maxYears = 6 − round` (`TOTAL_ROUNDS - round + 1`), so 5-year deals are
+legal only in round 1 and the ceiling shrinks by one every round after.
 
 **New schema field from H-A:** `games/{gameId}.transition = {fromRound, fromPhase, toRound, toPhase}`
 — present only while an advance's hooks are resolving; a leftover marker means a crashed advance and
