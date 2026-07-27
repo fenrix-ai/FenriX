@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
@@ -22,8 +22,11 @@ test('results: record, box lines, awards without perDollar, highlighted snapshot
   const [w, l] = screen.getByRole('heading', { level: 2 }).textContent!.split('–').map(Number);
   expect(w + l).toBe(3);
   // Box lines: 8 players took the floor for Alpha (5 + sixth + 2 active bench).
+  // Scoped to the box-lines card by testid (Task 3, playtest-polish): a Star Auction
+  // results card can now also render above it with its own <table>, so `getAllByRole
+  // ('table')[0]` is no longer reliably the box-lines table.
   await waitFor(() => {
-    const table = screen.getAllByRole('table')[0];
+    const table = within(screen.getByTestId('box-lines')).getByRole('table');
     expect(table.querySelectorAll('tbody tr').length).toBe(3 * 8);
   });
   // The bargain award never shows the computed per-dollar number.

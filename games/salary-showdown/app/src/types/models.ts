@@ -62,6 +62,15 @@ export interface AuctionDoc {
   results?: { pid: number; teamId: string | null; rate: number | null;
     years: number | null; guaranteed: number | null }[];
 }
+// teams/{teamId}/private/auction — written by submitBids (bids, round) and, since
+// playtest-polish T1, merged by auction resolution with would-have-won skip
+// feedback (team-private; rendered only on the own team's Results screen).
+export interface PrivateAuctionDoc {
+  bids?: Record<string, { rate: number; years: number }>;
+  round?: number;
+  skippedRound?: number;
+  skipped?: { pid: number; reason: 'cap' | 'roster' }[];
+}
 export interface GameResult {
   game_id: string; home: string; away: string; homeScore: number; awayScore: number;
 }

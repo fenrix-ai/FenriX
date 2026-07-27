@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 import { useGame } from '../contexts/GameContext';
 import { useRoundDoc } from '../hooks/useRoundDoc';
 import { PhaseHeader } from '../components/ui/PhaseHeader';
@@ -6,6 +8,7 @@ import { StandingsTable } from '../components/ui/StandingsTable';
 import { parseBoxCsv, teamRows } from '../lib/boxfeed';
 import { spendThroughRound } from '../lib/contracts';
 import { fmtM } from '../lib/money';
+import type { AuctionDoc, PrivateAuctionDoc } from '../types/models';
 
 // ALL 23 feed columns (spec §11.14: own box lines show the complete feed schema);
 // the table is wide and lives inside an overflow-x scroll container.
@@ -15,10 +18,33 @@ const BOX_COLS = ['round', 'game_id', 'team', 'opponent', 'team_score', 'opp_sco
   'playstyle'] as const;
 
 export default function ResultsPage() {
-  const { game, team, teams, membership, catalog } = useGame();
+  const { gameId, game, team, teams, membership, catalog } = useGame();
   const round = game?.round ?? 1;
   const rd = useRoundDoc(round);
   const [slide, setSlide] = useState(0);
+
+  // Star Auction results (spec §1): public facts for the round just played, plus
+  // the OWN-team-only would-have-won skip note. Both listeners follow the same
+  // §3a rule as every other listener: errors log via console.error, never silent.
+  // NOTE: `membership` (GameContext's own player-membership doc) carries teamId/
+  // role/displayName only — it has no gameId field. Every sibling listener (e.g.
+  // useRoundDoc) instead scopes off the top-level `gameId` from useGame(), so
+  // these two follow the same pattern rather than the brief's literal
+  // `membership.gameId` (adaptation noted in the report).
+  const [auction, setAuction] = useState<AuctionDoc | null>(null);
+  const [privAuction, setPrivAuction] = useState<PrivateAuctionDoc | null>(null);
+  useEffect(() => {
+    if (!gameId || !membership) { setAuction(null); return; }
+    return onSnapshot(doc(db, 'games', gameId, 'auctions', String(round)),
+      (s) => setAuction(s.exists() ? (s.data() as AuctionDoc) : null),
+      (e) => console.error('[results] auction listener', e));
+  }, [gameId, membership, round]);
+  useEffect(() => {
+    if (!gameId || !membership) { setPrivAuction(null); return; }
+    return onSnapshot(doc(db, 'games', gameId, 'teams', membership.teamId, 'private', 'auction'),
+      (s) => setPrivAuction(s.exists() ? (s.data() as PrivateAuctionDoc) : null),
+      (e) => console.error('[results] private auction listener', e));
+  }, [gameId, membership, round]);
 
   useEffect(() => {
     const id = setInterval(() => setSlide((s) => (s + 1) % 3), 5000);
@@ -115,7 +141,38 @@ export default function ResultsPage() {
         </div>
       </div>
 
-      <details open>
+      {auction?.results && (
+        <div className="card" style={{ margin: '12px 0' }} data-testid="auction-results">
+          <strong>{`Star Auction · Round ${round}`}</strong>
+          <table className="table" style={{ marginTop: 6 }}>
+            <thead><tr><th className="name">Star</th><th>Pos</th><th>Signed by</th><th>Rate</th><th>Years</th></tr></thead>
+            <tbody>
+              {auction.stars.map((pid) => {
+                const r = auction.results!.find((x) => x.pid === pid);
+                const won = r?.teamId != null;
+                return (
+                  <tr key={pid}>
+                    <td className="name">{catalog.get(pid)?.name ?? pid}</td>
+                    <td>{catalog.get(pid)?.position ?? '—'}</td>
+                    <td>{won ? teams.get(r!.teamId!)?.name ?? '—' : 'Unsold'}</td>
+                    <td className="mono">{won ? `${fmtM(r!.rate!)}/rd` : '—'}</td>
+                    <td className="mono">{won ? `${r!.years} yr` : '—'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {privAuction?.skippedRound === round && (privAuction.skipped ?? []).length > 0 && (
+            <p className="muted" data-testid="auction-skip-note" style={{ marginBottom: 0 }}>
+              {(privAuction.skipped ?? []).map((s) =>
+                `Your winning bid on ${catalog.get(s.pid)?.name ?? s.pid} couldn't be awarded (${
+                  s.reason === 'cap' ? 'salary cap' : 'roster full'}).`).join(' ')}
+            </p>
+          )}
+        </div>
+      )}
+
+      <details open data-testid="box-lines">
         <summary className="muted" style={{ cursor: 'pointer' }}>Your box lines</summary>
         <div style={{ overflowX: 'auto' }}>
           <table className="table">
