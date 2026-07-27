@@ -23,8 +23,8 @@ export const SYNTHETIC_MIN_PID = 9000;
 // Values are EMPIRICALLY DERIVED, not invented: each is the 25th percentile of
 // that field across the real 175 hidden entries (linear-interpolated percentile,
 // rounded to hidden.json's own shipped precision — ti/comps 6dp, attrs 3dp,
-// exp 4dp / 5dp for the rate fields). Provenance and the audit table live in
-// .superpowers/sdd/2026-07-26-salary-showdown-playtest-polish/task-2-report.md.
+// exp 4dp / 5dp for the rate fields). Provenance and the audit table live in the
+// task-2 report (session ledger, not in repo).
 // Sanity checks that fixed these as "replacement level, weak":
 //   - attrs.three_pt 39.648 < synergy.shooter_3pt_skill (42) -> never counts as a
 //     shooter, so a DRP can only ever push a lineup toward the spacing penalty.

@@ -60,6 +60,9 @@ games/{gameId}/teams/{teamId}         # PUBLIC team state (rosters are public li
                                       # and is merged into engine.js as an ADDITIVE overlay on hidden.json —
                                       # the 175 datagen entries and the Python parity fixture are untouched,
                                       # and hidden.json / the datagen exporter are never modified.
+                                      # Synthetic pids (9000+) are rejected by validateSigning and excluded
+                                      # from expiringPids; hardship is the ONLY path onto a roster (adjudicated
+                                      # ruling, Dylan 2026-07-26).
   doneRound: 0-5, donePhase: ''|FRONT_OFFICE|FREE_AGENCY   # "We're done" STATUS FLAG, NEVER a lock:
                                       # markDone (GM-only callable, valid only in FRONT_OFFICE/FREE_AGENCY)
                                       # stamps the game's current {round, phase} here. Professor-panel
@@ -67,7 +70,7 @@ games/{gameId}/teams/{teamId}         # PUBLIC team state (rosters are public li
                                       # Initialized 0 / '' at createGame. Gates NOTHING — signing/cutting
                                       # stays open until the professor closes the phase, and no callable
                                       # may ever read these fields as a precondition.
-games/{gameId}/teams/{teamId}/private/auction    # { bids: { [pid]: {rate, years} } } — Scout writes via callable
+games/{gameId}/teams/{teamId}/private/auction    # { bids: { [pid]: {rate, years} }, round } — Scout writes via callable
                                       # After auction resolution the doc may also carry skippedRound: number
                                       # and skipped: [{pid, reason: 'cap'|'roster'}] — merge-written by the
                                       # AUCTION exit hook (playtest-polish T1, spec §1.2): team-private

@@ -442,7 +442,9 @@ export const submitBids = onCall(async (req) => {
     catch (e) { throw new HttpsError('invalid-argument', e.message); }
     // A full overwrite (not merge): resubmitting replaces the whole bid set, so a
     // Scout can freely revise before the professor closes the phase. Once AUCTION's
-    // exit hook has read this doc there is no further write path back into it.
+    // exit hook has read this doc, the only sanctioned write-back is that same hook's
+    // own merge-write of {skippedRound, skipped} (playtest-polish T1) — this callable
+    // never touches the doc again.
     tx.set(db().doc(`games/${gameId}/teams/${teamId}/private/auction`), { bids, round: g.round });
     return { accepted: Object.keys(bids).length };
   });

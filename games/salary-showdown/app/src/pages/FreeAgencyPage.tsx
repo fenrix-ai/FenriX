@@ -6,7 +6,7 @@ import { PayrollBar } from '../components/ui/PayrollBar';
 import { HypeStars } from '../components/ui/HypeStars';
 import { PositionBadge } from '../components/ui/PositionBadge';
 import { ErrorNotice } from '../components/ui/ErrorNotice';
-import { activeContracts, capOkWith } from '../lib/contracts';
+import { activeContracts, capOkWith, isSynthetic } from '../lib/contracts';
 import { askPrice, contractRate, fmtM, maxYears } from '../lib/money';
 import type { CatalogPlayer } from '../types/models';
 
@@ -41,6 +41,7 @@ export default function FreeAgencyPage() {
     const avail = new Set(market.available);
     const all: Row[] = [];
     for (const p of catalog.values()) {
+      if (isSynthetic(p.pid)) continue; // Default Role Players are never a signable FA/market row
       const unsoldBase = market.unsoldPrices[p.pid];
       const isFa = p.salary_per_round !== '';
       if (!isFa && unsoldBase == null) continue; // auction-class, not fallen through → not a market row

@@ -24,6 +24,17 @@ test('draft night: analyst table, sign drawer, non-exclusive row persists, ALREA
   expect(screen.getByText('STL')).toBeInTheDocument();
   expect(screen.getByText('BLK')).toBeInTheDocument();
 
+  // Pin (final-review wave, FreeAgencyPage synthetic-filter fix): catalog seeds the 8
+  // synthetic Default Role Players (pid 9000+) at createGame time, well before any
+  // team ever hits hardship — their salary_per_round is '0.0', which used to pass the
+  // rows loop's isFa check and leak into the "All players" view. Real FA pool is
+  // exactly 150 (175 total − 25 auction-class); a regression re-admits the 8
+  // synthetics and this reads "All players (158)" with a visible DRP row.
+  const allChip = screen.getByRole('button', { name: /^All players \(/ });
+  expect(allChip).toHaveTextContent('All players (150)');
+  await user.click(allChip);
+  expect(screen.queryByText('Default Role Player')).toBeNull();
+
   // Open the drawer on a known cheap player: search by a name from the market.
   const market = (await adminDb().doc(`games/${seeded.gameId}/market/1`).get()).data()!;
   const cat = await adminDb().collection(`games/${seeded.gameId}/catalog`).get();

@@ -56,10 +56,12 @@ test('front office: expiring re-sign, then a mid-contract cut with dead money', 
   await waitFor(() => expect(screen.getByText(`0 of ${n} decided`)).toBeInTheDocument(),
     { timeout: 20000 });
 
-  // Alpha finished round 1 three players short, so hardship DID top it up — the roster
-  // really does carry expired synthetic contracts. They must not surface as expiring
-  // deals: a Default Role Player is not re-signable (backend refuses the pid range, and
-  // the client mirrors that filter in lib/contracts). This is the pin for that filter.
+  // Alpha closed round 1 with only 3 active contracts (1G/1W/1B, signed above), so
+  // hardship topped it up to the 8-man floor: need = max(8-3, deficits) = max(5, 2) = 5
+  // synthetics signed — the roster really does carry expired synthetic contracts. They
+  // must not surface as expiring deals: a Default Role Player is not re-signable
+  // (backend refuses the pid range, and the client mirrors that filter in
+  // lib/contracts). This is the pin for that filter.
   const alpha = (await adminDb().doc(
     `games/${seeded.gameId}/teams/${seeded.teamIds[0]}`).get()).data()!;
   expect(alpha.roster.some((c: { pid: number }) => c.pid >= 9000)).toBe(true);
