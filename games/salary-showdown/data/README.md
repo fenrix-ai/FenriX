@@ -11,6 +11,9 @@ Every player available this season: 150 free agents (listed `salary_per_round`, 
 and 25 auction-class stars (`salary_per_round` blank — their price is whatever the
 bidding sets; `auction_round` 1–5 tells you which round they hit the block).
 
+- Rosters hold a maximum of 10 players; only 8 dress for a game.
+- Not every free agent is on the market every night — scout a deep board before class.
+
 All stats are **last season, per game**. `prev_*` columns are the season before that.
 
 | Column | Meaning |
