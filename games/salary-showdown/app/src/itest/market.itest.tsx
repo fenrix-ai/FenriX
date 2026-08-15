@@ -62,3 +62,32 @@ test('draft night: analyst table, sign drawer, non-exclusive row persists, ALREA
   await waitFor(() => expect(screen.getByRole('alert'))
     .toHaveTextContent('He is already under contract with your team.'), { timeout: 15000 });
 }, 120000);
+
+test("we're done (P2-2): acknowledgment derives from the server flag and survives a remount", async () => {
+  localStorage.removeItem('ss.gameId'); // isolation from the prior test's claim
+  const seeded = await seedToPhase({ to: 'R1:FREE_AGENCY' });
+  await signInAnonymously(auth);
+  await httpsCallable(functions, 'joinGame')({
+    joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'GM', displayName: 'IT GM',
+  });
+  localStorage.setItem('ss.gameId', seeded.gameId);
+  const user = userEvent.setup();
+  const first = render(<MemoryRouter initialEntries={['/game/market']}><App /></MemoryRouter>);
+
+  const btn = await screen.findByRole('button', { name: "We're done" }, { timeout: 20000 });
+  expect(screen.queryByTestId('done-note')).toBeNull(); // nothing acknowledged yet
+  await user.click(btn);
+
+  // Label + note flip from the LIVE team doc (server stamped doneRound/donePhase).
+  await screen.findByRole('button', { name: 'Done noted' }, { timeout: 15000 });
+  expect(screen.getByTestId('done-note')).toHaveTextContent(
+    'Marked done — you can still make changes until the phase closes.');
+  expect(screen.getByRole('button', { name: 'Done noted' })).toBeEnabled(); // NEVER a lock
+
+  // Remount (reload stand-in): the acknowledgment persists — it derives from
+  // the team doc, not click-local state (the pre-fix behavior lost it here).
+  first.unmount();
+  render(<MemoryRouter initialEntries={['/game/market']}><App /></MemoryRouter>);
+  await screen.findByRole('button', { name: 'Done noted' }, { timeout: 20000 });
+  expect(screen.getByTestId('done-note')).toBeInTheDocument();
+}, 120000);

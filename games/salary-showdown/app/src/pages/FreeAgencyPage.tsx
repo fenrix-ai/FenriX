@@ -33,7 +33,6 @@ export default function FreeAgencyPage() {
   const [err, setErr] = useState<unknown>(null);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
-  const [doneNote, setDoneNote] = useState('');
 
   const round = game?.round ?? 1;
   const rows = useMemo<Row[]>(() => {
@@ -90,12 +89,16 @@ export default function FreeAgencyPage() {
   };
 
   // markDone is a status flag, never a lock (spec §4.2): signing stays open
-  // after pressing it and re-pressing is idempotent.
+  // after pressing it and re-pressing is idempotent. The acknowledged state
+  // derives from the LIVE team doc (P2-2, 2026-08-15) — the server stamps
+  // {doneRound, donePhase}, so it survives reloads and renders in every GM
+  // tab, not just the one that clicked.
+  const isDone = team != null && game != null
+    && team.doneRound === game.round && team.donePhase === game.phase;
   const markDone = async () => {
     setBusy(true); setErr(null);
     try {
       await call('markDone', { gameId });
-      setDoneNote('Marked done — you can still make changes until the phase closes.');
     } catch (e) { setErr(e); } finally { setBusy(false); }
   };
 
@@ -128,10 +131,12 @@ export default function FreeAgencyPage() {
       {isGM && (
         <div style={{ margin: '10px 0' }}>
           <button className="btn gold" disabled={busy} onClick={() => void markDone()}>
-            {"We're done"}
+            {isDone ? 'Done noted' : "We're done"}
           </button>
-          {doneNote && (
-            <p className="ok" data-testid="done-note" style={{ margin: '6px 0 0' }}>{doneNote}</p>
+          {isDone && (
+            <p className="ok" data-testid="done-note" style={{ margin: '6px 0 0' }}>
+              Marked done — you can still make changes until the phase closes.
+            </p>
           )}
         </div>
       )}

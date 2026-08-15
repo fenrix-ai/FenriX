@@ -34,7 +34,6 @@ export default function FrontOfficePage() {
   const [resignYears, setResignYears] = useState<Record<number, number>>({});
   const [cutTarget, setCutTarget] = useState<Contract | null>(null);
   const [busy, setBusy] = useState(false);
-  const [doneNote, setDoneNote] = useState('');
 
   const round = game?.round ?? 1;
   const actives = useMemo(
@@ -63,6 +62,11 @@ export default function FrontOfficePage() {
 
   if (!game || !team || catalog.size === 0) return null;
 
+  // Acknowledged state derives from the LIVE team doc (P2-2, 2026-08-15):
+  // the server stamps {doneRound, donePhase}, so it survives reloads and
+  // renders in every GM tab, not just the one that clicked.
+  const isDone = team.doneRound === game.round && team.donePhase === game.phase;
+
   const act = async (fn: () => Promise<unknown>) => {
     setBusy(true); setErr(null);
     try { await fn(); } catch (e) { setErr(e); } finally { setBusy(false); }
@@ -80,17 +84,16 @@ export default function FrontOfficePage() {
       {isGM && (
         <div style={{ margin: '10px 0' }}>
           {/* markDone is a status flag, NEVER a lock (spec §4.2): the GM keeps
-              acting after pressing it, and re-pressing is idempotent — so the
-              button stays enabled after success. Non-GM sees nothing here. */}
+              acting after pressing it, re-pressing is idempotent, and the
+              button stays ENABLED once acknowledged. Non-GM sees nothing here. */}
           <button className="btn gold" disabled={busy}
-            onClick={() => void act(async () => {
-              await call('markDone', { gameId });
-              setDoneNote('Marked done — you can still make changes until the phase closes.');
-            })}>
-            {"We're done"}
+            onClick={() => void act(async () => { await call('markDone', { gameId }); })}>
+            {isDone ? 'Done noted' : "We're done"}
           </button>
-          {doneNote && (
-            <p className="ok" data-testid="done-note" style={{ margin: '6px 0 0' }}>{doneNote}</p>
+          {isDone && (
+            <p className="ok" data-testid="done-note" style={{ margin: '6px 0 0' }}>
+              Marked done — you can still make changes until the phase closes.
+            </p>
           )}
         </div>
       )}

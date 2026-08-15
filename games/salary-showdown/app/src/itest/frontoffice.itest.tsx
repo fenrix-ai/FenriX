@@ -102,8 +102,10 @@ test("we're done: GM sees the button, click stamps {doneRound, donePhase}", asyn
 
   await waitFor(() => expect(screen.getByTestId('done-note')).toHaveTextContent(
     'Marked done — you can still make changes until the phase closes.'), { timeout: 15000 });
-  // Status flag, NEVER a lock: the button must still be pressable after success.
-  expect(screen.getByRole('button', { name: "We're done" })).toBeEnabled();
+  // The acknowledgment derives from the LIVE team doc (P2-2): the label flips
+  // to 'Done noted' — and stays ENABLED (status flag, NEVER a lock).
+  expect(screen.getByRole('button', { name: 'Done noted' })).toBeEnabled();
+  expect(screen.queryByRole('button', { name: "We're done" })).toBeNull();
 
   const t = (await adminDb().doc(
     `games/${seeded.gameId}/teams/${seeded.teamIds[0]}`).get()).data()!;
