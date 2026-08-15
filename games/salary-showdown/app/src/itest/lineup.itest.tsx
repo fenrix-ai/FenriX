@@ -74,15 +74,33 @@ test('lineup (F7): a GM tab follows the Coach\'s submit live and shows the locke
   const b = active.filter((p) => posOf[p] === 'B');
   const starters = [g[0], g[1], w[0], w[1], b[0]];
   const rest = active.filter((p) => !starters.includes(p));
+  const sixth = rest.find((p) => posOf[p] === 'G')!;
+  const benchB = rest.find((p) => posOf[p] === 'B')!;
+  const benchW = rest.find((p) => posOf[p] === 'W')!;
   const coach = await newClient('f7-coach');
   await coach.call('joinGame', {
     joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'Coach', displayName: 'F7 C' });
+  // Bench order [B, W] deliberately INVERTS what arrangeLineup would emit:
+  // synthetics share identical minutes, Array.sort is stable, so an arranged
+  // bench falls out in roster order ([W, B] here). Faithful render of the
+  // locked lineup — bench order is the rule; these two play in THIS order —
+  // must show B first. A regression back to arrangeLineup flips it.
   await coach.call('submitLineup', { gameId: seeded.gameId, lineup: {
-    starters, sixth: rest[0], bench: rest.slice(1), playstyle: 'Lockdown' } });
+    starters, sixth, bench: [benchB, benchW], playstyle: 'Lockdown' } });
 
   // The GM tab follows WITHOUT any remount/reload: live playstyle + badge.
   await waitFor(() => expect(lineupStatus())
     .toHaveTextContent('Playstyle: Lockdown'), { timeout: 15000 });
   expect(screen.getByTestId('lineup-locked-badge'))
     .toHaveTextContent('Lineup locked for round 1 — the Coach can revise until the phase closes.');
+
+  // Faithful bench order: the ACTIVE BENCH zones show the Coach's exact
+  // order (B then W), not the minutes-arranged one (W then B).
+  const benchLabel = screen.getByText('ACTIVE BENCH — these two play');
+  const benchZone = benchLabel.nextElementSibling as HTMLElement;
+  const badges = Array.from(benchZone.querySelectorAll('.slot')).map(
+    (s) => s.textContent ?? '');
+  expect(badges).toHaveLength(2);
+  expect(badges[0]).toContain('B');
+  expect(badges[1]).toContain('W');
 }, 120000);

@@ -61,12 +61,20 @@ export default function LineupPage() {
   // already streams into context, and a GM/Scout tab sitting on this screen
   // must follow the Coach's submitted lineup without a reload — the same
   // teammate-visibility pattern AuctionPage uses for the Scout's stored bids.
-  // arrangeLineup(prev = team.lineup) preserves the stored arrangement and
-  // absorbs roster drift exactly like the mount-time seed does.
+  // A lineup locked THIS round renders VERBATIM: the server validated it
+  // against the in-phase roster (rosters only change in FO/FA/auction
+  // resolution, never during LINEUP), and bench order is the rule —
+  // bench[0..1] play, so no re-arrangement may reorder what the Coach
+  // actually locked (arrangeLineup rebuilds bench by minutes and would).
+  // Anything else (nothing locked yet, or a stale prior-round lineup) gets
+  // the same auto-arranged preview as the mount-time seed.
   const liveSlots = useMemo(() => {
     if (!team || catalog.size === 0 || active.length === 0) return null;
+    if (team.lineupLockedRound === round && team.lineup) {
+      return fromLineup(team.lineup, catalog);
+    }
     return fromLineup(arrangeLineup(active, catalog, team.lineup), catalog);
-  }, [team, catalog, active]);
+  }, [team, catalog, active, round]);
   const shown = isCoach ? slots : liveSlots;
   const shownStyle = isCoach
     ? style
