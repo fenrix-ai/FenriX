@@ -37,6 +37,8 @@ function Slot({ id, pid, label, cls = '' }: {
 
 export default function LineupPage() {
   const { game, team, catalog, membership, call, gameId } = useGame();
+  // The COACH's local draft: seeded once at mount, then owned by the drag
+  // handlers — a live snapshot must never clobber an in-progress arrangement.
   const [slots, setSlots] = useState<Slots | null>(null);
   const [style, setStyle] = useState<Playstyle>('Balanced');
   const [err, setErr] = useState<unknown>(null);
@@ -55,21 +57,37 @@ export default function LineupPage() {
     setStyle((arranged.playstyle as Playstyle) ?? 'Balanced');
   }, [team, catalog, active, slots]);
 
-  if (!game || !team || !slots || catalog.size === 0) return null;
+  // Non-Coach roles render the LIVE team doc instead (F7): the team doc
+  // already streams into context, and a GM/Scout tab sitting on this screen
+  // must follow the Coach's submitted lineup without a reload — the same
+  // teammate-visibility pattern AuctionPage uses for the Scout's stored bids.
+  // arrangeLineup(prev = team.lineup) preserves the stored arrangement and
+  // absorbs roster drift exactly like the mount-time seed does.
+  const liveSlots = useMemo(() => {
+    if (!team || catalog.size === 0 || active.length === 0) return null;
+    return fromLineup(arrangeLineup(active, catalog, team.lineup), catalog);
+  }, [team, catalog, active]);
+  const shown = isCoach ? slots : liveSlots;
+  const shownStyle = isCoach
+    ? style
+    : ((team?.lineup?.playstyle as Playstyle) ?? 'Balanced');
+
+  if (!game || !team || !shown || catalog.size === 0) return null;
 
   const counts = { G: 0, W: 0, B: 0 };
-  for (const pid of [slots.g1, slots.g2, slots.w1, slots.w2, slots.b1]) {
+  for (const pid of [shown.g1, shown.g2, shown.w1, shown.w2, shown.b1]) {
     if (pid != null) counts[catalog.get(pid)!.position] += 1;
   }
-  const legal = isComplete(slots) && counts.G === 2 && counts.W === 2 && counts.B === 1;
+  const legal = isComplete(shown) && counts.G === 2 && counts.W === 2 && counts.B === 1;
 
   const onDragEnd = (e: DragEndEvent) => {
-    if (!e.over || !isCoach) return;
+    if (!e.over || !isCoach || !slots) return;
     const next = place(slots, Number(e.active.id), e.over.id as SlotId, catalog);
     if (next) setSlots(next); // illegal drops are silently ignored (validation, not evaluation)
   };
 
   const submit = async () => {
+    if (!slots) return;
     setBusy(true); setErr(null); setNote('');
     try {
       await call('submitLineup', { gameId, lineup: toLineup(slots, style) });
@@ -80,6 +98,14 @@ export default function LineupPage() {
   return (
     <main className="page">
       <PhaseHeader title="Set Lineup" round={round} timerEndsAt={game.timerEndsAt} timerPausedMs={game.timerPausedMs} />
+      {/* Team-visible locked indicator (F7): lineupLockedRound is public team
+          state, so every role can see the Coach's submit registered. A badge,
+          not a lock — resubmission stays open until the phase closes. */}
+      {team.lineupLockedRound === round && (
+        <p className="ok" data-testid="lineup-locked-badge">
+          Lineup locked for round {round} — the Coach can revise until the phase closes.
+        </p>
+      )}
       <ErrorNotice error={err} />
       {note && <p className="ok" role="status">{note}</p>}
       <DndContext onDragEnd={onDragEnd}>
@@ -87,31 +113,31 @@ export default function LineupPage() {
           <div className="arc" />
           <div style={{ position: 'absolute', top: '8%', left: 0, right: 0, display: 'flex',
             justifyContent: 'center', gap: 24 }}>
-            <Slot id="g1" pid={slots.g1} label="GUARD" />
-            <Slot id="g2" pid={slots.g2} label="GUARD" />
+            <Slot id="g1" pid={shown.g1} label="GUARD" />
+            <Slot id="g2" pid={shown.g2} label="GUARD" />
           </div>
           <div style={{ position: 'absolute', top: '48%', left: '3%' }}>
-            <Slot id="w1" pid={slots.w1} label="WING" />
+            <Slot id="w1" pid={shown.w1} label="WING" />
           </div>
           <div style={{ position: 'absolute', top: '48%', right: '3%' }}>
-            <Slot id="w2" pid={slots.w2} label="WING" />
+            <Slot id="w2" pid={shown.w2} label="WING" />
           </div>
           <div style={{ position: 'absolute', bottom: '6%', left: 0, right: 0,
             display: 'flex', justifyContent: 'center' }}>
-            <Slot id="b1" pid={slots.b1} label="BIG" />
+            <Slot id="b1" pid={shown.b1} label="BIG" />
           </div>
         </div>
         <div style={{ display: 'flex', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
           <div><div className="dim" style={{ fontSize: 12 }}>SIXTH MAN</div>
-            <Slot id="sixth" pid={slots.sixth} label="SIXTH" cls="sixth" /></div>
+            <Slot id="sixth" pid={shown.sixth} label="SIXTH" cls="sixth" /></div>
           <div><div className="dim" style={{ fontSize: 12 }}>ACTIVE BENCH — these two play</div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <Slot id="bench1" pid={slots.bench1} label="BENCH 1" />
-              <Slot id="bench2" pid={slots.bench2} label="BENCH 2" />
+              <Slot id="bench1" pid={shown.bench1} label="BENCH 1" />
+              <Slot id="bench2" pid={shown.bench2} label="BENCH 2" />
             </div></div>
           <div style={{ flex: 1 }}>
             <div className="dim" style={{ fontSize: 12 }}>INACTIVE DEPTH — no minutes tonight</div>
-            <DepthZone pids={slots.depth} />
+            <DepthZone pids={shown.depth} />
           </div>
         </div>
       </DndContext>
@@ -120,7 +146,7 @@ export default function LineupPage() {
         {PLAYSTYLES.map((s) => (
           <button key={s} className="card" disabled={!isCoach}
             style={{ flex: '1 0 120px', textAlign: 'left', cursor: 'pointer',
-              border: style === s ? '1.5px solid var(--gold)' : '1px solid var(--border)' }}
+              border: shownStyle === s ? '1.5px solid var(--gold)' : '1px solid var(--border)' }}
             onClick={() => setStyle(s)}>
             <strong>{s}</strong>
             <div className="muted" style={{ fontSize: 12 }}>{PLAYSTYLE_BLURBS[s]}</div>
@@ -129,7 +155,7 @@ export default function LineupPage() {
       </div>
 
       <p className="mono" role="status">
-        Lineup: {counts.G} G · {counts.W} W · {counts.B} B — {legal ? 'Legal' : 'Incomplete'} · Playstyle: {style}
+        Lineup: {counts.G} G · {counts.W} W · {counts.B} B — {legal ? 'Legal' : 'Incomplete'} · Playstyle: {shownStyle}
       </p>
       {isCoach
         ? <button className="btn green" style={{ width: '100%' }} disabled={!legal || busy}
