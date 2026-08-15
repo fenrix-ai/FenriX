@@ -72,11 +72,16 @@ deploy. Timers are advisory pacing only; nothing below is blocked by one.
       QUIT the browser on a joined device (not just the tab) and reopen
       `<hosting-url>`. SEE it land straight back in the game at the current
       phase: in prod the anonymous uid persists in the browser (default auth
-      persistence) and `ss.gameId` now persists with it. Then, in that SAME
-      browser, open the join page again, pick the same team and tap your OWN
-      seat — it renders with "· taken" and is still tappable. SEE the server
-      re-admit you and the game screen restore: `joinGame` rejects a claimed
-      seat only when the uid DIFFERS.
+      persistence) and `ss.gameId` now persists with it.
+      Re-admit half — needs DevTools, because while a membership exists the
+      app always routes past the join form (that routing is correct; this
+      simulates a device that lost its saved game but kept its identity):
+      F12 → Application → Local Storage → delete the `ss.gameId` key ONLY
+      (do NOT "Clear site data" — that wipes the identity too), then reload.
+      The join form is back: enter the code, pick the same team and tap your
+      OWN seat — it renders with "· taken" and is still tappable. SEE the
+      server re-admit you and the game screen restore: `joinGame` rejects a
+      claimed seat only when the uid DIFFERS.
       Negative half, worth seeing once: do the same tap in a FRESH incognito
       window (a new anonymous uid) and it must FAIL with "GM role already
       taken on that team". That rejection is correct — seats are bound to the

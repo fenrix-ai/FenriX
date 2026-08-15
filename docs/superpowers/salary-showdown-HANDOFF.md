@@ -329,8 +329,7 @@ the pedagogy or the design.
   the **wins-per-payroll-dollar** column on Standings, and the **Bargain of the Round** award
   (which names the winner and shows his *raw* stat line + salary — the wire carries a `perDollar`
   field that must **NEVER** be rendered).
-- **No emojis anywhere in product UI.** `★ ▲ ▼ ½ ‹ ›` are glyphs and are fine. **Hype renders only
-  as ★ glyphs, never numerically.**
+- **No emojis anywhere in product UI.** `★ ▲ ▼ ½ ‹ ›` are glyphs and are fine. **Hype renders only as ★ glyphs, never numerically.** Scope (2026-08-15, F9a): the never-numerically rule governs what sighted students see IN-GAME. Two spec-internal carve-outs are sanctioned: the finale reveal's Hype-vs-TrueImpact scatter is numeric hype by design (spec §11 mandates the numeric reveal scatter — axis and per-point tooltips ship as reviewed in Plan 3a), and `HypeStars`'s aria-label carries the numeric value (lossless for assistive tech, correct a11y practice).
 - **Playstyle strings verbatim:** `Balanced`, `Run & Gun`, `3PT Barrage`, `Inside Attack`,
   `Lockdown`. Student-facing blurbs are exactly: "Play your normal game." / "Play fast. More
   shots." / "Shoot more threes." / "Feed your Big." / "Slow it down. Defend." Never re-worded, and

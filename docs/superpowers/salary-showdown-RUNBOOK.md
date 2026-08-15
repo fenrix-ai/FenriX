@@ -13,7 +13,9 @@ Projector: never type its URL — open it from the panel's "Open projector" butt
    the round document approaches Firestore's 1 MiB limit beyond that."
 3. Write down the **join code** (the large code at the top of the panel) and the
    **game id** (press F12, then Application > Local Storage > `ss.profGameId`).
-   These two lines are your whole disaster-recovery kit.
+   The game id resumes the panel in THIS browser and is required for the
+   emergency recovery below — it cannot, by itself, move the panel to a
+   different browser.
 4. Press **Open projector**. Drag the new window to the projector display (extended
    display, not mirrored) and make it fullscreen. The wall shows the giant join code,
    the line "join at https://salary-showdown.web.app/?code=XXXXXX", and a live
@@ -34,7 +36,7 @@ checked. Advance with the gold button labelled like "Advance → Star Auction ·
 |---|---|---|---|
 | Front Office (R2-5) | GM decides expiring deals, may cut players | 3:00 | Watch the submission lights; GMs press "We're done" |
 | Draft Night | GM signs free agents from tonight's market | 2:30 | Same — lights + "We're done" |
-| Star Auction | GM places one sealed star bid | 2:00 | Lights fill as bids land |
+| Star Auction | Scout places one sealed star bid | 2:00 | Lights fill as bids land |
 | Lineup | Coach drags 8 players into slots, presses "Submit lineup" | 1:30 | Lights fill as lineups lock |
 | Simulate | Watch the wall — scoreboard flood plays out | 1:00 | Nothing; advance when "Round complete." shows |
 | Results | Watch the standings shuffle on the wall | 1:30 | Narrate the movement; advance when ready |
@@ -60,11 +62,33 @@ The final advance (Results, Round 5) asks separately: "End the season and reveal
 
 | Symptom | Fix |
 |---|---|
-| Panel tab closed or laptop rebooted | Reopen `/professor` in the same browser — the session resumes by itself. On a different browser: paste the game id from your recovery note into **Existing game id**, press **Resume**. |
+| Panel tab closed or laptop rebooted | Reopen `/professor` in the same browser — the session resumes by itself. Same browser only: a different browser cannot resume the panel (professor identity lives in the browser that created the game). If that browser is gone, see **Lost laptop (emergency recovery)** below. |
 | Projector window died | Press **Open projector** on the panel again. The game state is on the server; nothing is lost. |
 | Header stuck on "advancing…" for more than 10 seconds | Press **Resolve stuck advance** (appears in the phase control after 10 seconds). |
 | Wrong game loaded / dead session on the panel | Press **Clear session** in the session header, then Resume with the correct game id. |
 | Everything else | The join code stays in the panel header. Students' phones keep working; the game never moves on its own unless Auto-advance is checked. Wait, then advance manually. |
+
+### Lost laptop (emergency recovery)
+
+The panel's identity is an anonymous login stored in the browser that created
+the game. If that browser is gone (dead laptop, wiped profile), no in-app
+button can move control — rebinding takes the Firebase console (owner access):
+
+1. On the new machine, open `/professor`, paste the game id into **Existing
+   game id**, press **Resume** once, and leave it on "Connecting to session…"
+   (this creates the new browser's identity).
+2. In the Firebase console (console.firebase.google.com) → project
+   `salary-showdown` → **Authentication → Users**, copy the **User UID** of
+   the newest anonymous user — the one created just now (sort by Created
+   date).
+3. **Firestore Database → data → `games` → your game id**: edit the
+   `professorUid` field to that UID.
+4. Reload the panel page — the hung connection attempt never retries on its
+   own.
+
+Meanwhile the class is safe: with the old panel dead nothing advances the
+game (auto-advance fires from a live panel, and timers are advisory), so
+students keep working in the current phase and nothing is lost.
 
 ## 30-second drag check (day before class, on the classroom machine)
 
