@@ -19,6 +19,13 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const CATALOG = JSON.parse(readFileSync(
   join(HERE, '../../backend/functions/src/data/players.json'), 'utf8'));
 const byPid = Object.fromEntries(CATALOG.map((p) => [p.pid, p]));
+// Synthetic Default Role Players are not in players.json — they exist only in
+// the per-game catalog (SCHEMA.md HARDSHIP note; synthetics.js pids 9001-3 G,
+// 9011-3 W, 9021-2 B). Position derives from the reserved pid block; mins 0
+// sorts them last, same spirit as replacement level. Only lineup arrangement
+// needs the fallback: market pools never contain synthetics (F2).
+const pidInfo = (pid) => byPid[pid]
+  ?? { position: pid >= 9020 ? 'B' : pid >= 9010 ? 'W' : 'G', mins_per_game: 0 };
 
 admin.initializeApp({ projectId: 'salary-showdown-dev' });
 const adb = admin.firestore();
@@ -38,7 +45,11 @@ async function newClient(name) {
   const app = initializeApp({ apiKey: 'fake-api-key', projectId: 'salary-showdown-dev' }, name);
   const auth = getAuth(app);
   connectAuthEmulator(auth, 'http://127.0.0.1:9199', { disableWarnings: true });
-  const fns = getFunctions(app);
+  // us-west1 matches the backend's setGlobalOptions pin: the functions
+  // emulator registers callables under their declared region, and the
+  // callable URL's /{project}/{region}/{fn} path must agree (same pin as
+  // the itest harness and _playtest-cli; missed here by plan-3b T3 — F1).
+  const fns = getFunctions(app, 'us-west1');
   connectFunctionsEmulator(fns, '127.0.0.1', 5101);
   const cred = await signInAnonymously(auth);
   const call = (fn, data) => httpsCallable(fns, fn)(data).then((r) => r.data);
@@ -54,11 +65,11 @@ const activePids = (team, round) =>
 function arrangeLineup(pids) {
   // Minutes-desc greedy 2G/2W/1B, matching the backend's autoRepair ordering.
   const sorted = [...pids].sort(
-    (a, b) => Number(byPid[b].mins_per_game) - Number(byPid[a].mins_per_game));
+    (a, b) => Number(pidInfo(b).mins_per_game) - Number(pidInfo(a).mins_per_game));
   const need = { G: 2, W: 2, B: 1 };
   const starters = [];
   for (const pid of sorted) {
-    const pos = byPid[pid].position;
+    const pos = pidInfo(pid).position;
     if (need[pos] > 0) { starters.push(pid); need[pos] -= 1; }
   }
   const rest = sorted.filter((p) => !starters.includes(p));
