@@ -1,4 +1,5 @@
-import { expiringPids, isSynthetic, SYNTHETIC_MIN_PID, activePids } from './contracts';
+import { expiringPids, isSynthetic, SYNTHETIC_MIN_PID, activePids,
+  winsPerDollarThroughRound } from './contracts';
 import type { TeamDoc } from '../types/models';
 
 const c = (pid: number, startRound: number, years: number, hardship = false) =>
@@ -38,4 +39,18 @@ test('activePids still includes a synthetic during its own round', () => {
   const t = team([c(1001, 2, 1), c(9001, 2, 1, true)]);
   expect(activePids(t, 2)).toEqual([1001, 9001]);
   expect(activePids(t, 3)).toEqual([]);
+});
+
+// The in-game W / $M column (Standings + Results) must agree with the finale's
+// F8 rule: zero spend -> the ratio is UNDEFINED (null), never 0 — 0 would brand
+// a passive team worst-possible-efficiency, which the finale refuses to claim.
+test('winsPerDollarThroughRound: zero spend is null, real spend divides wins by it', () => {
+  const spender = { wins: 3, spendLog: [c(1001, 1, 2)] } as unknown as TeamDoc; // $4/rd x rounds 1-2
+  const passive = { wins: 1, spendLog: [] } as unknown as TeamDoc;
+  const legacy = { wins: 0 } as unknown as TeamDoc;                             // no spendLog field
+  const m = winsPerDollarThroughRound(
+    new Map([['a', spender], ['b', passive], ['c', legacy]]), 2);
+  expect(m.get('a')).toBeCloseTo(3 / 8);
+  expect(m.get('b')).toBeNull();
+  expect(m.get('c')).toBeNull();
 });

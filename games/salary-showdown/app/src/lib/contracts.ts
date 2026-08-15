@@ -60,3 +60,18 @@ export const spendThroughRound = (spendLog: Contract[], round: number) =>
     const end = Math.min(c.startRound + c.years - 1, round);
     return s + c.rate * Math.max(0, end - c.startRound + 1);
   }, 0));
+
+// The in-game W / $M standings column (one of §6's two sanctioned derived
+// metrics), shared by Standings and Results so the two surfaces can't drift.
+// Zero spend -> null: the ratio is undefined and renders "—", matching the
+// finale's F8 rule — 0 would fabricate a worst-possible-efficiency claim.
+export const winsPerDollarThroughRound = (
+  teams: ReadonlyMap<string, TeamDoc>, round: number,
+): Map<string, number | null> => {
+  const m = new Map<string, number | null>();
+  for (const [tid, t] of teams) {
+    const spend = spendThroughRound(t.spendLog ?? [], round);
+    m.set(tid, spend > 0 ? t.wins / spend : null);
+  }
+  return m;
+};

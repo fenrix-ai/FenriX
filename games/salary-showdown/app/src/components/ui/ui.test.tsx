@@ -2,7 +2,8 @@ import { render, screen } from '@testing-library/react';
 import { HypeStars } from './HypeStars';
 import { LedTimer } from './LedTimer';
 import { PayrollBar } from './PayrollBar';
-import type { TeamDoc } from '../../types/models';
+import { StandingsTable } from './StandingsTable';
+import type { StandingsRow, TeamDoc } from '../../types/models';
 
 test('LedTimer renders the steady null state (timer off)', () => {
   render(<LedTimer endsAt={null} />);
@@ -38,4 +39,20 @@ test('LedTimer off state (both null) never shows "paused"', () => {
   render(<LedTimer endsAt={null} pausedMs={null} />);
   expect(screen.getByTestId('led')).toHaveTextContent('--:--');
   expect(screen.queryByText('paused')).toBeNull();
+});
+
+const srow = (teamId: string, name: string, rank: number): StandingsRow => ({
+  teamId, name, rank, wins: 2, losses: 1, pointDiff: 0, pointsFor: 0,
+  tiebreakCoin: 0, previousRank: null,
+});
+// F8's in-game sibling: a zero-spend team's W / $M is UNDEFINED — rendering
+// 0.000 would fabricate a worst-possible-efficiency claim the finale (which
+// emits null and shows "—") explicitly refuses to make. Same team, same rule.
+test('StandingsTable W / $M renders "—" for a null ratio (zero spend), never 0.000', () => {
+  render(<StandingsTable rows={[srow('a', 'Alpha', 1), srow('b', 'Bravo', 2)]}
+    highlightTeamId={null} wpd={new Map([['a', 0.055], ['b', null]])} />);
+  const wpdCell = (name: string) => [...screen.getByText(name).closest('tr')!
+    .querySelectorAll('td')].at(-1)!.textContent;
+  expect(wpdCell('Alpha')).toBe('0.055');
+  expect(wpdCell('Bravo')).toBe('—');
 });

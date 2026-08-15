@@ -5,7 +5,7 @@ import { db } from '../lib/firebase';
 import { useGame } from '../contexts/GameContext';
 import { PhaseHeader } from '../components/ui/PhaseHeader';
 import { StandingsTable } from '../components/ui/StandingsTable';
-import { spendThroughRound } from '../lib/contracts';
+import { winsPerDollarThroughRound } from '../lib/contracts';
 import type { RoundDoc, StandingsRow } from '../types/models';
 
 export default function StandingsPage() {
@@ -28,15 +28,9 @@ export default function StandingsPage() {
     return () => { cancelled = true; };
   }, [game?.round, game?.phase, membership, gameId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const wpd = useMemo(() => {
-    if (!latest) return null;
-    const m = new Map<string, number>();
-    for (const [tid, t] of teams) {
-      const spend = spendThroughRound(t.spendLog ?? [], latest.round);
-      m.set(tid, spend > 0 ? t.wins / spend : 0);
-    }
-    return m;
-  }, [teams, latest]);
+  const wpd = useMemo(
+    () => (latest ? winsPerDollarThroughRound(teams, latest.round) : null),
+    [teams, latest]);
 
   if (!game || !membership) return null;
   return (

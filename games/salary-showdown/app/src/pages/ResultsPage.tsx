@@ -6,7 +6,7 @@ import { useRoundDoc } from '../hooks/useRoundDoc';
 import { PhaseHeader } from '../components/ui/PhaseHeader';
 import { StandingsTable } from '../components/ui/StandingsTable';
 import { parseBoxCsv, teamRows } from '../lib/boxfeed';
-import { spendThroughRound } from '../lib/contracts';
+import { winsPerDollarThroughRound } from '../lib/contracts';
 import { fmtM } from '../lib/money';
 import type { AuctionDoc, PrivateAuctionDoc } from '../types/models';
 
@@ -70,14 +70,7 @@ export default function ResultsPage() {
       box: teamRows(allRows, team.name) };
   }, [rd, membership, team, teams, allRows]);
 
-  const wpd = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const [tid, t] of teams) {
-      const spend = spendThroughRound(t.spendLog ?? [], round);
-      m.set(tid, spend > 0 ? t.wins / spend : 0);
-    }
-    return m;
-  }, [teams, round]);
+  const wpd = useMemo(() => winsPerDollarThroughRound(teams, round), [teams, round]);
 
   if (!game || !team || !rd || !my || !membership) return null;
 
