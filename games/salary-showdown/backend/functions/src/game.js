@@ -760,8 +760,13 @@ HOOKS['enter:FINALE'] = async (gameId) => {
     vals.sort((a, b) => b.valuePerDollar - a.valuePerDollar);
     perTeam.push({ teamId: t.id, bestSigning: vals[0] ?? null, worstSigning: vals.at(-1) ?? null });
     const spend = spendAll.reduce((s, c) => s + c.rate * c.years, 0);
+    // Zero-spend seasons have no meaningful wins-per-dollar: the Math.max
+    // clamp used to fabricate "wins per $1M" here, ranking a zero-spend
+    // ≥1-win team #1 as "1.000" beside "$0.0M committed" (F8). Emit null;
+    // the client renders "—" and sorts these rows last, matching its
+    // sibling best/worst table's "No signings on record." treatment.
     winsPerDollar.push({ teamId: t.id, wins: team.wins, totalSpend: Math.round(spend * 10) / 10,
-      ratio: Math.round((team.wins / Math.max(1, spend)) * 1000) / 1000 });
+      ratio: spend === 0 ? null : Math.round((team.wins / Math.max(1, spend)) * 1000) / 1000 });
   }
   await revealRef.set({
     scatter, perTeam, winsPerDollar,

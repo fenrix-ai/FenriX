@@ -22,8 +22,10 @@ export function WinsPerDollar({ rows, teamNames }: {
         <g key={b.teamId}>
           <text x={f.padL} y={b.y + b.h / 2 + 4} fontSize={13} fontWeight={700}
             fill="var(--text)">{b.name}</text>
-          <rect x={b.x} y={b.y} width={Math.max(b.w, 0.5)} height={b.h} rx={2}
-            fill="var(--gold)" opacity={0.85} />
+          {b.ratio != null && (
+            <rect x={b.x} y={b.y} width={Math.max(b.w, 0.5)} height={b.h} rx={2}
+              fill="var(--gold)" opacity={0.85} />
+          )}
           <text x={b.x + Math.max(b.w, 0.5) + 6} y={b.y + b.h / 2 + 4} fontSize={11}
             fill="var(--muted)" fontFamily="var(--mono)">
             {b.ratioLabel} · {b.detail}</text>

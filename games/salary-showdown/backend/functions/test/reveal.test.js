@@ -49,7 +49,14 @@ describe('reveal', () => {
     const after = (await db.doc(`games/${gameId}/reveal/latest`).get()).data();
     expect(after.scatter).toHaveLength(175);
     expect(typeof after.scatter[0].ti).toBe('number');
-    expect(after.winsPerDollar[0].ratio).toBeGreaterThanOrEqual(0);
+    // Both teams here are fully passive: every contract is a $0 hardship
+    // synthetic, so totalSpend is 0 and wins-per-dollar is meaningless — the
+    // writer emits null (F8; the old Math.max(1, spend) clamp fabricated
+    // "wins per $1M" and ranked a zero-spend winner #1).
+    for (const w of after.winsPerDollar) {
+      expect(w.totalSpend).toBe(0);
+      expect(w.ratio).toBeNull();
+    }
 
     // scatter shape: hidden truth + coerced numbers + trap flag + archetype string
     for (const row of after.scatter) {
@@ -78,7 +85,7 @@ describe('reveal', () => {
       expect([teamA, teamB]).toContain(w.teamId);
       expect(typeof w.wins).toBe('number');
       expect(typeof w.totalSpend).toBe('number');
-      expect(typeof w.ratio).toBe('number');
+      expect(w.ratio).toBeNull(); // zero-spend passive teams (asserted above)
     }
 
     // trueWeights: narrative verbatim, no emojis, defense-visible flag set
@@ -181,6 +188,12 @@ describe('reveal: spend accounting survives a cut (dead-money hall of shame)', (
     const wpd = reveal.winsPerDollar.find((w) => w.teamId === teamA);
     expect(wpd.totalSpend).toBe(expectedSpend);
     expect(wpd.totalSpend).toBeGreaterThanOrEqual(Math.round(contract.rate * contract.years * 10) / 10);
+    // Non-zero spend keeps a REAL ratio — null is reserved for zero-spend (F8):
+    expect(wpd.ratio).toBe(Math.round((wpd.wins / Math.max(1, expectedSpend)) * 1000) / 1000);
+    // …and the passive rival (teamB, zero-spend hardship-only) gets null even
+    // if it stole wins:
+    const wpdB = reveal.winsPerDollar.find((w) => w.teamId !== teamA);
+    expect(wpdB.ratio).toBeNull();
 
     // perTeam best/worst signing iterates spendLog too (not roster), so the cut pid
     // is a real candidate — replicate game.js's exact fold over spendLog and confirm

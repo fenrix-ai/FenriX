@@ -188,3 +188,20 @@ test('bestWorstRows: rank order, player-name fallback, null signings preserved',
   const alpha = bestWorstRows(perTeam, new Map([['t1', 'Zed'], ['t2', 'Beta']]), new Map());
   expect(alpha.map((r) => r.team)).toEqual(['Beta', 'Zed']);
 });
+
+test('winsPerDollarGeometry: null ratio (zero-spend) sorts last, labels "—", zero width', () => {
+  const names = new Map([['t1', 'Alpha'], ['t2', 'Beta'], ['t3', 'Gamma']]);
+  const rows: RevealDoc['winsPerDollar'] = [
+    { teamId: 't1', wins: 1, totalSpend: 0, ratio: null },
+    { teamId: 't3', wins: 9, totalSpend: 100, ratio: 0.09 },
+    { teamId: 't2', wins: 0, totalSpend: 0, ratio: null },
+  ];
+  const f: Frame = { w: 700, h: 300, padL: 10, padR: 10, padT: 10, padB: 10 };
+  const bars = winsPerDollarGeometry(rows, names, f);
+  expect(bars.map((b) => b.name)).toEqual(['Gamma', 'Alpha', 'Beta']); // nulls last, name tiebreak
+  expect(bars[0].ratioLabel).toBe('0.090');                            // real ratios untouched
+  expect(bars[1].ratioLabel).toBe('—');
+  expect(bars[1].w).toBe(0);
+  expect(bars[2].ratioLabel).toBe('—');
+  expect(bars[2].detail).toBe('0 W · $0.0M committed');
+});

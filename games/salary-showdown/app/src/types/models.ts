@@ -109,7 +109,9 @@ export interface RevealDoc {
   perTeam: { teamId: string;
     bestSigning: { pid: number; valuePerDollar: number } | null;
     worstSigning: { pid: number; valuePerDollar: number } | null }[];
-  winsPerDollar: { teamId: string; wins: number; totalSpend: number; ratio: number }[];
+  // ratio is null for a zero-spend season (F8): the server emits null below
+  // the clamp instead of fabricating "wins per $1M"; renders as "—".
+  winsPerDollar: { teamId: string; wins: number; totalSpend: number; ratio: number | null }[];
   trueWeights: { narrative: string; defenseVisible: boolean; turnoverWeight: number;
     engine: { base: number; scoring: number; playmaking: number; steal: number;
       block: number; rebound: number; turnover: number };

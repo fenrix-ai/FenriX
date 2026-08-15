@@ -171,7 +171,7 @@ export function weightsGeometry(tw: RevealDoc['trueWeights'], f: Frame): Weights
 }
 
 export interface WpdBar {
-  teamId: string; name: string; ratio: number; ratioLabel: string; detail: string;
+  teamId: string; name: string; ratio: number | null; ratioLabel: string; detail: string;
   x: number; y: number; w: number; h: number;
 }
 
@@ -183,19 +183,25 @@ const WPD_LABEL_W = 150;
 export function winsPerDollarGeometry(rows: RevealDoc['winsPerDollar'],
   names: Map<string, string>, f: Frame): WpdBar[] {
   const nameOf = (id: string) => names.get(id) ?? id;
-  const sorted = [...rows].sort((a, b) =>
-    b.ratio - a.ratio || nameOf(a.teamId).localeCompare(nameOf(b.teamId)));
+  // null ratio = zero-spend season (F8): sorts below every real ratio (a
+  // number-vs-null comparison would NaN-poison the comparator, so nulls are
+  // handled explicitly), labels "—", and draws no bar.
+  const sorted = [...rows].sort((a, b) => {
+    if ((a.ratio == null) !== (b.ratio == null)) return a.ratio == null ? 1 : -1;
+    return (b.ratio ?? 0) - (a.ratio ?? 0)
+      || nameOf(a.teamId).localeCompare(nameOf(b.teamId));
+  });
   const span = f.w - f.padL - f.padR - WPD_LABEL_W;
-  const maxRatio = Math.max(...sorted.map((r) => r.ratio), 1e-9);
+  const maxRatio = Math.max(...sorted.map((r) => r.ratio ?? 0), 1e-9);
   const rowH = (f.h - f.padT - f.padB) / Math.max(1, sorted.length);
   const barH = rowH * 0.5;
   return sorted.map((r, i) => ({
     teamId: r.teamId, name: nameOf(r.teamId), ratio: r.ratio,
-    ratioLabel: r.ratio.toFixed(3),
+    ratioLabel: r.ratio == null ? '—' : r.ratio.toFixed(3),
     detail: `${r.wins} W · $${r.totalSpend.toFixed(1)}M committed`,
     x: f.padL + WPD_LABEL_W,
     y: f.padT + i * rowH + (rowH - barH) / 2,
-    w: (r.ratio / maxRatio) * span,
+    w: ((r.ratio ?? 0) / maxRatio) * span,
     h: barH,
   }));
 }
