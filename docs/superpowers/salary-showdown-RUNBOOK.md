@@ -76,11 +76,16 @@ button can move control — rebinding takes the Firebase console (owner access):
 
 1. On the new machine, open `/professor`, paste the game id into **Existing
    game id**, press **Resume** once, and leave it on "Connecting to session…"
-   (this creates the new browser's identity).
+   An error line saying this browser can't open the game appears under it —
+   that is EXPECTED at this step; do not press Clear session. (Opening the
+   page is what created the new browser's identity.)
 2. In the Firebase console (console.firebase.google.com) → project
-   `salary-showdown` → **Authentication → Users**, copy the **User UID** of
-   the newest anonymous user — the one created just now (sort by Created
-   date).
+   `salary-showdown` → **Authentication → Users**, sort by Created date and
+   copy the **User UID** of the newest anonymous user — its Created time
+   matches the minute you opened the panel in step 1. During a live class,
+   students create anonymous users too: if two rows are that fresh, a wrong
+   pick is recoverable — the panel just stays on "Connecting to session…";
+   repeat step 3 with the next-newest UID.
 3. **Firestore Database → data → `games` → your game id**: edit the
    `professorUid` field to that UID.
 4. Reload the panel page — the hung connection attempt never retries on its
