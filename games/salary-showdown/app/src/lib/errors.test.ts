@@ -34,3 +34,7 @@ test('already-exists kind maps to the seat-taken copy', () => {
   expect(errorCopy(new FirebaseError('functions/already-exists', 'GM role already taken on that team')).headline)
     .toBe('That seat was just taken — pick another role.');
 });
+test('bad join code maps to the projector-check copy', () => {
+  expect(errorCopy(new Error('bad join code')).headline)
+    .toBe('No game found with that code — check the projector.');
+});

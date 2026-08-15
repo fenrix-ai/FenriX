@@ -20,6 +20,7 @@ const TABLE: Record<string, string> = {
   BAD_TIMER: "Timer request was invalid — check the phase hasn't changed.",
   BAD_STEP: "That reveal step doesn't exist.",
   PHASE_MISMATCH: 'The phase just closed.',
+  'bad join code': 'No game found with that code — check the projector.',
   'market is closed': 'Free agency is closed.',
   'auction is closed': 'The auction is closed.',
   'lineups are locked': 'Lineups are locked for this round.',
