@@ -22,12 +22,20 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const { uid } = useAuth();
   // 'ss.gameId' lives in localStorage (spec §10.4): a student's crashed or
   // closed laptop must recover its game in one click after reopening the
-  // browser, and sessionStorage dies with the tab. Multi-tab dev playtesting
-  // still works: sharing one gameId across tabs is CORRECT (same game), and
-  // per-tab IDENTITY still comes from session-persisted anonymous auth
-  // (browserSessionPersistence in lib/firebase.ts), which stays per-tab.
+  // browser, and sessionStorage dies with the tab. Multi-tab dev playtesting:
+  // sharing one gameId across tabs is CORRECT (same game), and per-tab
+  // IDENTITY comes from session-persisted anonymous auth (DEV-gated
+  // browserSessionPersistence in lib/firebase.ts). A tab that boots with the
+  // shared gameId but no membership yet gets terminal permission-denied
+  // listeners; the epoch below resubscribes them once its own join lands
+  // (F6 — pre-fix such a tab stayed stranded until a manual reload).
   const [gameId, setGameIdState] = useState<string | null>(
     () => localStorage.getItem('ss.gameId'));
+  // Bumped on EVERY setGameId call, including id-unchanged ones: after
+  // joinGame resolves, setGameId(sameId) must still force the game-doc and
+  // membership effects to tear down dead (permission-denied) listeners and
+  // resubscribe. HARD INVARIANT unchanged: callers await joinGame FIRST.
+  const [epoch, setEpoch] = useState(0);
   const [game, setGame] = useState<GameDoc | null>(null);
   const [membership, setMembership] = useState<Membership | null>(null);
   const [teams, setTeams] = useState<Map<string, TeamDoc>>(new Map());
@@ -37,6 +45,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const setGameId = useCallback((id: string | null) => {
     if (id) localStorage.setItem('ss.gameId', id);
     else localStorage.removeItem('ss.gameId');
+    setEpoch((e) => e + 1); // resubscribe even when id is unchanged (F6)
     setGameIdState(id);
   }, []);
 
@@ -59,14 +68,14 @@ export function GameProvider({ children }: { children: ReactNode }) {
           : d);
       },
       () => setGame(null)); // permission error pre-membership: stay null, Landing owns the flow
-  }, [gameId]);
+  }, [gameId, epoch]); // eslint-disable-line react-hooks/exhaustive-deps -- epoch forces resubscribe after join (F6)
 
   useEffect(() => { // own membership doc
     if (!gameId || !uid) { setMembership(null); return; }
     return onSnapshot(doc(db, 'games', gameId, 'players', uid),
       (s) => setMembership(s.exists() ? (s.data() as Membership) : null),
       () => setMembership(null));
-  }, [gameId, uid]);
+  }, [gameId, uid, epoch]); // eslint-disable-line react-hooks/exhaustive-deps -- epoch forces resubscribe after join (F6)
 
   useEffect(() => { // all team docs (public to members) — Lobby, Standings, Results need them
     if (!gameId || !membership?.teamId) { setTeams(new Map()); return; }

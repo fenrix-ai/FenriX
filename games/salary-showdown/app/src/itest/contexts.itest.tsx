@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 import { signInAnonymously } from 'firebase/auth';
@@ -27,3 +28,33 @@ test('membership + phase router: joined client lands on /lobby, follows startSea
   await waitFor(() => expect(screen.getByRole('heading', { name: /Draft Night/ })).toBeInTheDocument(),
     { timeout: 15000 });
 }, 90000);
+
+test('second-tab strand (F6): a pre-membership boot recovers after join, no reload', async () => {
+  localStorage.removeItem('ss.gameId'); // isolation from the prior test's claim
+  const seeded = await seedToPhase({ to: 'LOBBY' });
+  await signInAnonymously(auth);
+  await waitFor(() => expect(auth.currentUser).toBeTruthy(), { timeout: 15000 });
+  // The dev second-tab boot: ss.gameId is ALREADY set (shared localStorage)
+  // while this tab's fresh uid has no membership — the game-doc and
+  // membership listeners attach at mount and die terminally on
+  // permission-denied (Firestore never retries a denied listen).
+  localStorage.setItem('ss.gameId', seeded.gameId);
+  const user = userEvent.setup();
+  render(<MemoryRouter initialEntries={['/']}><App /></MemoryRouter>);
+
+  // Landing renders (membership null → PhaseRouter never bounces); drive the
+  // REAL claim flow: joinGame resolves, THEN setGameId(same id) — the epoch
+  // bump must tear down the dead listeners and resubscribe. Pre-fix, this
+  // stranded on the picker (seat claimed server-side, UI stuck) until reload.
+  await user.type(await screen.findByLabelText('join code', {}, { timeout: 15000 }),
+    seeded.joinCode);
+  await user.type(screen.getByLabelText('display name'), 'Tab Two');
+  await user.click(screen.getByRole('button', { name: 'Find game' }));
+  await waitFor(() => expect(screen.getByText('Alpha')).toBeInTheDocument(), { timeout: 15000 });
+  const alphaCard = screen.getByText('Alpha').closest('.card')!;
+  await user.click(Array.from(alphaCard.querySelectorAll('button'))
+    .find((b) => b.textContent === 'GM')!);
+
+  await waitFor(() => expect(screen.getByRole('heading', { name: /Lobby/ })).toBeInTheDocument(),
+    { timeout: 15000 });
+}, 120000);
