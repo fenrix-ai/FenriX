@@ -21,6 +21,9 @@ interface ProfessorCtx {
   setGameId(id: string | null): void;      // persists localStorage 'ss.profGameId'
   game: GameDoc | null;                    // transition-GATED (see game-doc effect)
   settling: boolean;                       // raw doc has transition != null
+  gameError: boolean;                      // game-doc listener errored (permission-denied
+                                           // = mistyped id OR not this game's professor);
+                                           // terminal until setGameId changes (P2-3)
   // UNGATED round/phase straight off the doc; null when no doc. Sole consumer
   // today: AdvanceControl's stuck-advance resolve, whose expectations MUST be
   // raw — the ONE sanctioned exception to the gated-expectations rule (see
@@ -45,6 +48,7 @@ export function ProfessorProvider({ children }: { children: ReactNode }) {
     () => localStorage.getItem('ss.profGameId'));
   const [game, setGame] = useState<GameDoc | null>(null);
   const [settling, setSettling] = useState(false);
+  const [gameError, setGameError] = useState(false);
   const [raw, setRaw] = useState<{ round: number; phase: Phase } | null>(null);
   const [teams, setTeams] = useState<Map<string, TeamDoc>>(new Map());
   const [players, setPlayers] = useState<Map<string, PlayerSeat>>(new Map());
@@ -62,9 +66,11 @@ export function ProfessorProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => { // game doc: gated view + raw settling flag
-    if (!gameId || !uid) { setGame(null); setSettling(false); setRaw(null); return; }
+    if (!gameId || !uid) { setGame(null); setSettling(false); setRaw(null); setGameError(false); return; }
+    setGameError(false); // new subscription, clean slate
     return onSnapshot(doc(db, 'games', gameId),
       (s) => {
+        setGameError(false);
         if (!s.exists()) { setGame(null); setSettling(false); setRaw(null); return; }
         const d = s.data() as GameDoc;
         // §3a transition gate — same mapping as GameContext.tsx:37-56. The
@@ -79,7 +85,15 @@ export function ProfessorProvider({ children }: { children: ReactNode }) {
         setSettling(d.transition != null);
         setRaw({ round: d.round, phase: d.phase });
       },
-      (e) => console.error('[professor] games/{id} listener', e));
+      (e) => {
+        // permission-denied lands here for BOTH a mistyped id and a browser
+        // that isn't this game's professor (rules grant the read only to
+        // games/{id}.professorUid) — and a denied listen is TERMINAL, so this
+        // flag is what lets the panel explain the dead end instead of showing
+        // "Connecting to session…" forever (P2-3; still logged loudly, §3a rule).
+        setGameError(true);
+        console.error('[professor] games/{id} listener', e);
+      });
   }, [gameId, uid]);
 
   useEffect(() => { // all team docs (public state + doneRound/donePhase lights)
@@ -179,9 +193,9 @@ export function ProfessorProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(() => ({
-    gameId, setGameId, game, settling, raw, contextRound, teams, players,
+    gameId, setGameId, game, settling, gameError, raw, contextRound, teams, players,
     round, auctionWave, bidsSubmitted, reveal, call,
-  }), [gameId, setGameId, game, settling, raw, contextRound, teams, players,
+  }), [gameId, setGameId, game, settling, gameError, raw, contextRound, teams, players,
     round, auctionWave, bidsSubmitted, reveal, call]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

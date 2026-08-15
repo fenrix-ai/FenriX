@@ -91,6 +91,13 @@ test('clear session: a bad gameId is no longer a dead end', async () => {
   render(<MemoryRouter initialEntries={['/professor']}><App /></MemoryRouter>);
 
   await screen.findByText('Connecting to session…', {}, { timeout: 20000 });
+  // The dead end explains itself now (P2-3 / F4's UX half): the listener's
+  // permission-denied sets gameError and this copy renders under the spinner
+  // line. Same copy for a mistyped id and a not-the-professor browser — the
+  // rules deny both identically.
+  await screen.findByTestId('connect-error', {}, { timeout: 15000 });
+  expect(screen.getByTestId('connect-error').textContent)
+    .toContain("This browser can't open that game");
   await user.click(screen.getByRole('button', { name: 'Clear session' }));
 
   // Back at SessionSetup's create/resume view; the persisted key is gone.

@@ -19,7 +19,7 @@ import type { RoundDoc } from '../../types/models';
 // RevealStepper, RoundContext and the season CSV export — each renders null
 // outside the phases it serves.
 export default function ProfessorPage() {
-  const { gameId, game, settling, setGameId } = useProfessor();
+  const { gameId, game, settling, gameError, setGameId } = useProfessor();
   return (
     <main className="page">
       <div className="phase-head">
@@ -56,6 +56,14 @@ export default function ProfessorPage() {
       ) : gameId ? (
         <section className="card" style={{ marginTop: 10 }} aria-label="Session">
           <p className="muted" style={{ margin: 0 }}>Connecting to session…</p>
+          {gameError && (
+            <p className="muted" data-testid="connect-error" style={{ margin: '6px 0 0' }}>
+              This browser can't open that game — either the game id is mistyped, or
+              this isn't the browser that created it (professor identity stays in the
+              creating browser). If that browser is gone, see the runbook's Lost
+              laptop recovery.
+            </p>
+          )}
           {/* Bad-gameId dead-end fix (3b T1): a mistyped or foreign gameId
               never produces a game doc (rules deny the read), so without
               this button the panel sits on "Connecting" forever. Clearing
