@@ -233,9 +233,21 @@ delegated to **Cloud Tasks**:
 ## 8. Auth and sessions
 
 - **Students:** browser-only. On join, the game service issues a **signed,
-  HttpOnly session cookie** (HMAC with a per-environment secret from Secret
-  Manager) binding the browser to a player/seat in a game. Join mechanics (codes,
-  names, team pick) are per-game.
+  HttpOnly cookie** (HMAC with a per-environment secret from Secret Manager)
+  binding the browser to a player/seat in a game. The cookie carries an explicit
+  multi-hour `Max-Age` (default 12h) so it survives a closed tab — not a
+  browser-session cookie. Join mechanics (codes, names, team pick) are per-game.
+
+  **Reconnection is a first-class property of this design.** All game state lives
+  in Firestore and no Cloud Run instance holds in-memory session state, so a
+  closed tab, a page refresh, or a dropped connection loses nothing: reopening
+  the game URL re-identifies the student from the cookie, the API returns
+  current round state, and the SSE stream reopens (the browser's `EventSource`
+  auto-reconnects on brief drops without a reload — any instance can serve the
+  reconnect). The starter template's frontend implements this
+  rehydrate-on-load pattern. The remaining edge case — a different device or a
+  cleared cookie — is per-game rejoin mechanics (e.g. re-entering the join code
+  to reclaim a seat), not a platform concern.
 - **Professors:** baseline is a per-deployment console passcode (Secret Manager)
   exchanged for a professor-scoped session cookie. Good enough for a trusted
   small user set.
@@ -331,6 +343,15 @@ frontend + API, SSE endpoint, session-cookie auth helper, Firestore data-access
 layer with typed documents, Cloud Tasks round-deadline helper, agent-players
 client with built-in fallback, Dockerfile, compose file, caller CI workflow, and
 a README that walks an AI agent through creating a new game.
+
+**The template is copy-and-own, not a framework.** A new game starts as a copy;
+from then on the game owns its code, and every feature module is separable and
+deletable — a game without agent seats deletes the agent-players client, a game
+without timed rounds deletes the Cloud Tasks helper, and nothing else breaks.
+The only mandatory pieces are the platform's **deployability contract**: a
+Dockerfile, a `/healthz` endpoint, and the caller CI workflow — the minimum for
+CI to build, deploy, and monitor the game like any other service. The README
+marks each module as required-by-platform or optional.
 
 ## 14. Cost model (classroom bursts)
 
