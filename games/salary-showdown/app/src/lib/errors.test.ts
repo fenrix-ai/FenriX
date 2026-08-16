@@ -39,7 +39,7 @@ test('bad join code maps to the projector-check copy', () => {
     .toBe('No game found with that code — check the projector.');
 });
 test('rename errors map to student copy', () => {
-  expect(errorCopy(new Error('BAD_NAME')).headline).toBe('Enter a team name.');
+  expect(errorCopy(new Error('BAD_NAME')).headline).toBe('Enter a team name — start it with a letter or number.');
   expect(errorCopy(new Error('naming is closed')).headline)
     .toBe('Team names lock when the season starts.');
 });

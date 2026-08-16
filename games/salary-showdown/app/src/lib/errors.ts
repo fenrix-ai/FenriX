@@ -17,7 +17,7 @@ const TABLE: Record<string, string> = {
   NOT_ON_ROSTER: 'Your lineup does not match your current roster — it has been refreshed.',
   BAD_TEMPLATE: 'Starters must be exactly 2 Guards, 2 Wings, 1 Big, plus a Sixth Man.',
   BAD_SHAPE: 'The lineup did not submit cleanly — rearrange and resubmit.',
-  BAD_NAME: 'Enter a team name.',
+  BAD_NAME: 'Enter a team name — start it with a letter or number.',
   BAD_TIMER: "Timer request was invalid — check the phase hasn't changed.",
   BAD_STEP: "That reveal step doesn't exist.",
   PHASE_MISMATCH: 'The phase just closed.',

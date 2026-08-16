@@ -23,6 +23,10 @@ describe('count-first createGame', () => {
     await expect(call(createGame, { teamCount: 1 }, 'prof'))
       .rejects.toThrow('need at least 2 teams');
   });
+  it('pathological teamCount is rejected before any allocation', async () => {
+    await expect(call(createGame, { teamCount: 100000 }, 'prof'))
+      .rejects.toThrow('too many teams');
+  });
 });
 
 describe('renameTeam', () => {
@@ -40,6 +44,11 @@ describe('renameTeam', () => {
     await call(renameTeam, { gameId: g.gameId, name: '  The Cap Crunchers of Silicon Valley  ' }, 'gmA');
     const mine = (await db.doc(`games/${g.gameId}/teams/${g.teamIds[0]}`).get()).data();
     expect(mine.name).toBe('The Cap Crunchers of Sil'); // trim + slice(0, 24)
+    // Hostile teamId is IGNORED — the callable derives the team from the
+    // caller's membership, so rivals are untargetable even by explicit id.
+    await call(renameTeam, { gameId: g.gameId, teamId: g.teamIds[1], name: 'Hijacked' }, 'gmA');
+    const mineAfter = (await db.doc(`games/${g.gameId}/teams/${g.teamIds[0]}`).get()).data();
+    expect(mineAfter.name).toBe('Hijacked');
     // the rival team keeps its placeholder — renameTeam has no teamId input
     const rival = (await db.doc(`games/${g.gameId}/teams/${g.teamIds[1]}`).get()).data();
     expect(rival.name).toMatch(/^Franchise /);
@@ -47,6 +56,8 @@ describe('renameTeam', () => {
   it('empty and non-member renames reject', async () => {
     const g = await lobbyGame();
     await expect(call(renameTeam, { gameId: g.gameId, name: '   ' }, 'gmA'))
+      .rejects.toThrow('BAD_NAME');
+    await expect(call(renameTeam, { gameId: g.gameId, name: '=SUM(A1:A9)' }, 'gmA'))
       .rejects.toThrow('BAD_NAME');
     await expect(call(renameTeam, { gameId: g.gameId, name: 'Sneaky' }, 'stranger'))
       .rejects.toThrow('not in this game');

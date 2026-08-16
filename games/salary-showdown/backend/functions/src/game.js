@@ -45,6 +45,13 @@ export const createGame = onCall(async (req) => {
   // 21-franchise cap stays panel-enforced (standing hard rule); the server
   // keeps only the minimum.
   const teamCount = Number.isInteger(req.data.teamCount) ? req.data.teamCount : null;
+  // Abuse guard, NOT the classroom cap: the 21-franchise limit stays panel-
+  // enforced (standing hard rule). This ceiling only blocks pathological
+  // counts — a ~30-byte anonymous body could otherwise allocate millions of
+  // placeholder teams before any validation ran.
+  if (teamCount != null && teamCount > 500) {
+    throw new HttpsError('invalid-argument', 'too many teams');
+  }
   const teamNames = teamCount != null
     ? Array.from({ length: teamCount }, (_, i) => `Franchise ${i + 1}`)
     : (req.data.teamNames ?? []);
@@ -143,7 +150,13 @@ export const renameTeam = onCall(async (req) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'sign in first');
   const { gameId } = req.data;
   const name = String(req.data.name ?? '').trim().slice(0, 24);
-  if (name.length === 0) throw new HttpsError('invalid-argument', 'BAD_NAME');
+  // Student-typed names flow verbatim into the downloadable season CSV
+  // (boxCsv team/opponent columns, format frozen): refuse spreadsheet
+  // formula prefixes so a name can never execute when the export opens in
+  // Excel/Sheets. Empty-after-trim shares the same student copy.
+  if (name.length === 0 || /^[=+\-@]/.test(name)) {
+    throw new HttpsError('invalid-argument', 'BAD_NAME');
+  }
   const m = await db().doc(`games/${gameId}/players/${req.auth.uid}`).get();
   if (!m.exists) throw new HttpsError('permission-denied', 'not in this game');
   const g = (await db().doc(`games/${gameId}`).get()).data();
