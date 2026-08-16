@@ -8,7 +8,7 @@ import { ErrorNotice } from '../ui/ErrorNotice';
 // ceiling beyond 21 teams (parent spec).
 const CAP_COPY =
   "Cap sessions at 21 franchises — the round document approaches Firestore's 1 MiB limit beyond that.";
-const MIN_COPY = 'Enter at least 2 team names — one per line.';
+const MIN_COPY = 'Enter how many franchises are playing — at least 2.';
 
 // Game lifecycle (design spec §5.2): create a game (team-names textarea, one
 // per line), resume an existing gameId, and start the season while in lobby.
@@ -16,7 +16,7 @@ const MIN_COPY = 'Enter at least 2 team names — one per line.';
 // from there.
 export function SessionSetup() {
   const { gameId, setGameId, game, teams, call } = useProfessor();
-  const [namesText, setNamesText] = useState('');
+  const [countText, setCountText] = useState('');
   const [resumeId, setResumeId] = useState('');
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -24,15 +24,18 @@ export function SessionSetup() {
 
   if (!gameId) {
     const create = async () => {
-      const names = namesText.split('\n').map((s) => s.trim()).filter((s) => s.length > 0);
-      if (names.length < 2) { setInlineError(MIN_COPY); return; }
-      if (names.length > 21) { setInlineError(CAP_COPY); return; }
+      // Count-first create (playtest-2 item 1): students name their own
+      // franchises from the lobby. The 21-franchise cap stays enforced HERE
+      // with the exact CAP_COPY string — standing hard rule, not server-side.
+      const n = Number(countText);
+      if (!Number.isInteger(n) || n < 2) { setInlineError(MIN_COPY); return; }
+      if (n > 21) { setInlineError(CAP_COPY); return; }
       setInlineError(null);
       setBusy(true);
       setError(null);
       try {
         const res = await call<{ gameId: string; joinCode: string }>(
-          'createGame', { teamNames: names });
+          'createGame', { teamCount: n });
         setGameId(res.gameId); // persists localStorage 'ss.profGameId' (ProfessorContext)
       } catch (e) {
         setError(e);
@@ -43,10 +46,15 @@ export function SessionSetup() {
     return (
       <section className="card" style={{ marginTop: 10 }} aria-label="Session setup">
         <h2 style={{ margin: '0 0 8px', fontSize: 16 }}>New session</h2>
-        <textarea aria-label="team names" rows={8} value={namesText}
-          onChange={(e) => setNamesText(e.target.value)}
-          placeholder="One team name per line (2 to 21 teams)"
-          style={{ width: '100%', boxSizing: 'border-box' }} />
+        <input aria-label="franchise count" className="mono" inputMode="numeric"
+          value={countText}
+          onChange={(e) => setCountText(e.target.value.replace(/[^0-9]/g, ''))}
+          placeholder="How many franchises? (2 to 21)"
+          style={{ width: '100%', boxSizing: 'border-box', fontSize: 16 }} />
+        <p className="muted" style={{ margin: '6px 0 0', fontSize: 13 }}>
+          Teams arrive as Franchise 1..N — students name their own from the
+          lobby before you press Start season.
+        </p>
         {inlineError && (
           <p className="neg" role="alert" style={{ margin: '8px 0' }}>{inlineError}</p>
         )}

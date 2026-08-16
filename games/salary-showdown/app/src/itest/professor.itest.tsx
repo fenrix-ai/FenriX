@@ -84,9 +84,8 @@ test('panel: create enforces the 21-franchise cap, lists franchises, starts the 
   const user = userEvent.setup();
   render(<MemoryRouter initialEntries={['/professor']}><App /></MemoryRouter>);
 
-  const box = await screen.findByLabelText('team names', {}, { timeout: 20000 });
-  await user.click(box);
-  await user.paste(Array.from({ length: 22 }, (_, i) => `Team ${i + 1}`).join('\n'));
+  const box = await screen.findByLabelText('franchise count', {}, { timeout: 20000 });
+  await user.type(box, '22');
   await user.click(screen.getByRole('button', { name: 'Create game' }));
   // The franchise cap is enforced HERE in the panel (count check + exact copy),
   // NOT server-side (standing hard rule): the inline error renders and no game
@@ -97,12 +96,12 @@ test('panel: create enforces the 21-franchise cap, lists franchises, starts the 
   expect(screen.queryByLabelText('Join code')).toBeNull();
 
   await user.clear(box);
-  await user.click(box);
-  await user.paste('Alpha\nBeta\nGamma');
+  await user.type(box, '3');
   await user.click(screen.getByRole('button', { name: 'Create game' }));
   await waitFor(() => expect(screen.getByLabelText('Join code')).toBeInTheDocument(),
     { timeout: 30000 });
-  for (const nm of ['Alpha', 'Beta', 'Gamma']) {
+  // Count-first create: teams arrive as placeholders students will rename.
+  for (const nm of ['Franchise 1', 'Franchise 2', 'Franchise 3']) {
     await waitFor(() => expect(screen.getByText(nm)).toBeInTheDocument(), { timeout: 20000 });
   }
   await user.click(await screen.findByRole('button', { name: 'Start season' }, { timeout: 20000 }));
