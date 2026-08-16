@@ -8,6 +8,7 @@ import { SessionSetup } from '../../components/professor/SessionSetup';
 import { AdvanceControl } from '../../components/professor/AdvanceControl';
 import { TimerStrip } from '../../components/professor/TimerStrip';
 import { SubmissionGrid } from '../../components/professor/SubmissionGrid';
+import { SeatPanel } from '../../components/professor/SeatPanel';
 import { RevealStepper } from '../../components/professor/RevealStepper';
 import { RoundContext } from '../../components/professor/RoundContext';
 import { ErrorNotice } from '../../components/ui/ErrorNotice';
@@ -81,6 +82,7 @@ export default function ProfessorPage() {
       <AdvanceControl />
       <TimerStrip />
       <SubmissionGrid />
+      <SeatPanel />
       <RevealStepper />
       <RoundContext />
       <ExportSeasonButton />
