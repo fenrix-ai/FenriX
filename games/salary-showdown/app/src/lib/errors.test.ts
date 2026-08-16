@@ -38,3 +38,8 @@ test('bad join code maps to the projector-check copy', () => {
   expect(errorCopy(new Error('bad join code')).headline)
     .toBe('No game found with that code — check the projector.');
 });
+test('rename errors map to student copy', () => {
+  expect(errorCopy(new Error('BAD_NAME')).headline).toBe('Enter a team name.');
+  expect(errorCopy(new Error('naming is closed')).headline)
+    .toBe('Team names lock when the season starts.');
+});

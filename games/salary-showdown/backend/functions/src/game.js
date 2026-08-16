@@ -38,7 +38,16 @@ export async function assertProfessor(gameId, uid) {
 
 export const createGame = onCall(async (req) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'sign in first');
-  const teamNames = req.data.teamNames ?? [];
+  // Count-first create (playtest-2 item 1): the panel sends { teamCount } and
+  // students name their own franchises from the lobby (renameTeam below).
+  // { teamNames } stays supported VERBATIM — the seed script, itest harness,
+  // playtest CLI, prod-smoke, and every existing test drive it. The
+  // 21-franchise cap stays panel-enforced (standing hard rule); the server
+  // keeps only the minimum.
+  const teamCount = Number.isInteger(req.data.teamCount) ? req.data.teamCount : null;
+  const teamNames = teamCount != null
+    ? Array.from({ length: teamCount }, (_, i) => `Franchise ${i + 1}`)
+    : (req.data.teamNames ?? []);
   if (teamNames.length < 2) throw new HttpsError('invalid-argument', 'need at least 2 teams');
   const gameRef = db().collection('games').doc();
   const joinCode = gameRef.id.slice(0, 6).toUpperCase();
@@ -122,6 +131,25 @@ export const getLobby = onCall(async (req) => {
       teamId: t.id, name: t.data().name, claimedRoles: claimed[t.id] ?? [],
     })),
   };
+});
+
+// Lobby-only franchise naming (playtest-2 item 1, adjudicated): any member of
+// a team may rename THEIR OWN team until the season starts — the callable
+// derives teamId from the caller's membership, so rivals are untargetable.
+// Server-authoritative write like every mutation; 24-char cap mirrors
+// displayName's. Names are not required to be unique (professor-typed names
+// never were either).
+export const renameTeam = onCall(async (req) => {
+  if (!req.auth) throw new HttpsError('unauthenticated', 'sign in first');
+  const { gameId } = req.data;
+  const name = String(req.data.name ?? '').trim().slice(0, 24);
+  if (name.length === 0) throw new HttpsError('invalid-argument', 'BAD_NAME');
+  const m = await db().doc(`games/${gameId}/players/${req.auth.uid}`).get();
+  if (!m.exists) throw new HttpsError('permission-denied', 'not in this game');
+  const g = (await db().doc(`games/${gameId}`).get()).data();
+  if (g.status !== 'lobby') throw new HttpsError('failed-precondition', 'naming is closed');
+  await db().doc(`games/${gameId}/teams/${m.data().teamId}`).update({ name });
+  return { name };
 });
 
 export const startSeason = onCall(async (req) => {
