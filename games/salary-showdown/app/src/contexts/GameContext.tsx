@@ -1,7 +1,7 @@
 import {
   createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode,
 } from 'react';
-import { collection, doc, getDocs, onSnapshot } from 'firebase/firestore';
+import { collection, doc, getDocs, onSnapshot, query, where } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../lib/firebase';
 import { useAuth } from './AuthContext';
@@ -11,6 +11,10 @@ interface Membership { teamId: string; role: string; displayName: string }
 interface GameCtx {
   gameId: string | null; setGameId: (id: string | null) => void;
   game: GameDoc | null; membership: Membership | null; team: TeamDoc | null;
+  // Effective-role check (playtest-2 item 3): true when the caller holds the
+  // role, or their team has no claimed member with it — the exact mirror of
+  // the server's memberWithRole absent-seat fallback.
+  actsAs(role: string): boolean;
   teams: Map<string, TeamDoc>; catalog: Map<number, CatalogPlayer>;
   market: MarketDoc | null;
   call: <T = unknown>(name: string, data: unknown) => Promise<T>;
@@ -77,6 +81,24 @@ export function GameProvider({ children }: { children: ReactNode }) {
       () => setMembership(null));
   }, [gameId, uid, epoch]); // eslint-disable-line react-hooks/exhaustive-deps -- epoch forces resubscribe after join (F6)
 
+  const [myTeamRoles, setMyTeamRoles] = useState<Set<string>>(new Set());
+  useEffect(() => { // which roles are CLAIMED on my team (absent-seat fallback)
+    if (!gameId || !membership?.teamId) { setMyTeamRoles(new Set()); return; }
+    return onSnapshot(
+      query(collection(db, 'games', gameId, 'players'),
+        where('teamId', '==', membership.teamId)),
+      (snap) => {
+        const s = new Set<string>();
+        snap.forEach((d) => s.add((d.data() as { role: string }).role));
+        setMyTeamRoles(s);
+      },
+      () => {});
+  }, [gameId, membership?.teamId]);
+
+  const actsAs = useCallback((role: string) =>
+    membership != null && (membership.role === role || !myTeamRoles.has(role)),
+  [membership, myTeamRoles]);
+
   useEffect(() => { // all team docs (public to members) — Lobby, Standings, Results need them
     if (!gameId || !membership?.teamId) { setTeams(new Map()); return; }
     return onSnapshot(collection(db, 'games', gameId, 'teams'), (snap) => {
@@ -112,7 +134,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   const team = membership ? teams.get(membership.teamId) ?? null : null;
   const value = useMemo(() => ({
-    gameId, setGameId, game, membership, team, teams, catalog, market, call,
-  }), [gameId, setGameId, game, membership, team, teams, catalog, market, call]);
+    gameId, setGameId, game, membership, team, teams, catalog, market, call, actsAs,
+  }), [gameId, setGameId, game, membership, team, teams, catalog, market, call, actsAs]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

@@ -36,7 +36,7 @@ function Slot({ id, pid, label, cls = '' }: {
 }
 
 export default function LineupPage() {
-  const { game, team, catalog, membership, call, gameId } = useGame();
+  const { game, team, catalog, membership, call, gameId, actsAs } = useGame();
   // The COACH's local draft: seeded once at mount, then owned by the drag
   // handlers — a live snapshot must never clobber an in-progress arrangement.
   const [slots, setSlots] = useState<Slots | null>(null);
@@ -46,7 +46,8 @@ export default function LineupPage() {
   const [busy, setBusy] = useState(false);
 
   const round = game?.round ?? 1;
-  const isCoach = membership?.role === 'Coach';
+  const isCoach = actsAs('Coach');
+  const coachFallback = isCoach && membership?.role !== 'Coach';
   const active = useMemo(
     () => (team ? activePids(team, round) : []), [team, round]);
 
@@ -113,6 +114,9 @@ export default function LineupPage() {
         <p className="ok" data-testid="lineup-locked-badge">
           Lineup locked for round {round} — the Coach can revise until the phase closes.
         </p>
+      )}
+      {coachFallback && (
+        <p className="dim" data-testid="role-fallback">No Coach on your team — any member may set the lineup.</p>
       )}
       <ErrorNotice error={err} />
       {note && <p className="ok" role="status">{note}</p>}

@@ -15,7 +15,7 @@ interface Draft { rate: string; years: number }
 const fansM = (n: number) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M fans` : `${Math.round(n / 1e3)}k fans`;
 
 export default function AuctionPage() {
-  const { game, team, catalog, membership, call, gameId } = useGame();
+  const { game, team, catalog, membership, call, gameId, actsAs } = useGame();
   const [wave, setWave] = useState<AuctionDoc | null>(null);
   const [draft, setDraft] = useState<Record<number, Draft>>({});
   const [err, setErr] = useState<unknown>(null);
@@ -23,7 +23,8 @@ export default function AuctionPage() {
   const [busy, setBusy] = useState(false);
 
   const round = game?.round ?? 1;
-  const isScout = membership?.role === 'Scout';
+  const isScout = actsAs('Scout');
+  const scoutFallback = isScout && membership?.role !== 'Scout';
   const my = maxYears(round);
   const floor = minBid(round);
 
@@ -102,6 +103,9 @@ export default function AuctionPage() {
         {my > 1 ? ` · years 1–${my}` : ' · one-round offers only'}.
       </div>
       <ErrorNotice error={err} />
+      {scoutFallback && (
+        <p className="dim" data-testid="role-fallback">No Scout on your team — any member may bid.</p>
+      )}
       {note && <p className="ok" role="status">{note}</p>}
 
       <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 8 }}>

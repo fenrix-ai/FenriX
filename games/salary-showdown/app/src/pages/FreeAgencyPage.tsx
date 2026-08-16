@@ -20,9 +20,10 @@ const COLS = [
 ] as const;
 
 export default function FreeAgencyPage() {
-  const { game, team, catalog, market, call, gameId, membership } = useGame();
+  const { game, team, catalog, market, call, gameId, membership, actsAs } = useGame();
   const { form } = useSeasonForm();
-  const isGM = membership?.role === 'GM';
+  const isGM = actsAs('GM');
+  const gmFallback = isGM && membership?.role !== 'GM';
   const [chip, setChip] = useState<'tonight' | 'all'>('tonight');
   const [pos, setPos] = useState<'' | 'G' | 'W' | 'B'>('');
   const [cheap, setCheap] = useState(false);
@@ -128,6 +129,9 @@ export default function FreeAgencyPage() {
       </div>
       <ErrorNotice error={err} />
       {note && <p className="ok" data-testid="sign-note">{note}</p>}
+      {gmFallback && (
+        <p className="dim" data-testid="role-fallback">No GM on your team — any member may sign.</p>
+      )}
       {isGM && (
         <div style={{ margin: '10px 0' }}>
           <button className="btn gold" disabled={busy} onClick={() => void markDone()}>

@@ -26,9 +26,10 @@ function StatLine({ p, form }: {
 }
 
 export default function FrontOfficePage() {
-  const { game, team, catalog, call, gameId, membership } = useGame();
+  const { game, team, catalog, call, gameId, membership, actsAs } = useGame();
   const { form } = useSeasonForm();
-  const isGM = membership?.role === 'GM';
+  const isGM = actsAs('GM');
+  const gmFallback = isGM && membership?.role !== 'GM';
   const [err, setErr] = useState<unknown>(null);
   const [walked, setWalked] = useState<Set<number>>(new Set());
   const [resignYears, setResignYears] = useState<Record<number, number>>({});
@@ -81,6 +82,9 @@ export default function FrontOfficePage() {
       <PayrollBar team={team} round={round} />
       {!isGM && <p className="dim">The GM acts this phase — decisions shown are read-only.</p>}
       <ErrorNotice error={err} />
+      {gmFallback && (
+        <p className="dim" data-testid="role-fallback">No GM on your team — any member may sign.</p>
+      )}
       {isGM && (
         <div style={{ margin: '10px 0' }}>
           {/* markDone is a status flag, NEVER a lock (spec §4.2): the GM keeps

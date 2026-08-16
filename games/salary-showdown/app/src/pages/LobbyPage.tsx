@@ -14,6 +14,7 @@ const RULES = [
   'Prices rise about 8% each round.',
   'Roster: minimum 8, maximum 10. Starters: 2 G, 2 W, 1 B.',
   'One submit per phase: GM signs, Scout bids, Coach sets the lineup.',
+  'Missing a seat? Any teammate covers that role.',
 ];
 
 interface Member { teamId: string; role: string; displayName: string }
