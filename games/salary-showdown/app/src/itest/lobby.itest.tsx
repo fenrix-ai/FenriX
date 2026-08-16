@@ -24,7 +24,11 @@ test('lobby shows live role claims and own-team highlight', async () => {
 
 test('lobby rename (playtest-2): a member names their own franchise, live for the room', async () => {
   localStorage.removeItem('ss.gameId'); // isolation from the prior test's claim
-  const seeded = await seedToPhase({ to: 'LOBBY' });
+  // Names chosen to discriminate numeric-aware collation from plain lexicographic:
+  // teamIds[0] = 'Franchise 10' is the team this test joins and renames.
+  const seeded = await seedToPhase({
+    to: 'LOBBY', teams: ['Franchise 10', 'Franchise 2', 'Beta', 'Alpha'],
+  });
   await signInAnonymously(auth);
   await waitFor(() => expect(auth.currentUser).toBeTruthy(), { timeout: 15000 });
   await httpsCallable(functions, 'joinGame')({
@@ -35,6 +39,10 @@ test('lobby rename (playtest-2): a member names their own franchise, live for th
   render(<MemoryRouter initialEntries={['/lobby']}><App /></MemoryRouter>);
 
   const input = await screen.findByLabelText('team name', {}, { timeout: 20000 });
+  // Numeric-aware name sort (T1 review carry): Franchise 2 before Franchise 10.
+  // A lexicographic regression (or dropping the sort) flips this exact order.
+  expect([...document.querySelectorAll('.card > strong')].map((e) => e.textContent))
+    .toEqual(['Alpha', 'Beta', 'Franchise 2', 'Franchise 10']);
   await user.clear(input);
   await user.type(input, 'Cap Crunchers');
   await user.click(screen.getByRole('button', { name: 'Rename' }));
@@ -49,4 +57,8 @@ test('lobby rename (playtest-2): a member names their own franchise, live for th
   }, { timeout: 15000 });
   // Rival teams keep their names — rename can only target the caller's team.
   expect(screen.getByText('Beta')).toBeInTheDocument();
+  expect(screen.getByText('Franchise 2')).toBeInTheDocument();
+  // Post-rename re-sort: 'Cap Crunchers' takes its own alphabetical slot.
+  expect([...document.querySelectorAll('.card > strong')].map((e) => e.textContent))
+    .toEqual(['Alpha', 'Beta', 'Cap Crunchers', 'Franchise 2']);
 }, 120000);
