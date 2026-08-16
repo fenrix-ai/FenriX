@@ -43,3 +43,6 @@ test('rename errors map to student copy', () => {
   expect(errorCopy(new Error('naming is closed')).headline)
     .toBe('Team names lock when the season starts.');
 });
+test('releaseSeat unclaimed maps to the already-open copy', () => {
+  expect(errorCopy(new Error('seat is not claimed')).headline).toBe('That seat is already open.');
+});

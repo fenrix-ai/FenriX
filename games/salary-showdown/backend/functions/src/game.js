@@ -165,6 +165,22 @@ export const renameTeam = onCall(async (req) => {
   return { name };
 });
 
+// Professor-only seat release (playtest-2 item 3): frees a claimed seat so
+// the absent-seat fallback covers a player who left mid-session. Deleting the
+// membership doc signs that browser out of the team — its listeners lose read
+// access and the client falls back to the join screen — and the seat reopens
+// for a fresh claim (re-claiming re-asserts the role from the next call on).
+export const releaseSeat = onCall(async (req) => {
+  const { gameId, teamId, role } = req.data;
+  await assertProfessor(gameId, req.auth?.uid);
+  if (!ROLES.includes(role)) throw new HttpsError('invalid-argument', 'bad role');
+  const seat = await db().collection(`games/${gameId}/players`)
+    .where('teamId', '==', teamId).where('role', '==', role).limit(1).get();
+  if (seat.empty) throw new HttpsError('not-found', 'seat is not claimed');
+  await seat.docs[0].ref.delete();
+  return { released: role };
+});
+
 export const startSeason = onCall(async (req) => {
   const { gameId } = req.data;
   const g = await assertProfessor(gameId, req.auth?.uid);
@@ -347,11 +363,20 @@ export const setRevealStep = onCall(async (req) => {
   });
 });
 
+// Role gate with ABSENT-SEAT fallback (playtest-2 item 3, adjudicated): a
+// CLAIMED seat stays authoritative — its holder is the only one who may act.
+// When no member of the caller's team holds the role (two-player teams, or a
+// seat the professor released), any team member may act instead. The check
+// runs per call, so claiming a seat mid-phase reasserts the role immediately.
 async function memberWithRole(gameId, uid, role) {
   if (!uid) throw new HttpsError('unauthenticated', 'sign in first');
   const m = await db().doc(`games/${gameId}/players/${uid}`).get();
   if (!m.exists) throw new HttpsError('permission-denied', 'not in this game');
-  if (m.data().role !== role) throw new HttpsError('permission-denied', `${role} only`);
+  if (m.data().role !== role) {
+    const holder = await db().collection(`games/${gameId}/players`)
+      .where('teamId', '==', m.data().teamId).where('role', '==', role).limit(1).get();
+    if (!holder.empty) throw new HttpsError('permission-denied', `${role} only`);
+  }
   return m.data();
 }
 
