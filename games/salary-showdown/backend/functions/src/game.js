@@ -30,6 +30,11 @@ const CATALOG = Object.fromEntries([...players, ...SYNTHETICS].map((p) => [p.pid
 const FA_POOL = players.filter((p) => !p.auction_round);   // `players` only: synthetics are structurally excluded from every draw
 
 export async function assertProfessor(gameId, uid) {
+  // Unauthenticated callers must fail HERE: with uid undefined, a crafted
+  // gameId path resolving to a doc with no professorUid would otherwise pass
+  // the equality check (undefined !== undefined). Latent for the read-only
+  // riders; releaseSeat made it worth closing for the whole family.
+  if (!uid) throw new HttpsError('unauthenticated', 'sign in first');
   const g = await db().doc(`games/${gameId}`).get();
   if (!g.exists) throw new HttpsError('not-found', 'game not found');
   if (g.data().professorUid !== uid) throw new HttpsError('permission-denied', 'professor only');

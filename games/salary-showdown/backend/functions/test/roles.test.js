@@ -89,4 +89,42 @@ describe('releaseSeat', () => {
     await expect(call(releaseSeat, { gameId, teamId: teamA, role: 'Coach' }, 'prof'))
       .rejects.toThrow('seat is not claimed');
   });
+
+  it('fallback is per-TEAM: a rival Scout neither blocks nor receives team A\'s fallback bid', async () => {
+    const res = await call(createGame, { teamNames: ['Alpha', 'Beta'] }, 'prof');
+    const teams = await db.collection(`games/${res.gameId}/teams`).get();
+    const teamA = teams.docs.find((d) => d.data().name === 'Alpha').id;
+    const teamB = teams.docs.find((d) => d.data().name === 'Beta').id;
+    await call(joinGame, { joinCode: res.joinCode, teamId: teamA, role: 'GM', displayName: 'G' }, 'gmA');
+    await call(joinGame, { joinCode: res.joinCode, teamId: teamB, role: 'Scout', displayName: 'S' }, 'scoutB');
+    await call(startSeason, { gameId: res.gameId }, 'prof');
+    let g = (await db.doc(`games/${res.gameId}`).get()).data();
+    let guard = 0;
+    while (g.phase !== 'AUCTION') {
+      await call(advancePhase,
+        { gameId: res.gameId, expectedPhase: g.phase, expectedRound: g.round }, 'prof');
+      g = (await db.doc(`games/${res.gameId}`).get()).data();
+      if (++guard > 10) throw new Error('never reached AUCTION');
+    }
+    const wave = (await db.doc(`games/${res.gameId}/auctions/1`).get()).data();
+    // B's claimed Scout must NOT block team A's fallback (holder query keys on
+    // the CALLER's team)...
+    await call(submitBids,
+      { gameId: res.gameId, bids: { [wave.stars[0]]: { rate: 2.0, years: 1 } } }, 'gmA');
+    // ...and the write landed on A's own private doc, with B's untouched.
+    expect((await db.doc(`games/${res.gameId}/teams/${teamA}/private/auction`).get()).data().round).toBe(1);
+    expect((await db.doc(`games/${res.gameId}/teams/${teamB}/private/auction`).get()).exists).toBe(false);
+    // releaseSeat scoped to team A cannot touch B's Scout.
+    await expect(call(releaseSeat, { gameId: res.gameId, teamId: teamA, role: 'Scout' }, 'prof'))
+      .rejects.toThrow('seat is not claimed');
+    expect((await db.doc(`games/${res.gameId}/players/scoutB`).get()).exists).toBe(true);
+  });
+
+  it('releaseSeat demands auth before the professor check (crafted-path guard)', async () => {
+    const { gameId, teamA } = await gameAt('AUCTION');
+    await expect(t.wrap(releaseSeat)({
+      data: { gameId: `${gameId}/teams/${teamA}`, teamId: teamA, role: 'GM' },
+      auth: undefined,
+    })).rejects.toThrow('sign in first');
+  });
 });
