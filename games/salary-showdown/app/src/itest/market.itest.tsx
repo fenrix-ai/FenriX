@@ -35,6 +35,11 @@ test('draft night: analyst table, sign drawer, non-exclusive row persists, ALREA
   await user.click(allChip);
   expect(screen.queryByText('Default Role Player')).toBeNull();
 
+  // Playtest-2 item 2: the roster panel exists and starts empty.
+  const roster = () => screen.getByTestId('my-roster');
+  expect(roster().textContent).toContain('0 of 10');
+  expect(roster().textContent).toContain('No players under contract yet.');
+
   // Open the drawer on a known cheap player: search by a name from the market.
   const market = (await adminDb().doc(`games/${seeded.gameId}/market/1`).get()).data()!;
   const cat = await adminDb().collection(`games/${seeded.gameId}/catalog`).get();
@@ -53,6 +58,9 @@ test('draft night: analyst table, sign drawer, non-exclusive row persists, ALREA
   await user.click(screen.getByRole('button', { name: 'Confirm signing' }));
   await waitFor(() => expect(screen.getByTestId('sign-note'))
     .toHaveTextContent('He remains available to every team.'), { timeout: 15000 });
+  // …and reflects the signing live from the team doc.
+  await waitFor(() => expect(roster().textContent).toContain(target.name), { timeout: 15000 });
+  expect(roster().textContent).toContain('1 of 10');
   // NON-EXCLUSIVE: the row is still in the table after signing (scope to the
   // table — the open drawer repeats the same name and getByText would ambiguate).
   expect(document.querySelector('table')!.textContent).toContain(target.name);

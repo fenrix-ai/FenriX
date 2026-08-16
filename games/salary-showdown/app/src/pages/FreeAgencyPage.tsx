@@ -141,6 +141,31 @@ export default function FreeAgencyPage() {
         </div>
       )}
 
+      {/* Playtest-2 item 2: who you've signed, live from the team doc. Facts
+          only — name, position, committed rate × rounds. Renders every FA
+          round (not just Draft Night); DRP hardship rows show like any
+          contract because they ARE contracts. */}
+      <section className="card" data-testid="my-roster" style={{ margin: '10px 0' }}>
+        <strong>Your roster</strong>
+        <span className="mono muted" style={{ marginLeft: 8, fontSize: 13 }}>
+          {actives.length} of 10
+        </span>
+        {actives.length === 0 && (
+          <p className="dim" style={{ margin: '6px 0 0' }}>No players under contract yet.</p>
+        )}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+          {actives.map((c) => {
+            const p = catalog.get(c.pid)!;
+            return (
+              <span key={c.pid} className="chip" data-testid={`roster-${c.pid}`}>
+                {p.name} <PositionBadge pos={p.position} />{' '}
+                <span className="mono muted">{fmtM(c.rate)}/rd × {c.years}</span>
+              </span>
+            );
+          })}
+        </div>
+      </section>
+
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
         <div style={{ flex: 1, overflowX: 'auto' }}>
           <table className="table">
