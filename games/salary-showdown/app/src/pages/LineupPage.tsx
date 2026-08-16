@@ -53,10 +53,21 @@ export default function LineupPage() {
 
   useEffect(() => { // pre-arrange EVERY active pid (server requires all assigned)
     if (!team || catalog.size === 0 || active.length === 0 || slots) return;
+    // A lineup locked THIS round seeds VERBATIM — the same faithful-render
+    // rule (and server-validated safety argument) as liveSlots below. Bench
+    // order is the rule, and arrangeLineup rebuilds it by minutes: without
+    // this guard a Coach remounting mid-phase (hard refresh, Standings
+    // round-trip) silently got the arranged bench back, one Submit away
+    // from persisting the reversion.
+    if (team.lineupLockedRound === round && team.lineup) {
+      setSlots(fromLineup(team.lineup, catalog));
+      setStyle((team.lineup.playstyle as Playstyle) ?? 'Balanced');
+      return;
+    }
     const arranged = arrangeLineup(active, catalog, team.lineup);
     setSlots(fromLineup(arranged, catalog));
     setStyle((arranged.playstyle as Playstyle) ?? 'Balanced');
-  }, [team, catalog, active, slots]);
+  }, [team, catalog, active, slots, round]);
 
   // Non-Coach roles render the LIVE team doc instead (F7): the team doc
   // already streams into context, and a GM/Scout tab sitting on this screen

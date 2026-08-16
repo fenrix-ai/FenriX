@@ -104,3 +104,61 @@ test('lineup (F7): a GM tab follows the Coach\'s submit live and shows the locke
   expect(badges[0]).toContain('B');
   expect(badges[1]).toContain('W');
 }, 120000);
+
+test('lineup (F7 fix round 2): a Coach remount seeds the LOCKED lineup verbatim, not re-arranged', async () => {
+  localStorage.removeItem('ss.gameId'); // isolation from the prior test's claim
+  const seeded = await seedToPhase({ to: 'R1:LINEUP' });
+  await signInAnonymously(auth); // explicit: AuthProvider only signs in once rendered
+  await httpsCallable(functions, 'joinGame')({
+    joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'Coach', displayName: 'IT Coach',
+  });
+  localStorage.setItem('ss.gameId', seeded.gameId);
+  const first = render(<MemoryRouter initialEntries={['/game/lineup']}><App /></MemoryRouter>);
+
+  const lineupStatus = () =>
+    screen.getAllByRole('status').find((el) => el.textContent?.startsWith('Lineup:'))!;
+  await waitFor(() => expect(lineupStatus())
+    .toHaveTextContent('Lineup: 2 G · 2 W · 1 B — Legal · Playstyle: Balanced'), { timeout: 20000 });
+
+  // Same discriminating-bench-order technique as the F7 test above: the Coach
+  // locks bench [B, W] where an arranged bench falls out [W, B] (synthetics
+  // share identical minutes; stable sort → roster order).
+  const teamDoc = (await adminDb().doc(
+    `games/${seeded.gameId}/teams/${seeded.teamIds[0]}`).get()).data()!;
+  const active: number[] = teamDoc.roster
+    .filter((c: { startRound: number; years: number }) => c.startRound + c.years - 1 >= 1)
+    .map((c: { pid: number }) => c.pid);
+  const cat = await adminDb().collection(`games/${seeded.gameId}/catalog`).get();
+  const posOf = Object.fromEntries(cat.docs.map((d) => [Number(d.id), d.data().position]));
+  const g = active.filter((p) => posOf[p] === 'G');
+  const w = active.filter((p) => posOf[p] === 'W');
+  const b = active.filter((p) => posOf[p] === 'B');
+  const starters = [g[0], g[1], w[0], w[1], b[0]];
+  const rest = active.filter((p) => !starters.includes(p));
+  const sixth = rest.find((p) => posOf[p] === 'G')!;
+  const benchB = rest.find((p) => posOf[p] === 'B')!;
+  const benchW = rest.find((p) => posOf[p] === 'W')!;
+  // THIS tab's Coach submits directly (the same callable the Submit button
+  // wraps — a stand-in for a drag rearrangement jsdom's DndContext can't do).
+  await httpsCallable(functions, 'submitLineup')({ gameId: seeded.gameId, lineup: {
+    starters, sixth, bench: [benchB, benchW], playstyle: 'Lockdown' } });
+  await waitFor(() => expect(screen.getByTestId('lineup-locked-badge')).toBeInTheDocument(),
+    { timeout: 15000 });
+
+  // Remount (hard-refresh / Standings-round-trip stand-in, market.itest's
+  // P2-2 pattern): the Coach's mount seed must return the locked lineup
+  // VERBATIM. A seed that re-runs arrangeLineup rebuilds the bench by
+  // minutes, silently flipping it back to [W, B] — and a re-Submit would
+  // persist the reversion into the sim.
+  first.unmount();
+  render(<MemoryRouter initialEntries={['/game/lineup']}><App /></MemoryRouter>);
+  await waitFor(() => expect(lineupStatus())
+    .toHaveTextContent('Lineup: 2 G · 2 W · 1 B — Legal · Playstyle: Lockdown'), { timeout: 20000 });
+  const benchZone = screen.getByText('ACTIVE BENCH — these two play')
+    .nextElementSibling as HTMLElement;
+  const badges = Array.from(benchZone.querySelectorAll('.slot')).map(
+    (s) => s.textContent ?? '');
+  expect(badges).toHaveLength(2);
+  expect(badges[0]).toContain('B'); // the locked order…
+  expect(badges[1]).toContain('W'); // …not the minutes-arranged one
+}, 120000);
