@@ -36,7 +36,8 @@ export function DecisionWall() {
         {/* Sorted by name — the SAME order as the panel's SubmissionGrid, so
             the professor and the wall read the room identically. */}
         {[...teams.entries()]
-          .sort((a, b) => a[1].name.localeCompare(b[1].name))
+          // numeric-aware: Franchise 2 before Franchise 10
+          .sort((a, b) => a[1].name.localeCompare(b[1].name, undefined, { numeric: true }))
           .map(([tid, t]) => (
           <div key={tid} className="bs-light-row">
             <span className={lit.has(tid) ? 'bs-dot ok' : 'bs-dot dim'} aria-hidden="true">
