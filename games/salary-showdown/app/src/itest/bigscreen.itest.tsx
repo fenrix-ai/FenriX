@@ -112,6 +112,19 @@ test('bigscreen: score-card flood, then standings shuffle with NEW and delta gly
     expect(screen.getByRole('status')).toHaveTextContent('Round complete.');
   }, { timeout: 60000 });
 
+  // Playtest-2 item 4: the live standings panel re-ranks with the flood and,
+  // once every game has landed, agrees with the stored final standings
+  // exactly (comparator parity with backend sim.js — the property pin).
+  const stored = (await adminDb().doc(
+    `games/${gameId}/rounds/1`).get()).data()!;
+  const finalOrder = [...stored.standings]
+    .sort((a: { rank: number }, b: { rank: number }) => a.rank - b.rank)
+    .map((r: { name: string }) => r.name);
+  await waitFor(() => {
+    const rows = screen.getAllByTestId('bs-live-row');
+    expect(rows.map((r) => r.querySelector('.bs-live-name')!.textContent)).toEqual(finalOrder);
+  }, { timeout: 20000 });
+
   // R1:RESULTS — round 1 has no previous round: every previousRank is null,
   // so the rest-state table is 4 rows, all marked NEW.
   await driveTo(seeded, 'R1:RESULTS');

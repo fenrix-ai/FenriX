@@ -28,3 +28,19 @@ export function computeShuffleSteps(standings: StandingsRow[]): ShuffleStep[] {
       };
     });
 }
+
+// Movement markers are GLYPHS + plain text, never emojis: ▲ climbed, ▼ fell,
+// — held, NEW when there is no prior rank. Shared by the RESULTS shuffle and
+// the SIMULATE live panel (playtest-2 item 4).
+export function deltaGlyph(delta: number | null): string {
+  if (delta === null) return 'NEW';
+  if (delta > 0) return `▲ ${delta}`;
+  if (delta < 0) return `▼ ${-delta}`;
+  return '—';
+}
+export function deltaClass(delta: number | null): string {
+  if (delta === null) return 'bs-delta mono';
+  if (delta > 0) return 'bs-delta mono ok';
+  if (delta < 0) return 'bs-delta mono neg';
+  return 'bs-delta mono dim';
+}

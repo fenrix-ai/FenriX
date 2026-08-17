@@ -65,3 +65,17 @@
 .bs-podium-card.champ .bs-podium-name { font-size: clamp(26px, 3.2vw, 50px); }
 .bs-podium-record { font-size: clamp(16px, 1.8vw, 30px); }
 .bs-finale-loading { font-size: clamp(18px, 2.2vw, 34px); }
+
+/* Simulate wall split: score flood left, live standings right (playtest-2). */
+.bs-sim-split { display: flex; gap: 28px; align-items: flex-start; }
+.bs-sim-split .bs-flood { flex: 1; }
+.bs-live-standings { width: 360px; flex-shrink: 0; }
+.bs-live-row {
+  display: flex; gap: 12px; align-items: baseline;
+  padding: 4px 10px; border-radius: 6px; font-size: 22px;
+  transition: background 0.6s ease;
+}
+.bs-live-moved { background: rgba(212, 175, 55, 0.18); }
+.bs-live-rank { width: 30px; text-align: right; }
+.bs-live-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bs-live-rec { width: 56px; text-align: right; }

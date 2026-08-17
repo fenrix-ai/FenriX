@@ -1,22 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useProfessor } from '../../contexts/ProfessorContext';
 import { PHASE_NAMES } from '../../lib/phaseNames';
-import { computeShuffleSteps, type ShuffleStep } from '../../lib/shuffle';
-
-// Movement markers are GLYPHS + plain text, never emojis: ▲ climbed, ▼ fell,
-// — held, NEW when previousRank is null (round 1).
-function deltaGlyph(delta: number | null): string {
-  if (delta === null) return 'NEW';
-  if (delta > 0) return `▲ ${delta}`;
-  if (delta < 0) return `▼ ${-delta}`;
-  return '—';
-}
-function deltaClass(delta: number | null): string {
-  if (delta === null) return 'bs-delta mono';
-  if (delta > 0) return 'bs-delta mono ok';
-  if (delta < 0) return 'bs-delta mono neg';
-  return 'bs-delta mono dim';
-}
+import { computeShuffleSteps, deltaClass, deltaGlyph, type ShuffleStep } from '../../lib/shuffle';
 
 // RESULTS wall: playback of computeShuffleSteps(round.standings). One reveal
 // per 0.8s, bottom-up (rank N first, rank 1 last); the top three render as
