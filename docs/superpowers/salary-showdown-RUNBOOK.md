@@ -69,7 +69,7 @@ The final advance (Results, Round 5) asks separately: "End the season and reveal
 | Projector window died | Press **Open projector** on the panel again. The game state is on the server; nothing is lost. |
 | Header stuck on "advancing…" for more than 10 seconds | Press **Resolve stuck advance** (appears in the phase control after 10 seconds). |
 | Wrong game loaded / dead session on the panel | Press **Clear session** in the session header, then Resume with the correct game id. |
-| A player left and their empty seat blocks the team | Release the seat from the panel's **Seats** card — teammates can then act for that role. (Teammates can already act for any seat that was never claimed.) |
+| A player left and their empty seat blocks the team | Release the seat from the panel's **Seats** card — teammates can then act for that role. (Teammates can already act for any seat that was never claimed.) The released student's screen goes blank — have them reopen the join link and reclaim a seat. |
 | Everything else | The join code stays in the panel header. Students' phones keep working; the game never moves on its own unless Auto-advance is checked. Wait, then advance manually. |
 
 ### Lost laptop (emergency recovery)

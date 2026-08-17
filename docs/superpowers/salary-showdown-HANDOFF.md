@@ -40,11 +40,11 @@ top-3 in **86%** of simulated seasons and wins the title in **48%**.
 | Current branch | `salary-showdown-plan3b` (Plan 3b, exit battery 2026-07-26; Plan 3a merged to `main` @ `92c7616` + handoff sync `7c659f3` on 2026-07-25) |
 | Plan 3b HEAD | **`4f57e0e`** + this docs-sync commit (3a-backlog fixes + prod wiring + first production deploy + prod smoke + load drill + professor runbook + exit battery) |
 | `main` vs `origin/main` | **Pushed through `7c659f3` (2026-07-25, 3a merge + handoff sync)**; the 3b plan commit `1b4a64c` and branch `salary-showdown-plan3b` are local, pending Dylan's merge + push decision (repo `fenrix-ai/FenriX` is PUBLIC — §2a posture unchanged; 3b adds no new sensitive content) |
-| Production | **LIVE** — Firebase project `salary-showdown` (Blaze), Hosting `https://salary-showdown.web.app`, 12 callables + `(default)` Firestore in `us-west1`, anonymous auth on, $10 email budget alert armed (Dylan to verify, §4) |
-| Backend test suite | **23 files / 150 tests green** |
-| App unit suite | **13 files / 65 tests green** |
-| App integration suite | **17 files / 29 tests green ×3 consecutive** (live emulators; browser-transport pin per §3) |
-| UI-rules audit | clean, 64 files |
+| Production | **LIVE** — Firebase project `salary-showdown` (Blaze), Hosting `https://salary-showdown.web.app`, 14 callables + `(default)` Firestore in `us-west1`, anonymous auth on, $10 email budget alert armed (Dylan to verify, §4) |
+| Backend test suite | **26 files / 181 tests green** |
+| App unit suite | **15 files / 78 tests green** |
+| App integration suite | **20 files / 36 tests green ×3 consecutive** (live emulators; browser-transport pin per §3) |
+| UI-rules audit | clean, 66 files |
 
 ### 2a. Publication note (2026-07-24)
 
@@ -466,7 +466,7 @@ step ending every task (bias toward emulator-backed integration + browser checks
 **Error codes** — match on the **message**, not the kind (`BAD_YEARS` arrives as
 `failed-precondition` from signPlayer but `invalid-argument` from submitBids):
 `CAP_EXCEEDED:{round}:{payroll}` · `POSITION_LOCK` · `STAR_TAKEN` · `ALREADY_SIGNED` ·
-`NOT_IN_MARKET` · `ROSTER_FULL` · `BAD_YEARS` · `MIN_BID` · `BID_STEP` · `NOT_IN_WAVE` · `BAD_RATE` ·
+`NOT_IN_MARKET` · `ROSTER_FULL` · `BAD_NAME` · `BAD_YEARS` · `MIN_BID` · `BID_STEP` · `NOT_IN_WAVE` · `BAD_RATE` ·
 `PHASE_MISMATCH` · `BAD_PLAYSTYLE` · `DUPLICATE_PLAYER` · `NOT_ON_ROSTER` · `BAD_TEMPLATE` ·
 `BAD_SHAPE`. Plus prose messages and a sixth HttpsError kind, `already-exists` (role seat taken).
 The full map with student-facing copy is in `app/src/lib/errors.ts` and the Plan 2 Global Constraints.

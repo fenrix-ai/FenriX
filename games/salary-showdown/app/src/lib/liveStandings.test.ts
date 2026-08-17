@@ -52,11 +52,15 @@ test('round 1 has no meaningful base rank — delta is null', () => {
 
 test('ties fall through the full chain to tiebreakCoin ascending', () => {
   // Two teams identical on wins/pointDiff/pointsFor — coin decides, ASC.
+  // Fixture is declared Y-then-X, the reverse of the expected X-then-Y
+  // output: a stable sort leaves an unordered/no-op comparator's input
+  // order intact, so only a comparator that actually applies the ascending
+  // coin tiebreak can produce the expectation below.
   const final: StandingsRow[] = [
-    { teamId: 'X', name: 'X', wins: 1, losses: 1, pointDiff: 0, pointsFor: 100,
-      tiebreakCoin: 0.1, rank: 1, previousRank: null },
     { teamId: 'Y', name: 'Y', wins: 1, losses: 1, pointDiff: 0, pointsFor: 100,
       tiebreakCoin: 0.7, rank: 2, previousRank: null },
+    { teamId: 'X', name: 'X', wins: 1, losses: 1, pointDiff: 0, pointsFor: 100,
+      tiebreakCoin: 0.1, rank: 1, previousRank: null },
   ];
   const rows = liveStandings(final, [], 0, 2);
   expect(rows.map((r) => r.teamId)).toEqual(['X', 'Y']);

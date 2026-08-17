@@ -33,6 +33,7 @@ test('draft night: analyst table, sign drawer, non-exclusive row persists, ALREA
   const allChip = screen.getByRole('button', { name: /^All players \(/ });
   expect(allChip).toHaveTextContent('All players (150)');
   await user.click(allChip);
+  // page-wide sweep: safe at R1 only (hardship signs at the FA EXIT hook) — an R2+ FA test would trip this via the roster panel
   expect(screen.queryByText('Default Role Player')).toBeNull();
 
   // Playtest-2 item 2: the roster panel exists and starts empty.

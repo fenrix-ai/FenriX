@@ -67,7 +67,7 @@ games/{gameId}/teams/{teamId}         # PUBLIC team state (rosters are public li
                                       # from expiringPids; hardship is the ONLY path onto a roster (adjudicated
                                       # ruling, Dylan 2026-07-26).
   doneRound: 0-5, donePhase: ''|FRONT_OFFICE|FREE_AGENCY   # "We're done" STATUS FLAG, NEVER a lock:
-                                      # markDone (GM-only callable, valid only in FRONT_OFFICE/FREE_AGENCY)
+                                      # markDone (GM-gated callable — absent-seat fallback applies, valid only in FRONT_OFFICE/FREE_AGENCY)
                                       # stamps the game's current {round, phase} here. Professor-panel
                                       # submission lights read doneRound === round && donePhase === phase.
                                       # Initialized 0 / '' at createGame. Gates NOTHING — signing/cutting

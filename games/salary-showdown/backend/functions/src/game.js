@@ -172,9 +172,11 @@ export const renameTeam = onCall(async (req) => {
 
 // Professor-only seat release (playtest-2 item 3): frees a claimed seat so
 // the absent-seat fallback covers a player who left mid-session. Deleting the
-// membership doc signs that browser out of the team — its listeners lose read
-// access and the client falls back to the join screen — and the seat reopens
-// for a fresh claim (re-claiming re-asserts the role from the next call on).
+// membership doc revokes the client's reads — their screens go BLANK until
+// they reopen the site root and reclaim a seat (PhaseRouter only routes
+// members; auto-routing the released client home is a follow-up) — and the
+// seat reopens for a fresh claim (re-claiming re-asserts the role from the
+// next call on).
 export const releaseSeat = onCall(async (req) => {
   const { gameId, teamId, role } = req.data;
   await assertProfessor(gameId, req.auth?.uid);

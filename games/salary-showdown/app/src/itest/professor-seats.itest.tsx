@@ -30,11 +30,12 @@ test('seat panel (playtest-2): two-click release frees a claimed seat', async ()
   await waitFor(() => expect(panel.textContent).toContain('Scout: Leaver'), { timeout: 15000 });
 
   // Two-click confirm: Release arms, Confirm release fires.
-  await user.click(screen.getByRole('button', { name: 'Release' }));
-  await user.click(screen.getByRole('button', { name: 'Confirm release' }));
+  await user.click(screen.getByRole('button', { name: 'Release Scout on Alpha' }));
+  await user.click(screen.getByRole('button', { name: 'Confirm release Scout on Alpha' }));
 
   await waitFor(async () => {
     expect((await adminDb().doc(`games/${gameId}/players/${scout.uid}`).get()).exists).toBe(false);
   }, { timeout: 15000 });
-  await waitFor(() => expect(panel.textContent).toContain('Scout: open'), { timeout: 15000 });
+  await waitFor(() => expect(screen.getByTestId(`seats-${teamA}`).textContent).toContain('Scout: open'),
+    { timeout: 15000 });
 }, 120000);

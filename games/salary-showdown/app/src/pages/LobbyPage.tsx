@@ -82,7 +82,8 @@ function RenameRow({ current }: { current: string }) {
   const save = async () => {
     setBusy(true); setErr(null);
     try {
-      await call('renameTeam', { gameId, name });
+      const res = await call<{ name: string }>('renameTeam', { gameId, name });
+      setName(res.name);
       setDirty(false);
     } catch (e) { setErr(e); } finally { setBusy(false); }
   };

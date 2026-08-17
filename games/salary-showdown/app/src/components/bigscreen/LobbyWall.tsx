@@ -21,7 +21,8 @@ export function LobbyWall() {
       <div className="bs-teamgrid">
         {/* Sorted by name — same ordering as SubmissionGrid on the panel. */}
         {[...teams.entries()]
-          .sort((a, b) => a[1].name.localeCompare(b[1].name))
+          // numeric-aware: Franchise 2 before Franchise 10
+          .sort((a, b) => a[1].name.localeCompare(b[1].name, undefined, { numeric: true }))
           .map(([tid, t]) => (
           <section key={tid} className="bs-teamcard">
             <h2>{t.name}</h2>

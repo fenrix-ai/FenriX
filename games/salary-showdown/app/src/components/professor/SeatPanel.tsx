@@ -15,7 +15,8 @@ export function SeatPanel() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   if (!gameId || !game) return null;
-  const rows = [...teams.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
+  // numeric-aware: Franchise 2 before Franchise 10
+  const rows = [...teams.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name, undefined, { numeric: true }));
   const seatHolder = (teamId: string, role: string) =>
     [...players.values()].find((p) => p.teamId === teamId && p.role === role) ?? null;
   const release = async (teamId: string, role: string) => {
@@ -55,6 +56,7 @@ export function SeatPanel() {
               <span key={role} style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
                 <span className="ok">{role}: {holder.displayName}</span>
                 <button type="button" className="btn" disabled={busy}
+                  aria-label={arm === key ? `Confirm release ${role} on ${t.name}` : `Release ${role} on ${t.name}`}
                   onClick={() => (arm === key ? void release(teamId, role) : setArm(key))}>
                   {arm === key ? 'Confirm release' : 'Release'}
                 </button>

@@ -14,7 +14,8 @@ export function SubmissionGrid() {
   if (!game) return null;
   if (!LIGHT_PHASES.has(game.phase)) return null;
   const lit = submittedTeamIds(game.phase, game.round, teams, bidsSubmitted);
-  const rows = [...teams.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
+  // numeric-aware: Franchise 2 before Franchise 10
+  const rows = [...teams.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name, undefined, { numeric: true }));
   return (
     <section className="card" data-testid="submission-grid" style={{ marginTop: 12 }}>
       <strong>Submissions</strong>

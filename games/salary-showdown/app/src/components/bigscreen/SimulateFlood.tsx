@@ -67,7 +67,7 @@ export function SimulateFlood() {
                 className={`bs-live-row mono${r.movedNow ? ' bs-live-moved' : ''}`}>
                 <span className="bs-live-rank">{r.rank}</span>
                 <span className="bs-live-name">{r.name}</span>
-                <span className="bs-live-rec">{r.wins}-{r.losses}</span>
+                <span className="bs-live-rec">{r.wins}–{r.losses}</span>
                 {/* round 1 has no prior rank — an empty cell, not a NEW wall (T8 review) */}
                 <span className={deltaClass(r.delta)}>{r.delta == null ? '' : deltaGlyph(r.delta)}</span>
               </div>
