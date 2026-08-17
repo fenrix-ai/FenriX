@@ -15,10 +15,14 @@ const firebaseConfig = {
 
 export const app = initializeApp(firebaseConfig);
 
-// Dev/test: memory-only Firestore cache. Multi-tab dev playtesting (each tab a
-// distinct anonymous uid via session persistence) corrupts the SDK's shared
-// IndexedDB cache; memory cache is per-tab and cannot. Production keeps the
-// default persistent cache. The try/catch is the HMR guard: the app singleton
+// Dev/test: memory-only Firestore cache, forced explicitly. Multi-tab dev
+// playtesting (each tab a distinct anonymous uid via session persistence)
+// would corrupt a shared IndexedDB cache if persistence were ever turned on;
+// memory cache is per-tab and cannot be. Production takes the plain
+// getFirestore(app) path below, which is ALSO memory-only — the modular
+// SDK's default cache is memory, not persistent; IndexedDB persistence
+// requires explicitly opting in via persistentLocalCache(), which this app
+// does not do anywhere. The try/catch is the HMR guard: the app singleton
 // survives hot reloads, and a second initializeFirestore on it throws.
 export const db = (() => {
   if (!import.meta.env.DEV) return getFirestore(app);

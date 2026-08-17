@@ -7,10 +7,13 @@ Projector: never type its URL — open it from the panel's "Open projector" butt
 ## Pre-class setup (10 minutes before)
 
 1. On the laptop, open the panel URL above.
-2. Under **New session**, enter team names, one per line, then press **Create game**.
-   Hard cap: **21 franchises** — beyond that the per-round data document approaches
-   Firestore's 1 MiB limit. The panel blocks 22+ with: "Cap sessions at 21 franchises —
-   the round document approaches Firestore's 1 MiB limit beyond that."
+2. Under **New session**, enter HOW MANY franchises are playing, then press
+   **Create game**. Teams arrive as Franchise 1..N — students name their own
+   franchises from their lobby screens; names lock when you press Start
+   season. Hard cap: **21 franchises** — beyond that the per-round data
+   document approaches Firestore's 1 MiB limit. The panel blocks 22+ with:
+   "Cap sessions at 21 franchises — the round document approaches Firestore's
+   1 MiB limit beyond that."
 3. Write down the **join code** (the large code at the top of the panel) and the
    **game id** (press F12, then Application > Local Storage > `ss.profGameId`).
    The game id resumes the panel in THIS browser and is required for the
@@ -38,7 +41,7 @@ checked. Advance with the gold button labelled like "Advance → Star Auction ·
 | Draft Night | GM signs free agents from tonight's market | 2:30 | Same — lights + "We're done" |
 | Star Auction | Scout places one sealed star bid | 2:00 | Lights fill as bids land |
 | Lineup | Coach drags 8 players into slots, presses "Submit lineup" | 1:30 | Lights fill as lineups lock |
-| Simulate | Watch the wall — scoreboard flood plays out | 1:00 | Nothing; advance when "Round complete." shows |
+| Simulate | Watch the wall — scores flood in and the standings re-rank live; laptops show each team its own results | 1:00 | Nothing; advance when "Round complete." shows |
 | Results | Watch the standings shuffle on the wall | 1:30 | Narrate the movement; advance when ready |
 | Finale (after R5) | Watch the reveal | none | Step charts with the ‹ › **Finale reveal** control: Podium, Hype vs Reality, What the engine paid for, Wins per dollar, Best & worst signings |
 
@@ -66,6 +69,7 @@ The final advance (Results, Round 5) asks separately: "End the season and reveal
 | Projector window died | Press **Open projector** on the panel again. The game state is on the server; nothing is lost. |
 | Header stuck on "advancing…" for more than 10 seconds | Press **Resolve stuck advance** (appears in the phase control after 10 seconds). |
 | Wrong game loaded / dead session on the panel | Press **Clear session** in the session header, then Resume with the correct game id. |
+| A player left and their empty seat blocks the team | Release the seat from the panel's **Seats** card — teammates can then act for that role. (Teammates can already act for any seat that was never claimed.) |
 | Everything else | The join code stays in the panel header. Students' phones keep working; the game never moves on its own unless Auto-advance is checked. Wait, then advance manually. |
 
 ### Lost laptop (emergency recovery)

@@ -28,6 +28,9 @@ games/{gameId}
                                       # must present fromRound/fromPhase until the marker clears (the app's
                                       # GameContext does; new surfaces must follow suit).
 games/{gameId}/players/{uid}          # membership: { teamId, role: GM|Scout|Coach, displayName }
+                                      # releaseSeat (professor-only callable) may DELETE a claimed
+                                      # seat; role-gated callables fall back to any team member
+                                      # when no member holds the required role (2026-08-15).
 games/{gameId}/teams/{teamId}         # PUBLIC team state (rosters are public like real NBA):
   name, wins, losses, pointDiff, pointsFor,
   roster: [{pid, rate, startRound, years, viaAuction, hardship}],

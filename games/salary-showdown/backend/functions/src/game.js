@@ -13,7 +13,7 @@ import { validateLineup, autoRepair } from './lineup.js';
 import { simulateRound, toCsv } from './sim.js';
 import { SYNTHETICS } from './synthetics.js';
 
-// All 12 callables deploy to us-west1, co-located with the Firestore
+// All 14 callables deploy to us-west1, co-located with the Firestore
 // database (locked decision 2026-07-25). This MUST execute before the first
 // onCall() below evaluates — which is why it lives at the top of this, the
 // sole trigger-defining module, and NOT in index.js (ESM runs imported

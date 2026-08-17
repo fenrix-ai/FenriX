@@ -37,17 +37,19 @@ Coach / professor) are enforced server-side per callable, not by the client.
 
 | Callable | One-liner |
 | --- | --- |
-| `createGame({ teamNames })` | Professor creates a game, seeds teams + the full player catalog, returns `{ gameId, joinCode }`. |
+| `createGame({ teamNames } \| { teamCount })` | Professor creates a game, seeds teams + the full player catalog, returns `{ gameId, joinCode }`. `teamCount` seeds `Franchise 1..N` placeholders for students to rename via `renameTeam`; `teamNames` seeds those names directly and stays byte-unchanged for the seed script, itest harness, playtest CLI, and prod-smoke. |
 | `joinGame({ joinCode, teamId, role, displayName })` | Claims a GM/Scout/Coach seat on a team by join code; one uid per role per team. |
 | `getLobby({ joinCode })` | Lobby discovery for non-members: team list + claimed roles, by join code. |
+| `renameTeam({ gameId, name })` | Member, lobby-only: renames the caller's own team. `teamId` is derived from the caller's membership doc, never from the payload, so rivals' teams are untargetable. 24-char cap, same trust level as display names. |
+| `releaseSeat({ gameId, teamId, role })` | Professor-only, any phase: frees a claimed seat (a player who left mid-session) so the absent-seat fallback below covers that role; re-claiming re-asserts it. |
 | `startSeason({ gameId })` | Professor-only: locks the lobby, draws the round-1 free-agency market, moves `LOBBY → FREE_AGENCY`. |
 | `advancePhase({ gameId, expectedPhase, expectedRound })` | Professor-only: flips `phase`/`round` first (losers of a race get `PHASE_MISMATCH`), then resolves the exit + entry hooks (idempotent via `hooklog`). Callers ALWAYS send both expectations. |
-| `signPlayer({ gameId, pid, years })` | GM-only: signs a free agent (or re-signs an expiring contract in `FRONT_OFFICE`); claims unsold auction stars exclusively. |
-| `cutRosterPlayer({ gameId, pid })` | GM-only: cuts a rostered player in `FRONT_OFFICE`/`FREE_AGENCY`, adding dead money per the payroll rules. |
-| `submitBids({ gameId, bids })` | Scout-only: overwrites this team's sealed bids for the round's auction stars (private subcollection, freely revisable until auction close). |
-| `submitLineup({ gameId, lineup })` | Coach-only: validates and locks `{starters, sixth, bench, playstyle}` against the team's currently-active roster. |
+| `signPlayer({ gameId, pid, years })` | GM-gated — any team member may act while no GM seat is claimed: signs a free agent (or re-signs an expiring contract in `FRONT_OFFICE`); claims unsold auction stars exclusively. |
+| `cutRosterPlayer({ gameId, pid })` | GM-gated — any team member may act while no GM seat is claimed: cuts a rostered player in `FRONT_OFFICE`/`FREE_AGENCY`, adding dead money per the payroll rules. |
+| `submitBids({ gameId, bids })` | Scout-gated — any team member may act while no Scout seat is claimed: overwrites this team's sealed bids for the round's auction stars (private subcollection, freely revisable until auction close). |
+| `submitLineup({ gameId, lineup })` | Coach-gated — any team member may act while no Coach seat is claimed: validates and locks `{starters, sixth, bench, playstyle}` against the team's currently-active roster. |
 | `setTimer({ gameId, action, seconds?, expectedPhase, expectedRound })` | Professor-only pacing timer: `start`/`pause`/`resume`/`extend`/`clear` over `timerEndsAt`/`timerPausedMs`. Advisory only — expiry never blocks a submission server-side. |
-| `markDone({ gameId })` | GM-only "we're done" status flag during `FRONT_OFFICE`/`FREE_AGENCY`: stamps `doneRound`/`donePhase` on the caller's team doc. Status light only, never a lock. |
+| `markDone({ gameId })` | GM-gated — any team member may act while no GM seat is claimed. "We're done" status flag during `FRONT_OFFICE`/`FREE_AGENCY`: stamps `doneRound`/`donePhase` on the caller's team doc. Status light only, never a lock. |
 | `setRevealStep({ gameId, step })` | Professor-only during `FINALE`: sets `revealStep` (integer 0-8) on the game doc to step the projector's reveal charts. |
 
 Error handling is via `HttpsError` (`unauthenticated`, `permission-denied`,

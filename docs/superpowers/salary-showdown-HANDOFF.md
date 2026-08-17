@@ -457,7 +457,8 @@ step ending every task (bias toward emulator-backed integration + browser checks
 ## 10. Frozen integration contracts (for any new client work)
 
 **Callables** (all require anonymous auth; role enforced server-side):
-`createGame({teamNames})` · `getLobby({joinCode})` · `joinGame({joinCode, teamId, role, displayName})` ·
+`createGame({teamNames} | {teamCount})` · `getLobby({joinCode})` · `joinGame({joinCode, teamId, role, displayName})` ·
+`renameTeam({gameId, name})` (member, lobby-only, own team) · `releaseSeat({gameId, teamId, role})` (professor-only) ·
 `startSeason({gameId})` · `advancePhase({gameId, expectedPhase, expectedRound})` ·
 `signPlayer({gameId, pid, years})` · `cutRosterPlayer({gameId, pid})` ·
 `submitBids({gameId, bids})` · `submitLineup({gameId, lineup})`
@@ -469,6 +470,8 @@ step ending every task (bias toward emulator-backed integration + browser checks
 `PHASE_MISMATCH` · `BAD_PLAYSTYLE` · `DUPLICATE_PLAYER` · `NOT_ON_ROSTER` · `BAD_TEMPLATE` ·
 `BAD_SHAPE`. Plus prose messages and a sixth HttpsError kind, `already-exists` (role seat taken).
 The full map with student-facing copy is in `app/src/lib/errors.ts` and the Plan 2 Global Constraints.
+
+**Role gates (2026-08-15, adjudicated):** `signPlayer`/`cutRosterPlayer`/`markDone` (GM), `submitBids` (Scout), `submitLineup` (Coach) now fall back to ANY member of the team when no member holds the required role — a CLAIMED seat stays authoritative. `releaseSeat` frees a claimed seat.
 
 **Money math** (mirrors of `backend/functions/src/payroll.js`, in `app/src/lib/money.ts`):
 `r01(x) = round(x*10)/10` · `askPrice(base, r) = r01(base * 1.08^(r-1))` ·
