@@ -467,7 +467,7 @@ export const cutRosterPlayer = onCall(async (req) => {
   });
 });
 
-// GM-only "We're done" STATUS FLAG — NEVER a lock (plan-3 design spec §4.2). It
+// GM-gated (absent-seat fallback — see memberWithRole) "We're done" STATUS FLAG — NEVER a lock (plan-3 design spec §4.2). It
 // stamps the caller's team doc with the game's current {round, phase} so the
 // professor panel's submission lights can show who considers themselves finished,
 // and it gates NOTHING: signPlayer / cutRosterPlayer / every other callable stays
@@ -490,7 +490,7 @@ export const markDone = onCall(async (req) => {
   });
 });
 
-// Scout-only. teamId comes from the caller's own membership doc, never from the
+// Scout-gated (absent-seat fallback — see memberWithRole). teamId comes from the caller's own membership doc, never from the
 // payload — a Scout has no way to address another team's private bid doc, so this
 // endpoint cannot be used to bid on another team's behalf.
 export const submitBids = onCall(async (req) => {
@@ -524,7 +524,7 @@ export const submitBids = onCall(async (req) => {
 const activePidsOf = (team, round) =>
   team.roster.filter((c) => c.startRound + c.years - 1 >= round).map((c) => c.pid);
 
-// Coach-only. Validated server-side against the CURRENT roster (activePidsOf at the
+// Coach-gated (absent-seat fallback — see memberWithRole). Validated server-side against the CURRENT roster (activePidsOf at the
 // game's live round) so a stale client can never lock in a lineup that no longer
 // matches the roster (auction wins / hardship signings since the lineup was drafted).
 // Resubmitting overwrites in full — same free-revision pattern as submitBids — until
