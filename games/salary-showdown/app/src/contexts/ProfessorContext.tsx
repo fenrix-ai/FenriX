@@ -138,6 +138,11 @@ export function ProfessorProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => { // context round doc (see contextRound memo above)
     if (!gameId || !uid || contextRound == null) { setRound(null); return; }
+    // Clear the PREVIOUS round's doc before resubscribing: contextRound flips
+    // synchronously with game.round while this state lags a listener round-
+    // trip, and the simulate wall's live-standings aside would otherwise
+    // render last round's rows as a plausible-but-wrong 0-0 table (T9 review).
+    setRound(null);
     return onSnapshot(doc(db, 'games', gameId, 'rounds', String(contextRound)),
       (s) => setRound(s.exists() ? (s.data() as RoundDoc) : null),
       (e) => console.error('[professor] rounds listener', e));

@@ -61,7 +61,7 @@ export function SimulateFlood() {
             round start. The RESULTS shuffle is unchanged; this previews it. */}
         {total > 0 && (
           <aside className="bs-live-standings" data-testid="bs-live-standings">
-            <div className="bs-sub" style={{ marginBottom: 6 }}>Standings</div>
+            <div className="bs-live-title">Standings</div>
             {live.map((r) => (
               <div key={r.teamId} data-testid="bs-live-row"
                 className={`bs-live-row mono${r.movedNow ? ' bs-live-moved' : ''}`}>

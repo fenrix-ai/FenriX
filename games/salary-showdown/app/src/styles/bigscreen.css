@@ -69,13 +69,15 @@
 /* Simulate wall split: score flood left, live standings right (playtest-2). */
 .bs-sim-split { display: flex; gap: 28px; align-items: flex-start; }
 .bs-sim-split .bs-flood { flex: 1; }
-.bs-live-standings { width: 360px; flex-shrink: 0; }
+.bs-live-standings { width: clamp(300px, 26vw, 520px); flex-shrink: 0; }
+.bs-live-title { font-size: clamp(16px, 1.6vw, 26px); color: var(--muted); margin-bottom: 6px; }
 .bs-live-row {
   display: flex; gap: 12px; align-items: baseline;
-  padding: 4px 10px; border-radius: 6px; font-size: 22px;
-  transition: background 0.6s ease;
+  padding: 4px 10px; border-radius: 6px; font-size: clamp(16px, 2vw, 32px);
+  transition: background 0.15s ease-out;
 }
 .bs-live-moved { background: rgba(212, 175, 55, 0.18); }
-.bs-live-rank { width: 30px; text-align: right; }
+/* fast attack: the flood interval bottoms out ~214ms at 21 teams (min(3000, 45000/C(n,2))) — the tint must land inside it */
+.bs-live-rank { width: 1.6em; text-align: right; }
 .bs-live-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bs-live-rec { width: 56px; text-align: right; }
+.bs-live-rec { width: 2.8em; text-align: right; }
