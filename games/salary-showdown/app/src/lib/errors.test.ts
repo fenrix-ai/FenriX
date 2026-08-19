@@ -46,3 +46,11 @@ test('rename errors map to student copy', () => {
 test('releaseSeat unclaimed maps to the already-open copy', () => {
   expect(errorCopy(new Error('seat is not claimed')).headline).toBe('That seat is already open.');
 });
+test('student-created-team errors map to student copy', () => {
+  expect(errorCopy(new Error('league is full')).headline)
+    .toBe('The league is full — 21 franchises is the cap.');
+  expect(errorCopy(new Error('creation is closed')).headline)
+    .toBe('The season already started — claim an open seat instead.');
+  expect(errorCopy(new Error('need at least 2 teams')).headline)
+    .toBe('Need at least 2 franchises before the season can start.');
+});

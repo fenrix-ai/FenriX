@@ -41,26 +41,47 @@ export async function assertProfessor(gameId, uid) {
   return g.data();
 }
 
+// One franchise, day zero. Shared by createGame's explicit paths and
+// createTeam below so the team-doc shape can never fork between them.
+function newTeamDoc(name) {
+  return {
+    name, wins: 0, losses: 0, pointDiff: 0, pointsFor: 0,
+    roster: [], deadMoney: [], lineup: null, lineupLockedRound: 0, hardshipUsed: [],
+    // "We're done" STATUS FLAG (markDone below): stamped {round, phase} for the
+    // professor panel's submission lights. Never a lock — gates nothing.
+    doneRound: 0, donePhase: '',
+    // append-only ledger of every contract ever acquired (signPlayer incl. re-signs,
+    // auction wins, hardship signings) — cuts never remove an entry here, since
+    // committed money is never recovered. FINALE's totalSpend/best-worst signing
+    // read from this, not from the live `roster`.
+    spendLog: [],
+  };
+}
+
 export const createGame = onCall(async (req) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'sign in first');
-  // Count-first create (playtest-2 item 1): the panel sends { teamCount } and
-  // students name their own franchises from the lobby (renameTeam below).
-  // { teamNames } stays supported VERBATIM — the seed script, itest harness,
-  // playtest CLI, prod-smoke, and every existing test drive it. The
-  // 21-franchise cap stays panel-enforced (standing hard rule); the server
-  // keeps only the minimum.
+  // Student-created franchises (2026-08-17, adjudicated): the panel now sends
+  // an EMPTY payload — zero teams — and students create their own franchises
+  // via createTeam below. Both explicit paths stay supported VERBATIM as
+  // tooling contracts: { teamNames } drives the seed script, itest harness,
+  // playtest CLI, prod-smoke, and every existing test; { teamCount } remains
+  // from the count-first panel era. Explicit paths keep the 2-team minimum —
+  // only the bare panel call may start empty (startSeason enforces the floor
+  // at tip-off instead).
   const teamCount = Number.isInteger(req.data.teamCount) ? req.data.teamCount : null;
-  // Abuse guard, NOT the classroom cap: the 21-franchise limit stays panel-
-  // enforced (standing hard rule). This ceiling only blocks pathological
-  // counts — a ~30-byte anonymous body could otherwise allocate millions of
-  // placeholder teams before any validation ran.
+  // Abuse guard, NOT the classroom cap (createTeam enforces the 21): this
+  // ceiling only blocks pathological counts — a ~30-byte anonymous body
+  // could otherwise allocate millions of placeholder teams before any
+  // validation ran.
   if (teamCount != null && teamCount > 500) {
     throw new HttpsError('invalid-argument', 'too many teams');
   }
   const teamNames = teamCount != null
     ? Array.from({ length: teamCount }, (_, i) => `Franchise ${i + 1}`)
     : (req.data.teamNames ?? []);
-  if (teamNames.length < 2) throw new HttpsError('invalid-argument', 'need at least 2 teams');
+  if ((teamCount != null || req.data.teamNames != null) && teamNames.length < 2) {
+    throw new HttpsError('invalid-argument', 'need at least 2 teams');
+  }
   const gameRef = db().collection('games').doc();
   const joinCode = gameRef.id.slice(0, 6).toUpperCase();
   const batch = db().batch();
@@ -71,18 +92,7 @@ export const createGame = onCall(async (req) => {
     config: { cap: 100.0, totalRounds: 5 },
   });
   for (const name of teamNames) {
-    batch.set(gameRef.collection('teams').doc(), {
-      name, wins: 0, losses: 0, pointDiff: 0, pointsFor: 0,
-      roster: [], deadMoney: [], lineup: null, lineupLockedRound: 0, hardshipUsed: [],
-      // "We're done" STATUS FLAG (markDone below): stamped {round, phase} for the
-      // professor panel's submission lights. Never a lock — gates nothing.
-      doneRound: 0, donePhase: '',
-      // append-only ledger of every contract ever acquired (signPlayer incl. re-signs,
-      // auction wins, hardship signings) — cuts never remove an entry here, since
-      // committed money is never recovered. FINALE's totalSpend/best-worst signing
-      // read from this, not from the live `roster`.
-      spendLog: [],
-    });
+    batch.set(gameRef.collection('teams').doc(), newTeamDoc(name));
   }
   await batch.commit();
   // catalog seed: batched in chunks of 400 (batch limit 500). Synthetics are seeded
@@ -115,6 +125,51 @@ export const joinGame = onCall(async (req) => {
     tx.set(gameRef.collection('players').doc(req.auth.uid),
       { teamId, role, displayName: String(displayName).slice(0, 24) });
     return { gameId: gameRef.id, teamId, role };
+  });
+});
+
+// Student-created franchises (2026-08-17, adjudicated): a student on the join
+// screen creates a team AND claims their seat in ONE transaction — no orphan
+// teams; every franchise starts with a member. The 21-franchise cap is
+// enforced HERE, server-side (amended hard rule 2026-08-17 — the rationale is
+// unchanged: rounds/{r} approaches Firestore's 1 MiB ceiling beyond 21 teams;
+// only the enforcement site moved out of the professor panel, which no longer
+// takes a count at all). Name validation mirrors renameTeam exactly (trim,
+// 24-char cap, spreadsheet formula-prefix refusal); duplicate names stay
+// allowed (teamId keys all correctness; renameTeam could recreate duplicates
+// anyway). Creating is LOBBY-ONLY — mid-season arrivals claim open seats via
+// joinGame instead. CLIENT CONTRACT (HARD INVARIANT, same as joinGame):
+// createTeam must RESOLVE before setGameId(...) — it is what creates the
+// caller's membership, and pre-membership listeners never recover.
+export const createTeam = onCall(async (req) => {
+  if (!req.auth) throw new HttpsError('unauthenticated', 'sign in first');
+  const { role } = req.data;
+  if (!ROLES.includes(role)) throw new HttpsError('invalid-argument', 'bad role');
+  const name = String(req.data.name ?? '').trim().slice(0, 24);
+  if (name.length === 0 || /^[=+\-@]/.test(name)) {
+    throw new HttpsError('invalid-argument', 'BAD_NAME');
+  }
+  const displayName = String(req.data.displayName ?? '').slice(0, 24);
+  const joinCode = String(req.data.joinCode ?? '').toUpperCase();
+  const games = await db().collection('games').where('joinCode', '==', joinCode).limit(1).get();
+  if (games.empty) throw new HttpsError('not-found', 'bad join code');
+  const gameRef = games.docs[0].ref;
+  return db().runTransaction(async (tx) => {
+    const g = (await tx.get(gameRef)).data();
+    if (g.status !== 'lobby') throw new HttpsError('failed-precondition', 'creation is closed');
+    const teams = await tx.get(gameRef.collection('teams'));
+    if (teams.size >= 21) throw new HttpsError('resource-exhausted', 'league is full');
+    const teamRef = gameRef.collection('teams').doc();
+    tx.set(teamRef, newTeamDoc(name));
+    // Same membership write as joinGame — creating IS joining. A creator who
+    // already held a seat elsewhere MOVES here (the membership doc is
+    // uid-keyed), mirroring joinGame's switch-teams semantics; the abandoned
+    // franchise persists and idles on server defaults.
+    tx.set(gameRef.collection('players').doc(req.auth.uid), { teamId: teamRef.id, role, displayName });
+    // teamCount tracks the teams collection (LobbyWall's seat counter reads
+    // it); size+1 inside the tx keeps it exact and self-healing.
+    tx.update(gameRef, { teamCount: teams.size + 1 });
+    return { gameId: gameRef.id, teamId: teamRef.id, role };
   });
 });
 
@@ -190,17 +245,28 @@ export const releaseSeat = onCall(async (req) => {
 
 export const startSeason = onCall(async (req) => {
   const { gameId } = req.data;
-  const g = await assertProfessor(gameId, req.auth?.uid);
-  if (g.status !== 'lobby') throw new HttpsError('failed-precondition', 'already started');
-  // round-1 market draw (75% of the FA catalog, seeded, identical for all teams;
-  // non-exclusive per spec §4.2 — the draw is a shared catalog of signable copies).
-  const d = drawMarket({ gameId, round: 1, faPool: FA_POOL, absentCounts: {}, extraPids: [] });
-  const batch = db().batch();
-  batch.set(db().doc(`games/${gameId}/market/1`),
-    { available: d.available, absentCounts: d.absentCounts, unsoldPrices: {} });
-  batch.update(db().doc(`games/${gameId}`), { status: 'active', round: 1, phase: 'FREE_AGENCY' });
-  await batch.commit();
-  return { phase: 'FREE_AGENCY' };
+  await assertProfessor(gameId, req.auth?.uid);
+  // TRANSACTION (was a batch, 2026-08-17): createTeam also transacts on the
+  // game doc, so the status flip serializes against franchise creation — a
+  // create lands either before the flip (and plays normally) or after (and
+  // retries into 'creation is closed'). No team can sneak in mid-start.
+  const gameRef = db().doc(`games/${gameId}`);
+  return db().runTransaction(async (tx) => {
+    const g = (await tx.get(gameRef)).data();
+    if (g.status !== 'lobby') throw new HttpsError('failed-precondition', 'already started');
+    // Students create the franchises now (createTeam), so creation no longer
+    // guarantees a playable league — the start does. Same message as
+    // createGame's explicit-path minimum; one student-copy entry serves both.
+    if ((g.teamCount ?? 0) < 2) throw new HttpsError('failed-precondition', 'need at least 2 teams');
+    // round-1 market draw (75% of the FA catalog, seeded, identical for all teams;
+    // non-exclusive per spec §4.2 — the draw is a shared catalog of signable
+    // copies). drawMarket is pure + seeded — safe inside the transaction.
+    const d = drawMarket({ gameId, round: 1, faPool: FA_POOL, absentCounts: {}, extraPids: [] });
+    tx.set(db().doc(`games/${gameId}/market/1`),
+      { available: d.available, absentCounts: d.absentCounts, unsoldPrices: {} });
+    tx.update(gameRef, { status: 'active', round: 1, phase: 'FREE_AGENCY' });
+    return { phase: 'FREE_AGENCY' };
+  });
 });
 
 // Idempotency guard: each hook firing is recorded in games/{gameId}/hooklog so a
