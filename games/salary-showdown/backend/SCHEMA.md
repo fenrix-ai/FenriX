@@ -32,6 +32,14 @@ games/{gameId}/players/{uid}          # membership: { teamId, role: GM|Scout|Coa
                                       # seat; role-gated callables fall back to any team member
                                       # when no member holds the required role (2026-08-15).
 games/{gameId}/teams/{teamId}         # PUBLIC team state (rosters are public like real NBA):
+                                      # createTeam (any signed-in student, lobby-only callable,
+                                      # 2026-08-17) creates a franchise AND the creator's
+                                      # players/{uid} membership in ONE transaction — no orphan
+                                      # teams. The 21-franchise cap is enforced there server-side
+                                      # (amended rule; rounds/{r} ~1MiB rationale unchanged), and
+                                      # games/{gameId}.teamCount is updated in the same transaction
+                                      # (LobbyWall's seat counter reads it). createGame with an
+                                      # EMPTY payload seeds zero teams; startSeason refuses <2.
   name, wins, losses, pointDiff, pointsFor,
   roster: [{pid, rate, startRound, years, viaAuction, hardship}],
   deadMoney: [{pid, rate, startRound, endRound}],

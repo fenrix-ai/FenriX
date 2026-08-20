@@ -307,10 +307,12 @@ use an explicit `prod` alias.
   un-automatable** (4 independent attempts across 2 agents; synthetic pointer events don't satisfy
   its sensors). The underlying `place()` slot model is exhaustively unit-tested; only the gesture
   is unverified.
-- **Cap sessions at 21 franchises.** The `rounds/{r}` doc approaches Firestore's 1 MiB limit around
-  28+ teams, and the >21-team balanced partial round-robin scheduler is **descoped**. A 70-student
-  class at 3/team ≈ 23 franchises — so this is a real operational instruction for the professor
-  material, not a footnote.
+- **21-franchise cap — now SERVER-enforced (2026-08-17).** The `rounds/{r}` doc approaches
+  Firestore's 1 MiB limit around 28+ teams, and the >21-team balanced partial round-robin scheduler
+  is **descoped**. Students create franchises themselves (`createTeam`), so the cap moved out of
+  the professor material and into the callable: franchise #22 is rejected server-side
+  (`league is full`; student copy: "The league is full — 21 franchises is the cap."). No professor
+  action needed.
 
 ---
 
@@ -345,12 +347,19 @@ the pedagogy or the design.
   (`bench.slice(0,2)` in both engine and sim); roster spots 9–10 are inactive depth. The lineup UI
   makes this visible with separate "ACTIVE BENCH — these two play" and "INACTIVE DEPTH" zones.
 - **Config knobs `config.cap` / `config.totalRounds` are decorative** — never expose as editable.
+- **21-franchise cap, enforced SERVER-SIDE in `createTeam` (enforcement site amended 2026-08-17).**
+  Students create franchises themselves; the 22nd create is rejected with `league is full` (student
+  copy: "The league is full — 21 franchises is the cap."). Rationale unchanged: `rounds/{r}`
+  approaches Firestore's 1 MiB ceiling beyond 21 teams. The professor panel no longer takes a count
+  at all; `createGame`'s explicit tooling paths keep only the 500 abuse ceiling, and `startSeason`
+  refuses to start with fewer than 2 franchises.
 - **`games[].home/away` are teamIds; `boxCsv` `team`/`opponent` are display names.** Different
   conventions on purpose; join accordingly.
 - **Mockup sample numbers are never authoritative** — recompute everything. Known mock errors are
   listed in spec §11 "Mockup errata."
-- **HARD INVARIANT:** `joinGame` must RESOLVE before `setGameId(...)`. The game-doc listener never
-  recovers from a `permission-denied`, so setting gameId pre-membership permanently strands the tab.
+- **HARD INVARIANT:** `joinGame` — and `createTeam`, which claims the creator's seat the same
+  way — must RESOLVE before `setGameId(...)`. The game-doc listener never recovers from a
+  `permission-denied`, so setting gameId pre-membership permanently strands the tab.
 
 ---
 
@@ -457,7 +466,12 @@ step ending every task (bias toward emulator-backed integration + browser checks
 ## 10. Frozen integration contracts (for any new client work)
 
 **Callables** (all require anonymous auth; role enforced server-side):
-`createGame({teamNames} | {teamCount})` · `getLobby({joinCode})` · `joinGame({joinCode, teamId, role, displayName})` ·
+`createGame({teamNames} | {teamCount} | {})` (empty payload = ZERO-team game for student-created
+franchises; explicit paths keep the 2-minimum and the 500 abuse ceiling) · `getLobby({joinCode})` ·
+`joinGame({joinCode, teamId, role, displayName})` ·
+`createTeam({joinCode, name, role, displayName})` (any signed-in student, lobby-only: creates the
+franchise AND claims the creator's seat in one transaction — no orphan teams; 21-cap enforced here;
+duplicate names allowed; `startSeason` refuses <2 teams) ·
 `renameTeam({gameId, name})` (member, lobby-only, own team) · `releaseSeat({gameId, teamId, role})` (professor-only) ·
 `startSeason({gameId})` · `advancePhase({gameId, expectedPhase, expectedRound})` ·
 `signPlayer({gameId, pid, years})` · `cutRosterPlayer({gameId, pid})` ·

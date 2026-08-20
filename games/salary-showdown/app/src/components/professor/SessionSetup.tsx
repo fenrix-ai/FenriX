@@ -9,10 +9,11 @@ import { ErrorNotice } from '../ui/ErrorNotice';
 // enforcement site moved. The 2-franchise floor is server-side too
 // (startSeason); the disabled Start button below is a UX mirror, not the gate.
 
-// Game lifecycle (design spec §5.2): create a game (franchise-count input —
-// students name their own teams from the lobby), resume an existing gameId,
-// and start the season while in lobby. Renders nothing once the season is
-// running — AdvanceControl owns the game from there.
+// Game lifecycle (design spec §5.2): create a game (creates it EMPTY —
+// students create and name their own franchises from the join screen via
+// createTeam), resume an existing gameId, and start the season while in
+// lobby. Renders nothing once the season is running — AdvanceControl owns
+// the game from there.
 export function SessionSetup() {
   const { gameId, setGameId, game, teams, call } = useProfessor();
   const [resumeId, setResumeId] = useState('');

@@ -7,13 +7,14 @@ Projector: never type its URL — open it from the panel's "Open projector" butt
 ## Pre-class setup (10 minutes before)
 
 1. On the laptop, open the panel URL above.
-2. Under **New session**, enter HOW MANY franchises are playing, then press
-   **Create game**. Teams arrive as Franchise 1..N — students name their own
-   franchises from their lobby screens; names lock when you press Start
+2. Under **New session**, press **Create game**. The game starts with ZERO
+   franchises: students create and name their own from the join screen
+   (franchise name + role, one tap), and the panel's Franchises card fills
+   in live. Names stay editable from their lobby until you press Start
    season. Hard cap: **21 franchises** — beyond that the per-round data
-   document approaches Firestore's 1 MiB limit. The panel blocks 22+ with:
-   "Cap sessions at 21 franchises — the round document approaches Firestore's
-   1 MiB limit beyond that."
+   document approaches Firestore's 1 MiB limit. The SERVER now blocks
+   franchise #22; students see: "The league is full — 21 franchises is the
+   cap." **Start season** stays locked until at least 2 franchises exist.
 3. Write down the **join code** (the large code at the top of the panel) and the
    **game id** (press F12, then Application > Local Storage > `ss.profGameId`).
    The game id resumes the panel in THIS browser and is required for the
@@ -70,6 +71,7 @@ The final advance (Results, Round 5) asks separately: "End the season and reveal
 | Header stuck on "advancing…" for more than 10 seconds | Press **Resolve stuck advance** (appears in the phase control after 10 seconds). |
 | Wrong game loaded / dead session on the panel | Press **Clear session** in the session header, then Resume with the correct game id. |
 | A player left and their empty seat blocks the team | Release the seat from the panel's **Seats** card — teammates can then act for that role. (Teammates can already act for any seat that was never claimed.) The released student's screen goes blank — have them reopen the join link and reclaim a seat. |
+| A stray or mistaken franchise sits in the lobby | Leave it or have its creator rename it — there is no delete. An unstaffed franchise plays on server defaults (hardship signings + auto-filled lineups) and hurts nobody; don't press Start season until the room looks right. If the lobby is genuinely messed up (someone spammed franchises), just Create game again and share the new code — 30 seconds. |
 | Everything else | The join code stays in the panel header. Students' phones keep working; the game never moves on its own unless Auto-advance is checked. Wait, then advance manually. |
 
 ### Lost laptop (emergency recovery)
