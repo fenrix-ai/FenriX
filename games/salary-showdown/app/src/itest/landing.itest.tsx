@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { newClient, seedToPhase } from './harness';
+import { adminDb, newClient, seedToPhase } from './harness';
 import { auth } from '../lib/firebase';
 import { signInAnonymously } from 'firebase/auth';
 import App from '../App';
@@ -62,4 +62,37 @@ test('seat-taken race shows the mapped copy and refreshes the picker', async () 
   await user.click(takenGm);
   await waitFor(() => expect(screen.getByRole('alert'))
     .toHaveTextContent('That seat was just taken — pick another role.'), { timeout: 15000 });
+}, 120000);
+
+test('create a franchise (student-created teams): one tap creates the team and claims the seat', async () => {
+  localStorage.removeItem('ss.gameId'); // isolation from prior tests' claims
+  sessionStorage.clear();
+  const prof = await newClient('prof-empty');
+  const { gameId, joinCode } = await prof.call<{ gameId: string; joinCode: string }>(
+    'createGame', {}); // zero-team game — the panel's new path
+  await signInAnonymously(auth);
+  await waitFor(() => expect(auth.currentUser).toBeTruthy(), { timeout: 15000 });
+  const user = userEvent.setup();
+  render(<MemoryRouter initialEntries={['/']}><App /></MemoryRouter>);
+
+  await user.type(screen.getByLabelText('join code'), joinCode);
+  await user.type(screen.getByLabelText('display name'), 'Founder');
+  await user.click(screen.getByRole('button', { name: 'Find game' }));
+
+  // Zero teams yet — the create card is the picker's only affordance.
+  const nameBox = await screen.findByLabelText('new franchise name', {}, { timeout: 15000 });
+  await user.type(nameBox, 'Cap Crunchers');
+  await user.click(screen.getByRole('button', { name: 'Create as GM' }));
+
+  // createTeam resolved before setGameId (HARD INVARIANT) → PhaseRouter lands us in the lobby.
+  await waitFor(() => expect(screen.getByRole('heading', { name: /Lobby/ })).toBeInTheDocument(),
+    { timeout: 15000 });
+  const teamsSnap = await adminDb().collection(`games/${gameId}/teams`).get();
+  expect(teamsSnap.size).toBe(1);
+  expect(teamsSnap.docs[0].data().name).toBe('Cap Crunchers');
+  const membership = (await adminDb().doc(
+    `games/${gameId}/players/${auth.currentUser!.uid}`).get()).data()!;
+  expect(membership).toMatchObject({ teamId: teamsSnap.docs[0].id, role: 'GM' });
+  // LobbyWall's seat counter reads games/{id}.teamCount — the create incremented it.
+  expect((await adminDb().doc(`games/${gameId}`).get()).data()!.teamCount).toBe(1);
 }, 120000);
