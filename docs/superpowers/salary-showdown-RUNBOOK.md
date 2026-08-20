@@ -103,17 +103,20 @@ students keep working in the current phase and nothing is lost.
 
 ## 30-second drag check (day before class, on the classroom machine)
 
-1. On the panel, press **Create game** for a throwaway session. Open the join URL in a
-   normal window and create franchise "QA 1", claiming the Coach seat. Open the join URL
-   again in a **private/incognito window** — a private window is a separate student
-   identity, so this creates a second franchise instead of moving the seat you just
-   claimed — and create franchise "QA 2" with any role. Back on the panel, press
+1. On the panel, press **Clear session** first if a session is loaded, then press
+   **Create game** for a throwaway session. Never claim a seat in the panel's own
+   browser — a claimed seat there hijacks later `/professor` and `/bigscreen` loads in
+   this profile to the throwaway game. Open the join URL in a **private/incognito
+   window**, press **Find game**, and create franchise "QA 1", claiming the Coach seat.
+   Open the join URL again in a **second, separate private/incognito window** — two
+   separate private windows are two separate anonymous identities — press **Find
+   game**, and create franchise "QA 2" with any role. Back on the panel, press
    **Start season** (it unlocks once both franchises exist).
 2. Press Advance twice (confirm "Advance anyway" — this is a throwaway) to reach Lineup.
-3. In the QA 1 window (the normal one, where you claimed Coach) at `/game/lineup`: drag
-   one player card from the bench area into a **GUARD** slot — it must land in the slot.
-   Drag it onto a filled slot — the two players must swap. Fill all 8 slots and press
-   **Submit lineup**.
+3. In the QA 1 window (the private window where you claimed Coach) at `/game/lineup`:
+   drag one player card from the bench area into a **GUARD** slot — it must land in the
+   slot. Drag it onto a filled slot — the two players must swap. Fill all 8 slots and
+   press **Submit lineup**.
 4. If dragging fails on this machine/browser, students must use their own devices for
    the Coach role. (Everything else is tap/click only.)
 
