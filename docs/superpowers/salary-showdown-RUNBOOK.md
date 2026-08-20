@@ -71,7 +71,7 @@ The final advance (Results, Round 5) asks separately: "End the season and reveal
 | Header stuck on "advancing…" for more than 10 seconds | Press **Resolve stuck advance** (appears in the phase control after 10 seconds). |
 | Wrong game loaded / dead session on the panel | Press **Clear session** in the session header, then Resume with the correct game id. |
 | A player left and their empty seat blocks the team | Release the seat from the panel's **Seats** card — teammates can then act for that role. (Teammates can already act for any seat that was never claimed.) The released student's screen goes blank — have them reopen the join link and reclaim a seat. |
-| A stray or mistaken franchise sits in the lobby | Leave it or have its creator rename it — there is no delete. An unstaffed franchise plays on server defaults (hardship signings + auto-filled lineups) and hurts nobody; don't press Start season until the room looks right. If the lobby is genuinely messed up (someone spammed franchises), just Create game again and share the new code — 30 seconds. |
+| A stray or mistaken franchise sits in the lobby | Leave it or have its creator rename it — there is no delete. An unstaffed franchise plays on server defaults (hardship signings + auto-filled lineups) and hurts nobody; don't press Start season until the room looks right. If the lobby is genuinely messed up (someone spammed franchises), just press **Clear session**, then **Create game** and share the new code — 30 seconds. Students who already claimed seats in the bad lobby should reopen the site in a private window to join the new game — their old tab stays pinned to the dead lobby. |
 | Everything else | The join code stays in the panel header. Students' phones keep working; the game never moves on its own unless Auto-advance is checked. Wait, then advance manually. |
 
 ### Lost laptop (emergency recovery)
@@ -103,12 +103,17 @@ students keep working in the current phase and nothing is lost.
 
 ## 30-second drag check (day before class, on the classroom machine)
 
-1. Create a throwaway 2-team game, open the join page in a second tab, **Find game**,
-   claim a Coach seat, then **Start season**.
+1. On the panel, press **Create game** for a throwaway session. Open the join URL in a
+   normal window and create franchise "QA 1", claiming the Coach seat. Open the join URL
+   again in a **private/incognito window** — a private window is a separate student
+   identity, so this creates a second franchise instead of moving the seat you just
+   claimed — and create franchise "QA 2" with any role. Back on the panel, press
+   **Start season** (it unlocks once both franchises exist).
 2. Press Advance twice (confirm "Advance anyway" — this is a throwaway) to reach Lineup.
-3. In the Coach tab at `/game/lineup`: drag one player card from the bench area into a
-   **GUARD** slot — it must land in the slot. Drag it onto a filled slot — the two
-   players must swap. Fill all 8 slots and press **Submit lineup**.
+3. In the QA 1 window (the normal one, where you claimed Coach) at `/game/lineup`: drag
+   one player card from the bench area into a **GUARD** slot — it must land in the slot.
+   Drag it onto a filled slot — the two players must swap. Fill all 8 slots and press
+   **Submit lineup**.
 4. If dragging fails on this machine/browser, students must use their own devices for
    the Coach role. (Everything else is tap/click only.)
 
