@@ -101,7 +101,9 @@ test('clear session: a bad gameId is no longer a dead end', async () => {
   await user.click(screen.getByRole('button', { name: 'Clear session' }));
 
   // Back at SessionSetup's create/resume view; the persisted key is gone.
-  await screen.findByLabelText('franchise count', {}, { timeout: 15000 });
+  // The create view is identified by its button now — the franchise-count
+  // input was removed with the zero-team create (2026-08-17).
+  await screen.findByRole('button', { name: 'Create game' }, { timeout: 15000 });
   expect(localStorage.getItem('ss.profGameId')).toBeNull();
   expect(screen.queryByText('Connecting to session…')).toBeNull();
 }, 120000);
