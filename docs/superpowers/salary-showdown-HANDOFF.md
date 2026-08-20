@@ -43,7 +43,7 @@ top-3 in **86%** of simulated seasons and wins the title in **48%**.
 | Production | **LIVE** — Firebase project `salary-showdown` (Blaze), Hosting `https://salary-showdown.web.app`, 14 callables + `(default)` Firestore in `us-west1`, anonymous auth on, $10 email budget alert armed (Dylan to verify, §4) |
 | Backend test suite | **27 files / 191 tests green** |
 | App unit suite | **15 files / 79 tests green** |
-| App integration suite | **20 files / 37 tests green** (live emulators; browser-transport pin per §3) |
+| App integration suite | **20 files / 37 tests green ×3 consecutive** (live emulators; browser-transport pin per §3) |
 | UI-rules audit | clean, 66 files |
 
 ### 2a. Publication note (2026-07-24)
@@ -307,12 +307,6 @@ use an explicit `prod` alias.
   un-automatable** (4 independent attempts across 2 agents; synthetic pointer events don't satisfy
   its sensors). The underlying `place()` slot model is exhaustively unit-tested; only the gesture
   is unverified.
-- **21-franchise cap — now SERVER-enforced (2026-08-17).** The `rounds/{r}` doc approaches
-  Firestore's 1 MiB limit around 28+ teams, and the >21-team balanced partial round-robin scheduler
-  is **descoped**. Students create franchises themselves (`createTeam`), so the cap moved out of
-  the professor material and into the callable: franchise #22 is rejected server-side
-  (`league is full`; student copy: "The league is full — 21 franchises is the cap."). No professor
-  action needed.
 
 ---
 
@@ -351,8 +345,9 @@ the pedagogy or the design.
   Students create franchises themselves; the 22nd create is rejected with `league is full` (student
   copy: "The league is full — 21 franchises is the cap."). Rationale unchanged: `rounds/{r}`
   approaches Firestore's 1 MiB ceiling beyond 21 teams. The professor panel no longer takes a count
-  at all; `createGame`'s explicit tooling paths keep only the 500 abuse ceiling, and `startSeason`
-  refuses to start with fewer than 2 franchises.
+  at all; `createGame`'s explicit tooling paths keep the 2-team minimum and intentionally bypass the
+  21-cap — only `{teamCount}` carries the explicit 500 abuse ceiling, since `{teamNames}` is bounded
+  only by request size — and `startSeason` refuses to start with fewer than 2 franchises.
 - **`games[].home/away` are teamIds; `boxCsv` `team`/`opponent` are display names.** Different
   conventions on purpose; join accordingly.
 - **Mockup sample numbers are never authoritative** — recompute everything. Known mock errors are
@@ -467,7 +462,8 @@ step ending every task (bias toward emulator-backed integration + browser checks
 
 **Callables** (all require anonymous auth; role enforced server-side):
 `createGame({teamNames} | {teamCount} | {})` (empty payload = ZERO-team game for student-created
-franchises; explicit paths keep the 2-minimum and the 500 abuse ceiling) · `getLobby({joinCode})` ·
+franchises; explicit paths keep the 2-team minimum and intentionally bypass the 21-cap — only
+`{teamCount}` carries the 500 abuse ceiling, `{teamNames}` bounded by request size) · `getLobby({joinCode})` ·
 `joinGame({joinCode, teamId, role, displayName})` ·
 `createTeam({joinCode, name, role, displayName})` (any signed-in student, lobby-only: creates the
 franchise AND claims the creator's seat in one transaction — no orphan teams; 21-cap enforced here;
@@ -515,7 +511,7 @@ at 20 teams). Sealed bids mean **no live shared bid state** — never add a cros
   said to leave these for now.
 - Spec §14 parking lot: trades between class teams, performance-driven repricing, hot/cold streaks,
   injuries, durability, personality-with-teeth.
-- The >21-team scheduler and the `rounds/{r}` doc-size work (see §5).
+- The >21-team scheduler and the `rounds/{r}` doc-size work (see §6).
 
 ---
 

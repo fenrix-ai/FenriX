@@ -105,7 +105,7 @@ students keep working in the current phase and nothing is lost.
 
 1. On the panel, press **Clear session** first if a session is loaded, then press
    **Create game** for a throwaway session. Never claim a seat in the panel's own
-   browser — a claimed seat there hijacks later `/professor` and `/bigscreen` loads in
+   browser profile — a claimed seat there hijacks later `/professor` and `/bigscreen` loads in
    this profile to the throwaway game. Open the join URL in a **private/incognito
    window**, press **Find game**, and create franchise "QA 1", claiming the Coach seat.
    Open the join URL again in a **genuinely different browser** (or a second OS-level
