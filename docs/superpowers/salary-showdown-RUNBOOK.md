@@ -108,10 +108,11 @@ students keep working in the current phase and nothing is lost.
    browser — a claimed seat there hijacks later `/professor` and `/bigscreen` loads in
    this profile to the throwaway game. Open the join URL in a **private/incognito
    window**, press **Find game**, and create franchise "QA 1", claiming the Coach seat.
-   Open the join URL again in a **second, separate private/incognito window** — two
-   separate private windows are two separate anonymous identities — press **Find
-   game**, and create franchise "QA 2" with any role. Back on the panel, press
-   **Start season** (it unlocks once both franchises exist).
+   Open the join URL again in a **genuinely different browser** (or a second OS-level
+   browser profile) — incognito windows in the SAME browser share one session, so a
+   second incognito window would inherit QA 1's identity instead of creating a new
+   franchise — press **Find game**, and create franchise "QA 2" with any role. Back on
+   the panel, press **Start season** (it unlocks once both franchises exist).
 2. Press Advance twice (confirm "Advance anyway" — this is a throwaway) to reach Lineup.
 3. In the QA 1 window (the private window where you claimed Coach) at `/game/lineup`:
    drag one player card from the bench area into a **GUARD** slot — it must land in the
