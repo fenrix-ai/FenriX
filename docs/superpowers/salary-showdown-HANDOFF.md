@@ -41,9 +41,9 @@ top-3 in **86%** of simulated seasons and wins the title in **48%**.
 | Plan 3b HEAD | **`4f57e0e`** + this docs-sync commit (3a-backlog fixes + prod wiring + first production deploy + prod smoke + load drill + professor runbook + exit battery) |
 | `main` vs `origin/main` | **Pushed through `7c659f3` (2026-07-25, 3a merge + handoff sync)**; the 3b plan commit `1b4a64c` and branch `salary-showdown-plan3b` are local, pending Dylan's merge + push decision (repo `fenrix-ai/FenriX` is PUBLIC — §2a posture unchanged; 3b adds no new sensitive content) |
 | Production | **LIVE** — Firebase project `salary-showdown` (Blaze), Hosting `https://salary-showdown.web.app`, 14 callables + `(default)` Firestore in `us-west1`, anonymous auth on, $10 email budget alert armed (Dylan to verify, §4) |
-| Backend test suite | **26 files / 181 tests green** |
-| App unit suite | **15 files / 78 tests green** |
-| App integration suite | **20 files / 36 tests green ×3 consecutive** (live emulators; browser-transport pin per §3) |
+| Backend test suite | **27 files / 191 tests green** |
+| App unit suite | **15 files / 79 tests green** |
+| App integration suite | **20 files / 37 tests green** (live emulators; browser-transport pin per §3) |
 | UI-rules audit | clean, 66 files |
 
 ### 2a. Publication note (2026-07-24)
