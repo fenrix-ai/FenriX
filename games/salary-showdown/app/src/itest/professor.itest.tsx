@@ -75,7 +75,7 @@ test('professor panel: creator sees join code + Lobby; header follows startSeaso
     { timeout: 30000 });
 }, 240000);
 
-test('panel: create enforces the 21-franchise cap, lists franchises, starts the season', async () => {
+test('panel: zero-team create — franchises appear as students create them; season starts at 2+', async () => {
   await signInAnonymously(auth);
   await waitFor(() => expect(auth.currentUser).toBeTruthy(), { timeout: 15000 });
   // beforeEach cleared ss.profGameId — the panel opens on the create/resume view.
@@ -84,27 +84,33 @@ test('panel: create enforces the 21-franchise cap, lists franchises, starts the 
   const user = userEvent.setup();
   render(<MemoryRouter initialEntries={['/professor']}><App /></MemoryRouter>);
 
-  const box = await screen.findByLabelText('franchise count', {}, { timeout: 20000 });
-  await user.type(box, '22');
-  await user.click(screen.getByRole('button', { name: 'Create game' }));
-  // The franchise cap is enforced HERE in the panel (count check + exact copy),
-  // NOT server-side (standing hard rule): the inline error renders and no game
-  // was created (no session header appears).
-  expect(screen.getByText(
-    "Cap sessions at 21 franchises — the round document approaches Firestore's 1 MiB limit beyond that.",
-  )).toBeInTheDocument();
-  expect(screen.queryByLabelText('Join code')).toBeNull();
-
-  await user.clear(box);
-  await user.type(box, '3');
-  await user.click(screen.getByRole('button', { name: 'Create game' }));
+  // Zero-team create: no count input exists any more — the 21-cap moved
+  // server-side into createTeam (amended hard rule 2026-08-17, pinned in
+  // test/create-team.test.js), and the 2-franchise floor lives in startSeason.
+  await user.click(await screen.findByRole('button', { name: 'Create game' }, { timeout: 20000 }));
   await waitFor(() => expect(screen.getByLabelText('Join code')).toBeInTheDocument(),
     { timeout: 30000 });
-  // Count-first create: teams arrive as placeholders students will rename.
-  for (const nm of ['Franchise 1', 'Franchise 2', 'Franchise 3']) {
-    await waitFor(() => expect(screen.getByText(nm)).toBeInTheDocument(), { timeout: 20000 });
-  }
-  await user.click(await screen.findByRole('button', { name: 'Start season' }, { timeout: 20000 }));
+  expect(screen.getByText('No franchises yet — students create them from the join screen.'))
+    .toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Start season' })).toBeDisabled();
+
+  const joinCode = screen.getByLabelText('Join code').textContent!;
+  const stu1 = await newClient('creator1');
+  await stu1.call('createTeam',
+    { joinCode, name: 'Cap Crunchers', role: 'GM', displayName: 'A' });
+  await waitFor(() => expect(screen.getByText('Cap Crunchers')).toBeInTheDocument(),
+    { timeout: 20000 });
+  expect(screen.getByRole('button', { name: 'Start season' })).toBeDisabled(); // 1 < 2
+
+  const stu2 = await newClient('creator2');
+  await stu2.call('createTeam',
+    { joinCode, name: 'Beta Blockers', role: 'GM', displayName: 'B' });
+  await waitFor(() => expect(screen.getByText('Beta Blockers')).toBeInTheDocument(),
+    { timeout: 20000 });
+
+  const start = screen.getByRole('button', { name: 'Start season' });
+  await waitFor(() => expect(start).toBeEnabled(), { timeout: 15000 });
+  await user.click(start);
   // startSeason lands in FREE_AGENCY R1 (Draft Night); the advance button names
   // the CONCRETE next phase from the order — Star Auction, same round.
   await screen.findByRole('button', { name: 'Advance → Star Auction · R1' }, { timeout: 30000 });
