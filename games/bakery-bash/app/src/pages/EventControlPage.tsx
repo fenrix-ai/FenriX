@@ -67,7 +67,7 @@ export function EventControlPage() {
     resetAll,
   } = useEventLeaderboard();
   const sharedOrigin = typeof window === "undefined" ? "" : window.location.origin;
-  const sharedQuery = `?session=${sessionId}`;
+  const sharedQuery = `?session=${sessionId}${gameId ? `&game=${encodeURIComponent(gameId)}` : ""}`;
   const controlLink = `${sharedOrigin}/event/control${sharedQuery}`;
   const displayLink = `${sharedOrigin}/event/display${sharedQuery}`;
 
