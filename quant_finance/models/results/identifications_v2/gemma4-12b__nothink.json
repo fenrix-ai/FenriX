@@ -1,0 +1,90 @@
+[
+  {
+    "guess": "1) **AMD (Advanced Micro Devices, Inc.)**\n\n2) **Specific Clues:**\n\n*   **Product Lineup & Architecture:** The report explicitly mentions \"x86 microprocessors (CPUs),\" \"accelerated processing units (APUs),\" and \"discrete and integrated graphics processing units (GPUs).\" It specifically highlights the **\"Threadripper\"** and **\"Falcon\"** (likely a placeholder for Ryzen) branding, as well as the **\"Nexus Fabric\"** (a placeholder for Infinity Fabric).\n*   **Specific Product Names & Technologies:** The text includes several real AMD trademarks and product names: **FreeSync**, **FSR** (ClarityFX), **Infinity Hub**, **V-Cache** (Nexus Cache), **RDNA** (RPGA), and **Zen** (Helix core architecture). It also mentions the **MI200** series accelerators and the **7nm/5nm** nodes.\n*   **M&A Activity:** The report describes a $29 billion acquisition of \"Cortex Logic, Inc.\" expected to close in early 2022. This is a direct reference to AMD's acquisition of **Xilinx** (though the valuation and specific \"Cortex\" name are fictionalized, the timeline and scale match the Xilinx deal).\n*   **Competitive Positioning:** The text identifies **Intel** as the primary competitor in the microprocessor market and **NVIDIA** as the principal competitor in the discrete graphics and data center markets. It also mentions being the \"market share leader in semi-custom game console products,\" which refers to AMD's role as the primary chip provider for the **Sony PlayStation 5** and **Microsoft Xbox** series.\n*   **Executive Leadership:** The report mentions a CEO who won the \"Woman Innovation Award\" and was listed on Forbes' \"World's Most Powerful Women.\" This refers to **Dr. Lisa Su**, who took over as CEO of AMD and led the company's significant turnaround.",
+    "reasoning": "",
+    "finish_reason": "stop",
+    "prompt_tokens": 11426,
+    "completion_tokens": 416,
+    "latency_s": 5.9,
+    "model": "gemma4-12b",
+    "mode": "nothink",
+    "company": 1
+  },
+  {
+    "guess": "1) **AppLovin Corporation**\n\n2) **Specific Clues:**\n\n*   **The Product Suite (NexReach, PEAK, Calibrate, StreamLink):** These are direct fictional analogs to AppLovin\u2019s core business pillars. Specifically, **PEAK** is a clear stand-in for **AppLovin's AXON engine** (their AI-powered real-time bidding technology) and their **MAX** mediation platform. **NexReach** mirrors their user acquisition tools, and **Calibrate** mirrors their attribution and analytics offerings.\n*   **The \"Apps\" Portfolio & Studio Model:** The report describes a portfolio of over 200 free-to-play mobile games across five genres (casual, match-three, card/casino, etc.) run by ten studios. This perfectly describes AppLovin\u2019s business model, where they own a massive portfolio of games to provide \"internal\" demand for their own advertising technology.\n*   **The \"Prism\" AI Engine & Microsecond Speeds:** The description of an AI-powered engine (Prism) matching advertiser demand with publisher supply at \"microsecond-level speeds\" is the hallmark of AppLovin\u2019s technological competitive advantage in the mobile ad-tech space.\n*   **The Recent Strategic Sale:** The report mentions a term sheet for the sale of the mobile gaming business for approximately $1.017 billion in February 2025. While the specific numbers in the fictional report are illustrative, AppLovin has been actively divesting/restructuring certain non-core gaming assets while doubling down on their high-margin AI advertising technology (AXON).\n*   **The CTV Expansion (StreamLink):** The mention of \"StreamLink\" and the \"Global FAST Pass\" (GFP) aligns with AppLovin\u2019s recent aggressive expansion into the Connected TV (CTV) and FAST (Free Ad-supported Streaming TV) markets to diversify beyond mobile.",
+    "reasoning": "",
+    "finish_reason": "stop",
+    "prompt_tokens": 10921,
+    "completion_tokens": 408,
+    "latency_s": 5.5,
+    "model": "gemma4-12b",
+    "mode": "nothink",
+    "company": 2
+  },
+  {
+    "guess": "1) **General Motors Company (GM)**\n\n2) **Specific Clues:**\n\n*   **The Ignition Switch Recall:** The text explicitly mentions \"proceedings related to the Ignition Switch Recall\" and \"charges of $0.5 billion for ignition switch related legal matters.\" This is a hallmark of General Motors' legal history and financial reporting from the 2014\u20132018 period.\n*   **The \"Steele/Averton\" Business Sale:** The report mentions a $2.7 billion valuation allowance related to the sale of the \"Steele/Averton Business.\" This is a direct reference to GM's sale of its **Sterling** and **Averton** (and associated parts/truck) business units/assets during their restructuring.\n*   **The \"Meridian Motor Group Pilot Autonomy\" & SoftBank Investment:** The text describes a $1.1 billion investment from **SoftBank** into an autonomous vehicle entity. This mirrors GM's real-world partnership and investment structure with **Cruise** (and the broader autonomous vehicle strategy involving SoftBank).\n*   **Specific Financial Data & Market Share:** The report states a **17.9% market share** in the U.S. and total U.S. sales of **3.3 million units** in 2018. These figures align almost perfectly with GM's actual 2018 performance.\n*   **The \"RUC Trust\" and Bankruptcy Claims:** The mention of the **SLC (S.L.C.) RUC Trust** and a specific threshold of **$40.9 billion** in allowed general unsecured claims relates to the complex litigation and bankruptcy-related trust structures (like the **S.L.C. Trust**) associated with GM's historical liabilities.",
+    "reasoning": "",
+    "finish_reason": "stop",
+    "prompt_tokens": 14116,
+    "completion_tokens": 378,
+    "latency_s": 5.6,
+    "model": "gemma4-12b",
+    "mode": "nothink",
+    "company": 3
+  },
+  {
+    "guess": "1) **Kroger Co.**\n\n2) **Specific Clues:**\n\n*   **The \"Extra Week\" and Fiscal Year:** The report mentions a \"53rd week in fiscal year 2017\" and a fiscal year ending on the last day of January. This is a hallmark of Kroger\u2019s financial reporting (which typically ends on the first Sunday of February, often resulting in 53-week years).\n*   **Specific Brand Names:** The report lists \"Reserve Collection\u00ae,\" \"Big K\u00ae,\" \"Check This Out\u2026\u00ae,\" and \"Legacy Farm\u00ae.\" These are all actual private-label brands owned and operated by Kroger.\n*   **The \"QuickPick\" and \"ExpressLane\" Services:** The report mentions \"Pickup (also referred to as QuickPick\u00ae)\" and \"Meridian Market ExpressLane\u2122.\" These are the specific names of Kroger's digital and in-store pickup services.\n*   **Specific Acquisitions and Divestitures:** The report details the sale of a \"convenience store business unit\" for $1.7 billion and the merger with \"ModernHEALTH\" (a fictionalized name for **Village Supermarkets** or similar pharmacy-heavy acquisitions) and \"Fresh Table\" (fictionalized **Fresh Market** or similar). Most tellingly, it mentions the sale of a \"Maple Hill Dairy\" business and the sale of a \"Specialty Pharmacy\" business to **Inmar** (a real-world digital coupon and loyalty company that partnered with Kroger).\n*   **Union and Pension Obligations:** The mention of the \"UFCW Consolidated Pension Plan\" and the specific \"withdrawal liabilities\" for local unions is a very specific detail found in Kroger's 10-K filings regarding their labor relations with the United Food and Commercial Workers union.",
+    "reasoning": "",
+    "finish_reason": "stop",
+    "prompt_tokens": 13102,
+    "completion_tokens": 375,
+    "latency_s": 5.6,
+    "model": "gemma4-12b",
+    "mode": "nothink",
+    "company": 4
+  },
+  {
+    "guess": "1) **AmerisourceBergen (now Cencora)**\n\n2) **Specific Clues:**\n\n*   **The \"Nexus Health Exchange\" and \"Core ATS Business\":** The report mentions the 2017 contribution of the \"Core ATS Business\" to form the \"Nexus Health Exchange\" joint venture. This is a direct reference to AmerisourceBergen's formation of the **AllianceRx** (and associated joint ventures) and the specific accounting for the \"Net Asset Exchange\" related to their restructuring of the **AmerisourceBergen (ATS)** business units.\n*   **Specific Acquisitions:** The text explicitly mentions the acquisition of **Maple Care Pharmacy** in 2017 (a known AmerisourceBergen acquisition) and the 2018 acquisitions of **ClaimPath, LLC** and **ScriptJunction**. It also mentions the 2019 acquisition of **MSD** (which corresponds to their acquisition of **Medline** or similar smaller distribution entities during that period).\n*   **Opioid Litigation and Settlements:** The report details significant \"opioid-related costs\" and \"antitrust legal settlements.\" AmerisourceBergen was one of the primary pharmaceutical distributors involved in the massive multi-state opioid litigation and received significant settlements (the text mentions a $174 million share of an antitrust settlement).\n*   **Geographic and Segment Details:** The mention of \"Apex Health Distribution\" (a pseudonym for their European/International distribution arm), the \"U.K. retail business\" facing government reimbursement reductions, and the \"Canadian business\" facing generic price cuts perfectly mirrors AmerisourceBergen\u2019s international footprint and the specific regulatory headwinds they faced in those regions between 2017 and 2019.\n*   **Financial Scale:** The revenue figures (approx. $184 billion in 2019) and the specific mention of **CVS Health** as a major customer (accounting for ~18.6% of revenue) are hallmark identifiers of AmerisourceBergen\u2019s financial profile.",
+    "reasoning": "",
+    "finish_reason": "stop",
+    "prompt_tokens": 12897,
+    "completion_tokens": 435,
+    "latency_s": 6.0,
+    "model": "gemma4-12b",
+    "mode": "nothink",
+    "company": 5
+  },
+  {
+    "guess": "1) **Netflix, Inc.**\n\n2) **Specific Clues:**\n\n*   **Ad-Supported Subscription Plan:** The text explicitly mentions the introduction of an \"ad-supported subscription plan\" and \"advertising revenue.\" Netflix launched its first ad-supported tier in late 2022, a major shift in its business model.\n*   **Content Liabilities and Fixed Costs:** The report highlights \"multi-year commitments\" with studios and \"fixed cost\" content obligations that are not tied to member usage. This is a hallmark of Netflix\u2019s financial structure, where they pay for content upfront regardless of how many people watch it.\n*   **International Regulatory Context:** The mention of the \"EU revised its [COMPANY] Directive in 2018 to require that European works comprise at least thirty percent (32%) of media service providers\u2019 catalogs\" is a direct reference to the **Audiovisual Media Services Directive (AVMSD)**, which specifically impacts Netflix's operations in Europe.\n*   **AWS Dependency:** The report states they run the \"vast majority of our computing on AWS\" and notes that \"the retail side of Amazon competes with us.\" This perfectly describes Netflix\u2019s infrastructure and its unique competitive dynamic with Amazon (which owns both AWS and Prime Video).\n*   **Gaming Expansion:** The text mentions scaling \"content production, including games.\" Netflix has aggressively expanded into mobile and cloud gaming as a core part of its \"streaming and gaming\" strategy.",
+    "reasoning": "",
+    "finish_reason": "stop",
+    "prompt_tokens": 10504,
+    "completion_tokens": 305,
+    "latency_s": 4.7,
+    "model": "gemma4-12b",
+    "mode": "nothink",
+    "company": 6
+  },
+  {
+    "guess": "1) **Palantir Technologies Inc.**\n\n2) **Specific Clues:**\n\n*   **Founding and Origin Story:** The report states the company was founded in 2003 and began by building software for the \"intelligence community in the United States to assist in counterterrorism investigations.\" This perfectly mirrors Palantir's history, which began with the development of Gotham for the intelligence community.\n*   **Product Lineup and Branding:** The fictional \"DataForge Shield\" and \"DataForge Core\" are clear stand-ins for Palantir\u2019s **Gotham** and **Foundry** platforms. The description of \"DataForge Deploy\" as a \"cloud-agnostic, single control layer\" aligns with Palantir's **Apollo** platform.\n*   **The \"AIP\" Offering:** The report explicitly mentions \"DataForge DataForge AIP\" (a redundant naming convention in the anonymized text) as a platform leveraging \"generative AI models, including large language models (LLMs).\" This is a direct reference to Palantir's **AIP (Artificial Intelligence Platform)**, which they have heavily marketed since 2023.\n*   **Customer Mix and Revenue:** The report notes that 60% of revenue comes from the government segment and 49% from the commercial segment (overlapping totals indicate a heavy dual-focus). It also mentions a \"strategic global partnership with Fujitsu Limited,\" which is a known real-world partnership between Palantir and Fujitsu.\n*   **Specific Risk Factors:** The mention of the \"Founder Voting Trust Agreement\" and the names of the founders\u2014**Eric Weston, Nathan Cross, and Franklin Shore**\u2014are anonymized versions of Palantir's actual founders (Peter Thiel, Alex Karp, and others) and the specific multi-class stock structure typical of the company.",
+    "reasoning": "",
+    "finish_reason": "stop",
+    "prompt_tokens": 10773,
+    "completion_tokens": 387,
+    "latency_s": 5.5,
+    "model": "gemma4-12b",
+    "mode": "nothink",
+    "company": 7
+  },
+  {
+    "guess": "1) **Western Digital Corporation** (or potentially **SanDisk**, which is a subsidiary of Western Digital).\n\n2) **Specific Clues:**\n\n*   **The \"Spin-off\" and \"Separation\" Narrative:** The report describes a separation from a parent company (\"FlashCore Storage\") to become a standalone public entity. This mirrors the corporate restructuring and strategic focus on the NAND flash and SSD markets that Western Digital has navigated, particularly in distinguishing its storage business from other hardware segments.\n*   **Product Portfolio and Market Segments:** The text explicitly mentions \"Cloud,\" \"Client,\" and \"Consumer\" as the three primary end markets. It specifically highlights \"solid-state drives\" (SSDs), \"removable cards,\" and \"universal serial bus (USB) drives.\" This is the exact product lineup and market segmentation used by Western Digital/SanDisk.\n*   **Specific Competitors:** The report lists \"Samsung Electronics Co., Ltd.,\" \"SK Hynix, Inc.,\" and \"Micron Technology\" (implied by the description of vertically integrated suppliers). These are the primary global rivals in the NAND flash and SSD space.\n*   **Manufacturing and Joint Ventures:** The description of \"joint ventures\" for flash memory wafers and the mention of manufacturing facilities in **Japan** (specifically Hoshima and Tachibana) and **Malaysia** (Penang) aligns with the complex, geographically dispersed manufacturing footprint of major flash memory players like Western Digital.\n*   **Patent Count:** The report mentions approximately **7,900 granted patents**. This is a very specific figure that aligns with the intellectual property scale of a major global storage leader like Western Digital.",
+    "reasoning": "",
+    "finish_reason": "stop",
+    "prompt_tokens": 10978,
+    "completion_tokens": 342,
+    "latency_s": 4.6,
+    "model": "gemma4-12b",
+    "mode": "nothink",
+    "company": 8
+  }
+]

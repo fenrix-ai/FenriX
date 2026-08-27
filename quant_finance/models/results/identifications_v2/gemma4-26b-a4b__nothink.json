@@ -1,0 +1,90 @@
+[
+  {
+    "guess": "1) **AMD (Advanced Micro Devices, Inc.)**\n\n2) **Specific Clues:**\n* **Product Lineup:** The report describes a company offering x86 microprocessors (CPUs), APUs, and discrete/integrated GPUs, as well as semi-custom SoCs for game consoles. This perfectly matches AMD's core business.\n* **Specific Brand Names:** The text includes several real AMD trademarks/product lines, even if some are slightly altered or used in context: **Threadripper**, **FreeSync**, **Ryzen** (implied via \"Apex\" and \"Helix\" architecture descriptions), and **Radeon** (implied via \"Lumix\" and \"RX\" series).\n* **The \"Cortex Logic\" Acquisition:** The report mentions a pending $29 billion acquisition of \"Cortex Logic, Inc.\" expected to close in Q1 2022. This is a direct reference to AMD's real-world acquisition of **Xilinx** (which was valued at approximately $35 billion and closed in early 2022).\n* **Competitive Landscape:** The text explicitly identifies **Intel** as the primary competitor in microprocessors and **NVIDIA** as the principal competitor in discrete graphics and data center GPUs, which is the defining competitive dynamic for AMD.\n* **Console Partnerships:** The mention of providing semi-custom SoCs for the \"PlayForge 5\" (PlayStation 5) and \"PixelBox\" (Xbox Series X/S) mirrors AMD's dominant position as the chip provider for both Sony and Microsoft's current-gen consoles.",
+    "reasoning": "",
+    "finish_reason": "stop",
+    "prompt_tokens": 11426,
+    "completion_tokens": 337,
+    "latency_s": 3.6,
+    "model": "gemma4-26b-a4b",
+    "mode": "nothink",
+    "company": 1
+  },
+  {
+    "guess": "1) **AppLovin Corporation**\n\n2) **Specific Clues:**\n* **Business Model & Segments:** The report describes a dual-segment model consisting of \"Advertising\" (software/marketing technology) and \"Apps\" (a portfolio of mobile games). This is the exact structure of AppLovin, which operates both a massive mobile gaming business and a high-margin software platform.\n* **Product Suite Mapping:** The fictional products are direct analogs to AppLovin's core stack: \"NexReach\" (User Acquisition) maps to **AppDiscovery**; \"PEAK\" (In-app bidding/mediation) maps to **MAX**; and \"Calibrate\" (Measurement/Attribution) maps to **Adjust** (or similar attribution/analytics tools integrated into their ecosystem).\n* **The \"Prism\" AI Engine:** The emphasis on a proprietary AI engine that powers the auction and recommendation logic mirrors AppLovin's heavy marketing of its **AXON** AI engine, which drives its advertising technology.\n* **The Strategic Divestiture:** The text mentions a term sheet to sell the \"mobile gaming business\" for approximately $1 billion. This mirrors AppLovin's recent strategic shift and market activity regarding the separation or optimization of its software vs. apps business.\n* **Industry Context:** The mention of \"Apple's Identifier for Advertisers (IDFA)\" and the impact of \"Application Tracking Transparency\" as a specific risk factor is a hallmark of AppLovin's 10-K filings, as they are one of the most prominent companies affected by Apple's privacy changes.",
+    "reasoning": "",
+    "finish_reason": "stop",
+    "prompt_tokens": 10921,
+    "completion_tokens": 336,
+    "latency_s": 3.5,
+    "model": "gemma4-26b-a4b",
+    "mode": "nothink",
+    "company": 2
+  },
+  {
+    "guess": "1) **General Motors Company**\n\n2) **Specific Clues:**\n* **The Ignition Switch Recall:** The text repeatedly mentions significant legal costs, investigations, and \"charges related to the Ignition Switch Recall Compensation Program.\" This is a defining historical event for General Motors.\n* **Takata Airbag Litigation:** The report explicitly discusses the \"Takata Matters,\" specifically the NHTSA consent order regarding ammonium nitrate-based inflators, which was a massive industry-wide issue heavily impacting GM.\n* **GM Financial / Automotive Financing:** The description of the financial services segment (providing leasing and financing to customers and dealers in North America, South America, and Asia) matches the profile of GM Financial.\n* **Specific Corporate Restructuring/Divestitures:** The text mentions the \"sale of the Steele/Averton Business\" (a fictionalized name for a divestiture) and restructuring actions in **Korea** (referencing GM Korea/GM Daewoo) and **Brazil**.\n* **Autonomous Vehicle Investment:** The mention of \"Meridian Motor Group Pilot Autonomy\" and an investment in **Lyft, Inc.** is a direct reference to GM's real-world investment in Lyft and its development of autonomous technology (Cruise).\n* **Labor Relations:** The mention of the **UAW (United Auto Workers)** contract expiring in September 2019 is a specific identifier for a major American automaker.",
+    "reasoning": "",
+    "finish_reason": "stop",
+    "prompt_tokens": 14116,
+    "completion_tokens": 291,
+    "latency_s": 3.6,
+    "model": "gemma4-26b-a4b",
+    "mode": "nothink",
+    "company": 3
+  },
+  {
+    "guess": "1) **Ahold Delhaize**\n\n2) **Specific Clues:**\n* **The Merger History:** The text explicitly mentions the merger of \"Groupe Delhaize\" with \"Koninklijke Ahold\" in July 2016, which is the defining event that created the real-world company Ahold Delhaize.\n* **Specific Subsidiary/Acquisition References:** The report mentions the acquisition of \"Wayfare Markets\" (likely referring to Stop & Shop/Hannaford/Giant contexts) and the sale of a convenience store business (which aligns with Ahold Delhaize's sale of its convenience store business to various entities/restructuring).\n* **The \"Extra Week\" and Fiscal Year:** The report notes a 53-week fiscal year in 2017 (the \"Extra Week\") and a fiscal year ending on the last day of January, which matches Ahold Delhaize's specific financial calendar.\n* **Private Label and Brand Structure:** The description of \"Our Brands\" with tiered quality (premium vs. value) and the specific mention of \"Big K\" (a real Ahold Delhaize private label brand) is a direct giveaway.\n* **Labor and Pension Details:** The mention of the \"United Food and Commercial Workers (UFCW) Consolidated Pension Plan\" is a highly specific detail regarding the labor unions that represent a large portion of Ahold Delhaize's US workforce.",
+    "reasoning": "",
+    "finish_reason": "stop",
+    "prompt_tokens": 13102,
+    "completion_tokens": 304,
+    "latency_s": 3.7,
+    "model": "gemma4-26b-a4b",
+    "mode": "nothink",
+    "company": 4
+  },
+  {
+    "guess": "1) **AmerisourceBergen** (now known as **Cencora**)\n\n2) **Specific Clues:**\n* **The \"Nexus Health Exchange\" Joint Venture:** The report details a massive 2017 transaction involving the contribution of a \"Core ATS Business\" to a joint venture called Nexus Health Exchange. This is a direct reference to the 2017 formation of **McKesson's** joint venture with AmerisourceBergen (though the report uses the fictional name, the financial mechanics and the \"Core ATS\" description match the AmerisourceBergen/McKesson deal structure).\n* **Opioid Litigation and Legal Settlements:** The text explicitly mentions \"higher opioid-related costs of $130 million\" and \"antitrust legal settlements.\" AmerisourceBergen was a primary defendant in the massive multi-state opioid litigation and had significant legal settlements during this specific fiscal period.\n* **Specific Acquisitions and Divestitures:** The report mentions the acquisition of **Maple Care Pharmacy** (referencing AmerisourceBergen's acquisition of Maple Leaf/various Canadian assets) and the sale of an **EIS** business. It also mentions the acquisition of **MSD** (referencing the acquisition of **MSD**\u2014Medical Supply Distribution\u2014or similar specialty entities).\n* **Financial Profile and Segment Structure:** The revenue scale (approx. $184 billion), the extremely low gross margin (around 5%), and the specific mention of **CVS Health** as a major customer (accounting for ~18.6% of revenue) are exact matches for AmerisourceBergen's 2019 financial profile.\n* **Geographic Footprint:** The mention of significant business in the **U.K., Canada, and France**, and the impact of government reimbursement reductions in those specific regions, aligns perfectly with AmerisourceBergen's international pharmaceutical distribution footprint.",
+    "reasoning": "",
+    "finish_reason": "stop",
+    "prompt_tokens": 12897,
+    "completion_tokens": 399,
+    "latency_s": 4.3,
+    "model": "gemma4-26b-a4b",
+    "mode": "nothink",
+    "company": 5
+  },
+  {
+    "guess": "1) **Netflix, Inc.**\n\n2) **Specific Clues:**\n* **Business Model & Recent Shifts:** The text explicitly mentions scaling a streaming service, introducing an \"ad-supported subscription plan,\" and expanding into \"games,\" which mirrors Netflix's recent strategic pivots.\n* **Infrastructure & Competition:** The report identifies a heavy reliance on **AWS (Amazon Web Services)** for cloud computing and explicitly notes the competitive tension with Amazon (the retail side of Amazon competes with the service), a hallmark of Netflix's risk disclosures.\n* **Content & Regulatory Risks:** The mention of \"multi-year commitments\" for content, \"content amortization\" patterns, and specific EU regulations requiring a \"thirty percent (32%)\" quota for European works are direct parallels to Netflix's operational realities and the EU Audiovisual Media Services Directive.\n* **Financial Profile:** The disclosure of a \"substantial amount of indebtedness\" (specifically mentioning $19.0 billion in senior notes) and \"content liabilities\" ($7.5 billion) aligns with the capital-intensive nature of Netflix's content spend and its historical debt structure.\n* **Labor & Industry Context:** The mention of \"collective bargaining agreements\" in the \"motion picture industry\" and the risks of \"strikes or work stoppages\" (referencing the recent Hollywood strikes) points directly to a major studio/distributor.",
+    "reasoning": "",
+    "finish_reason": "stop",
+    "prompt_tokens": 10504,
+    "completion_tokens": 285,
+    "latency_s": 3.1,
+    "model": "gemma4-26b-a4b",
+    "mode": "nothink",
+    "company": 6
+  },
+  {
+    "guess": "1) **Palantir Technologies Inc.**\n\n2) **Specific Clues:**\n* **Origins and Mission:** The report mentions the company was founded in 2003 and began by building software for the U.S. intelligence community to assist in counterterrorism\u2014the exact origin story of Palantir.\n* **Product Lineup Mapping:** The fictional \"DataForge\" platforms map directly to Palantir's core offerings: *DataForge Shield* (Gotham), *DataForge Core* (Foundry), *DataForge Deploy* (Apollo), and *DataForge AIP* (Artificial Intelligence Platform).\n* **Customer Composition and Revenue Split:** The report describes a high-revenue split between government (60%) and commercial (49%) segments, along with the mention of serving \"special forces\" and \"intelligence community\" users, which mirrors Palantir's business model.\n* **Specific Business Terminology:** The mention of \"bootcamps\" as a primary customer acquisition and acceleration tool is a specific, well-documented marketing and sales strategy used by Palantir to demonstrate their AIP (Artificial Intelligence Platform) to enterprises.\n* **Governance Structure:** The risk factors mention a multi-class stock structure with specific \"Founders\" holding concentrated voting power, which is a hallmark of Palantir's corporate governance.",
+    "reasoning": "",
+    "finish_reason": "stop",
+    "prompt_tokens": 10773,
+    "completion_tokens": 278,
+    "latency_s": 3.1,
+    "model": "gemma4-26b-a4b",
+    "mode": "nothink",
+    "company": 7
+  },
+  {
+    "guess": "1) **Kioxia Corporation**\n\n2) **Specific Clues:**\n* **The Joint Venture Structure:** The report describes a complex relationship with \"Kaisen Memory\" (a fictionalized **Western Digital**) where the company owns a portion of manufacturing entities (the \"Flash Ventures\") located in Japan (specifically mentioning **Hoshino** and **Tachibana**, which correspond to the real-world locations of Kioxia/Toshiba memory plants).\n* **The Spin-off/Separation Context:** The text describes a separation from \"FlashCore Storage\" (representing the historical split/restructuring of **Toshiba** into **Kioxia**).\n* **Market Segments:** The specific breakdown of \"Cloud, Client, and Consumer\" is the exact tripartite market segmentation used in Kioxia\u2019s official financial reporting.\n* **Competitive Landscape:** The report lists \"Samsung Electronics, SK Hynix, and [Company] Co., Ltd\" (representing **Micron**) as primary competitors, which is the standard competitive set for a major NAND flash manufacturer.\n* **Ownership/Manufacturing Model:** The description of obtaining wafers through joint ventures while designing controllers in-house is the hallmark of Kioxia\u2019s business model.",
+    "reasoning": "",
+    "finish_reason": "stop",
+    "prompt_tokens": 10978,
+    "completion_tokens": 257,
+    "latency_s": 3.2,
+    "model": "gemma4-26b-a4b",
+    "mode": "nothink",
+    "company": 8
+  }
+]
