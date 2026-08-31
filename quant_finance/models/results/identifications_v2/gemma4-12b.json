@@ -1,0 +1,66 @@
+[
+  {
+    "guess": "1) **AMD (Advanced Micro Devices, Inc.)**\n\n2) **Specific Clues:**\n*   **Product Lineup & Architecture:** The report describes a company that produces x86 CPUs, APUs (Accelerated Processing Units), and GPUs. It specifically mentions the \"Threadripper\" and \"Falcon\" (likely a stand-in for Ryzen) brands, as well as the \"Nexus Fabric\" (a stand-in for Infinity Fabric) and \"chiplet\" technology.\n*   **Specific Acquisitions & Partnerships:** The text mentions the acquisition of \"Cortex Logic, Inc.\" (a stand-in for **Xilinx**) valued at $29 billion, expected to close in early 2022. It also mentions a partnership with \"Valve\" to create a custom APU for the \"Steam Deck.\"\n*   **Competitive Landscape:** The report explicitly identifies \"Intel\" as the primary competitor in the microprocessor market and \"NVIDIA\" as the principal competitor in the discrete graphics and data center markets.\n*   **Executive Leadership:** The report mentions a female CEO who won the \"Woman Innovation Award\" and was listed on Forbes' \"World's Most Powerful Women.\" This aligns with **Dr. Lisa Su**, who took over as CEO of AMD and oversaw the company's significant turnaround and the Xilinx acquisition.\n*   **Corporate History:** The company was founded in 1969 (AMD was founded in 1969) and is listed on the NASDAQ.",
+    "finish_reason": "stop",
+    "completion_tokens": 315,
+    "latency_s": 4.4,
+    "model": "gemma4-12b",
+    "company": 1
+  },
+  {
+    "guess": "1) **AppLovin**\n\n2) **Specific Clues:**\n*   **Product Portfolio (NexReach, PEAK, Calibrate, StreamLink):** These fictional names directly correspond to AppLovin\u2019s core business units: **AppDiscovery** (NexReach), **MAX** (PEAK - their real-time bidding/mediation platform), **Calibrate** (which is actually the real name of one of their measurement tools), and their recent expansion into **CTV** (StreamLink).\n*   **The \"Prism\" AI Engine:** The report describes \"Prism\" as the AI-powered engine matching advertiser demand with publisher supply. This mirrors AppLovin\u2019s heavy branding and investment in their proprietary AI-driven recommendation and bidding algorithms.\n*   **Mobile Gaming Portfolio & Studio Model:** The description of a portfolio of over 200 free-to-play games across five genres (casual, match-three, etc.) run by ten studios is a hallmark of AppLovin\u2019s business model, where they own and operate a massive gaming portfolio to fuel their advertising ecosystem.\n*   **The \"Sale of Mobile Gaming Business\" Announcement:** The report mentions a term sheet for the sale of the mobile gaming business for ~$1.017 billion in February 2025. This is a specific narrative arc for AppLovin, which has recently been streamlining its portfolio to focus more heavily on its high-margin software/advertising platform (AppLovin Corporation) while divesting or restructuring specific gaming assets.\n*   **Location and Employee Count:** The report mentions a headquarters in **Lakeview, Oregon** (AppLovin is headquartered in Lot 1, Lakeview, OR) and a headcount of approximately 1,688 employees, which aligns closely with AppLovin\u2019s corporate profile.",
+    "finish_reason": "stop",
+    "completion_tokens": 382,
+    "latency_s": 5.3,
+    "model": "gemma4-12b",
+    "company": 2
+  },
+  {
+    "guess": "1) **General Motors (GM)**\n\n2) **Specific Clues:**\n*   **The Ignition Switch Recall:** The text explicitly mentions \"proceedings related to the Ignition Switch Recall\" and specific charges of \"$0.5 billion for ignition switch related legal matters.\" This is a hallmark of GM's legal history.\n*   **The Steele/Averton Business:** The report mentions a valuation allowance related to the \"sale of the Steele/Averton Business.\" This refers to the sale of GM's stake in the **Stellantis** (formerly FCA) joint venture or related restructuring of their manufacturing footprint.\n*   **Meridian Motor Group Pilot Autonomy & SoftBank:** The text describes a $1.1 billion investment from **SoftBank** and the development of autonomous vehicles. This mirrors GM's high-profile partnership with **Cruise** (and the broader \"Pilot\" autonomous truck initiatives).\n*   **Specific Financial Figures:** The report lists \"Total net sales and revenue\" of **$172.0 billion** for 2018. This matches GM's reported 2018 revenue almost exactly.\n*   **Regional Operations & Korea:** The mention of \"restructuring actions in Korea\" and the \"Korea Development Bank (KDB)\" purchasing preferred shares aligns with GM's specific corporate dealings and manufacturing footprint in South Korea.",
+    "finish_reason": "stop",
+    "completion_tokens": 288,
+    "latency_s": 5.1,
+    "model": "gemma4-12b",
+    "company": 3
+  },
+  {
+    "guess": "1) ** Albertsons Companies**\n\n2) **Specific Clues:**\n*   **The \"Extra Week\" and Fiscal Year End:** The report mentions a fiscal year ending on the last day of January and specifically discusses an \"Extra Week\" in 2017 (a 53-week year). This is a hallmark of Albertsons' fiscal calendar.\n*   **Specific Brand Names:** The report lists \"Reserve Collection\u00ae,\" \"Big K\u00ae,\" \"Check This Out\u2026\u00ae,\" and \"Legacy Farm\u00ae.\" These are all real private-label brands owned and operated by Albertsons.\n*   **Specific Acquisitions and Divestitures:** The text mentions the sale of a \"convenience store business unit\" for $1.7 billion in 2018 (referring to the sale of their convenience store assets) and the acquisition of \"ModernHEALTH\" (referring to the acquisition of **Village Supermarkets** or similar pharmacy-heavy entities, but specifically the \"ModernHEALTH\" name is a placeholder for the **Village Supermarkets** / **Modern Health** integration period). Most tellingly, it mentions the sale of the \"Maple Hill Dairy\" business to an affiliate of [COMPANY] (referring to the sale of the **Maple Hill Dairy** assets to **Empire** or similar entities).\n*   **Union and Pension Obligations:** The report explicitly mentions the \"UFCW Consolidated Pension Plan\" and \"Central States multi-employer pension fund,\" which are the specific labor and pension entities associated with the grocery retail industry and Albertsons specifically.",
+    "finish_reason": "stop",
+    "completion_tokens": 324,
+    "latency_s": 5.3,
+    "model": "gemma4-12b",
+    "company": 4
+  },
+  {
+    "guess": "1) **AmerisourceBergen (now Cencora)**\n\n2) **Specific Clues:**\n*   **The \"Nexus Health Exchange\" and \"Core MTS Business\" Joint Venture:** The report describes a massive 2017 contribution of a \"Core MTS Business\" to a joint venture called \"Nexus Health Exchange.\" This directly mirrors AmerisourceBergen's 2017 formation of the **Nexus Health Exchange** (a joint venture with Cardinal Health and McKesson) and the divestiture/contribution of its **Medical Supplies (MTS)** business.\n*   **Specific Acquisitions:** The report mentions the 2017 acquisition of **\"Maple Care Pharmacy\"** (which corresponds to the real-world acquisition of **Maple Care Pharmacy** in Canada) and the 2018 acquisitions of **\"ClaimPath, LLC\"** and **\"ScriptJunction\"** (which are the exact names of the companies AmerisourceBergen acquired in 2018).\n*   **The \"UnitySource\" and \"Apex\" Branding:** The report uses \"Apex Health Distribution\" and \"UnitySource.\" In the real report, these correspond to **AmerisourceBergen's** internal and joint sourcing initiatives. The \"Apex RxTech\" mention aligns with their **RxTech** software business.\n*   **Financial Figures and Geography:** The revenue figures (approx. $184 billion in 2019), the specific mention of the **U.K. and France** retail pharmacy closures/reimbursement issues, and the **$174 million antitrust settlement** (which matches the settlement AmerisourceBergen received regarding generic drug pricing) are all hallmarks of AmerisourceBergen's 2019 10-K.",
+    "finish_reason": "stop",
+    "completion_tokens": 377,
+    "latency_s": 5.5,
+    "model": "gemma4-12b",
+    "company": 5
+  },
+  {
+    "guess": "1) **Netflix, Inc.**\n\n2) **Specific Clues:**\n*   **Business Model & Content Strategy:** The report describes a company that scales \"original content\" production, manages \"streaming video\" and \"e-commerce,\" and specifically mentions the introduction of an **\"ad-supported subscription plan\"** and \"live programming.\" These are the primary pillars of Netflix's recent strategic pivot.\n*   **Content Liabilities & Fixed Costs:** The text highlights the \"long-term and largely fixed cost nature of our content commitments\" and \"multi-year commitments with studios.\" This is a hallmark of the Netflix financial profile, where massive upfront spending on content (and the associated amortization) creates significant liquidity risks.\n*   **Regulatory & International Context:** The mention of the **\"EU revised its [COMPANY] Directive in 2018\"** requiring European works to comprise at least 30% of catalogs is a direct reference to the European Union's Audiovisual Media Services Directive, which heavily impacts Netflix's operations in Europe.\n*   **Infrastructure & Competition:** The report explicitly mentions using **AWS (Amazon Web Services)** for the \"vast majority of our computing\" and notes that while the \"retail side of Amazon competes with us,\" they do not believe Amazon will use AWS to gain a competitive advantage. This accurately reflects Netflix's reliance on AWS and its complex relationship with Amazon.\n*   **Labor Relations:** The mention of \"collective bargaining agreements in the motion picture industry\" and the risk of \"strikes or work stoppages\" (referencing the 2023 WGA/SAG-AFTRA strikes) aligns with Netflix's role as a major producer of scripted and unscripted content.",
+    "finish_reason": "stop",
+    "completion_tokens": 360,
+    "latency_s": 5.2,
+    "model": "gemma4-12b",
+    "company": 6
+  },
+  {
+    "guess": "1) **Palantir Technologies Inc.**\n\n2) **Specific Clues:**\n*   **Founding and Origin Story:** The report mentions being founded in 2003 and starting by building software for the \"intelligence community in the United States to assist in counterterrorism investigations.\" This is the exact origin story of Palantir (founded by Peter Thiel, Alex Karp, and others).\n*   **Product Lineup:** The fictional names \"DataForge Shield\" and \"DataForge Core\" directly map to Palantir's primary products: **Palantir Gotham** (used by government/defense/intelligence) and **Palantir Foundry** (used by commercial enterprises). \"DataForge Deploy\" corresponds to **Palantir Apollo**.\n*   **Recent AI Integration:** The description of \"DataForge DataForge AIP\" (leveraging LLMs and generative AI directly within the core platforms) mirrors Palantir's recent heavy marketing and product push for **Palantir AIP** (Artificial Intelligence Platform).\n*   **Customer Profile and Revenue Split:** The report notes that 60% of revenue comes from the government segment and 49% from the commercial segment (indicating significant overlap/dual-use). It also mentions specific use cases like \"signals intelligence,\" \"disaster relief,\" and \"special forces,\" which are hallmarks of Palantir's Gotham platform.\n*   **Specific Partnership:** The mention of a strategic global partnership with **Fujitsu Limited** to incorporate the platform into \"Fujitsu Uvance\" is a real-world partnership announced by Palantir.",
+    "finish_reason": "stop",
+    "completion_tokens": 332,
+    "latency_s": 4.8,
+    "model": "gemma4-12b",
+    "company": 7
+  },
+  {
+    "guess": "1) **Western Digital Corporation** (specifically modeled on the **SanDisk** brand/division).\n\n2) **Specific Clues:**\n*   **The \"Spin-off\" and Brand Identity:** The report describes a separation from a parent company (\"FlashCore Storage\") and the transition to a standalone entity while maintaining \"significant consumer brands and franchises.\" This mirrors Western Digital's history and its strategic positioning of the SanDisk brand as a primary consumer-facing identity for flash storage.\n*   **The \"Cloud, Client, and Consumer\" Segmentation:** The text explicitly divides the business into these three specific end markets. This is the standard industry reporting structure for Western Digital, which highlights its massive footprint in both enterprise (Cloud) and retail (Consumer) flash markets.\n*   **The Joint Venture with \"Kaisen Memory\":** The description of a joint venture where the company owns ~47% of manufacturing facilities in Japan (specifically Hoshima and Tachibana) and receives wafers at \"cost plus a small markup\" is a direct parallel to the complex manufacturing and joint venture structures used in the NAND flash industry (similar to the Kioxia/Western Digital relationship).\n*   **Product Portfolio:** The mention of \"solid-state drives, embedded products, removable cards, universal serial bus drives and wafers\" perfectly matches the product lineup of Western Digital/SanDisk, which is one of the few companies that produces both high-end enterprise SSDs and mass-market USB flash drives/microSD cards.",
+    "finish_reason": "stop",
+    "completion_tokens": 309,
+    "latency_s": 4.5,
+    "model": "gemma4-12b",
+    "company": 8
+  }
+]

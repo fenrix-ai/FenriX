@@ -1,0 +1,13 @@
+FenriX model speed benchmark — RTX 5090, native sm_120, llama.cpp (Q4_K_M / Q3_K_M)
+pp512 = prompt-processing t/s | tg128 = token-generation t/s | llama-bench -r 3
+
+model            tier       kind      pp512 t/s   tg128 t/s  fit
+---------------- ---------- ------ ------------ -----------  -------
+gemma4-26b-a4b   big-moe    moe         11522.0       203.4  clean
+gemma4-31b       mid-dense  dense        3600.3        71.4  clean
+gemma4-12b       small-fast dense        9141.1       146.7  clean
+qwen35-35b-a3b   big-moe    moe          8300.0       220.3  clean
+qwen35-27b       mid-dense  dense        3831.5        76.0  clean
+qwen35-9b        small-fast dense       11769.6       202.8  clean
+llama33-70b      mid-dense  dense         358.8         3.2  offload
+llama31-8b       small-fast dense       15214.0       253.7  clean
