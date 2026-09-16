@@ -1,6 +1,6 @@
 # Salary Showdown — Continuation Handoff
 
-**Written:** 2026-07-23 · **Repo:** `/Users/dylanmassaro/FenriX` · **Owner:** Dylan Massaro (MGSC 310)
+**Written:** 2026-07-23 · **Refreshed:** 2026-09-16 · **Repo:** `/Users/dylanmassaro/FenriX` · **Owner:** Dylan Massaro (MGSC 310)
 
 You are picking up an in-flight classroom-game project. Read this file end to end before touching
 anything. It is the authoritative summary of state, open work, hard rules, and environment
@@ -37,14 +37,14 @@ top-3 in **86%** of simulated seasons and wins the title in **48%**.
 
 | Fact | Value |
 |---|---|
-| Current branch | `salary-showdown-plan3b` (Plan 3b, exit battery 2026-07-26; Plan 3a merged to `main` @ `92c7616` + handoff sync `7c659f3` on 2026-07-25) |
-| Plan 3b HEAD | **`4f57e0e`** + this docs-sync commit (3a-backlog fixes + prod wiring + first production deploy + prod smoke + load drill + professor runbook + exit battery) |
-| `main` vs `origin/main` | **Pushed through `7c659f3` (2026-07-25, 3a merge + handoff sync)**; the 3b plan commit `1b4a64c` and branch `salary-showdown-plan3b` are local, pending Dylan's merge + push decision (repo `fenrix-ai/FenriX` is PUBLIC — §2a posture unchanged; 3b adds no new sensitive content) |
-| Production | **LIVE** — Firebase project `salary-showdown` (Blaze), Hosting `https://salary-showdown.web.app`, 14 callables + `(default)` Firestore in `us-west1`, anonymous auth on, $10 email budget alert armed (Dylan to verify, §4) |
-| Backend test suite | **27 files / 191 tests green** |
-| App unit suite | **15 files / 79 tests green** |
-| App integration suite | **20 files / 37 tests green ×3 consecutive** (live emulators; browser-transport pin per §3) |
-| UI-rules audit | clean, 66 files |
+| Current branch | `main` @ `eeac5cf` (2026-09-16 catch-up: playtest-2 + student-created teams merged 2026-08-23 @ `8add828`; then the two stranded 2026-08-15 fixes — Coach mount-seed locked lineup `e930761`, standings W/$M em-dash `eeac5cf` — cherry-picked, battery-verified, pushed) |
+| Open branch work | none for Salary Showdown. `claude/upbeat-almeida-f07a76` (DRP hardship-only, 2026-07-27) is SUPERSEDED by `756d3db` and only awaits deletion (catch-up plan Task 6). Everything else open is in `docs/superpowers/plans/2026-09-16-catch-up-to-main.md` |
+| `main` vs `origin/main` | in sync @ `eeac5cf` (pushed 2026-09-16; repo `fenrix-ai/FenriX` is PUBLIC — §2a posture unchanged) |
+| Production | **LIVE but BEHIND `main`** — Firebase project `salary-showdown` (Blaze), Hosting `https://salary-showdown.web.app` serves `index-DK89VFRi.js` built @ `1cd8e8a` (2026-08-19); 15 callables incl. `createTeam` + `(default)` Firestore in `us-west1`, anonymous auth on, $10 email budget alert armed (Dylan to verify, §4). NOT live yet: panel zero-team create + Start gating (`61e5f75`) and both 2026-09-16 fixes. Bundle `index-CfTQjkxR.js` is rebuilt from `eeac5cf` and staged in `backend/dist`; the hosting deploy is Dylan's to run (§5 — classifier-blocked for the assistant) |
+| Backend test suite | **27 files / 191 tests green** (fresh emulator, 2026-09-16; backend tree unchanged since `8add828`) |
+| App unit suite | **15 files / 81 tests green** (2026-09-16) |
+| App integration suite | **20 files / 38 tests green** (live emulators, 2026-09-16, one run on the merge candidate; browser-transport pin per §3) |
+| UI-rules audit | clean, 66 files (2026-09-16) |
 
 ### 2a. Publication note (2026-07-24)
 
@@ -302,11 +302,20 @@ use an explicit `prod` alias.
 
 ## 5. Pre-class checklist (small, tracked, not yet done)
 
+- **Deploy production to `main`** — `cd games/salary-showdown/backend && firebase deploy --only hosting --project salary-showdown`
+  (bundle `index-CfTQjkxR.js` already staged from `eeac5cf`; functions unchanged in behaviour since the 2026-08-19 deploy —
+  the only `functions/src` diff is a comment). Verify with
+  `curl -s https://salary-showdown.web.app/ | grep -o 'index-[A-Za-z0-9_-]*\.js'`, then run the scripted smoke
+  (`docs/superpowers/salary-showdown-prod-smoke.md`). Classifier-blocked for the assistant — Dylan runs it.
 - **30-second manual drag QA** at `/game/lineup` — drag a bench guard onto a guard slot (should
   swap) and a wing onto a guard slot (should snap back). The dnd-kit gesture is **provably
   un-automatable** (4 independent attempts across 2 agents; synthetic pointer events don't satisfy
   its sensors). The underlying `place()` slot model is exhaustively unit-tested; only the gesture
   is unverified.
+- **Deployed dress rehearsal** — panel on the laptop at `https://salary-showdown.web.app/professor`, projector via
+  Open projector, ≥2 phones joining by code, including the FinaleWall projector eyeball.
+- **Budget alert verification** — Billing console shows the $10 email alert armed and the alert email address is right.
+- **Class-date decision** — the gate was opened by the 2026-07-26 load-drill PASS.
 
 ---
 
@@ -383,23 +392,24 @@ the ledger is the durable record.
 ## 8. Environment & commands (all verified)
 
 ```bash
-# Emulators (Java is required and NOT on the default PATH)
+# Emulators (Java 21 is required; since 2026-09 Temurin 21 resolves from /usr/bin/java and the
+# old /opt/homebrew/opt/openjdk prefix no longer exists — plain `npm run emu` works)
 cd games/salary-showdown/backend/functions
-PATH="/opt/homebrew/opt/openjdk/bin:$PATH" npm run emu
+npm run emu
 # Ports: Functions 5101 · Firestore 8180 · Auth 9199 · Emulator UI 4100
 # `firebase` is a GLOBAL binary. Project id: salary-showdown-dev
 
 # Backend tests — against ALREADY-RUNNING emulators (preferred):
-cd games/salary-showdown/backend/functions && npx vitest run       # expect 19 files / 115 tests
+cd games/salary-showdown/backend/functions && npx vitest run       # expect 27 files / 191 tests
 # Backend tests — booting their own emulator (ports must be FREE):
-cd games/salary-showdown/backend && PATH="/opt/homebrew/opt/openjdk/bin:$PATH" \
+cd games/salary-showdown/backend && \
   firebase emulators:exec --project salary-showdown-dev --only firestore "cd functions && npx vitest run"
 
 # App
 cd games/salary-showdown/app
 npm run dev                        # Vite on port 5176 (--strictPort; 5173-5175 belong to other projects)
-npx vitest run                     # unit: 7 files / 30 tests
-npx vitest run -c vitest.integration.config.ts   # integration: 13 files / 14 tests (needs live emulators)
+npx vitest run                     # unit: 15 files / 81 tests
+npx vitest run -c vitest.integration.config.ts   # integration: 20 files / 38 tests (needs live emulators)
 npm run audit:ui                   # UI-rules tripwire (emoji / config.timers / judgment language)
 npx tsc -b
 
@@ -517,12 +527,16 @@ at 20 teams). Sealed bids mean **no live shared bid state** — never add a cros
 
 ## 12. Suggested first moves
 
-1. Read `.superpowers/sdd/progress.md` (especially the hardening section at the end).
-2. `git status` and confirm you're on `salary-showdown-backend-hardening` @ `d72a377`.
-3. Boot emulators, run the backend suite (expect 115 green) to confirm a sane baseline.
-4. Attack §3 — the season-E2E listener stall — with `superpowers:systematic-debugging`.
-5. Once green ×3, merge to `main` via `superpowers:finishing-a-development-branch`.
-6. Then brainstorm + write **Plan 3** and execute it with the gated subagent workflow.
+1. `git status` — confirm you're on `main` @ `eeac5cf` or later and in sync with `origin/main`.
+2. Boot emulators (§8) and run the three suites — backend 27 files / 191 tests, app unit 15 / 81,
+   integration 20 / 38 — to confirm a sane baseline before touching anything.
+3. Check production is caught up:
+   `curl -s https://salary-showdown.web.app/ | grep -o 'index-[A-Za-z0-9_-]*\.js'` should print
+   `index-CfTQjkxR.js` (or newer). If it still prints `index-DK89VFRi.js`, the §5 deploy has not
+   happened — tell Dylan; do not deploy yourself.
+4. Open work lives in `docs/superpowers/plans/2026-09-16-catch-up-to-main.md`, one session per
+   task. Task 1 (released-student auto-route home) is the only Salary Showdown code task there.
+5. New feature or UI work: brainstorm + write a plan first, then execute with the gated subagent
+   workflow (§9). The UI punch list is the plan's appendix.
 
-Ask before: pushing to GitHub (nothing has ever been pushed), starting V2 features, or changing any
-rule in §6.
+Ask before: deploying, merging pull requests, starting V2 features (§11), or changing any rule in §6.
