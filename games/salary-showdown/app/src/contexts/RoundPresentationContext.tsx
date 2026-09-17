@@ -226,6 +226,11 @@ export function RoundPresentationProvider({ children }: { children: ReactNode })
 
   useEffect(() => {
     if (!progress || progress.scope !== progressScope) return;
+    // Keep every committed reveal in memory, including elapsed/reduced-motion
+    // reveals. Storage is optional and cannot be the only high-water mark.
+    setProgress((value) => value?.scope === progressScope && value.manualApplied < applied
+      ? { ...value, manualApplied: applied }
+      : value);
     const stored = { ...progress, manualApplied: Math.max(progress.manualApplied, applied) };
     try {
       sessionStorage.setItem(
