@@ -1,0 +1,122 @@
+:global(:root) {
+  --ss-student-header-offset: 92px;
+}
+
+.shell {
+  min-width: 0;
+}
+
+.shell :global(.page) {
+  width: min(100%, 1600px);
+  max-width: 1600px;
+}
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: minmax(220px, 1.2fr) minmax(210px, 0.8fr) auto;
+  align-items: center;
+  gap: 18px;
+  min-height: 76px;
+  margin: -16px -2px 16px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--ss-border);
+  background: rgb(9 21 36 / 96%);
+  box-shadow: 0 10px 24px rgb(2 8 16 / 22%);
+  backdrop-filter: blur(12px);
+}
+
+.franchise,
+.actions,
+.phase {
+  min-width: 0;
+}
+
+.franchise {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.franchiseCopy {
+  min-width: 0;
+}
+
+.brand {
+  font-size: 0.7rem;
+}
+
+.franchiseName {
+  overflow: hidden;
+  color: var(--ss-text);
+  font-size: clamp(1rem, 1.5vw, 1.25rem);
+  font-weight: 750;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role {
+  margin-top: 2px;
+  color: var(--ss-text-muted);
+  font-size: 0.78rem;
+}
+
+.phase {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px 10px;
+  color: var(--ss-text-muted);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.phase h1 {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--ss-text);
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  font-size: clamp(1.05rem, 1.7vw, 1.35rem);
+  line-height: 1.1;
+  text-align: center;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+@media (max-width: 760px) {
+  :global(:root) {
+    --ss-student-header-offset: 132px;
+  }
+
+  .header {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 12px;
+  }
+
+  .phase {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-content: flex-start;
+  }
+
+  .phase h1 {
+    flex-basis: auto;
+    text-align: left;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .header {
+    backdrop-filter: none;
+  }
+}

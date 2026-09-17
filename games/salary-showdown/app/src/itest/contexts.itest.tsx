@@ -3,9 +3,11 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 import { signInAnonymously } from 'firebase/auth';
-import { seedToPhase } from './harness';
+import { newClient, seedToPhase } from './harness';
 import { auth, functions } from '../lib/firebase';
 import App from '../App';
+import { AuthProvider } from '../contexts/AuthContext';
+import { GameProvider, useGame } from '../contexts/GameContext';
 
 test('membership + phase router: joined client lands on /lobby, follows startSeason', async () => {
   const seeded = await seedToPhase({ to: 'LOBBY' });
@@ -56,5 +58,47 @@ test('second-tab strand (F6): a pre-membership boot recovers after join, no relo
     .find((b) => b.textContent === 'GM')!);
 
   await waitFor(() => expect(screen.getByRole('heading', { name: /Lobby/ })).toBeInTheDocument(),
+    { timeout: 15000 });
+}, 120000);
+
+function SeatProbe() {
+  const { teamSeats, actsAs } = useGame();
+  const seats = [...teamSeats.entries()]
+    .map(([uid, seat]) => `${uid}:${seat.teamId}:${seat.role}:${seat.displayName}`)
+    .sort()
+    .join('|');
+  return (
+    <output data-testid="team-seats">
+      {teamSeats.size};coach={String(actsAs('Coach'))};{seats}
+    </output>
+  );
+}
+
+test('GameContext exposes only same-team seats and preserves absent-role fallback', async () => {
+  localStorage.removeItem('ss.gameId');
+  const seeded = await seedToPhase({ to: 'LOBBY' });
+  await signInAnonymously(auth);
+  await waitFor(() => expect(auth.currentUser).toBeTruthy(), { timeout: 15000 });
+  await httpsCallable(functions, 'joinGame')({
+    joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'GM', displayName: 'Seat GM',
+  });
+  const scout = await newClient('same-team-scout');
+  await scout.call('joinGame', {
+    joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'Scout', displayName: 'Seat Scout',
+  });
+  localStorage.setItem('ss.gameId', seeded.gameId);
+
+  render(<AuthProvider><GameProvider><SeatProbe /></GameProvider></AuthProvider>);
+
+  await waitFor(() => expect(screen.getByTestId('team-seats')).toHaveTextContent('2;coach=true'),
+    { timeout: 15000 });
+  expect(screen.getByTestId('team-seats')).toHaveTextContent(seeded.teamIds[0]);
+  expect(screen.getByTestId('team-seats')).not.toHaveTextContent(seeded.teamIds[1]);
+
+  const coach = await newClient('same-team-coach');
+  await coach.call('joinGame', {
+    joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'Coach', displayName: 'Seat Coach',
+  });
+  await waitFor(() => expect(screen.getByTestId('team-seats')).toHaveTextContent('3;coach=false'),
     { timeout: 15000 });
 }, 120000);

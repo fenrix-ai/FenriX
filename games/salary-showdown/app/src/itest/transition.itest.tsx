@@ -7,6 +7,8 @@ import { adminDb, seedToPhase } from './harness';
 import { auth, functions } from '../lib/firebase';
 import App from '../App';
 
+afterEach(() => vi.restoreAllMocks());
+
 // Pins the §3a contract: the backend's flip-first advance publishes the new
 // round/phase BEFORE the enter hook creates that phase's data, bracketed by the
 // games/{id}.transition marker. While the marker is present the client must
@@ -46,4 +48,35 @@ test('a mid-advance transition marker holds the client on the fully-built phase'
   await adminDb().doc(`games/${seeded.gameId}`).update({ transition: FieldValue.delete() });
   await waitFor(() => expect(screen.getAllByLabelText(/salary for /)).toHaveLength(5),
     { timeout: 20000 });
+}, 120000);
+
+test('Standings stays on the revealed prefix during SIMULATE and unlocks in RESULTS', async () => {
+  const seeded = await seedToPhase({ to: 'R1:SIMULATE' });
+  await signInAnonymously(auth);
+  await httpsCallable(functions, 'joinGame')({
+    joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'GM', displayName: 'Safe GM',
+  });
+  localStorage.setItem('ss.gameId', seeded.gameId);
+  const now = vi.spyOn(Date, 'now').mockReturnValue(2_000_000_000_000);
+  render(<MemoryRouter initialEntries={['/standings']}><App /></MemoryRouter>);
+
+  await waitFor(() => expect(screen.getByTestId('standings')).toBeInTheDocument(),
+    { timeout: 20000 });
+  const records = () => [...screen.getByTestId('standings').querySelectorAll('tbody tr')]
+    .map((row) => row.querySelectorAll('td')[2]?.textContent);
+  expect(records()).toEqual(records().map(() => '0-0'));
+  expect(screen.getByTestId('team-record')).toHaveTextContent('0–0');
+
+  const finalRound = (await adminDb().doc(`games/${seeded.gameId}/rounds/1`).get()).data()!;
+  expect(finalRound.standings.some((row: { wins: number; losses: number }) =>
+    row.wins > 0 || row.losses > 0)).toBe(true);
+
+  await seeded.prof.call('advancePhase', {
+    gameId: seeded.gameId, expectedPhase: 'SIMULATE', expectedRound: 1,
+  });
+  await waitFor(() => expect(records()).toEqual(
+    finalRound.standings.map((row: { wins: number; losses: number }) => `${row.wins}-${row.losses}`),
+  ), { timeout: 20000 });
+  expect(screen.getByTestId('standings')).toBeInTheDocument();
+  now.mockRestore();
 }, 120000);

@@ -5,9 +5,9 @@ import { collection, doc, getDocs, onSnapshot, query, where } from 'firebase/fir
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../lib/firebase';
 import { useAuth } from './AuthContext';
-import type { CatalogPlayer, GameDoc, MarketDoc, TeamDoc } from '../types/models';
+import type { CatalogPlayer, GameDoc, MarketDoc, PlayerSeat, TeamDoc } from '../types/models';
 
-interface Membership { teamId: string; role: string; displayName: string }
+type Membership = PlayerSeat;
 interface GameCtx {
   gameId: string | null; setGameId: (id: string | null) => void;
   game: GameDoc | null; membership: Membership | null; team: TeamDoc | null;
@@ -15,12 +15,14 @@ interface GameCtx {
   // role, or their team has no claimed member with it — the exact mirror of
   // the server's memberWithRole absent-seat fallback.
   actsAs(role: string): boolean;
+  teamSeats: ReadonlyMap<string, PlayerSeat>;
   teams: Map<string, TeamDoc>; catalog: Map<number, CatalogPlayer>;
   market: MarketDoc | null;
   call: <T = unknown>(name: string, data: unknown) => Promise<T>;
 }
 const Ctx = createContext<GameCtx>(null as unknown as GameCtx);
 export const useGame = () => useContext(Ctx);
+const EMPTY_TEAM_SEATS: ReadonlyMap<string, PlayerSeat> = new Map();
 
 export function GameProvider({ children }: { children: ReactNode }) {
   const { uid } = useAuth();
@@ -81,19 +83,42 @@ export function GameProvider({ children }: { children: ReactNode }) {
       () => setMembership(null));
   }, [gameId, uid, epoch]); // eslint-disable-line react-hooks/exhaustive-deps -- epoch forces resubscribe after join (F6)
 
-  const [myTeamRoles, setMyTeamRoles] = useState<Set<string>>(new Set());
-  useEffect(() => { // which roles are CLAIMED on my team (absent-seat fallback)
-    if (!gameId || !membership?.teamId) { setMyTeamRoles(new Set()); return; }
-    return onSnapshot(
+  const seatKey = gameId && uid && membership?.teamId
+    ? `${gameId}/${uid}/${membership.teamId}`
+    : '';
+  const [seatSnapshot, setSeatSnapshot] = useState<{
+    key: string; seats: ReadonlyMap<string, PlayerSeat>;
+  }>({ key: '', seats: new Map() });
+  useEffect(() => { // same-team seats only (role fallback + teammate display)
+    if (!seatKey || !gameId || !membership?.teamId) return undefined;
+    let active = true;
+    const unsubscribe = onSnapshot(
       query(collection(db, 'games', gameId, 'players'),
         where('teamId', '==', membership.teamId)),
       (snap) => {
-        const s = new Set<string>();
-        snap.forEach((d) => s.add((d.data() as { role: string }).role));
-        setMyTeamRoles(s);
+        if (!active) return;
+        const seats = new Map<string, PlayerSeat>();
+        snap.forEach((d) => seats.set(d.id, d.data() as PlayerSeat));
+        setSeatSnapshot({ key: seatKey, seats });
       },
-      () => {});
-  }, [gameId, membership?.teamId]);
+      () => {
+        if (active) setSeatSnapshot({ key: seatKey, seats: EMPTY_TEAM_SEATS });
+      });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [gameId, membership?.teamId, seatKey]);
+
+  // Key the published map to game + user + team so a scope change cannot expose
+  // the prior team's seats during the effect-cleanup/render gap.
+  const teamSeats = seatSnapshot.key === seatKey
+    ? seatSnapshot.seats
+    : EMPTY_TEAM_SEATS;
+  const myTeamRoles = useMemo(
+    () => new Set<string>(Array.from(teamSeats.values(), (seat) => seat.role)),
+    [teamSeats],
+  );
 
   const actsAs = useCallback((role: string) =>
     membership != null && (membership.role === role || !myTeamRoles.has(role)),
@@ -134,7 +159,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   const team = membership ? teams.get(membership.teamId) ?? null : null;
   const value = useMemo(() => ({
-    gameId, setGameId, game, membership, team, teams, catalog, market, call, actsAs,
-  }), [gameId, setGameId, game, membership, team, teams, catalog, market, call, actsAs]);
+    gameId, setGameId, game, membership, team, teamSeats, teams, catalog, market, call, actsAs,
+  }), [gameId, setGameId, game, membership, team, teamSeats, teams, catalog, market, call, actsAs]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
