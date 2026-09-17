@@ -1,0 +1,77 @@
+.mark {
+  --mark-primary: #ffc94d;
+  --mark-secondary: #172c4a;
+  --mark-ink: #08101d;
+  display: block;
+  flex: 0 0 auto;
+  width: var(--mark-size);
+  height: var(--mark-size);
+  overflow: visible;
+}
+
+.mark[data-accent='gold'] {
+  --mark-primary: #ffc94d;
+  --mark-secondary: #253d65;
+  --mark-ink: #08101d;
+}
+
+.mark[data-accent='teal'] {
+  --mark-primary: #58ddcf;
+  --mark-secondary: #174b56;
+  --mark-ink: #061719;
+}
+
+.mark[data-accent='coral'] {
+  --mark-primary: #ff8d7f;
+  --mark-secondary: #6b2732;
+  --mark-ink: #241014;
+}
+
+.mark[data-accent='violet'] {
+  --mark-primary: #b9a7ff;
+  --mark-secondary: #493579;
+  --mark-ink: #160e2c;
+}
+
+.mark[data-accent='sky'] {
+  --mark-primary: #70cbff;
+  --mark-secondary: #175078;
+  --mark-ink: #071827;
+}
+
+.mark[data-accent='mint'] {
+  --mark-primary: #7ce1ad;
+  --mark-secondary: #1d5a48;
+  --mark-ink: #071b14;
+}
+
+.shadow {
+  fill: rgb(0 0 0 / 35%);
+  transform: translateY(2px);
+}
+
+.field { fill: var(--mark-primary); }
+.secondary { fill: var(--mark-secondary); }
+.detail {
+  fill: none;
+  stroke: rgb(255 255 255 / 34%);
+  stroke-width: 2;
+}
+
+.outline {
+  fill: none;
+  stroke: var(--mark-primary);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+}
+
+.monogram {
+  fill: var(--mark-ink);
+  font-family: var(--mono);
+  font-size: 19px;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  paint-order: stroke;
+  stroke: rgb(255 255 255 / 18%);
+  stroke-width: 1px;
+}
