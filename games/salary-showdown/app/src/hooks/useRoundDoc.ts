@@ -1,19 +1,29 @@
 import { useEffect, useState } from 'react';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { useAuth } from '../contexts/AuthContext';
 import { useGame } from '../contexts/GameContext';
+import { useRoundPresentation } from '../contexts/RoundPresentationContext';
 import type { RoundDoc } from '../types/models';
 
 export function useRoundDoc(round: number) {
+  const { uid } = useAuth();
   const { gameId, membership } = useGame();
-  const [rd, setRd] = useState<RoundDoc | null>(null);
+  const presentation = useRoundPresentation();
+  const queryKey = gameId && uid && membership && round > 0 && round < presentation.round
+    ? JSON.stringify([gameId, uid, round])
+    : '';
+  const [historical, setHistorical] = useState<{
+    key: string; rd: RoundDoc | null;
+  }>({ key: '', rd: null });
   useEffect(() => {
-    if (!gameId || !membership || round < 1) { setRd(null); return; }
-    return onSnapshot(doc(db, 'games', gameId, 'rounds', String(round)),
-      (s) => setRd(s.exists() ? (s.data() as RoundDoc) : null),
-      // §3a lesson: a listener error must at least leave a console trace —
-      // never a silent no-op. (Recovery/refetch is out of scope here.)
-      (e) => console.error('useRoundDoc: rounds listener error', e));
-  }, [gameId, !!membership, round]);
-  return rd;
+    if (!queryKey) return undefined;
+    let active = true;
+    void presentation.getRound(round).then((rd) => {
+      if (active) setHistorical({ key: queryKey, rd });
+    });
+    return () => { active = false; };
+  }, [presentation.getRound, queryKey, round]);
+  if (round === presentation.round) return presentation.rd;
+  // Check during render: an effect-only reset would briefly publish the prior
+  // game/user's document before the new query starts.
+  return queryKey && historical.key === queryKey ? historical.rd : null;
 }
