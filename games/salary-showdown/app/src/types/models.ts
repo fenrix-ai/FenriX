@@ -1,3 +1,5 @@
+import type { TeamIdentity } from '../lib/franchiseIdentity';
+
 export type Phase = 'LOBBY' | 'FRONT_OFFICE' | 'FREE_AGENCY' | 'AUCTION' | 'LINEUP'
   | 'SIMULATE' | 'RESULTS' | 'FINALE';
 export type Role = 'GM' | 'Scout' | 'Coach';
@@ -12,6 +14,7 @@ export interface Lineup { starters: number[]; sixth: number; bench: number[]; pl
 
 export interface TeamDoc {
   name: string; wins: number; losses: number; pointDiff: number; pointsFor: number;
+  identity?: TeamIdentity;
   roster: Contract[]; deadMoney: DeadMoney[]; spendLog: Contract[];
   lineup: Lineup | null; lineupLockedRound: number; hardshipUsed: number[];
   // markDone status flag (backend T2; init 0/'' in createGame). A status light,
