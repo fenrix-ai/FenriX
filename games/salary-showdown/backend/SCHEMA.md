@@ -41,6 +41,14 @@ games/{gameId}/teams/{teamId}         # PUBLIC team state (rosters are public li
                                       # (LobbyWall's seat counter reads it). createGame with an
                                       # EMPTY payload seeds zero teams; startSeason refuses <2.
   name, wins, losses, pointDiff, pointsFor,
+  identity: {accent, jersey}           # OPTIONAL lobby cosmetic metadata. accent is one of
+                                      # gold|teal|coral|violet|sky|mint; jersey is one of
+                                      # classic|stripe|chevron. Old teams omit this field.
+                                      # setTeamIdentity({gameId, identity}) derives teamId from
+                                      # the caller's membership and updates only this field in a
+                                      # transaction that requires status=lobby and phase=LOBBY.
+                                      # Returns {ok:true}. getLobby includes identity only when
+                                      # the stored value passes the same exact-shape validation.
   roster: [{pid, rate, startRound, years, viaAuction, hardship}],
   deadMoney: [{pid, rate, startRound, endRound}],
   spendLog: [{pid, rate, years, startRound, viaAuction, hardship}]  # append-only ledger: every

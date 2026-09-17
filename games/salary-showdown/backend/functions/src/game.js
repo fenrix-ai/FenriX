@@ -12,8 +12,9 @@ import { validateBids, resolveAuction } from './auction.js';
 import { validateLineup, autoRepair } from './lineup.js';
 import { simulateRound, toCsv } from './sim.js';
 import { SYNTHETICS } from './synthetics.js';
+import { isGameId, isTeamIdentity } from './teamIdentity.js';
 
-// All 15 callables deploy to us-west1, co-located with the Firestore
+// All callables deploy to us-west1, co-located with the Firestore
 // database (locked decision 2026-07-25). This MUST execute before the first
 // onCall() below evaluates — which is why it lives at the top of this, the
 // sole trigger-defining module, and NOT in index.js (ESM runs imported
@@ -194,10 +195,50 @@ export const getLobby = onCall(async (req) => {
   const { status, phase, round } = g.data();
   return {
     gameId: g.id, status, phase, round,
-    teams: teams.docs.map((t) => ({
-      teamId: t.id, name: t.data().name, claimedRoles: claimed[t.id] ?? [],
-    })),
+    teams: teams.docs.map((t) => {
+      const team = t.data();
+      return {
+        teamId: t.id,
+        name: team.name,
+        claimedRoles: claimed[t.id] ?? [],
+        ...(isTeamIdentity(team.identity) ? { identity: team.identity } : {}),
+      };
+    }),
   };
+});
+
+// Lobby-only cosmetic franchise identity. Any authenticated member may update
+// THEIR OWN team; a client-supplied teamId is deliberately ignored. Reading the
+// game, membership, and team inside one transaction serializes this write with
+// startSeason's game-doc transaction, so an identity save can commit only before
+// the lobby closes, never after a winning start transition.
+export const setTeamIdentity = onCall(async (req) => {
+  if (!req.auth) throw new HttpsError('unauthenticated', 'sign in first');
+  const { gameId, identity } = req.data;
+  if (!isGameId(gameId)) throw new HttpsError('invalid-argument', 'BAD_GAME_ID');
+  if (!isTeamIdentity(identity)) throw new HttpsError('invalid-argument', 'BAD_IDENTITY');
+
+  const gameRef = db().doc(`games/${gameId}`);
+  const memberRef = gameRef.collection('players').doc(req.auth.uid);
+  return db().runTransaction(async (tx) => {
+    const [gameSnap, memberSnap] = await Promise.all([
+      tx.get(gameRef),
+      tx.get(memberRef),
+    ]);
+    if (!gameSnap.exists) throw new HttpsError('not-found', 'game not found');
+    if (!memberSnap.exists) throw new HttpsError('permission-denied', 'not in this game');
+
+    const teamRef = gameRef.collection('teams').doc(memberSnap.data().teamId);
+    const teamSnap = await tx.get(teamRef);
+    if (!teamSnap.exists) throw new HttpsError('not-found', 'team not found');
+
+    const game = gameSnap.data();
+    if (game.status !== 'lobby' || game.phase !== 'LOBBY') {
+      throw new HttpsError('failed-precondition', 'identity is closed');
+    }
+    tx.update(teamRef, { identity });
+    return { ok: true };
+  });
 });
 
 // Lobby-only franchise naming (playtest-2 item 1, adjudicated): any member of
