@@ -48,7 +48,7 @@ test('lobby rename (playtest-2): a member names their own franchise, live for th
   await user.click(screen.getByRole('button', { name: 'Rename' }));
 
   // The card follows the live team doc; the server owns the write.
-  await waitFor(() => expect(screen.getByText('Cap Crunchers')).toBeInTheDocument(),
+  await waitFor(() => expect(screen.getByText('Cap Crunchers', { selector: '.card > strong' })).toBeInTheDocument(),
     { timeout: 15000 });
   await waitFor(async () => {
     const t = (await adminDb().doc(
