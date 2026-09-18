@@ -1,6 +1,7 @@
-import { useId } from 'react';
-import type { ReactElement } from 'react';
+import { useEffect, useId, useRef } from 'react';
+import type { KeyboardEvent, ReactElement } from 'react';
 import { PayrollTimeline } from '../contracts/PayrollTimeline';
+import { ErrorNotice } from '../ui/ErrorNotice';
 import { isActive } from '../../lib/contracts';
 import { previewCut } from '../../lib/cutPreview';
 import { fmtM } from '../../lib/money';
@@ -14,8 +15,11 @@ export type CutPreviewProps = {
   round: number;
   busy: boolean;
   canAct: boolean;
+  error?: unknown | null;
   onConfirm: () => void;
   onCancel: () => void;
+  returnFocus?: HTMLElement | null;
+  fallbackFocus?: HTMLElement | null;
 };
 
 export function CutPreview({
@@ -25,10 +29,18 @@ export function CutPreview({
   round,
   busy,
   canAct,
+  error = null,
   onConfirm,
   onCancel,
+  returnFocus = null,
+  fallbackFocus = null,
 }: CutPreviewProps): ReactElement {
   const titleId = useId();
+  const dialogRef = useRef<HTMLElement>(null);
+  const confirmRef = useRef<HTMLButtonElement>(null);
+  const keepRef = useRef<HTMLButtonElement>(null);
+  const returnFocusRef = useRef(returnFocus);
+  const fallbackFocusRef = useRef(fallbackFocus);
   const cutAlreadyApplied = !team.roster.some((candidate) => (
     candidate.pid === contract.pid && isActive(candidate, round)
   ));
@@ -39,13 +51,67 @@ export function CutPreview({
     (_, index) => round + index,
   );
 
+  useEffect(() => {
+    const initialFocus = canAct && !busy
+      ? confirmRef.current
+      : !busy
+        ? keepRef.current
+        : dialogRef.current;
+    initialFocus?.focus();
+
+    return () => {
+      const previousTrigger = returnFocusRef.current;
+      if (previousTrigger?.isConnected) {
+        previousTrigger.focus();
+      } else if (fallbackFocusRef.current?.isConnected) {
+        fallbackFocusRef.current.focus();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (busy) dialogRef.current?.focus();
+  }, [busy]);
+
+  const keepFocusInside = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key === 'Escape' && !busy) {
+      event.preventDefault();
+      event.stopPropagation();
+      onCancel();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+
+    const focusable = [confirmRef.current, keepRef.current]
+      .filter((element): element is HTMLButtonElement => Boolean(element && !element.disabled));
+    if (focusable.length === 0) {
+      event.preventDefault();
+      dialogRef.current?.focus();
+      return;
+    }
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement;
+    if (event.shiftKey && (active === first || !dialogRef.current?.contains(active))) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && (active === last || !dialogRef.current?.contains(active))) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
   return (
     <div className={styles.backdrop}>
       <section
         aria-labelledby={titleId}
         aria-modal="true"
         className={styles.dialog}
+        onKeyDown={keepFocusInside}
+        ref={dialogRef}
         role="dialog"
+        tabIndex={-1}
       >
         <header className={styles.header}>
           <div>
@@ -70,16 +136,25 @@ export function CutPreview({
 
         <PayrollTimeline round={round} team={projected} />
 
+        <ErrorNotice error={error} />
+
         <footer className={styles.actions}>
           <button
             className="btn cut"
             disabled={busy || !canAct}
             onClick={onConfirm}
+            ref={confirmRef}
             type="button"
           >
             Confirm cut
           </button>
-          <button className="btn" disabled={busy} onClick={onCancel} type="button">
+          <button
+            className="btn"
+            disabled={busy}
+            onClick={onCancel}
+            ref={keepRef}
+            type="button"
+          >
             Keep player
           </button>
         </footer>

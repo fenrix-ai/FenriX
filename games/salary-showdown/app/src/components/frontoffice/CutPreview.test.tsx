@@ -116,3 +116,73 @@ test('stays mounted when the live team snapshot applies the cut before the actio
   expect(screen.getByLabelText(/Round 3: cash \$0.0M, dead money \$11.0M/))
     .toBeInTheDocument();
 });
+
+test('moves focus inside, traps both tab directions, and closes with Escape', async () => {
+  const onCancel = vi.fn();
+  const user = userEvent.setup();
+  render(
+    <CutPreview
+      busy={false}
+      canAct
+      contract={deal}
+      onCancel={onCancel}
+      onConfirm={() => undefined}
+      player={player}
+      round={3}
+      team={team}
+    />,
+  );
+
+  const dialog = screen.getByRole('dialog');
+  const confirm = screen.getByRole('button', { name: 'Confirm cut' });
+  const keep = screen.getByRole('button', { name: 'Keep player' });
+  expect(dialog).toContainElement(document.activeElement as HTMLElement);
+
+  keep.focus();
+  await user.tab();
+  expect(confirm).toHaveFocus();
+
+  confirm.focus();
+  await user.tab({ shift: true });
+  expect(keep).toHaveFocus();
+
+  await user.keyboard('{Escape}');
+  expect(onCancel).toHaveBeenCalledOnce();
+});
+
+test('keeps focus on the dialog while a cut is busy and exposes rejection feedback', async () => {
+  const user = userEvent.setup();
+  const { rerender } = render(
+    <CutPreview
+      busy={false}
+      canAct
+      contract={deal}
+      error={null}
+      onCancel={() => undefined}
+      onConfirm={() => undefined}
+      player={player}
+      round={3}
+      team={team}
+    />,
+  );
+
+  rerender(
+    <CutPreview
+      busy
+      canAct
+      contract={deal}
+      error={new Error('CUT_REJECTED')}
+      onCancel={() => undefined}
+      onConfirm={() => undefined}
+      player={player}
+      round={3}
+      team={team}
+    />,
+  );
+
+  const dialog = screen.getByRole('dialog');
+  expect(dialog).toHaveFocus();
+  await user.tab();
+  expect(dialog).toHaveFocus();
+  expect(within(dialog).getByRole('alert')).toBeInTheDocument();
+});

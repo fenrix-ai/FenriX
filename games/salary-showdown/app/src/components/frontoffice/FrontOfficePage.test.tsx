@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, test, vi } from 'vitest';
 import type { CatalogPlayer, TeamDoc } from '../../types/models';
@@ -6,11 +6,16 @@ import FrontOfficePage from '../../pages/FrontOfficePage';
 
 const mocks = vi.hoisted(() => ({
   call: vi.fn(),
+  uid: 'user-a',
   context: {} as Record<string, unknown>,
 }));
 
 vi.mock('../../contexts/GameContext', () => ({
   useGame: () => mocks.context,
+}));
+
+vi.mock('../../contexts/AuthContext', () => ({
+  useAuth: () => ({ uid: mocks.uid, ready: true }),
 }));
 
 vi.mock('../../hooks/useSeasonForm', () => ({
@@ -63,6 +68,7 @@ const synthetic = {
 
 beforeEach(() => {
   mocks.call.mockReset();
+  mocks.uid = 'user-a';
   const team = {
     name: 'Cap City',
     identity: { accent: 'teal', jersey: 'stripe' },
@@ -178,4 +184,84 @@ test('round five with no expiring deals keeps the roster and full payroll horizo
   expect(screen.getByText('$12.0M/rd through Round 5')).toBeInTheDocument();
   expect(screen.getByLabelText(/Round 5: cash \$12.0M, dead money \$0.0M/))
     .toBeInTheDocument();
+});
+
+test('a stale successful cut cannot close a new-game modal or emit a receipt', async () => {
+  let resolveCut!: (value: unknown) => void;
+  mocks.call.mockImplementationOnce(() => new Promise((resolve) => {
+    resolveCut = resolve;
+  }));
+  const user = userEvent.setup();
+  const { rerender } = render(<FrontOfficePage />);
+
+  await user.click(screen.getByRole('button', { name: 'Review cut for Casey Active' }));
+  await user.click(screen.getByRole('button', { name: 'Confirm cut' }));
+  mocks.context = { ...mocks.context, gameId: 'game-2' };
+  rerender(<FrontOfficePage />);
+  await user.click(screen.getByRole('button', { name: 'Review cut for Casey Active' }));
+
+  await act(async () => resolveCut({}));
+
+  expect(screen.getByRole('dialog', { name: 'Cut Casey Active?' })).toBeInTheDocument();
+  expect(screen.queryByRole('status', { name: 'Saved action' })).toBeNull();
+});
+
+test('a stale rejected cut cannot surface its error in a new auth scope', async () => {
+  let rejectCut!: (reason: unknown) => void;
+  mocks.call.mockImplementationOnce(() => new Promise((_resolve, reject) => {
+    rejectCut = reject;
+  }));
+  const user = userEvent.setup();
+  const { rerender } = render(<FrontOfficePage />);
+
+  await user.click(screen.getByRole('button', { name: 'Review cut for Casey Active' }));
+  await user.click(screen.getByRole('button', { name: 'Confirm cut' }));
+  mocks.uid = 'user-b';
+  rerender(<FrontOfficePage />);
+  await act(async () => rejectCut(new Error('CUT_REJECTED')));
+
+  expect(screen.queryByRole('alert')).toBeNull();
+  expect(screen.queryByRole('status', { name: 'Saved action' })).toBeNull();
+});
+
+test('a live multi-round renewal displays authoritative rate and duration', () => {
+  mocks.context = {
+    ...mocks.context,
+    team: {
+      ...(mocks.context.team as TeamDoc),
+      roster: [{ ...expired, startRound: 2, years: 3, rate: 9.2 }, active],
+    },
+  };
+
+  render(<FrontOfficePage />);
+
+  expect(screen.getByText('Re-signed for $9.2M/rd.')).toBeInTheDocument();
+  expect(screen.getByText('3 rounds · Rounds 2–4.')).toBeInTheDocument();
+});
+
+test('a successful renewal keeps submitted multi-round terms before the live snapshot', async () => {
+  mocks.call.mockResolvedValueOnce({});
+  const user = userEvent.setup();
+  render(<FrontOfficePage />);
+  const decision = screen.getByRole('region', {
+    name: 'Contract decision for Alex Expired',
+  });
+
+  await user.selectOptions(within(decision).getByRole('combobox'), '3');
+  await user.click(within(decision).getByRole('button', { name: 'Re-sign Alex Expired' }));
+
+  await waitFor(() => expect(screen.getByText('Re-signed for $9.2M/rd.'))
+    .toBeInTheDocument());
+  expect(screen.getByText('3 rounds · Rounds 2–4.')).toBeInTheDocument();
+});
+
+test('canceling a cut returns focus to the exact review trigger', async () => {
+  const user = userEvent.setup();
+  render(<FrontOfficePage />);
+  const trigger = screen.getByRole('button', { name: 'Review cut for Casey Active' });
+
+  await user.click(trigger);
+  await user.click(screen.getByRole('button', { name: 'Keep player' }));
+
+  expect(trigger).toHaveFocus();
 });

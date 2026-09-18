@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CutPreview } from '../components/frontoffice/CutPreview';
 import { PayrollTimeline } from '../components/contracts/PayrollTimeline';
 import { PlayerCard } from '../components/players/PlayerCard';
@@ -8,6 +8,7 @@ import { PayrollBar } from '../components/ui/PayrollBar';
 import { PhaseHeader } from '../components/ui/PhaseHeader';
 import { PositionBadge } from '../components/ui/PositionBadge';
 import { TickerBar } from '../components/ui/TickerBar';
+import { useAuth } from '../contexts/AuthContext';
 import { useGame } from '../contexts/GameContext';
 import { useActionReceipt } from '../hooks/useActionReceipt';
 import { useSeasonForm } from '../hooks/useSeasonForm';
@@ -16,7 +17,14 @@ import { askPrice, contractRate, fmtM, hypeCurve, maxYears } from '../lib/money'
 import type { CatalogPlayer, Contract } from '../types/models';
 import styles from './FrontOfficePage.module.css';
 
-type Decision = 'resigned' | 'cut';
+type Decision =
+  | { kind: 'resigned'; contract: Contract }
+  | { kind: 'cut' };
+
+type CutTarget = {
+  contract: Contract;
+  returnFocus: HTMLButtonElement;
+};
 
 function StatLine({ player, form }: {
   player: CatalogPlayer;
@@ -46,6 +54,7 @@ const renewalFor = (player: CatalogPlayer, round: number, years: number): Contra
 };
 
 export default function FrontOfficePage() {
+  const { uid } = useAuth();
   const { game, team, catalog, call, gameId, membership, actsAs } = useGame();
   const { form } = useSeasonForm();
   const isGM = actsAs('GM');
@@ -55,8 +64,9 @@ export default function FrontOfficePage() {
   const [resignYears, setResignYears] = useState<Record<number, number>>({});
   const [selectedPid, setSelectedPid] = useState<number | null>(null);
   const [serverDecisions, setServerDecisions] = useState<Record<number, Decision>>({});
-  const [cutTarget, setCutTarget] = useState<Contract | null>(null);
+  const [cutTarget, setCutTarget] = useState<CutTarget | null>(null);
   const [busy, setBusy] = useState(false);
+  const doneButtonRef = useRef<HTMLButtonElement>(null);
 
   const round = game?.round ?? 1;
   const actives = useMemo(
@@ -89,8 +99,32 @@ export default function FrontOfficePage() {
     game?.phase ?? '',
     membership?.teamId ?? '',
     membership?.role ?? '',
+    uid ?? '',
   ].join('/');
   const { receipt, run: runWithReceipt } = useActionReceipt(actionScope);
+  const scopeRef = useRef(actionScope);
+  const scopeGeneration = useRef(0);
+  if (scopeRef.current !== actionScope) {
+    scopeRef.current = actionScope;
+    scopeGeneration.current += 1;
+  }
+
+  useEffect(() => {
+    const effectGeneration = scopeGeneration.current;
+    setErr(null);
+    setWalked(new Set());
+    setResignYears({});
+    setSelectedPid(null);
+    setServerDecisions({});
+    setCutTarget(null);
+    setBusy(false);
+
+    return () => {
+      if (scopeGeneration.current === effectGeneration) {
+        scopeGeneration.current += 1;
+      }
+    };
+  }, [actionScope]);
 
   if (!game || !team || catalog.size === 0) return null;
 
@@ -107,29 +141,47 @@ export default function FrontOfficePage() {
   const selectedRenewal = selectedPlayer
     ? renewalFor(selectedPlayer, round, selectedYears)
     : undefined;
-  const selectedResigned = activeSelectedPid !== null && (
-    serverDecisions[activeSelectedPid] === 'resigned'
-    || actives.some((contract) => (
+  const authoritativeRenewal = activeSelectedPid === null
+    ? undefined
+    : actives.find((contract) => (
       contract.pid === activeSelectedPid && contract.startRound === round
-    ))
+    ));
+  const localRenewal = activeSelectedPid !== null
+    && serverDecisions[activeSelectedPid]?.kind === 'resigned'
+    ? serverDecisions[activeSelectedPid].contract
+    : undefined;
+  const savedRenewal = authoritativeRenewal ?? localRenewal;
+  const selectedResigned = activeSelectedPid !== null && (
+    serverDecisions[activeSelectedPid]?.kind === 'resigned'
+    || authoritativeRenewal !== undefined
   );
   const selectedCut = activeSelectedPid !== null
-    && serverDecisions[activeSelectedPid] === 'cut';
+    && serverDecisions[activeSelectedPid]?.kind === 'cut';
   const selectedWalked = activeSelectedPid !== null && walked.has(activeSelectedPid);
   const selectedPreview = selectedRenewal && !selectedResigned && !selectedCut && !selectedWalked
     ? selectedRenewal
     : undefined;
   const selectedCap = selectedPreview ? capOkWith(team, selectedPreview) : null;
 
-  const perform = async (operation: () => Promise<unknown>) => {
+  const perform = async <T,>(
+    operation: () => Promise<T>,
+    onSuccess?: (value: T) => void,
+  ) => {
+    const operationScope = actionScope;
+    const operationGeneration = scopeGeneration.current;
+    const stillCurrent = () => (
+      scopeRef.current === operationScope
+      && scopeGeneration.current === operationGeneration
+    );
     setBusy(true);
     setErr(null);
     try {
-      await operation();
+      const value = await operation();
+      if (stillCurrent()) onSuccess?.(value);
     } catch (error) {
-      setErr(error);
+      if (stillCurrent()) setErr(error);
     } finally {
-      setBusy(false);
+      if (stillCurrent()) setBusy(false);
     }
   };
 
@@ -160,6 +212,7 @@ export default function FrontOfficePage() {
               className="btn gold"
               disabled={busy}
               onClick={() => void perform(() => call('markDone', { gameId }))}
+              ref={doneButtonRef}
               type="button"
             >
               {isDone ? 'Done noted' : "We're done"}
@@ -175,7 +228,7 @@ export default function FrontOfficePage() {
         )}
       </div>
 
-      <ErrorNotice error={err} />
+      {!cutTarget ? <ErrorNotice error={err} /> : null}
       {gmFallback ? (
         <p className={styles.fallback} data-testid="role-fallback">
           No GM on your team — any member may sign or cut.
@@ -208,9 +261,9 @@ export default function FrontOfficePage() {
                 {expiring.map((pid) => {
                   const player = catalog.get(pid);
                   if (!player) return null;
-                  const resigned = serverDecisions[pid] === 'resigned'
+                  const resigned = serverDecisions[pid]?.kind === 'resigned'
                     || actives.some((contract) => contract.pid === pid && contract.startRound === round);
-                  const cut = serverDecisions[pid] === 'cut';
+                  const cut = serverDecisions[pid]?.kind === 'cut';
                   const walk = walked.has(pid);
                   const state = cut ? 'Re-signed, then cut'
                     : resigned ? 'Re-signed'
@@ -272,7 +325,10 @@ export default function FrontOfficePage() {
                       aria-label={`Review cut for ${player.name}`}
                       className="btn cut"
                       disabled={busy || !isGM}
-                      onClick={() => setCutTarget(contract)}
+                      onClick={(event) => setCutTarget({
+                        contract,
+                        returnFocus: event.currentTarget,
+                      })}
                       type="button"
                     >
                       Review cut
@@ -320,8 +376,14 @@ export default function FrontOfficePage() {
                   <p className={styles.savedDecision}>
                     Re-signed, then cut. Remaining salary is recorded as dead money.
                   </p>
-                ) : selectedResigned ? (
-                  <p className={styles.savedDecision}>Re-signed for {fmtM(selectedRenewal.rate)}/rd.</p>
+                ) : selectedResigned && savedRenewal ? (
+                  <div className={styles.savedDecision}>
+                    <p>Re-signed for {fmtM(savedRenewal.rate)}/rd.</p>
+                    <p>
+                      {savedRenewal.years} round{savedRenewal.years === 1 ? '' : 's'} · Rounds{' '}
+                      {savedRenewal.startRound}–{savedRenewal.startRound + savedRenewal.years - 1}.
+                    </p>
+                  </div>
                 ) : selectedWalked ? (
                   <div className={styles.walkDecision}>
                     <p>Walk selected — undo until Front Office closes.</p>
@@ -376,20 +438,23 @@ export default function FrontOfficePage() {
                       <button
                         className="btn green"
                         disabled={busy || !isGM || !selectedCap?.ok}
-                        onClick={() => void perform(async () => {
-                          await runWithReceipt(
+                        onClick={() => {
+                          const submittedRenewal = selectedRenewal;
+                          void perform(() => runWithReceipt(
                             `Re-sign saved for ${selectedPlayer.name}.`,
                             () => call('signPlayer', {
                               gameId,
                               pid: activeSelectedPid,
                               years: selectedYears,
                             }),
-                          );
-                          setServerDecisions((current) => ({
+                          ), () => setServerDecisions((current) => ({
                             ...current,
-                            [activeSelectedPid]: 'resigned',
-                          }));
-                        })}
+                            [activeSelectedPid]: {
+                              kind: 'resigned',
+                              contract: submittedRenewal,
+                            },
+                          })));
+                        }}
                         type="button"
                       >
                         Re-sign {selectedPlayer.name}
@@ -422,23 +487,28 @@ export default function FrontOfficePage() {
         <CutPreview
           busy={busy}
           canAct={isGM}
-          contract={cutTarget}
+          contract={cutTarget.contract}
+          error={err}
+          fallbackFocus={doneButtonRef.current}
           onCancel={() => setCutTarget(null)}
-          onConfirm={() => void perform(async () => {
-            const player = catalog.get(cutTarget.pid);
-            await runWithReceipt(
+          onConfirm={() => {
+            const targetPid = cutTarget.contract.pid;
+            const player = catalog.get(targetPid);
+            void perform(() => runWithReceipt(
               `Cut saved for ${player?.name ?? 'player'}.`,
-              () => call('cutRosterPlayer', { gameId, pid: cutTarget.pid }),
-            );
-            if (expiring.includes(cutTarget.pid)) {
-              setServerDecisions((current) => ({
-                ...current,
-                [cutTarget.pid]: 'cut',
-              }));
-            }
-            setCutTarget(null);
-          })}
-          player={catalog.get(cutTarget.pid)!}
+              () => call('cutRosterPlayer', { gameId, pid: targetPid }),
+            ), () => {
+              if (expiring.includes(targetPid)) {
+                setServerDecisions((current) => ({
+                  ...current,
+                  [targetPid]: { kind: 'cut' },
+                }));
+              }
+              setCutTarget(null);
+            });
+          }}
+          player={catalog.get(cutTarget.contract.pid)!}
+          returnFocus={cutTarget.returnFocus}
           round={round}
           team={team}
         />
