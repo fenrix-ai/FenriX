@@ -46,6 +46,10 @@ test('front office: expiring re-sign, then a mid-contract cut with dead money', 
   // Sign as Alpha's GM (same uid the app will render as) BEFORE the phase closes, so
   // these are genuine one-round contracts that expire into round 2's front office.
   const signed = await signOneRoundDeals(seeded, EXPIRING_POSITIONS);
+  const signedPlayers = await Promise.all(signed.map(async (pid) => ({
+    pid,
+    name: (await adminDb().doc(`games/${seeded.gameId}/catalog/${pid}`).get()).data()!.name as string,
+  })));
   await driveTo(seeded, 'R2:FRONT_OFFICE');
 
   localStorage.setItem('ss.gameId', seeded.gameId);
@@ -67,24 +71,62 @@ test('front office: expiring re-sign, then a mid-contract cut with dead money', 
   expect(alpha.roster.some((c: { pid: number }) => c.pid >= 9000)).toBe(true);
   expect(screen.queryByText('Default Role Player')).toBeNull();
 
-  // Re-sign the first expiring player on a 2-round deal.
-  const firstCard = screen.getAllByRole('button', { name: 'Re-sign' })[0].closest('.card')!;
-  const select = within(firstCard as HTMLElement).getByRole('combobox');
+  // Re-sign the first expiring player on a 2-round deal. The selected player's
+  // persistent rail previews the candidate across all five payroll rounds.
+  const first = signedPlayers[0];
+  const firstDecision = screen.getByRole('region', {
+    name: `Contract decision for ${first.name}`,
+  });
+  const select = within(firstDecision).getByRole('combobox', {
+    name: `Contract length for ${first.name}`,
+  });
   await user.selectOptions(select, '2');
-  await user.click(within(firstCard as HTMLElement).getByRole('button', { name: 'Re-sign' }));
+  expect(screen.getByLabelText(/Round 2: cash .*candidate \$.*total/)).toBeInTheDocument();
+  await user.click(within(firstDecision).getByRole('button', {
+    name: `Re-sign ${first.name}`,
+  }));
+  await waitFor(() => expect(screen.getByRole('status', { name: 'Saved action' }))
+    .toHaveTextContent(`Re-sign saved for ${first.name}.`), { timeout: 15000 });
   await waitFor(() => expect(screen.getByText(`1 of ${n} decided`)).toBeInTheDocument(),
     { timeout: 15000 });
 
+  // Let walk stays entirely local and reversible. It must not remove the
+  // expired roster entry or pretend the server saved anything.
+  const second = signedPlayers[1];
+  await user.click(screen.getByRole('button', { name: `Review ${second.name}` }));
+  const secondDecision = screen.getByRole('region', {
+    name: `Contract decision for ${second.name}`,
+  });
+  await user.click(within(secondDecision).getByRole('button', { name: 'Let walk' }));
+  expect(within(secondDecision).getByText('Walk selected — undo until Front Office closes.'))
+    .toBeInTheDocument();
+  const afterWalk = (await adminDb().doc(
+    `games/${seeded.gameId}/teams/${seeded.teamIds[0]}`).get()).data()!;
+  expect(afterWalk.roster.some((c: { pid: number }) => c.pid === second.pid)).toBe(true);
+  await user.click(within(secondDecision).getByRole('button', { name: 'Undo walk' }));
+
   // Cut him — a genuine mid-contract cut (2-round deal, cut in its first round).
-  await user.click(screen.getByRole('button', { name: 'Cut' }));
-  expect(screen.getByRole('dialog').textContent).toContain('dead money');
+  await user.click(screen.getByRole('button', { name: `Review cut for ${first.name}` }));
+  const dialog = screen.getByRole('dialog', { name: `Cut ${first.name}?` });
+  expect(dialog).toHaveTextContent('No committed salary is removed.');
+  expect(within(dialog).getByRole('list', { name: 'Remaining obligations' }))
+    .toHaveTextContent('Round 2');
+  expect(within(dialog).getByRole('list', { name: 'Remaining obligations' }))
+    .toHaveTextContent('Round 3');
   await user.click(screen.getByRole('button', { name: 'Confirm cut' }));
+  await waitFor(() => expect(screen.getByRole('status', { name: 'Saved action' }))
+    .toHaveTextContent(`Cut saved for ${first.name}.`), { timeout: 15000 });
   await waitFor(async () => {
     const t = (await adminDb().doc(
       `games/${seeded.gameId}/teams/${seeded.teamIds[0]}`).get()).data()!;
     expect(t.deadMoney).toHaveLength(1);
     expect(t.deadMoney[0].endRound).toBe(3);
   }, { timeout: 15000 });
+  expect(screen.getByText('Re-signed, then cut')).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: `Review ${first.name}` }));
+  expect(screen.getByRole('region', {
+    name: `Contract decision for ${first.name}`,
+  })).toHaveTextContent('Remaining salary is recorded as dead money.');
 }, 120000);
 
 test("we're done: GM sees the button, click stamps {doneRound, donePhase}", async () => {
