@@ -4,6 +4,19 @@ Panel (your laptop): **https://salary-showdown.web.app/professor**
 Students join at: **https://salary-showdown.web.app/** (the projector shows this with the code)
 Projector: never type its URL — open it from the panel's "Open projector" button.
 
+
+## Laptop UI candidate rehearsal — 2026-09-17
+
+The redesigned UI is an undeployed integration candidate in `/private/tmp/salary-showdown-ui-worktrees/I01`, branch `codex/salary-showdown-ui-integration`; all screens merged at `c586f18dc66ad0e278de605d751401eb3b99e143`, with integration tests updated at `dbde850`. The production URLs above are historical class-day instructions and do not imply this candidate is live.
+
+Use the existing local DEV emulators and port 5193 preview for rehearsal. I01 owns the sole mutable test/browser slot; workers are idle. Never run the browser drill concurrently with backend or browser-SDK integration tests, restart/clear the shared emulators, or use a production game as a fixture. Exact test outcomes and remaining gates are in [the live I01 ledger](plans/salary-showdown-ui-tasks/completions/I01.md).
+
+Before release, complete the student viewport matrix (1280×720,1366×768,1440×900,1024px fallback, actual 200% zoom), projector matrix (720p/1080p/4K, two/21 teams, all reveal steps), keyboard-only forms/lineup/focus, reduced-motion toggles during play, and a three-role representative-team reconnect drill. Save screenshots with their fixture IDs, phase/round, viewport, and tested commit. Existing automated passes do not substitute for these pending checks.
+
+The laptop finale remains independently browsable while the professor controls only the projector step. Auction exposure above cap is allowed, sealed offers remain revisable until the phase closes, Done is advisory, and ordinary free agents can appear on multiple teams. Inspect those behaviors in the rehearsal before accepting the candidate.
+
+Production deployment requires a separate explicit instruction. Follow the additive identity-callable-then-built-hosting sequence and recorded prior-Hosting-release rollback procedure in [the handoff](salary-showdown-HANDOFF.md); do not deploy individual worker bundles.
+
 ## Pre-class setup (10 minutes before)
 
 1. On the laptop, open the panel URL above.

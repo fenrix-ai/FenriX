@@ -6,6 +6,21 @@ You are picking up an in-flight classroom-game project. Read this file end to en
 anything. It is the authoritative summary of state, open work, hard rules, and environment
 gotchas. Everything here was verified at the time of writing.
 
+
+## UI integration candidate — 2026-09-17, local evidence only
+
+This section supersedes the older repository/test/deployment snapshot below for the laptop UI candidate. No production status was rechecked and no deployment was performed. Do not use an old individual worker build as the release artifact.
+
+- Integration checkout: `/private/tmp/salary-showdown-ui-worktrees/I01`, branch `codex/salary-showdown-ui-integration`. The user's `/Users/dylanmassaro/FenriX` checkout remains untouched.
+- All ten screens merged at product commit `c586f18dc66ad0e278de605d751401eb3b99e143`. Integration acceptance tests/selectors committed at `dbde850`; resolve the full current candidate SHA before any release. Worker provenance and failed-run evidence are in [the I01 ledger](plans/salary-showdown-ui-tasks/completions/I01.md).
+- Frontend: 38 files / 213 unit tests PASS; TypeScript/build PASS; UI audit 122 PASS. First full browser-SDK integration run:49 PASS/3 stale-selector failures, retained. Corrected targeted run:4 files/7 PASS, including a rendered two-team five-round season and saved-offer/shared-reveal navigation. Corrected complete browser-SDK suite: 21 files / 53 tests PASS (192.62s). Sequential backend suite: 28 files / 214 tests PASS (33.86s). Logs are under `/private/tmp/salary-showdown-ui-worktrees/evidence/i01-final-acceptance/`.
+- Only `salary-showdown-dev` emulators were tested: Auth 9199, Firestore 8180, Functions 5101, region us-west1. No emulator restart, reconfiguration or data clear. Node host is 24.16.0; backend declares 20 and Node 20 runtime parity remains unverified.
+- Release gate remains CLOSED: full visual/classroom matrix, saved screenshot artifacts, actual 200% browser zoom, actual reduced-motion preference toggles, representative three-role 21-team and reconnect review are not complete. Inline simulation inspection alone is not the final matrix.
+
+After all acceptance gates pass and deployment is explicitly authorized, capture the currently active Hosting release/version ID for rollback, verify a clean tested integration commit, and rebuild its app assets. Deploy the additive `setTeamIdentity` callable first from this integration checkout (`firebase deploy --only functions:setTeamIdentity --project salary-showdown` from `games/salary-showdown/backend`), verify that callable, then deploy its freshly built Hosting assets (`firebase deploy --only hosting --project salary-showdown`). These are release instructions, not authorization or evidence of execution. Do not change the default DEV alias or deploy unrelated functions/rules.
+
+Rollback: restore the recorded prior Hosting release through Firebase Hosting release history. Optional identity metadata is backward compatible, so the additive callable can remain while the UI is rolled back. Preserve all worktrees and test evidence; never reset the user's main checkout to roll back hosting.
+
 ---
 
 ## 1. What the project is
