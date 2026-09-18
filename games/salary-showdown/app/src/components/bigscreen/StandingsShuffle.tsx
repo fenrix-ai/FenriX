@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useProfessor } from '../../contexts/ProfessorContext';
 import { PHASE_NAMES } from '../../lib/phaseNames';
 import { computeShuffleSteps, deltaClass, deltaGlyph, type ShuffleStep } from '../../lib/shuffle';
@@ -16,34 +16,44 @@ const PAGE_SIZE = 7;
 // consulted. Rest state: the full table with deltas, held until the professor
 // advances. Display-only; facts only (rank, name, record, movement).
 export function StandingsShuffle() {
-  const { game, round } = useProfessor();
+  const { gameId, game, round } = useProfessor();
   const steps = useMemo(() => computeShuffleSteps(round?.standings ?? []), [round]);
   const championship = game?.round === 5;
-  const [shown, setShown] = useState(0);
   const reduced = useReducedMotion();
-  const scope = `${game?.round ?? 0}/${steps.map((step) => step.teamId).join(',')}`;
+  const scope = `${gameId ?? 'no-game'}/${game?.round ?? 0}`;
+  const [progress, setProgress] = useState({ scope, shown: 0 });
+  const stepsRef = useRef(steps);
+  stepsRef.current = steps;
+  const ready = steps.length > 0;
+  const shown = progress.scope === scope ? Math.min(progress.shown, steps.length) : 0;
   const pager = useWallPage(steps.length, PAGE_SIZE, scope, !reduced);
 
   useEffect(() => { // cosmetic client pacing — the standings are already server-final
-    setShown(0);
-    if (steps.length === 0) return;
-    if (reduced) {
-      setShown(steps.length);
-      return;
-    }
+    setProgress((current) => current.scope === scope ? current : { scope, shown: 0 });
+    if (!ready) return undefined;
     let cancelled = false;
     let id: ReturnType<typeof setTimeout>;
     const schedule = (i: number) => { // i = index of the NEXT step to reveal
-      const slow = championship && i >= steps.length - 3;
+      const count = stepsRef.current.length;
+      const slow = championship && i >= count - 3;
       id = setTimeout(() => {
         if (cancelled) return;
-        setShown(i + 1);
-        if (i + 1 < steps.length) schedule(i + 1);
+        setProgress((current) => current.scope === scope
+          ? { ...current, shown: Math.max(current.shown, Math.min(count, i + 1)) }
+          : current);
+        if (i + 1 < count) schedule(i + 1);
       }, slow ? 3000 : 800);
     };
     schedule(0);
     return () => { cancelled = true; clearTimeout(id); };
-  }, [steps, championship, reduced]);
+  }, [championship, ready, scope]);
+
+  useEffect(() => {
+    if (!reduced || !ready) return;
+    setProgress((current) => current.scope === scope
+      ? { ...current, shown: Math.max(current.shown, steps.length) }
+      : { scope, shown: steps.length });
+  }, [ready, reduced, scope, steps.length]);
 
   if (!game) return null;
   const revealed = new Set(steps.slice(0, shown).map((s) => s.teamId));

@@ -146,6 +146,41 @@ test('reduced motion exposes all 21 final placements immediately', () => {
   expect(screen.getByText('Franchise 21')).toBeInTheDocument();
 });
 
+test('turning reduced motion off cannot shroud placements already exposed', () => {
+  mocks.reduced = true;
+  mocks.professor = {
+    gameId: 'game-1',
+    game: game({ phase: 'RESULTS' }),
+    round: { games: [], standings: standings(2), awards: {}, boxCsv: '' },
+  };
+  const view = render(<StandingsShuffle />);
+  expect(screen.getAllByTestId('bs-shuffle-row')).toHaveLength(2);
+
+  mocks.reduced = false;
+  view.rerender(<StandingsShuffle />);
+
+  expect(screen.getAllByTestId('bs-shuffle-row')).toHaveLength(2);
+});
+
+test('an equivalent round snapshot cannot replay a completed shuffle', () => {
+  mocks.professor = {
+    gameId: 'game-1',
+    game: game({ phase: 'RESULTS' }),
+    round: { games: [], standings: standings(2), awards: {}, boxCsv: '' },
+  };
+  const view = render(<StandingsShuffle />);
+  act(() => vi.advanceTimersByTime(1600));
+  expect(screen.getAllByTestId('bs-shuffle-row')).toHaveLength(2);
+
+  mocks.professor = {
+    ...mocks.professor,
+    round: structuredClone(mocks.professor.round),
+  };
+  view.rerender(<StandingsShuffle />);
+
+  expect(screen.getAllByTestId('bs-shuffle-row')).toHaveLength(2);
+});
+
 test('settled 21-team standings rotate through every fixed page without skipping a row', () => {
   mocks.professor = {
     game: game({ phase: 'RESULTS', teamCount: 21 }),
