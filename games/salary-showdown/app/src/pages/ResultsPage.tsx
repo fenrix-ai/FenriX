@@ -5,6 +5,7 @@ import { BoxscoreExplorer } from '../components/results/BoxscoreExplorer';
 import { ResultsHero } from '../components/results/ResultsHero';
 import { PhaseHeader } from '../components/ui/PhaseHeader';
 import { StandingsTable } from '../components/ui/StandingsTable';
+import { useAuth } from '../contexts/AuthContext';
 import { useGame } from '../contexts/GameContext';
 import { parseBoxCsv } from '../lib/boxfeed';
 import { spendThroughRound } from '../lib/contracts';
@@ -14,29 +15,74 @@ import { useRoundDoc } from '../hooks/useRoundDoc';
 import type { AuctionDoc, PrivateAuctionDoc } from '../types/models';
 import styles from './ResultsPage.module.css';
 
+type ScopedSnapshot<T> = { scope: string; value: T | null };
+
 export default function ResultsPage() {
+  const { uid } = useAuth();
   const { gameId, game, team, teams, membership, catalog } = useGame();
   const round = game?.round ?? 1;
+  const auctionScope = gameId && uid && membership
+    ? `${gameId}/${round}/${membership.teamId}/${uid}`
+    : '';
   const rd = useRoundDoc(round);
   const [slide, setSlide] = useState(0);
   const [awardHovered, setAwardHovered] = useState(false);
   const [awardFocused, setAwardFocused] = useState(false);
-  const [auction, setAuction] = useState<AuctionDoc | null>(null);
-  const [privAuction, setPrivAuction] = useState<PrivateAuctionDoc | null>(null);
+  const [auctionSnapshot, setAuctionSnapshot] = useState<ScopedSnapshot<AuctionDoc>>({
+    scope: '', value: null,
+  });
+  const [privateSnapshot, setPrivateSnapshot] = useState<ScopedSnapshot<PrivateAuctionDoc>>({
+    scope: '', value: null,
+  });
 
   useEffect(() => {
-    if (!gameId || !membership) { setAuction(null); return; }
-    return onSnapshot(doc(db, 'games', gameId, 'auctions', String(round)),
-      (snapshot) => setAuction(snapshot.exists() ? snapshot.data() as AuctionDoc : null),
-      (error) => console.error('[results] auction listener', error));
-  }, [gameId, membership, round]);
+    if (!auctionScope || !gameId) return undefined;
+    let active = true;
+    const unsubscribe = onSnapshot(doc(db, 'games', gameId, 'auctions', String(round)),
+      (snapshot) => {
+        if (!active) return;
+        setAuctionSnapshot({
+          scope: auctionScope,
+          value: snapshot.exists() ? snapshot.data() as AuctionDoc : null,
+        });
+      },
+      (error) => {
+        if (!active) return;
+        console.error('[results] auction listener', error);
+        setAuctionSnapshot({ scope: auctionScope, value: null });
+      });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [auctionScope, gameId, round]);
 
   useEffect(() => {
-    if (!gameId || !membership) { setPrivAuction(null); return; }
-    return onSnapshot(doc(db, 'games', gameId, 'teams', membership.teamId, 'private', 'auction'),
-      (snapshot) => setPrivAuction(snapshot.exists() ? snapshot.data() as PrivateAuctionDoc : null),
-      (error) => console.error('[results] private auction listener', error));
-  }, [gameId, membership, round]);
+    if (!auctionScope || !gameId || !membership) return undefined;
+    let active = true;
+    const unsubscribe = onSnapshot(
+      doc(db, 'games', gameId, 'teams', membership.teamId, 'private', 'auction'),
+      (snapshot) => {
+        if (!active) return;
+        setPrivateSnapshot({
+          scope: auctionScope,
+          value: snapshot.exists() ? snapshot.data() as PrivateAuctionDoc : null,
+        });
+      },
+      (error) => {
+        if (!active) return;
+        console.error('[results] private auction listener', error);
+        setPrivateSnapshot({ scope: auctionScope, value: null });
+      },
+    );
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [auctionScope, gameId, membership]);
+
+  const auction = auctionSnapshot.scope === auctionScope ? auctionSnapshot.value : null;
+  const privAuction = privateSnapshot.scope === auctionScope ? privateSnapshot.value : null;
 
   useEffect(() => { setSlide(0); }, [round]);
   useEffect(() => {
@@ -85,12 +131,15 @@ export default function ResultsPage() {
       ?? teams.get(bargain.teamId)?.spendLog.slice().reverse()
         .find((contract) => contract.pid === bargain.pid)
     : null;
+  const bargainTeamName = bargain ? awardTeam(bargain.teamId) : null;
+  const bargainIdentityAmbiguous = bargainTeamName !== null
+    && [...teams.values()].filter((candidate) => candidate.name === bargainTeamName).length > 1;
   const bargainGameIds = bargain
     ? new Set(rd.games
       .filter((result) => result.home === bargain.teamId || result.away === bargain.teamId)
       .map((result) => result.game_id))
     : new Set<string>();
-  const bargainRows = bargain
+  const bargainRows = bargain && !bargainIdentityAmbiguous
     ? allRows.filter((row) => bargainGameIds.has(row.game_id)
       && row.team === awardTeam(bargain.teamId)
       && row.player_id === bargain.pid)
@@ -100,6 +149,10 @@ export default function ResultsPage() {
       (bargainRows.reduce((sum, row) => sum + row.rebounds, 0) / bargainRows.length).toFixed(1)} reb · ${
       (bargainRows.reduce((sum, row) => sum + row.steals + row.blocks, 0) / bargainRows.length).toFixed(1)} stocks per game`
     : '';
+  const bargainFacts = [
+    bargainLine,
+    bargainContract ? `${fmtM(bargainContract.rate)}/rd` : '',
+  ].filter(Boolean).join(' · ');
   const slides = [
     <div key="mvp"><strong>Round MVP</strong><span>{catalog.get(rd.awards.roundMvp.pid)?.name}{' '}
       ({awardTeam(rd.awards.roundMvp.teamId)})</span>
@@ -110,9 +163,7 @@ export default function ResultsPage() {
     <div key="bargain"><strong>Bargain of the Round</strong><span>{bargain
       ? `${catalog.get(bargain.pid)?.name} (${awardTeam(bargain.teamId)})`
       : '—'}</span>
-      {bargain ? <span className="mono">{bargainLine}{bargainContract
-        ? ` · ${fmtM(bargainContract.rate)}/rd`
-        : ''}</span> : null}</div>,
+      {bargain && bargainFacts ? <span className="mono">{bargainFacts}</span> : null}</div>,
   ];
 
   const leaveAwards = (event: FocusEvent<HTMLDivElement>) => {

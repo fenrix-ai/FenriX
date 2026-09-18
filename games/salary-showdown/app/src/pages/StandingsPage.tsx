@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { PhaseHeader } from '../components/ui/PhaseHeader';
 import { StandingsTable } from '../components/ui/StandingsTable';
+import { useAuth } from '../contexts/AuthContext';
 import { useGame } from '../contexts/GameContext';
 import { useRoundPresentation } from '../contexts/RoundPresentationContext';
 import { spendThroughRound } from '../lib/contracts';
@@ -11,6 +12,7 @@ import styles from './StandingsPage.module.css';
 type LoadedRound = { key: string; round: number; rd: RoundDoc | null };
 
 export default function StandingsPage() {
+  const { uid } = useAuth();
   const { game, gameId, teams, membership } = useGame();
   const presentation = useRoundPresentation();
   const isLiveRound = game?.phase === 'SIMULATE';
@@ -31,8 +33,8 @@ export default function StandingsPage() {
   }, [defaultRound, game, isLiveRound, latestCompleted]);
 
   const liveSelection = Boolean(isLiveRound && game && selectedRound === game.round);
-  const loadKey = gameId && selectedRound > 0 && !liveSelection
-    ? `${gameId}/${selectedRound}`
+  const loadKey = gameId && uid && selectedRound > 0 && !liveSelection
+    ? `${gameId}/${uid}/${selectedRound}`
     : '';
   useEffect(() => {
     if (!loadKey) return undefined;
