@@ -21,14 +21,46 @@ export default function FinalePage() {
   const { gameId, game, membership, team, teams } = useGame();
   const round = game?.round ?? 0;
   const rd = useRoundDoc(round);
-  const [reveal, setReveal] = useState<RevealDoc | null>(null);
+  const revealScope = gameId && uid && membership?.teamId && game?.phase === 'FINALE'
+    ? `${gameId}/${uid}/${membership.teamId}`
+    : '';
+  const [revealSnapshot, setRevealSnapshot] = useState<{
+    scope: string;
+    value: RevealDoc | null;
+  }>({ scope: '', value: null });
 
   useEffect(() => {
-    if (!gameId || game?.phase !== 'FINALE') { setReveal(null); return undefined; }
-    return onSnapshot(doc(db, 'games', gameId, 'reveal', 'latest'),
-      (snapshot) => setReveal(snapshot.exists() ? snapshot.data() as RevealDoc : null),
-      (error) => console.error('reveal/latest listener', error));
-  }, [gameId, game?.phase]);
+    if (!gameId || !revealScope) {
+      setRevealSnapshot({ scope: '', value: null });
+      return undefined;
+    }
+    let active = true;
+    setRevealSnapshot({ scope: revealScope, value: null });
+    const unsubscribe = onSnapshot(doc(db, 'games', gameId, 'reveal', 'latest'),
+      (snapshot) => {
+        if (!active) return;
+        setRevealSnapshot({
+          scope: revealScope,
+          value: snapshot.exists() ? snapshot.data() as RevealDoc : null,
+        });
+      },
+      (error) => {
+        if (!active) return;
+        console.error('reveal/latest listener', error);
+        setRevealSnapshot({ scope: revealScope, value: null });
+      });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [gameId, revealScope]);
+
+  // Key rendering to the actual game/viewer/team scope. React runs effect
+  // cleanup after render, so state clearing alone cannot prevent a previous
+  // scope's reveal from flashing during that render.
+  const reveal = revealScope && revealSnapshot.scope === revealScope
+    ? revealSnapshot.value
+    : null;
 
   const playerNames = useMemo(() => new Map(
     (reveal?.scatter ?? []).map((player) => [player.pid, player.name] as const)), [reveal]);

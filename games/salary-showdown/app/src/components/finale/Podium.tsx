@@ -15,36 +15,51 @@ export function Podium({ rows, teams, celebrationKey }: {
   const reducedMotion = useReducedMotion();
   const ranked = useMemo(() => [...rows].sort((a, b) => a.rank - b.rank).slice(0, 3), [rows]);
   const revealOrder = useMemo(() => [...ranked].reverse(), [ranked]);
-  const [visibleCount, setVisibleCount] = useState(() => reducedMotion
-    ? revealOrder.length : Math.min(1, revealOrder.length));
-  const [celebrating, setCelebrating] = useState(false);
+  const initialVisibleCount = reducedMotion
+    ? revealOrder.length : Math.min(1, revealOrder.length);
+  const [progress, setProgress] = useState(() => ({
+    key: celebrationKey,
+    count: initialVisibleCount,
+  }));
+  const visibleCount = progress.key === celebrationKey
+    ? progress.count
+    : initialVisibleCount;
+  const [celebratingKey, setCelebratingKey] = useState<string | null>(null);
 
   useEffect(() => {
-    setVisibleCount(reducedMotion ? revealOrder.length : Math.min(1, revealOrder.length));
+    setProgress({
+      key: celebrationKey,
+      count: reducedMotion ? revealOrder.length : Math.min(1, revealOrder.length),
+    });
   }, [celebrationKey, revealOrder.length]); // eslint-disable-line react-hooks/exhaustive-deps -- preference changes may reveal more, never hide progress
 
   useEffect(() => {
     if (reducedMotion) {
-      setVisibleCount((count) => Math.max(count, revealOrder.length));
+      setProgress((current) => current.key === celebrationKey
+        ? { ...current, count: Math.max(current.count, revealOrder.length) }
+        : { key: celebrationKey, count: revealOrder.length });
     }
-  }, [reducedMotion, revealOrder.length]);
+  }, [celebrationKey, reducedMotion, revealOrder.length]);
 
   useEffect(() => {
     if (reducedMotion || visibleCount >= revealOrder.length) return undefined;
-    const timer = window.setTimeout(() => setVisibleCount((count) =>
-      Math.min(revealOrder.length, count + 1)), STEP_MS);
+    const timer = window.setTimeout(() => setProgress((current) => current.key === celebrationKey
+      ? { ...current, count: Math.min(revealOrder.length, current.count + 1) }
+      : current), STEP_MS);
     return () => window.clearTimeout(timer);
-  }, [reducedMotion, revealOrder.length, visibleCount]);
+  }, [celebrationKey, reducedMotion, revealOrder.length, visibleCount]);
 
   const complete = visibleCount >= revealOrder.length;
   useEffect(() => {
+    setCelebratingKey(null);
     if (!complete || !celebrationKey) return undefined;
     const storageKey = `ss.finaleCelebrated.${celebrationKey}`;
     if (sessionStorage.getItem(storageKey)) return undefined;
     sessionStorage.setItem(storageKey, '1');
     if (reducedMotion) return undefined;
-    setCelebrating(true);
-    const timer = window.setTimeout(() => setCelebrating(false), CELEBRATION_MS);
+    setCelebratingKey(celebrationKey);
+    const timer = window.setTimeout(() => setCelebratingKey((current) =>
+      current === celebrationKey ? null : current), CELEBRATION_MS);
     return () => window.clearTimeout(timer);
   }, [celebrationKey, complete, reducedMotion]);
 
@@ -61,7 +76,7 @@ export function Podium({ rows, teams, celebrationKey }: {
         </div>
         {!complete && !reducedMotion && (
           <button type="button" className={styles.skipButton}
-            onClick={() => setVisibleCount(revealOrder.length)}>
+            onClick={() => setProgress({ key: celebrationKey, count: revealOrder.length })}>
             Skip podium animation
           </button>
         )}
@@ -87,7 +102,7 @@ export function Podium({ rows, teams, celebrationKey }: {
         {complete ? `${ranked[0]?.name ?? 'Champion'} finishes first.`
           : `Podium reveal ${visibleCount} of ${revealOrder.length}.`}
       </p>
-      {celebrating && (
+      {celebratingKey === celebrationKey && !reducedMotion && (
         <div className={styles.confetti} aria-hidden="true">
           {Array.from({ length: 28 }, (_, index) => (
             <i key={index} data-testid="confetti-particle"
