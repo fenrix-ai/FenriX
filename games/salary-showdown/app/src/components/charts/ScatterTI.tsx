@@ -11,13 +11,28 @@ const DOT: Record<'trap' | 'bargain' | 'normal', { fill: string; r: number }> = 
   normal: { fill: 'var(--muted)', r: 3.5 },
 };
 
-export function ScatterTI({ rows }: { rows: RevealDoc['scatter'] }) {
+export type ScatterTIProps = {
+  rows: RevealDoc['scatter'];
+  selectedPid?: number | null;
+  onSelectPid?: (pid: number) => void;
+  highlightPids?: ReadonlySet<number>;
+  visiblePids?: ReadonlySet<number>;
+};
+
+export function ScatterTI({ rows, selectedPid = null, onSelectPid,
+  highlightPids, visiblePids }: ScatterTIProps) {
   const g = scatterGeometry(rows, F);
   const x0 = F.padL, x1 = F.w - F.padR, y0 = F.padT, y1 = F.h - F.padB;
+  const points = visiblePids ? g.points.filter((point) => visiblePids.has(point.pid)) : g.points;
   return (
     <svg data-testid="chart-scatter-ti" viewBox={`0 0 ${F.w} ${F.h}`} role="img"
       aria-label="Hype versus TrueImpact, traps and bargains labeled"
+      data-total-points={g.points.length} data-visible-points={points.length}
       style={{ width: '100%', height: 'auto', display: 'block' }}>
+      <desc>
+        Hype is shown on the horizontal axis and TrueImpact on the vertical axis.
+        Trap, bargain, selected, and highlighted states use labels and outlines in addition to color.
+      </desc>
       <line x1={x0} y1={y1} x2={x1} y2={y1} stroke="var(--border)" />
       <line x1={x0} y1={y0} x2={x0} y2={y1} stroke="var(--border)" />
       {g.xTicks.map((t) => (
@@ -38,13 +53,33 @@ export function ScatterTI({ rows }: { rows: RevealDoc['scatter'] }) {
         fill="var(--muted)">Hype</text>
       <text x={14} y={(y0 + y1) / 2} textAnchor="middle" fontSize={13} fill="var(--muted)"
         transform={`rotate(-90 14 ${(y0 + y1) / 2})`}>TrueImpact</text>
-      {g.points.map((p) => (
-        <circle key={p.pid} cx={p.x} cy={p.y} r={DOT[p.cls].r} fill={DOT[p.cls].fill}
-          opacity={p.cls === 'normal' ? 0.55 : 0.9}>
+      {points.map((p) => {
+        const selected = p.pid === selectedPid;
+        const highlighted = highlightPids?.has(p.pid) ?? false;
+        const label = `${p.name}. Hype ${p.hype}. TrueImpact ${p.ti}. ${
+          p.salary === null ? 'No list salary.' : `$${p.salary.toFixed(1)}M list salary.`} ${
+          p.cls === 'trap' ? 'Known trap.' : p.cls === 'bargain' ? 'Known bargain.' : 'Other player.'}`;
+        return (
+        <circle key={p.pid} cx={p.x} cy={p.y} r={DOT[p.cls].r + (selected ? 2 : 0)}
+          fill={DOT[p.cls].fill} opacity={p.cls === 'normal' ? 0.62 : 0.94}
+          role={onSelectPid ? 'button' : undefined}
+          tabIndex={onSelectPid ? 0 : undefined}
+          aria-label={onSelectPid ? label : undefined}
+          aria-pressed={onSelectPid ? selected : undefined}
+          data-highlighted={highlighted ? 'true' : 'false'}
+          stroke={selected ? 'var(--gold)' : highlighted ? 'var(--ss-accent-sky)' : 'none'}
+          strokeWidth={selected || highlighted ? 3 : 0}
+          onClick={onSelectPid ? () => onSelectPid(p.pid) : undefined}
+          onKeyDown={onSelectPid ? (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              onSelectPid(p.pid);
+            }
+          } : undefined}>
           <title>{`${p.name} — hype ${p.hype}, TI ${p.ti}${
             p.salary === null ? '' : `, $${p.salary.toFixed(1)}M`}`}</title>
         </circle>
-      ))}
+      );})}
       <g fontSize={12}>
         <circle cx={x0 + 12} cy={y0 + 10} r={5.5} fill="var(--neg)" />
         <text x={x0 + 24} y={y0 + 14} fill="var(--text)">Trap (volume trap, aging legend)</text>

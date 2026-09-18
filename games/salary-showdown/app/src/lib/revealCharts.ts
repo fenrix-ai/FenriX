@@ -14,6 +14,32 @@ export interface Frame {
   w: number; h: number; padL: number; padR: number; padT: number; padB: number;
 }
 
+// SVG <text> does not wrap. Split copy into deterministic lines so long
+// franchise and player names remain inside the chart frame instead of being
+// clipped. Unbroken names are chunked rather than silently truncated.
+export function wrapChartLabel(value: string, maxChars: number): string[] {
+  if (maxChars < 1) return [value];
+  const words = value.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [''];
+  const lines: string[] = [];
+  let line = '';
+  const pushWord = (word: string) => {
+    let rest = word;
+    while (rest.length > maxChars) {
+      if (line) { lines.push(line); line = ''; }
+      lines.push(rest.slice(0, maxChars));
+      rest = rest.slice(maxChars);
+    }
+    if (!rest) return;
+    if (!line) line = rest;
+    else if (`${line} ${rest}`.length <= maxChars) line = `${line} ${rest}`;
+    else { lines.push(line); line = rest; }
+  };
+  words.forEach(pushWord);
+  if (line) lines.push(line);
+  return lines;
+}
+
 // Linear-interpolation quantile (numpy's default estimator) — the same one
 // datagen's harness.py check2_bargains uses, so the app-side bargain cluster
 // reproduces datagen's "check 2" definition exactly.
@@ -100,8 +126,8 @@ export interface WeightsGeometry {
   engine: WeightsGroup; regression: WeightsGroup; caption: string;
 }
 
-const GUTTER = 36;
-const LABEL_W = 96;
+const GUTTER = 48;
+const LABEL_W = 118;
 const signed = (v: number): string => `${v >= 0 ? '+' : ''}${fmtNum(v)}`;
 
 interface WeightRowIn { key: string; label: string; value: number; valueLabel: string; note?: string }
@@ -171,11 +197,14 @@ export function weightsGeometry(tw: RevealDoc['trueWeights'], f: Frame): Weights
 }
 
 export interface WpdBar {
-  teamId: string; name: string; ratio: number | null; ratioLabel: string; detail: string;
+  teamId: string; name: string; nameLines: string[];
+  ratio: number | null; ratioLabel: string; detail: string; detailX: number;
   x: number; y: number; w: number; h: number;
 }
 
-const WPD_LABEL_W = 150;
+const WPD_LABEL_W = 190;
+const WPD_DETAIL_W = 238;
+const WPD_GAP = 14;
 
 // Sorted bars, best ratio first (ties broken by team name for determinism).
 // totalSpend counts every contract ever signed — committed money is never
@@ -191,14 +220,17 @@ export function winsPerDollarGeometry(rows: RevealDoc['winsPerDollar'],
     return (b.ratio ?? 0) - (a.ratio ?? 0)
       || nameOf(a.teamId).localeCompare(nameOf(b.teamId));
   });
-  const span = f.w - f.padL - f.padR - WPD_LABEL_W;
+  const span = Math.max(0,
+    f.w - f.padL - f.padR - WPD_LABEL_W - WPD_DETAIL_W - WPD_GAP);
   const maxRatio = Math.max(...sorted.map((r) => r.ratio ?? 0), 1e-9);
   const rowH = (f.h - f.padT - f.padB) / Math.max(1, sorted.length);
   const barH = rowH * 0.5;
   return sorted.map((r, i) => ({
-    teamId: r.teamId, name: nameOf(r.teamId), ratio: r.ratio,
+    teamId: r.teamId, name: nameOf(r.teamId),
+    nameLines: wrapChartLabel(nameOf(r.teamId), 24), ratio: r.ratio,
     ratioLabel: r.ratio == null ? '—' : r.ratio.toFixed(3),
     detail: `${r.wins} W · $${r.totalSpend.toFixed(1)}M committed`,
+    detailX: f.w - f.padR,
     x: f.padL + WPD_LABEL_W,
     y: f.padT + i * rowH + (rowH - barH) / 2,
     w: ((r.ratio ?? 0) / maxRatio) * span,
