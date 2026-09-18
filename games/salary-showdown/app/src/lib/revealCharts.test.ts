@@ -1,6 +1,6 @@
 import {
   bestWorstRows, classifyScatter, median, quantile, scatterGeometry,
-  weightsGeometry, winsPerDollarGeometry, type Frame,
+  weightsGeometry, winsPerDollarGeometry, wrapChartLabel, type Frame,
 } from './revealCharts';
 import type { RevealDoc } from '../types/models';
 
@@ -42,6 +42,34 @@ test('classifyScatter: trap from the server flag, bargain from price vs TrueImpa
 test('classifyScatter: null-salary rows are never bargains', () => {
   // pid 4 has top-quartile ti (9 >= 9) but no list price (auction-class star).
   expect(classifyScatter(ROWS).get(4)).toBe('normal');
+});
+
+test('classifyScatter: preserves strict salary and inclusive TrueImpact thresholds', () => {
+  const rows = [
+    row({ pid: 11, salary: 2, ti: 10 }),
+    row({ pid: 12, salary: 6, ti: 7 }),
+    row({ pid: 13, salary: 10, ti: 6 }),
+    row({ pid: 14, salary: 14, ti: 5 }),
+  ];
+  const classes = classifyScatter(rows);
+  // Median salary is 8 and Q3 TrueImpact is 7.75: the cheap, top-quartile
+  // point is a bargain, while the salary boundary remains strictly below.
+  expect(classes.get(11)).toBe('bargain');
+
+  const boundaryRows = [
+    row({ pid: 21, salary: 8, ti: 10 }),
+    row({ pid: 22, salary: 8, ti: 1 }),
+  ];
+  expect(classifyScatter(boundaryRows).get(21)).toBe('normal');
+});
+
+test('wrapChartLabel: keeps long franchise and player names inside readable lines', () => {
+  expect(wrapChartLabel('The Extremely Long Analytics Collective', 14)).toEqual([
+    'The Extremely', 'Long Analytics', 'Collective',
+  ]);
+  expect(wrapChartLabel('Supercalifragilisticexpialidocious', 10)).toEqual([
+    'Supercalif', 'ragilistic', 'expialidoc', 'ious',
+  ]);
 });
 
 test('classifyScatter: trap wins when a trap also sits in the bargain box', () => {
@@ -97,28 +125,28 @@ const TW: RevealDoc['trueWeights'] = {
   regression: { winsR2: 0.7, turnoverCoef: -3.84, turnoverP: '<0.001', payrollT: -0.03, hypeT: 1.37 },
 };
 const FW: Frame = { w: 700, h: 400, padL: 10, padR: 10, padT: 30, padB: 30 };
-// inner 680, gutter 36 -> groupW 322; labelW 96 -> span 226, half-span 113.
+// inner 680, gutter 48 -> groupW 316; labelW 118 -> span 198, half-span 99.
 
 test('weightsGeometry: two side-by-side groups, each normalized to ITS OWN max — never a shared axis', () => {
   const g = weightsGeometry(TW, FW);
   expect(g.engine.boxX).toBe(10);
-  expect(g.regression.boxX).toBe(368);              // 10 + 322 + 36
-  expect(g.engine.zeroX).toBe(219);                 // 10 + 96 + 113
-  expect(g.regression.zeroX).toBe(577);             // 368 + 96 + 113
+  expect(g.regression.boxX).toBe(374);              // 10 + 316 + 48
+  expect(g.engine.zeroX).toBe(227);                 // 10 + 118 + 99
+  expect(g.regression.zeroX).toBe(591);             // 374 + 118 + 99
   // Engine normalizes to |6|: base fills the half-span exactly.
   const base = g.engine.bars.find((b) => b.key === 'base')!;
-  expect(base.w).toBeCloseTo(113, 5);
+  expect(base.w).toBeCloseTo(99, 5);
   expect(base.neg).toBe(false);
-  expect(base.x).toBe(219);
+  expect(base.x).toBe(227);
   expect(base.valueLabel).toBe('+6');
   // Regression normalizes to |-3.84|: the turnover coefficient fills ITS half-span.
   const tov = g.regression.bars.find((b) => b.key === 'turnoverCoef')!;
-  expect(tov.w).toBeCloseTo(113, 5);
+  expect(tov.w).toBeCloseTo(99, 5);
   expect(tov.neg).toBe(true);
   // Same |fraction of group max| would give a DIFFERENT width on a shared axis:
   // 0.7 (R2) is tiny next to 6 but sizeable next to 3.84.
   const r2 = g.regression.bars.find((b) => b.key === 'winsR2')!;
-  expect(r2.w).toBeCloseTo((0.7 / 3.84) * 113, 3);
+  expect(r2.w).toBeCloseTo((0.7 / 3.84) * 99, 3);
   expect(g.caption).toContain('never share an axis');
 });
 
@@ -127,8 +155,8 @@ test('weightsGeometry: engine turnover is presented as a penalty (negative)', ()
   const t = g.engine.bars.find((b) => b.key === 'turnover')!;
   expect(t.value).toBe(-1.5);                       // engine SUBTRACTS this weight
   expect(t.neg).toBe(true);
-  expect(t.w).toBeCloseTo((1.5 / 6) * 113, 5);
-  expect(t.x).toBeCloseTo(219 - (1.5 / 6) * 113, 5);
+  expect(t.w).toBeCloseTo((1.5 / 6) * 99, 5);
+  expect(t.x).toBeCloseTo(227 - (1.5 / 6) * 99, 5);
   expect(t.valueLabel).toBe('-1.5');
 });
 
@@ -156,11 +184,22 @@ test('winsPerDollarGeometry: sorted desc with name tiebreak, proportional widths
   const f: Frame = { w: 700, h: 300, padL: 10, padR: 10, padT: 10, padB: 10 };
   const bars = winsPerDollarGeometry(rows, names, f);
   expect(bars.map((b) => b.name)).toEqual(['Beta', 'Gamma', 'Alpha']); // tie broken by name
-  expect(bars[0].w).toBeCloseTo(530, 5);            // span = 700 - 20 - 150 (label gutter)
-  expect(bars[2].w).toBeCloseTo((0.05 / 0.09) * 530, 3);
-  expect(bars[0].x).toBe(160);                      // padL + label gutter
+  // span = 700 - 20 pads - 190 names - 238 details - 14 separation.
+  expect(bars[0].w).toBeCloseTo(238, 5);
+  expect(bars[2].w).toBeCloseTo((0.05 / 0.09) * 238, 3);
+  expect(bars[0].x).toBe(200);                      // padL + name column
   expect(bars[0].ratioLabel).toBe('0.090');
   expect(bars[0].detail).toBe('9 W · $100.0M committed');
+});
+
+test('winsPerDollarGeometry: reserves a fixed detail edge and wraps long team names', () => {
+  const f: Frame = { w: 720, h: 120, padL: 12, padR: 24, padT: 28, padB: 8 };
+  const bars = winsPerDollarGeometry(
+    [{ teamId: 'long', wins: 12, totalSpend: 123.4, ratio: 0.097 }],
+    new Map([['long', 'The Extremely Long Analytics Collective']]), f);
+  expect(bars[0].nameLines.length).toBeGreaterThan(1);
+  expect(bars[0].detailX).toBeLessThanOrEqual(f.w - f.padR);
+  expect(bars[0].x + bars[0].w).toBeLessThan(bars[0].detailX);
 });
 
 test('winsPerDollarGeometry: all-zero ratios yield zero-width bars, no NaN', () => {
@@ -204,4 +243,16 @@ test('winsPerDollarGeometry: null ratio (zero-spend) sorts last, labels "—", z
   expect(bars[1].w).toBe(0);
   expect(bars[2].ratioLabel).toBe('—');
   expect(bars[2].detail).toBe('0 W · $0.0M committed');
+});
+
+test('bestWorstRows: preserves null signings for long-name teams without inventing a player', () => {
+  const rows = bestWorstRows(
+    [{ teamId: 'long', bestSigning: null, worstSigning: null }],
+    new Map([['long', 'The Extremely Long Analytics Collective']]),
+    new Map(),
+  );
+  expect(rows).toEqual([{
+    teamId: 'long', team: 'The Extremely Long Analytics Collective',
+    best: null, worst: null,
+  }]);
 });
