@@ -1,0 +1,88 @@
+.page { min-width: 0; color: var(--ss-text); }
+.page h2 { font-size: 1.05rem; margin: 0; }
+.page h3 { font-size: 1rem; margin: 0; }
+.page p { line-height: 1.45; }
+.summary { display: flex; gap: 12px; align-items: center; }
+.summary > :first-child { flex: 1; position: static; min-width: 0; }
+.workspace { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; margin-top: 16px; }
+.workspace > * { min-width: 0; }
+.catalog { border: 1px solid var(--ss-border); border-radius: 12px; background: var(--ss-surface-inset); overflow: hidden; }
+.sectionHeader { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; padding: 16px 14px 8px; }
+.sectionHeader span, .muted, .tableHint, .compare p, .roster p, .composer p { color: var(--ss-text-muted); font-size: 13px; }
+.filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px; }
+.filters input { width: 180px; min-width: 0; flex-grow: 1; }
+.filters button, .filters input, .terms button { min-height: 36px; }
+.tableHint { margin: 4px 14px 12px; }
+.tableScroll { overflow: auto; max-height: min(57vh, 560px); border-block: 1px solid var(--ss-border); scrollbar-color: var(--ss-border) var(--ss-surface-inset); }
+.marketTable { white-space: nowrap; border-collapse: separate; border-spacing: 0; }
+.marketTable th { position: sticky; top: 0; z-index: 2; background: var(--ss-surface); }
+.marketTable th:first-child { left: 0; z-index: 4; text-align: left; }
+.marketTable td:first-child { position: sticky; left: 0; z-index: 1; background: var(--ss-surface-inset); border-right: 1px solid var(--ss-border); text-align: left; }
+.marketTable th button, .playerName button { background: transparent; border: 0; color: var(--ss-text); font: inherit; padding: 8px 3px; cursor: pointer; }
+.marketTable th button { color: var(--ss-text-muted); }
+.marketTable td { height: 48px; }
+.marketTable td.playerName { font-family: inherit; }
+.playerName button { text-align: left; font-weight: 650; }
+.playerName small { display: block; color: var(--ss-text-muted); font-size: 11px; }
+.marketTable tr[data-selected] td { background: var(--ss-surface-raised); }
+.marketTable tr[data-selected] td:first-child { box-shadow: inset 3px 0 var(--ss-gold); }
+.marketTable tr:hover td, .marketTable tr:focus-within td { background: var(--ss-surface); }
+.marketTable :focus-visible { outline-offset: -3px; }
+.detail { position: sticky; top: var(--ss-student-header-offset); padding: 12px; max-height: calc(100dvh - var(--ss-student-header-offset) - 16px); overflow: auto; }
+.detail > h2 { margin: 2px 0 12px; }
+.detail > p { font-size: 14px; color: var(--ss-text-muted); }
+.composer { display: grid; gap: 10px; }
+.composer p { margin: 0; }
+.composer :global(.neg) { color: var(--ss-danger-text); }
+.composer :global(.ok) { color: var(--ok); }
+.terms { display: flex; flex-wrap: wrap; gap: 6px; }
+.guarantee { font-family: var(--mono); font-size: 1.15rem; color: var(--ss-gold); }
+.payrollPreview { min-width: 0; }
+.payrollPreview > section { padding: 10px; }
+.payrollPreview header { flex-wrap: wrap; }
+.rosterDrawer { grid-column: 1 / -1; border: 1px solid var(--ss-border); border-radius: 10px; background: var(--ss-surface); }
+.rosterDrawer > summary { padding: 14px; color: var(--ss-gold); font-weight: 650; cursor: pointer; }
+.roster { padding: 14px; }
+.roster h2 { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; }
+.roster h2 span, .compare h2 span { font-size: 13px; color: var(--ss-text-muted); }
+.roster ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.roster li { padding: 10px; background: var(--ss-surface-inset); border: 1px solid var(--ss-border-subtle); border-radius: 8px; font-size: 13px; }
+.roster li div { margin-top: 6px; color: var(--ss-text-muted); }
+.limit { color: var(--ss-gold); font-size: 13px; margin: 8px 14px; }
+.limit:empty { margin: 0; }
+.compare { min-width: 0; padding: 14px; }
+.compare h2 { display: flex; gap: 12px; align-items: baseline; margin-bottom: 10px; }
+.compareScroll { overflow: auto; max-height: 400px; border: 1px solid var(--ss-border); border-radius: 8px; }
+.compareTable { width: 100%; border-spacing: 0; font-size: 13px; }
+.compareTable th, .compareTable td { padding: 9px; border-bottom: 1px solid var(--ss-border-subtle); text-align: left; min-width: 120px; }
+.compareTable td { font-family: var(--mono); }
+.compareTable thead th { position: sticky; top: 0; background: var(--ss-surface); z-index: 2; vertical-align: top; }
+.compareTable tbody th { color: var(--ss-text-muted); font-weight: 500; }
+.compareTable button { display: block; margin-top: 8px; }
+.empty { padding: 16px; color: var(--ss-text-muted); }
+.accepted { animation: accepted var(--ss-motion-receipt) ease-out; }
+@keyframes accepted { from { outline: 2px solid var(--ss-gold); background-color: var(--ss-surface-raised); } to { outline: 2px solid transparent; } }
+@media (min-width: 1400px) {
+  .workspace { grid-template-columns: minmax(0, 1fr) 320px 240px; }
+  .rosterDrawer { grid-column: 3; grid-row: 1; position: sticky; top: var(--ss-student-header-offset); max-height: calc(100dvh - var(--ss-student-header-offset) - 16px); overflow: auto; }
+  .rosterDrawer > summary { display: none; }
+  .rosterDrawer::details-content { content-visibility: visible; display: block; }
+  .rosterDrawer:not([open]) > .roster { display: block; }
+}
+@media (max-width: 1100px) {
+  .workspace { grid-template-columns: minmax(0, 1fr); }
+  .detail { position: static; max-height: none; }
+  .rosterDrawer { grid-column: auto; }
+}
+@media (max-width: 640px) {
+  .summary { align-items: stretch; flex-direction: column; }
+  .page { padding-inline: 10px; }
+  .filters { padding-inline: 10px; }
+}
+@media (prefers-reduced-motion: reduce) { .accepted { animation: none; } }
+
+.playerName > button:first-child { display: block; min-width: 150px; }
+.playerName > button:global(.chip) { padding: 3px 8px; font-size: 11px; border: 1px solid var(--ss-border); }
+.playerName > button:global(.on) { color: var(--ss-gold); border-color: var(--ss-gold); }
+
+.composer button[aria-disabled="true"] { opacity: .65; cursor: wait; }
