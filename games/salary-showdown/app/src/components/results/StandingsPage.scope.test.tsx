@@ -8,16 +8,16 @@ const mocks = vi.hoisted(() => ({
   presentation: {} as any,
 }));
 
-vi.mock('../contexts/GameContext', () => ({ useGame: () => mocks.game }));
-vi.mock('../contexts/AuthContext', () => ({
+vi.mock('../../contexts/GameContext', () => ({ useGame: () => mocks.game }));
+vi.mock('../../contexts/AuthContext', () => ({
   useAuth: () => ({ uid: mocks.uid, ready: true }),
 }));
-vi.mock('../contexts/RoundPresentationContext', () => ({
+vi.mock('../../contexts/RoundPresentationContext', () => ({
   useRoundPresentation: () => mocks.presentation,
 }));
-vi.mock('../components/ui/PhaseHeader', () => ({ PhaseHeader: () => null }));
+vi.mock('../ui/PhaseHeader', () => ({ PhaseHeader: () => null }));
 
-import StandingsPage from './StandingsPage';
+import StandingsPage from '../../pages/StandingsPage';
 
 const roundDoc = (name: string) => ({
   standings: [{

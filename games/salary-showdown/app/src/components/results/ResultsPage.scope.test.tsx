@@ -14,13 +14,13 @@ const mocks = vi.hoisted(() => ({
   listeners: [] as Listener[],
 }));
 
-vi.mock('../contexts/GameContext', () => ({ useGame: () => mocks.game }));
-vi.mock('../contexts/AuthContext', () => ({
+vi.mock('../../contexts/GameContext', () => ({ useGame: () => mocks.game }));
+vi.mock('../../contexts/AuthContext', () => ({
   useAuth: () => ({ uid: mocks.uid, ready: true }),
 }));
-vi.mock('../hooks/useRoundDoc', () => ({ useRoundDoc: () => mocks.rd }));
-vi.mock('../lib/firebase', () => ({ db: {} }));
-vi.mock('../components/ui/PhaseHeader', () => ({ PhaseHeader: () => null }));
+vi.mock('../../hooks/useRoundDoc', () => ({ useRoundDoc: () => mocks.rd }));
+vi.mock('../../lib/firebase', () => ({ db: {} }));
+vi.mock('../ui/PhaseHeader', () => ({ PhaseHeader: () => null }));
 vi.mock('firebase/firestore', () => ({
   doc: (_db: unknown, ...path: string[]) => path.join('/'),
   onSnapshot: (
@@ -43,7 +43,7 @@ vi.mock('firebase/firestore', () => ({
   },
 }));
 
-import ResultsPage from './ResultsPage';
+import ResultsPage from '../../pages/ResultsPage';
 
 const header = [
   'round', 'game_id', 'team', 'opponent', 'team_score', 'opp_score', 'win',
