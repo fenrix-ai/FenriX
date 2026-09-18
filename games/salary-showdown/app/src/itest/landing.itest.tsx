@@ -16,14 +16,20 @@ test('landing: code → team list with taken seats → claim → lobby', async (
   await user.type(screen.getByLabelText('display name'), 'Dana');
   await user.click(screen.getByRole('button', { name: 'Find game' }));
 
-  await waitFor(() => expect(screen.getByText('Alpha')).toBeInTheDocument(), { timeout: 15000 });
-  // Beta is fully staffed by bots — its three seats all read "taken".
-  const betaCard = screen.getByText('Beta').closest('.card')!;
-  expect(betaCard.textContent).toContain('GM · taken');
-  // Alpha is open — claim GM and land in the lobby via PhaseRouter.
-  const alphaCard = screen.getByText('Alpha').closest('.card')!;
-  await user.click(Array.from(alphaCard.querySelectorAll('button'))
-    .find((b) => b.textContent === 'GM')!);
+  await waitFor(() => expect(screen.getByRole('heading', { name: 'Choose your franchise' }))
+    .toBeInTheDocument(), { timeout: 15000 });
+  expect(screen.getByText('Step 2 of 3')).toBeInTheDocument();
+
+  // Beta is fully staffed by bots. Its role step explains why no seat can be claimed.
+  await user.click(screen.getByRole('button', { name: 'Choose Beta' }));
+  expect(screen.getByRole('button', { name: 'GM unavailable' })).toBeDisabled();
+  expect(screen.getByText('All seats are currently claimed.')).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Back to franchises' }));
+
+  // Alpha is open — choose it, claim GM, and land in the lobby via PhaseRouter.
+  await user.click(screen.getByRole('button', { name: 'Choose Alpha' }));
+  expect(screen.getByText('Step 3 of 3')).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Join as GM' }));
   await waitFor(() => expect(screen.getByRole('heading', { name: /Lobby/ })).toBeInTheDocument(),
     { timeout: 15000 });
 }, 90000);
@@ -39,29 +45,22 @@ test('seat-taken race shows the mapped copy and refreshes the picker', async () 
   await user.type(screen.getByLabelText('join code'), seeded.joinCode);
   await user.type(screen.getByLabelText('display name'), 'Racer');
   await user.click(screen.getByRole('button', { name: 'Find game' }));
-  await waitFor(() => expect(screen.getByText('Alpha')).toBeInTheDocument(), { timeout: 15000 });
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Choose Alpha' }))
+    .toBeInTheDocument(), { timeout: 15000 });
+  await user.click(screen.getByRole('button', { name: 'Choose Alpha' }));
 
   // Rival takes Alpha's GM seat AFTER our picker rendered it as open.
   const rival = await newClient('rival');
   await rival.call('joinGame', { joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'GM', displayName: 'Rival' });
 
-  const alphaCard = screen.getByText('Alpha').closest('.card')!;
-  await user.click(Array.from(alphaCard.querySelectorAll('button')).find((b) => b.textContent === 'GM')!);
+  await user.click(screen.getByRole('button', { name: 'Join as GM' }));
 
   await waitFor(() => expect(screen.getByRole('alert'))
     .toHaveTextContent('That seat was just taken — pick another role.'), { timeout: 15000 });
-  await waitFor(() => {
-    const refreshed = screen.getByText('Alpha').closest('.card')!;
-    expect(refreshed.textContent).toContain('GM · taken');
-  }, { timeout: 15000 });
-
-  // Taken chips stay clickable — the server arbitrates. A rival's seat rejects again.
-  const takenGm = Array.from(screen.getByText('Alpha').closest('.card')!.querySelectorAll('button'))
-    .find((b) => b.textContent === 'GM · taken')!;
-  expect(takenGm).not.toBeDisabled();
-  await user.click(takenGm);
-  await waitFor(() => expect(screen.getByRole('alert'))
-    .toHaveTextContent('That seat was just taken — pick another role.'), { timeout: 15000 });
+  await waitFor(() => expect(screen.getByRole('button', { name: 'GM unavailable' }))
+    .toBeDisabled(), { timeout: 15000 });
+  expect(screen.getByText('That role was claimed while you were choosing. Pick another seat.'))
+    .toBeInTheDocument();
 }, 120000);
 
 test('create a franchise (student-created teams): one tap creates the team and claims the seat', async () => {
@@ -82,6 +81,8 @@ test('create a franchise (student-created teams): one tap creates the team and c
   // Zero teams yet — the create card is the picker's only affordance.
   const nameBox = await screen.findByLabelText('new franchise name', {}, { timeout: 15000 });
   await user.type(nameBox, 'Cap Crunchers');
+  await user.click(screen.getByRole('button', { name: 'Continue with new franchise' }));
+  expect(screen.getByRole('heading', { name: 'Choose your role' })).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'Create as GM' }));
 
   // createTeam resolved before setGameId (HARD INVARIANT) → PhaseRouter lands us in the lobby.
