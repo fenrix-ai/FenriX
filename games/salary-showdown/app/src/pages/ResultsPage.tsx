@@ -1,195 +1,179 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type FocusEvent } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
-import { useGame } from '../contexts/GameContext';
-import { useRoundDoc } from '../hooks/useRoundDoc';
+import { AuctionResolution } from '../components/results/AuctionResolution';
+import { BoxscoreExplorer } from '../components/results/BoxscoreExplorer';
+import { ResultsHero } from '../components/results/ResultsHero';
 import { PhaseHeader } from '../components/ui/PhaseHeader';
 import { StandingsTable } from '../components/ui/StandingsTable';
-import { parseBoxCsv, teamRows } from '../lib/boxfeed';
-import { winsPerDollarThroughRound } from '../lib/contracts';
+import { useGame } from '../contexts/GameContext';
+import { parseBoxCsv } from '../lib/boxfeed';
+import { spendThroughRound } from '../lib/contracts';
+import { db } from '../lib/firebase';
 import { fmtM } from '../lib/money';
+import { useRoundDoc } from '../hooks/useRoundDoc';
 import type { AuctionDoc, PrivateAuctionDoc } from '../types/models';
-
-// ALL 23 feed columns (spec §11.14: own box lines show the complete feed schema);
-// the table is wide and lives inside an overflow-x scroll container.
-const BOX_COLS = ['round', 'game_id', 'team', 'opponent', 'team_score', 'opp_score',
-  'win', 'player_id', 'player_name', 'position', 'tier', 'mins', 'pts', 'fgm', 'fga',
-  'three_pm', 'three_pa', 'rebounds', 'assists', 'steals', 'blocks', 'turnovers',
-  'playstyle'] as const;
+import styles from './ResultsPage.module.css';
 
 export default function ResultsPage() {
   const { gameId, game, team, teams, membership, catalog } = useGame();
   const round = game?.round ?? 1;
   const rd = useRoundDoc(round);
   const [slide, setSlide] = useState(0);
-
-  // Star Auction results (spec §1): public facts for the round just played, plus
-  // the OWN-team-only would-have-won skip note. Both listeners follow the same
-  // §3a rule as every other listener: errors log via console.error, never silent.
-  // NOTE: `membership` (GameContext's own player-membership doc) carries teamId/
-  // role/displayName only — it has no gameId field. Every sibling listener (e.g.
-  // useRoundDoc) instead scopes off the top-level `gameId` from useGame(), so
-  // these two follow the same pattern rather than the brief's literal
-  // `membership.gameId` (adaptation noted in the report).
+  const [awardHovered, setAwardHovered] = useState(false);
+  const [awardFocused, setAwardFocused] = useState(false);
   const [auction, setAuction] = useState<AuctionDoc | null>(null);
   const [privAuction, setPrivAuction] = useState<PrivateAuctionDoc | null>(null);
+
   useEffect(() => {
     if (!gameId || !membership) { setAuction(null); return; }
     return onSnapshot(doc(db, 'games', gameId, 'auctions', String(round)),
-      (s) => setAuction(s.exists() ? (s.data() as AuctionDoc) : null),
-      (e) => console.error('[results] auction listener', e));
+      (snapshot) => setAuction(snapshot.exists() ? snapshot.data() as AuctionDoc : null),
+      (error) => console.error('[results] auction listener', error));
   }, [gameId, membership, round]);
+
   useEffect(() => {
     if (!gameId || !membership) { setPrivAuction(null); return; }
     return onSnapshot(doc(db, 'games', gameId, 'teams', membership.teamId, 'private', 'auction'),
-      (s) => setPrivAuction(s.exists() ? (s.data() as PrivateAuctionDoc) : null),
-      (e) => console.error('[results] private auction listener', e));
+      (snapshot) => setPrivAuction(snapshot.exists() ? snapshot.data() as PrivateAuctionDoc : null),
+      (error) => console.error('[results] private auction listener', error));
   }, [gameId, membership, round]);
 
+  useEffect(() => { setSlide(0); }, [round]);
   useEffect(() => {
-    const id = setInterval(() => setSlide((s) => (s + 1) % 3), 5000);
-    return () => clearInterval(id);
-  }, []);
+    if (awardHovered || awardFocused) return undefined;
+    const id = window.setInterval(() => setSlide((value) => (value + 1) % 3), 5000);
+    return () => window.clearInterval(id);
+  }, [awardFocused, awardHovered]);
 
-  const allRows = useMemo(() => (rd ? parseBoxCsv(rd.boxCsv) : []), [rd]);
-
-  const my = useMemo(() => {
+  const allRows = useMemo(() => rd ? parseBoxCsv(rd.boxCsv) : [], [rd]);
+  const summary = useMemo(() => {
     if (!rd || !membership || !team) return null;
     const games = rd.games
-      .filter((g) => g.home === membership.teamId || g.away === membership.teamId)
-      .map((g) => {
-        const home = g.home === membership.teamId;
-        return { opponent: teams.get(home ? g.away : g.home)?.name ?? '—',
-          us: home ? g.homeScore : g.awayScore, them: home ? g.awayScore : g.homeScore };
+      .filter((result) => result.home === membership.teamId || result.away === membership.teamId)
+      .map((result) => {
+        const home = result.home === membership.teamId;
+        return {
+          gameId: result.game_id,
+          opponent: teams.get(home ? result.away : result.home)?.name ?? '—',
+          us: home ? result.homeScore : result.awayScore,
+          them: home ? result.awayScore : result.homeScore,
+        };
       });
-    const wins = games.filter((g) => g.us > g.them);
-    const losses = games.filter((g) => g.us < g.them);
-    const best = wins.sort((a, b) => (b.us - b.them) - (a.us - a.them))[0] ?? null;
-    const worst = losses.sort((a, b) => (b.them - b.us) - (a.them - a.us))[0] ?? null;
-    return { record: `${wins.length}–${losses.length}`, best, worst,
-      box: teamRows(allRows, team.name) };
-  }, [rd, membership, team, teams, allRows]);
+    const wins = games.filter((result) => result.us > result.them);
+    const losses = games.filter((result) => result.us < result.them);
+    const best = [...wins].sort((a, b) => (b.us - b.them) - (a.us - a.them))[0] ?? null;
+    const worst = [...losses].sort((a, b) => (b.them - b.us) - (a.them - a.us))[0] ?? null;
+    const duplicateName = [...teams.values()].filter((candidate) => candidate.name === team.name).length > 1;
+    const gameIds = new Set(games.map((result) => result.gameId));
+    const box = allRows.filter((row) => gameIds.has(row.game_id)
+      && (duplicateName || row.team === team.name));
+    return { wins: wins.length, losses: losses.length, best, worst, box, duplicateName };
+  }, [allRows, membership, rd, team, teams]);
 
-  const wpd = useMemo(() => winsPerDollarThroughRound(teams, round), [teams, round]);
+  const wpd = useMemo(() => new Map((rd?.standings ?? []).map((row) => {
+    const spend = spendThroughRound(teams.get(row.teamId)?.spendLog ?? [], round);
+    return [row.teamId, spend > 0 ? row.wins / spend : null] as const;
+  })), [rd?.standings, round, teams]);
 
-  if (!game || !team || !rd || !my || !membership) return null;
+  if (!game || !team || !rd || !summary || !membership) return null;
 
-  const download = () => {
-    // Verbatim server string — never re-serialize; students get byte-identical data.
-    const url = URL.createObjectURL(new Blob([rd.boxCsv], { type: 'text/csv' }));
-    const a = Object.assign(document.createElement('a'),
-      { href: url, download: `boxscores_round_${round}.csv` });
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const awardTeam = (tid: string) => teams.get(tid)?.name ?? '—';
+  const standing = rd.standings.find((row) => row.teamId === membership.teamId);
+  const awardTeam = (teamId: string) => teams.get(teamId)?.name ?? '—';
   const bargain = rd.awards.bargain;
   const bargainContract = bargain
-    ? teams.get(bargain.teamId)?.roster.find((c) => c.pid === bargain.pid)
-      ?? teams.get(bargain.teamId)?.spendLog.slice().reverse().find((c) => c.pid === bargain.pid)
+    ? teams.get(bargain.teamId)?.roster.find((contract) => contract.pid === bargain.pid)
+      ?? teams.get(bargain.teamId)?.spendLog.slice().reverse()
+        .find((contract) => contract.pid === bargain.pid)
     : null;
+  const bargainGameIds = bargain
+    ? new Set(rd.games
+      .filter((result) => result.home === bargain.teamId || result.away === bargain.teamId)
+      .map((result) => result.game_id))
+    : new Set<string>();
   const bargainRows = bargain
-    ? teamRows(allRows, awardTeam(bargain.teamId))
-        .filter((r) => r.player_id === bargain.pid)
+    ? allRows.filter((row) => bargainGameIds.has(row.game_id)
+      && row.team === awardTeam(bargain.teamId)
+      && row.player_id === bargain.pid)
     : [];
   const bargainLine = bargainRows.length
-    ? `${(bargainRows.reduce((s, r) => s + r.pts, 0) / bargainRows.length).toFixed(1)} pts · ${
-       (bargainRows.reduce((s, r) => s + r.rebounds, 0) / bargainRows.length).toFixed(1)} reb · ${
-       (bargainRows.reduce((s, r) => s + r.steals + r.blocks, 0) / bargainRows.length).toFixed(1)} stocks per game`
+    ? `${(bargainRows.reduce((sum, row) => sum + row.pts, 0) / bargainRows.length).toFixed(1)} pts · ${
+      (bargainRows.reduce((sum, row) => sum + row.rebounds, 0) / bargainRows.length).toFixed(1)} reb · ${
+      (bargainRows.reduce((sum, row) => sum + row.steals + row.blocks, 0) / bargainRows.length).toFixed(1)} stocks per game`
     : '';
-
   const slides = [
-    <div key="mvp"><strong>Round MVP</strong> — {catalog.get(rd.awards.roundMvp.pid)?.name}{' '}
-      ({awardTeam(rd.awards.roundMvp.teamId)}) · <span className="mono">{rd.awards.roundMvp.line}</span></div>,
-    <div key="top"><strong>Top Scorer</strong> — {catalog.get(rd.awards.topScorer.pid)?.name}{' '}
-      ({awardTeam(rd.awards.topScorer.teamId)}) · <span className="mono">{rd.awards.topScorer.pts} pts</span></div>,
-    <div key="bargain"><strong>Bargain of the Round</strong> — {bargain
-      ? <>{catalog.get(bargain.pid)?.name} ({awardTeam(bargain.teamId)}) ·{' '}
-          {/* Raw line + salary ONLY — perDollar is on the wire but is never rendered. */}
-          <span className="mono">{bargainLine}{bargainContract ? ` · ${fmtM(bargainContract.rate)}/rd` : ''}</span></>
-      : '—'}</div>,
+    <div key="mvp"><strong>Round MVP</strong><span>{catalog.get(rd.awards.roundMvp.pid)?.name}{' '}
+      ({awardTeam(rd.awards.roundMvp.teamId)})</span>
+      <span className="mono">{rd.awards.roundMvp.line}</span></div>,
+    <div key="top"><strong>Top Scorer</strong><span>{catalog.get(rd.awards.topScorer.pid)?.name}{' '}
+      ({awardTeam(rd.awards.topScorer.teamId)})</span>
+      <span className="mono">{rd.awards.topScorer.pts} pts</span></div>,
+    <div key="bargain"><strong>Bargain of the Round</strong><span>{bargain
+      ? `${catalog.get(bargain.pid)?.name} (${awardTeam(bargain.teamId)})`
+      : '—'}</span>
+      {bargain ? <span className="mono">{bargainLine}{bargainContract
+        ? ` · ${fmtM(bargainContract.rate)}/rd`
+        : ''}</span> : null}</div>,
   ];
+
+  const leaveAwards = (event: FocusEvent<HTMLDivElement>) => {
+    if (!event.currentTarget.contains(event.relatedTarget)) setAwardFocused(false);
+  };
 
   return (
     <main className="page">
-      <PhaseHeader title="Results" round={round} timerEndsAt={game.timerEndsAt} timerPausedMs={game.timerPausedMs} />
-      <h2 className="mono" style={{ fontSize: 34, margin: '4px 0' }}>{my.record}</h2>
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        {my.best && <div className="card" style={{ flex: 1, minWidth: 180 }}>
-          <div className="dim">BEST WIN</div>
-          <span className="ok mono">{my.best.us}–{my.best.them}</span> vs {my.best.opponent}</div>}
-        {my.worst && <div className="card" style={{ flex: 1, minWidth: 180 }}>
-          <div className="dim">WORST LOSS</div>
-          <span className="neg mono">{my.worst.us}–{my.worst.them}</span> vs {my.worst.opponent}</div>}
+      <PhaseHeader title="Results" round={round} timerEndsAt={game.timerEndsAt}
+        timerPausedMs={game.timerPausedMs} />
+
+      <div className={styles.overviewGrid}>
+        <div className={styles.summaryColumn}>
+          <ResultsHero wins={summary.wins} losses={summary.losses}
+            rank={standing?.rank ?? 0} previousRank={standing?.previousRank ?? null} />
+
+          <div className={styles.highlights} aria-label="Round highlights">
+            <article className={styles.highlight}>
+              <span>Best win</span>
+              {summary.best ? <strong><b>{summary.best.us}–{summary.best.them}</b> vs {summary.best.opponent}</strong>
+                : <strong>No wins this round</strong>}
+            </article>
+            <article className={styles.highlight}>
+              <span>Worst loss</span>
+              {summary.worst ? <strong><b>{summary.worst.us}–{summary.worst.them}</b> vs {summary.worst.opponent}</strong>
+                : <strong>No losses this round</strong>}
+            </article>
+          </div>
+
+          <section className={styles.awards} data-testid="awards" aria-label="Round awards"
+            onMouseEnter={() => setAwardHovered(true)} onMouseLeave={() => setAwardHovered(false)}
+            onFocusCapture={() => setAwardFocused(true)} onBlurCapture={leaveAwards}>
+            <button className="chip" type="button" aria-label="previous award"
+              onClick={() => setSlide((value) => (value + 2) % 3)}>‹</button>
+            <div className={styles.awardSlide}>{slides[slide]}</div>
+            <button className="chip" type="button" aria-label="next award"
+              onClick={() => setSlide((value) => (value + 1) % 3)}>›</button>
+          </section>
+        </div>
+
+        <section className={styles.standingsPanel} aria-labelledby="snapshot-title">
+          <div className={styles.panelHeading}>
+            <div>
+              <h2 id="snapshot-title">League snapshot</h2>
+              <span>Through round {round}</span>
+            </div>
+          </div>
+          <div className={styles.standingsScroll} tabIndex={0} role="region"
+            aria-label="League standings, scrollable">
+            <StandingsTable rows={rd.standings} highlightTeamId={membership.teamId}
+              wpd={wpd} round={round} showMovement />
+          </div>
+        </section>
       </div>
 
-      <div className="card" style={{ margin: '12px 0' }} data-testid="awards">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button className="chip" aria-label="previous award"
-            onClick={() => setSlide((s) => (s + 2) % 3)}>‹</button>
-          <div style={{ flex: 1 }}>{slides[slide]}</div>
-          <button className="chip" aria-label="next award"
-            onClick={() => setSlide((s) => (s + 1) % 3)}>›</button>
-        </div>
-      </div>
-
-      {auction?.results && (
-        <div className="card" style={{ margin: '12px 0' }} data-testid="auction-results">
-          <strong>{`Star Auction · Round ${round}`}</strong>
-          <table className="table" style={{ marginTop: 6 }}>
-            <thead><tr><th className="name">Star</th><th>Pos</th><th>Signed by</th><th>Rate</th><th>Years</th></tr></thead>
-            <tbody>
-              {auction.stars.map((pid) => {
-                const r = auction.results!.find((x) => x.pid === pid);
-                const won = r?.teamId != null;
-                return (
-                  <tr key={pid}>
-                    <td className="name">{catalog.get(pid)?.name ?? pid}</td>
-                    <td>{catalog.get(pid)?.position ?? '—'}</td>
-                    <td>{won ? teams.get(r!.teamId!)?.name ?? '—' : 'Unsold'}</td>
-                    <td className="mono">{won ? `${fmtM(r!.rate!)}/rd` : '—'}</td>
-                    <td className="mono">{won ? `${r!.years} yr` : '—'}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          {privAuction?.skippedRound === round && (privAuction.skipped ?? []).length > 0 && (
-            <p className="muted" data-testid="auction-skip-note" style={{ marginBottom: 0 }}>
-              {(privAuction.skipped ?? []).map((s) =>
-                `Your winning bid on ${catalog.get(s.pid)?.name ?? s.pid} couldn't be awarded (${
-                  s.reason === 'cap' ? 'salary cap' : 'roster full'}).`).join(' ')}
-            </p>
-          )}
-        </div>
-      )}
-
-      <details open data-testid="box-lines">
-        <summary className="muted" style={{ cursor: 'pointer' }}>Your box lines</summary>
-        <div style={{ overflowX: 'auto' }}>
-          <table className="table">
-            <thead><tr>{BOX_COLS.map((c) => <th key={c} className={c === 'player_name' ? 'name' : ''}>{c}</th>)}</tr></thead>
-            <tbody>
-              {my.box.map((r, i) => (
-                <tr key={`${r.player_id}-${i}`}>
-                  {BOX_COLS.map((c) => (
-                    <td key={c} className={c === 'player_name' ? 'name' : ''}>
-                      {String(r[c as keyof typeof r])}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </details>
-
-      <button className="btn gold" onClick={download} style={{ margin: '10px 0' }}>
-        Download boxscores_round_{round}.csv — whole league, every line
-      </button>
-
-      <StandingsTable rows={rd.standings} highlightTeamId={membership.teamId} wpd={wpd} />
+      <BoxscoreExplorer rows={summary.box} round={round} csv={rd.boxCsv}
+        ambiguityNote={summary.duplicateName
+          ? 'Two franchises share this name. Full matchup lines are shown so no row is assigned to the wrong team.'
+          : null} />
+      <AuctionResolution auction={auction} privateAuction={privAuction} round={round}
+        catalog={catalog} teams={teams} />
     </main>
   );
 }
