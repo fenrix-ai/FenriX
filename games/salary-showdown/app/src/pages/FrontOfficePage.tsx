@@ -104,6 +104,10 @@ export default function FrontOfficePage() {
   const { receipt, run: runWithReceipt } = useActionReceipt(actionScope);
   const scopeRef = useRef(actionScope);
   const scopeGeneration = useRef(0);
+  const pendingAction = useRef<{
+    scope: string;
+    generation: number;
+  } | null>(null);
   if (scopeRef.current !== actionScope) {
     scopeRef.current = actionScope;
     scopeGeneration.current += 1;
@@ -118,6 +122,7 @@ export default function FrontOfficePage() {
     setServerDecisions({});
     setCutTarget(null);
     setBusy(false);
+    pendingAction.current = null;
 
     return () => {
       if (scopeGeneration.current === effectGeneration) {
@@ -169,6 +174,16 @@ export default function FrontOfficePage() {
   ) => {
     const operationScope = actionScope;
     const operationGeneration = scopeGeneration.current;
+    if (
+      pendingAction.current?.scope === operationScope
+      && pendingAction.current.generation === operationGeneration
+    ) return;
+
+    const actionToken = {
+      scope: operationScope,
+      generation: operationGeneration,
+    };
+    pendingAction.current = actionToken;
     const stillCurrent = () => (
       scopeRef.current === operationScope
       && scopeGeneration.current === operationGeneration
@@ -181,7 +196,10 @@ export default function FrontOfficePage() {
     } catch (error) {
       if (stillCurrent()) setErr(error);
     } finally {
-      if (stillCurrent()) setBusy(false);
+      if (pendingAction.current === actionToken) {
+        pendingAction.current = null;
+        if (stillCurrent()) setBusy(false);
+      }
     }
   };
 
@@ -380,8 +398,9 @@ export default function FrontOfficePage() {
                   <div className={styles.savedDecision}>
                     <p>Re-signed for {fmtM(savedRenewal.rate)}/rd.</p>
                     <p>
-                      {savedRenewal.years} round{savedRenewal.years === 1 ? '' : 's'} · Rounds{' '}
-                      {savedRenewal.startRound}–{savedRenewal.startRound + savedRenewal.years - 1}.
+                      {savedRenewal.years === 1
+                        ? `1 round · Round ${savedRenewal.startRound}.`
+                        : `${savedRenewal.years} rounds · Rounds ${savedRenewal.startRound}–${savedRenewal.startRound + savedRenewal.years - 1}.`}
                     </p>
                   </div>
                 ) : selectedWalked ? (

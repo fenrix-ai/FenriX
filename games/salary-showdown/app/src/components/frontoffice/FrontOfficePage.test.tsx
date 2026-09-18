@@ -265,3 +265,84 @@ test('canceling a cut returns focus to the exact review trigger', async () => {
 
   expect(trigger).toHaveFocus();
 });
+
+test('a renewed player stays in the ledger when the cut snapshot arrives before its acknowledgment', async () => {
+  let resolveCut!: (value: unknown) => void;
+  mocks.call.mockImplementationOnce(() => new Promise((resolve) => {
+    resolveCut = resolve;
+  }));
+  const renewed = { ...expired, startRound: 2, years: 3, rate: 9.2 };
+  mocks.context = {
+    ...mocks.context,
+    team: {
+      ...(mocks.context.team as TeamDoc),
+      roster: [renewed, active],
+      spendLog: [expired, renewed, active],
+    },
+  };
+  const user = userEvent.setup();
+  const { rerender } = render(<FrontOfficePage />);
+
+  await user.click(screen.getByRole('button', { name: 'Review cut for Alex Expired' }));
+  await user.click(screen.getByRole('button', { name: 'Confirm cut' }));
+  mocks.context = {
+    ...mocks.context,
+    team: {
+      ...(mocks.context.team as TeamDoc),
+      roster: [active],
+      deadMoney: [{ pid: 1, rate: 9.2, startRound: 2, endRound: 4 }],
+    },
+  };
+  rerender(<FrontOfficePage />);
+  await act(async () => resolveCut({}));
+
+  expect(screen.getByRole('button', { name: 'Review Alex Expired' })).toHaveTextContent(
+    'Re-signed, then cut',
+  );
+});
+
+test('same-frame action clicks are single-flight and a rejection permits retry', async () => {
+  let rejectFirst!: (reason: unknown) => void;
+  mocks.call
+    .mockImplementationOnce(() => new Promise((_resolve, reject) => {
+      rejectFirst = reject;
+    }))
+    .mockResolvedValueOnce({});
+  render(<FrontOfficePage />);
+  const button = screen.getByRole('button', { name: 'Re-sign Alex Expired' });
+
+  act(() => {
+    button.click();
+    button.click();
+  });
+  expect(mocks.call).toHaveBeenCalledTimes(1);
+
+  await act(async () => rejectFirst(new Error('SIGN_REJECTED')));
+  expect(button).toBeEnabled();
+  button.click();
+  await waitFor(() => expect(mocks.call).toHaveBeenCalledTimes(2));
+});
+
+test('a rejected cut keeps focus and error inside the modal and permits retry', async () => {
+  let rejectFirst!: (reason: unknown) => void;
+  mocks.call
+    .mockImplementationOnce(() => new Promise((_resolve, reject) => {
+      rejectFirst = reject;
+    }))
+    .mockResolvedValueOnce({});
+  const user = userEvent.setup();
+  render(<FrontOfficePage />);
+
+  await user.click(screen.getByRole('button', { name: 'Review cut for Casey Active' }));
+  await user.click(screen.getByRole('button', { name: 'Confirm cut' }));
+  await act(async () => rejectFirst(new Error('CUT_REJECTED')));
+
+  const dialog = screen.getByRole('dialog', { name: 'Cut Casey Active?' });
+  expect(within(dialog).getByRole('alert')).toBeInTheDocument();
+  expect(dialog).toContainElement(document.activeElement as HTMLElement);
+  await user.tab({ shift: true });
+  expect(dialog).toContainElement(document.activeElement as HTMLElement);
+
+  await user.click(within(dialog).getByRole('button', { name: 'Confirm cut' }));
+  await waitFor(() => expect(mocks.call).toHaveBeenCalledTimes(2));
+});

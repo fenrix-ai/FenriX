@@ -52,11 +52,7 @@ export function CutPreview({
   );
 
   useEffect(() => {
-    const initialFocus = canAct && !busy
-      ? confirmRef.current
-      : !busy
-        ? keepRef.current
-        : dialogRef.current;
+    const initialFocus = !busy ? keepRef.current : dialogRef.current;
     initialFocus?.focus();
 
     return () => {
@@ -70,7 +66,11 @@ export function CutPreview({
   }, []);
 
   useEffect(() => {
-    if (busy) dialogRef.current?.focus();
+    if (busy) {
+      dialogRef.current?.focus();
+    } else if (document.activeElement === dialogRef.current) {
+      keepRef.current?.focus();
+    }
   }, [busy]);
 
   const keepFocusInside = (event: KeyboardEvent<HTMLElement>) => {
@@ -93,10 +93,18 @@ export function CutPreview({
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
     const active = document.activeElement;
-    if (event.shiftKey && (active === first || !dialogRef.current?.contains(active))) {
+    if (event.shiftKey && (
+      active === first
+      || active === dialogRef.current
+      || !dialogRef.current?.contains(active)
+    )) {
       event.preventDefault();
       last.focus();
-    } else if (!event.shiftKey && (active === last || !dialogRef.current?.contains(active))) {
+    } else if (!event.shiftKey && (
+      active === last
+      || active === dialogRef.current
+      || !dialogRef.current?.contains(active)
+    )) {
       event.preventDefault();
       first.focus();
     }

@@ -137,6 +137,7 @@ test('moves focus inside, traps both tab directions, and closes with Escape', as
   const confirm = screen.getByRole('button', { name: 'Confirm cut' });
   const keep = screen.getByRole('button', { name: 'Keep player' });
   expect(dialog).toContainElement(document.activeElement as HTMLElement);
+  expect(keep).toHaveFocus();
 
   keep.focus();
   await user.tab();

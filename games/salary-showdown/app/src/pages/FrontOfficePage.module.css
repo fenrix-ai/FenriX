@@ -250,9 +250,15 @@
 .capBlocked,
 .walkDecision p { margin: 0; font-size: 0.8rem; font-weight: 800; }
 .capOk,
-.savedDecision { color: var(--ss-payroll-cash); }
-.savedDecision { display: grid; gap: 0.2rem; }
-.savedDecision p { margin: 0; font-size: 0.8rem; font-weight: 800; }
+.savedDecision {
+  color: var(--ss-payroll-cash);
+  display: grid;
+  font-size: 0.8rem;
+  font-weight: 800;
+  gap: 0.2rem;
+  margin: 0;
+}
+.savedDecision p { margin: 0; }
 .savedDecision p:last-child { color: var(--ss-text-muted); font-size: 0.72rem; }
 .capBlocked { color: var(--ss-danger-text); }
 .walkDecision p { color: var(--ss-gold); }
