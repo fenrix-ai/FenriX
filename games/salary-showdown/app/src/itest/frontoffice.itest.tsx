@@ -14,7 +14,7 @@ import App from '../App';
 // hardship fill the way it used to.
 const EXPIRING_POSITIONS = ['G', 'W', 'B'];
 
-async function signOneRoundDeals(seeded: Seeded, positions: string[]) {
+async function signDeals(seeded: Seeded, positions: string[], years = 1) {
   const market = (await adminDb().doc(`games/${seeded.gameId}/market/1`).get()).data()!;
   const cat = await adminDb().collection(`games/${seeded.gameId}/catalog`).get();
   const byPid = Object.fromEntries(cat.docs.map((d) => [Number(d.id), d.data()]));
@@ -31,7 +31,7 @@ async function signOneRoundDeals(seeded: Seeded, positions: string[]) {
     const pick = pool[pos].find((x) => !used.has(x.pid))!;
     used.add(pick.pid);
     await httpsCallable(functions, 'signPlayer')(
-      { gameId: seeded.gameId, pid: pick.pid, years: 1 });
+      { gameId: seeded.gameId, pid: pick.pid, years });
     pids.push(pick.pid);
   }
   return pids;
@@ -45,7 +45,7 @@ test('front office: expiring re-sign, then a mid-contract cut with dead money', 
   });
   // Sign as Alpha's GM (same uid the app will render as) BEFORE the phase closes, so
   // these are genuine one-round contracts that expire into round 2's front office.
-  const signed = await signOneRoundDeals(seeded, EXPIRING_POSITIONS);
+  const signed = await signDeals(seeded, EXPIRING_POSITIONS);
   const signedPlayers = await Promise.all(signed.map(async (pid) => ({
     pid,
     name: (await adminDb().doc(`games/${seeded.gameId}/catalog/${pid}`).get()).data()!.name as string,
@@ -153,4 +153,47 @@ test("we're done: GM sees the button, click stamps {doneRound, donePhase}", asyn
     `games/${seeded.gameId}/teams/${seeded.teamIds[0]}`).get()).data()!;
   expect(t.doneRound).toBe(2);
   expect(t.donePhase).toBe('FRONT_OFFICE');
+}, 120000);
+
+test('cut dialog: live rejection keeps keyboard focus and feedback inside', async () => {
+  const seeded = await seedToPhase({ to: 'R1:FREE_AGENCY' });
+  await signInAnonymously(auth);
+  await httpsCallable(functions, 'joinGame')({
+    joinCode: seeded.joinCode,
+    teamId: seeded.teamIds[0],
+    role: 'GM',
+    displayName: 'IT Keyboard GM',
+  });
+  const [pid] = await signDeals(seeded, ['G'], 2);
+  const playerName = (await adminDb().doc(
+    `games/${seeded.gameId}/catalog/${pid}`).get()).data()!.name as string;
+  await driveTo(seeded, 'R2:FRONT_OFFICE');
+
+  localStorage.setItem('ss.gameId', seeded.gameId);
+  const user = userEvent.setup();
+  render(<MemoryRouter initialEntries={['/game/office']}><App /></MemoryRouter>);
+
+  const trigger = await screen.findByRole('button', {
+    name: `Review cut for ${playerName}`,
+  }, { timeout: 20000 });
+  await user.click(trigger);
+  const dialog = screen.getByRole('dialog', { name: `Cut ${playerName}?` });
+  expect(within(dialog).getByRole('button', { name: 'Keep player' })).toHaveFocus();
+
+  const teamRef = adminDb().doc(`games/${seeded.gameId}/teams/${seeded.teamIds[0]}`);
+  const snapshot = (await teamRef.get()).data()!;
+  await teamRef.update({
+    roster: (snapshot.roster as Array<{ pid: number }>).filter((contract) => contract.pid !== pid),
+  });
+  await waitFor(() => expect(screen.queryByRole('button', {
+    name: `Review cut for ${playerName}`,
+  })).toBeNull(), { timeout: 15000 });
+
+  await user.click(within(dialog).getByRole('button', { name: 'Confirm cut' }));
+  await waitFor(() => expect(within(dialog).getByRole('alert')).toBeInTheDocument(), {
+    timeout: 15000,
+  });
+  expect(dialog).toContainElement(document.activeElement as HTMLElement);
+  await user.tab({ shift: true });
+  expect(dialog).toContainElement(document.activeElement as HTMLElement);
 }, 120000);
