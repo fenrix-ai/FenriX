@@ -7,6 +7,18 @@ anything. It is the authoritative summary of state, open work, hard rules, and e
 gotchas. Everything here was verified at the time of writing.
 
 
+## Production deployment — 2026-09-18
+
+This section supersedes the older undeployed/preview status below. The user explicitly requested “deploy it for real” after reviewing the preview and the required additive function deployment.
+
+- Live: https://salary-showdown.web.app/ (professor panel: https://salary-showdown.web.app/professor).
+- Deployed from clean integration commit `9d1ff3e62dc5764f2434648844afe05efbfaa20e`, branch `codex/salary-showdown-ui-integration`, in `/private/tmp/salary-showdown-ui-worktrees/I01`. Fresh production build PASS; ignored production web configuration only. Main checkout untouched.
+- Additive `setTeamIdentity` callable successfully created in `salary-showdown`, us-west1, Node 20, before Hosting deployment. Unauthenticated callable smoke check correctly returned HTTP 401 / UNAUTHENTICATED. No other functions or Firestore rules deployed; no production game fixtures created or modified.
+- Hosting release `1789769610242000`, version `f8171fbd999bbfc1`, released at `2026-09-18T22:13:30.242Z`. Live HTML HTTP 200; JS `index-C8qFzVo4.js` and CSS `index-CYTQUwbi.css` SHA-256 match the freshly built local assets. Browser visibly renders the new three-step join page; captured warning/error console is empty.
+- Rollback target: previous live version `7d5ce13d20e4ed83`, release `1789597570840000` (2026-09-16T22:26:10.840Z), recorded before deployment. Restore through Firebase Hosting release history if needed; the backward-compatible additive callable can remain.
+- Evidence outside git: `/private/tmp/salary-showdown-ui-worktrees/evidence/production-release-build.log`, `production-identity-deploy.log`, `production-hosting-deploy.json`, `production-channels-before.json`, `production-channels-after.json`.
+- Automated integration evidence remains 213 frontend unit, 53 browser-SDK integration, and 214 backend tests passing, plus types/build/UI audit. Full saved visual/classroom matrix, actual zoom/reduced-motion and representative 21-team/three-role/reconnect review remain pending; this deployment does not mark those checks passed. Local Node 20 runtime parity remains unverified. Firebase warned Node 20 is deprecated and will be decommissioned 2026-10-30; runtime/dependency upgrades were not included in this release.
+
 ## UI integration candidate — 2026-09-17, local evidence only
 
 This section supersedes the older repository/test/deployment snapshot below for the laptop UI candidate. No production status was rechecked and no deployment was performed. Do not use an old individual worker build as the release artifact.
