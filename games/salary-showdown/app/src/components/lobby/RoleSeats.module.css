@@ -1,0 +1,114 @@
+.section {
+  display: grid;
+  gap: 14px;
+}
+
+.heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.heading span {
+  color: var(--ss-gold);
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.heading h3,
+.heading p {
+  margin: 0;
+}
+
+.heading h3 {
+  margin-top: 4px;
+  font-size: 1.05rem;
+}
+
+.heading p {
+  max-width: 270px;
+  color: var(--ss-text-muted);
+  font-size: 0.78rem;
+  text-align: right;
+}
+
+.seats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.seat {
+  position: relative;
+  min-width: 0;
+  padding: 12px;
+  overflow: hidden;
+  border: 1px solid var(--ss-border-subtle);
+  border-radius: var(--ss-radius-md);
+  background: rgb(9 21 36 / 72%);
+}
+
+.role {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--ss-text-dim);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.occupant,
+.open {
+  display: grid;
+  gap: 4px;
+}
+
+.occupant strong,
+.open strong {
+  overflow: hidden;
+  font-size: 0.88rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.occupant span,
+.open span {
+  font-size: 0.7rem;
+}
+
+.own { color: var(--ss-gold); }
+.claimed { color: var(--ss-payroll-cash); }
+.open { color: var(--ss-text-muted); }
+.open span { color: var(--ss-text-dim); }
+
+.justJoined {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--ss-payroll-cash);
+  color: #07150d;
+  font-weight: 800;
+}
+
+@media (max-width: 700px) {
+  .heading { align-items: flex-start; flex-direction: column; }
+  .heading p { text-align: left; }
+  .seats { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .arrival { animation: teammate-arrival var(--ss-motion-receipt) ease-out; }
+}
+
+@keyframes teammate-arrival {
+  from { border-color: var(--ss-gold); opacity: 0.35; transform: translateY(7px); }
+  to { border-color: var(--ss-border-subtle); opacity: 1; transform: translateY(0); }
+}

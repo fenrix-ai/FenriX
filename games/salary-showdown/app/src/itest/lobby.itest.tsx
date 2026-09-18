@@ -2,12 +2,12 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
-import { adminDb, seedToPhase } from './harness';
+import { adminDb, newClient, seedToPhase } from './harness';
 import { auth, functions } from '../lib/firebase';
 import { signInAnonymously } from 'firebase/auth';
 import App from '../App';
 
-test('lobby shows live role claims and own-team highlight', async () => {
+test('lobby shows own seats, fallback coverage, teammate arrival, and identity snapshots', async () => {
   const seeded = await seedToPhase({ to: 'LOBBY' });
   await signInAnonymously(auth); // explicit: AuthProvider only signs in once rendered (Task 6 finding)
   await httpsCallable(functions, 'joinGame')({
@@ -16,18 +16,40 @@ test('lobby shows live role claims and own-team highlight', async () => {
   localStorage.setItem('ss.gameId', seeded.gameId);
   render(<MemoryRouter initialEntries={['/lobby']}><App /></MemoryRouter>);
   await waitFor(() => {
-    expect(screen.getByText(/Coach: Casey/)).toBeInTheDocument();  // own claim, live
-    expect(screen.getByText(/GM: GM1/)).toBeInTheDocument();       // bot on Beta
-    expect(screen.getAllByText(/GM: open/).length).toBe(1);        // Alpha's GM still open
+    expect(screen.getByText('Casey')).toBeInTheDocument();
+    expect(screen.getByText('Your seat')).toBeInTheDocument();
+    expect(screen.getAllByText('Open seat')).toHaveLength(2);
+    expect(screen.getByText('Any teammate can cover an open role until it is claimed.'))
+      .toBeInTheDocument();
+  }, { timeout: 15000 });
+
+  // Old games have no identity field. A deterministic fallback still renders editable choices.
+  expect(screen.getAllByRole('radio').filter((radio) => (radio as HTMLInputElement).checked))
+    .toHaveLength(2);
+
+  // The shared team-seat snapshot adds a teammate after the initial snapshot, and their
+  // lobby-only identity write updates this clean editor without a reload.
+  const teammate = await newClient('lobby-teammate');
+  await teammate.call('joinGame', {
+    joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'Scout', displayName: 'Taylor',
+  });
+  await waitFor(() => expect(screen.getByText('Just joined')).toBeInTheDocument(), { timeout: 15000 });
+  expect(screen.getByText('Taylor')).toBeInTheDocument();
+  await teammate.call('setTeamIdentity', {
+    gameId: seeded.gameId, identity: { accent: 'teal', jersey: 'chevron' },
+  });
+  await waitFor(() => {
+    expect(screen.getByRole('radio', { name: 'Teal' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Chevron' })).toBeChecked();
   }, { timeout: 15000 });
 }, 90000);
 
 test('lobby rename (playtest-2): a member names their own franchise, live for the room', async () => {
   localStorage.removeItem('ss.gameId'); // isolation from the prior test's claim
-  // Names chosen to discriminate numeric-aware collation from plain lexicographic:
-  // teamIds[0] = 'Franchise 10' is the team this test joins and renames.
+  // The joined team is separate so both numbered franchises remain rivals.
+  // Their order discriminates numeric-aware collation from plain lexicographic.
   const seeded = await seedToPhase({
-    to: 'LOBBY', teams: ['Franchise 10', 'Franchise 2', 'Beta', 'Alpha'],
+    to: 'LOBBY', teams: ['Home Team', 'Franchise 10', 'Franchise 2', 'Beta', 'Alpha'],
   });
   await signInAnonymously(auth);
   await waitFor(() => expect(auth.currentUser).toBeTruthy(), { timeout: 15000 });
@@ -41,14 +63,14 @@ test('lobby rename (playtest-2): a member names their own franchise, live for th
   const input = await screen.findByLabelText('team name', {}, { timeout: 20000 });
   // Numeric-aware name sort (T1 review carry): Franchise 2 before Franchise 10.
   // A lexicographic regression (or dropping the sort) flips this exact order.
-  expect([...document.querySelectorAll('.card > strong')].map((e) => e.textContent))
+  expect([...document.querySelectorAll('[data-rival-name]')].map((e) => e.textContent))
     .toEqual(['Alpha', 'Beta', 'Franchise 2', 'Franchise 10']);
   await user.clear(input);
   await user.type(input, 'Cap Crunchers');
   await user.click(screen.getByRole('button', { name: 'Rename' }));
 
   // The card follows the live team doc; the server owns the write.
-  await waitFor(() => expect(screen.getByText('Cap Crunchers', { selector: '.card > strong' })).toBeInTheDocument(),
+  await waitFor(() => expect(screen.getByRole('heading', { name: 'Cap Crunchers' })).toBeInTheDocument(),
     { timeout: 15000 });
   await waitFor(async () => {
     const t = (await adminDb().doc(
@@ -58,7 +80,8 @@ test('lobby rename (playtest-2): a member names their own franchise, live for th
   // Rival teams keep their names — rename can only target the caller's team.
   expect(screen.getByText('Beta')).toBeInTheDocument();
   expect(screen.getByText('Franchise 2')).toBeInTheDocument();
-  // Post-rename re-sort: 'Cap Crunchers' takes its own alphabetical slot.
-  expect([...document.querySelectorAll('.card > strong')].map((e) => e.textContent))
-    .toEqual(['Alpha', 'Beta', 'Cap Crunchers', 'Franchise 2']);
+  expect(screen.getByText('Franchise 10')).toBeInTheDocument();
+  // The own franchise remains the hero; rival cards retain numeric-aware ordering.
+  expect([...document.querySelectorAll('[data-rival-name]')].map((e) => e.textContent))
+    .toEqual(['Alpha', 'Beta', 'Franchise 2', 'Franchise 10']);
 }, 120000);
