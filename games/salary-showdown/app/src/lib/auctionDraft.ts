@@ -12,20 +12,3 @@ export function mergeAuctionSnapshot(
   }
   return result;
 }
-
-export function dirtyAfterAcknowledgement(
-  current: Bids,
-  submitted: Bids,
-  dirty: ReadonlySet<string>,
-): Set<string> {
-  const remaining = new Set<string>();
-  for (const pid of dirty) {
-    const currentBid = current[pid];
-    const submittedBid = submitted[pid];
-    const matches = currentBid === undefined && submittedBid === undefined
-      || currentBid !== undefined && submittedBid !== undefined
-        && currentBid.rate === submittedBid.rate && currentBid.years === submittedBid.years;
-    if (!matches) remaining.add(pid);
-  }
-  return remaining;
-}

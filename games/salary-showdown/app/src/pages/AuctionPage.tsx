@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { useAuth } from '../contexts/AuthContext';
 import { useGame } from '../contexts/GameContext';
 import { PhaseHeader } from '../components/ui/PhaseHeader';
 import { PayrollBar } from '../components/ui/PayrollBar';
@@ -9,7 +10,6 @@ import { OfferCard } from '../components/auction/OfferCard';
 import { useActionReceipt } from '../hooks/useActionReceipt';
 import { payrollAt } from '../lib/contracts';
 import {
-  dirtyAfterAcknowledgement,
   mergeAuctionSnapshot,
   type Bids,
 } from '../lib/auctionDraft';
@@ -35,12 +35,15 @@ const toBids = (draft: DraftOffers): Bids => {
   return bids;
 };
 
-const bidsMatch = (left: Bids[string] | undefined, right: Bids[string] | undefined): boolean =>
-  left === undefined && right === undefined
-  || left !== undefined && right !== undefined
-    && left.rate === right.rate && left.years === right.years;
+const rawOfferMatchesBid = (offer: DraftOffer | undefined, bid: Bids[string] | undefined): boolean => {
+  if (!offer || offer.rate.trim() === '') return bid === undefined;
+  const rate = Number(offer.rate);
+  return bid !== undefined && Number.isFinite(rate)
+    && rate === bid.rate && offer.years === bid.years;
+};
 
 export default function AuctionPage() {
+  const { uid } = useAuth();
   const { game, team, catalog, membership, call, gameId, actsAs } = useGame();
   const [wave, setWave] = useState<AuctionDoc | null>(null);
   const [draft, setDraftState] = useState<DraftOffers>({});
@@ -49,9 +52,17 @@ export default function AuctionPage() {
   const [err, setErr] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const draftRef = useRef<DraftOffers>({});
+  const savedRef = useRef<Bids>({});
   const dirtyRef = useRef<Set<string>>(new Set());
+  const editClockRef = useRef(0);
+  const editVersionsRef = useRef<Map<string, number>>(new Map());
   const scopeRef = useRef('');
   const submissionGeneration = useRef(0);
+  const pendingSubmissionRef = useRef<{
+    generation: number;
+    payload: Bids;
+    editVersions: ReadonlyMap<string, number>;
+  } | null>(null);
 
   const round = game?.round ?? 1;
   const phase = game?.phase ?? '';
@@ -60,7 +71,7 @@ export default function AuctionPage() {
   const scoutFallback = isScout && membership?.role !== 'Scout';
   const maxOfferYears = maxYears(round);
   const floor = minBid(round);
-  const scope = `${gameId ?? ''}/${round}/${phase}/${teamId}/${membership?.role ?? ''}`;
+  const scope = `${gameId ?? ''}/${round}/${phase}/${teamId}/${membership?.role ?? ''}/${uid ?? ''}`;
   const { receipt, run } = useActionReceipt(scope);
 
   const replaceDraft = (next: DraftOffers) => {
@@ -71,13 +82,20 @@ export default function AuctionPage() {
     dirtyRef.current = next;
     setDirtyState(next);
   };
+  const replaceSaved = (next: Bids) => {
+    savedRef.current = next;
+    setSaved(next);
+  };
 
   useEffect(() => {
     scopeRef.current = scope;
     submissionGeneration.current += 1;
+    pendingSubmissionRef.current = null;
+    editClockRef.current = 0;
+    editVersionsRef.current = new Map();
     replaceDraft({});
     replaceDirty(new Set());
-    setSaved({});
+    replaceSaved({});
     setErr(null);
     setBusy(false);
     return () => {
@@ -87,21 +105,30 @@ export default function AuctionPage() {
 
   useEffect(() => {
     if (!gameId || round < 1) return undefined;
+    const listenerScope = scope;
     return onSnapshot(
       doc(db, 'games', gameId, 'auctions', String(round)),
-      (snapshot) => setWave(snapshot.exists() ? snapshot.data() as AuctionDoc : null),
-      () => setWave(null),
+      (snapshot) => {
+        if (scopeRef.current === listenerScope) {
+          setWave(snapshot.exists() ? snapshot.data() as AuctionDoc : null);
+        }
+      },
+      () => {
+        if (scopeRef.current === listenerScope) setWave(null);
+      },
     );
-  }, [gameId, round]);
+  }, [gameId, round, scope]);
 
   useEffect(() => {
     if (!gameId || !membership) return undefined;
+    const listenerScope = scope;
     return onSnapshot(
       doc(db, 'games', gameId, 'teams', membership.teamId, 'private', 'auction'),
       (snapshot) => {
+        if (scopeRef.current !== listenerScope) return;
         const remoteDoc = snapshot.exists() ? snapshot.data() as PrivateAuctionDoc : undefined;
         const remote: Bids = remoteDoc?.round === round && remoteDoc.bids ? remoteDoc.bids : {};
-        setSaved(remote);
+        replaceSaved(remote);
 
         const current = draftRef.current;
         const currentBids = toBids(current);
@@ -112,9 +139,11 @@ export default function AuctionPage() {
         }
         replaceDraft(merged);
       },
-      (error) => setErr(error),
+      (error) => {
+        if (scopeRef.current === listenerScope) setErr(error);
+      },
     );
-  }, [gameId, membership, round]);
+  }, [gameId, membership, round, uid, scope]);
 
   const bids = useMemo(() => toBids(draft), [draft]);
 
@@ -158,10 +187,13 @@ export default function AuctionPage() {
 
   const updateOffer = (pid: number, nextOffer: DraftOffer) => {
     const key = String(pid);
+    editClockRef.current += 1;
+    editVersionsRef.current.set(key, editClockRef.current);
     const nextDraft = { ...draftRef.current, [key]: nextOffer };
     replaceDraft(nextDraft);
     const nextDirty = new Set(dirtyRef.current);
-    if (bidsMatch(toBids({ [key]: nextOffer })[key], saved[key])) nextDirty.delete(key);
+    if (pendingSubmissionRef.current) nextDirty.add(key);
+    else if (rawOfferMatchesBid(nextOffer, savedRef.current[key])) nextDirty.delete(key);
     else nextDirty.add(key);
     replaceDirty(nextDirty);
     setErr(null);
@@ -175,7 +207,9 @@ export default function AuctionPage() {
       const key = String(pid);
       const current = draftRef.current[key] ?? { rate: '', years: 1 };
       nextDraft[key] = { ...current, rate: '' };
-      if (saved[key] !== undefined) nextDirty.add(key);
+      editClockRef.current += 1;
+      editVersionsRef.current.set(key, editClockRef.current);
+      if (pendingSubmissionRef.current || savedRef.current[key] !== undefined) nextDirty.add(key);
     }
     replaceDraft(nextDraft);
     replaceDirty(nextDirty);
@@ -188,17 +222,38 @@ export default function AuctionPage() {
     const generation = submissionGeneration.current + 1;
     submissionGeneration.current = generation;
     const payload = { ...toBids(draftRef.current) };
+    const submission = {
+      generation,
+      payload,
+      editVersions: new Map(editVersionsRef.current),
+    };
+    pendingSubmissionRef.current = submission;
     setBusy(true);
     setErr(null);
     try {
       await run('Offers sealed', () => call('submitBids', { gameId, bids: payload }));
       if (scopeRef.current !== operationScope || submissionGeneration.current !== generation) return;
-      setSaved(payload);
-      replaceDirty(dirtyAfterAcknowledgement(
-        toBids(draftRef.current), payload, dirtyRef.current,
-      ));
+      replaceSaved(payload);
+      const remaining = new Set<string>();
+      for (const pid of dirtyRef.current) {
+        const submittedVersion = submission.editVersions.get(pid) ?? 0;
+        const currentVersion = editVersionsRef.current.get(pid) ?? 0;
+        if (currentVersion > submittedVersion
+          || !rawOfferMatchesBid(draftRef.current[pid], payload[pid])) {
+          remaining.add(pid);
+        }
+      }
+      replaceDirty(remaining);
+      pendingSubmissionRef.current = null;
     } catch (error) {
       if (scopeRef.current === operationScope && submissionGeneration.current === generation) {
+        pendingSubmissionRef.current = null;
+        const remaining = new Set<string>();
+        const keys = new Set([...Object.keys(draftRef.current), ...Object.keys(savedRef.current)]);
+        for (const pid of keys) {
+          if (!rawOfferMatchesBid(draftRef.current[pid], savedRef.current[pid])) remaining.add(pid);
+        }
+        replaceDirty(remaining);
         setErr(error);
       }
     } finally {

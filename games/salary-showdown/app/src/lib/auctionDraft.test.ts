@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { dirtyAfterAcknowledgement, mergeAuctionSnapshot } from './auctionDraft';
+import { mergeAuctionSnapshot } from './auctionDraft';
 
 describe('mergeAuctionSnapshot', () => {
   test('snapshot preserves dirty edits and dirty removal', () => {
@@ -30,23 +30,5 @@ describe('mergeAuctionSnapshot', () => {
 
     expect(draft).toEqual({ a: { rate: 8, years: 2 } });
     expect(saved).toEqual({ a: { rate: 3, years: 1 }, b: { rate: 2, years: 1 } });
-  });
-});
-
-describe('dirtyAfterAcknowledgement', () => {
-  test('clears only edits that still match the acknowledged payload', () => {
-    expect(dirtyAfterAcknowledgement(
-      { a: { rate: 9.5, years: 2 }, b: { rate: 4, years: 1 } },
-      { a: { rate: 8, years: 2 }, b: { rate: 4, years: 1 } },
-      new Set(['a', 'b']),
-    )).toEqual(new Set(['a']));
-  });
-
-  test('handles an acknowledged withdrawal without clearing a newer re-added offer', () => {
-    expect(dirtyAfterAcknowledgement(
-      { a: { rate: 7, years: 1 } },
-      {},
-      new Set(['a', 'b']),
-    )).toEqual(new Set(['a']));
   });
 });
