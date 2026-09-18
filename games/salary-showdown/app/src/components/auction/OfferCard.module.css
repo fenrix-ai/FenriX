@@ -1,0 +1,159 @@
+.offer {
+  display: grid;
+  width: 100%;
+  gap: var(--ss-space-3);
+}
+
+.context {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+  border: 1px solid var(--ss-border-subtle);
+  border-radius: var(--ss-radius-md);
+}
+
+.context div {
+  min-width: 0;
+  padding: var(--ss-space-2);
+  border-right: 1px solid var(--ss-border-subtle);
+}
+
+.context div:last-child { border-right: 0; }
+
+.context dt {
+  color: var(--ss-text-dim);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.context dd {
+  overflow: hidden;
+  margin: 2px 0 0;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+}
+
+.salary {
+  display: grid;
+  gap: var(--ss-space-1);
+  color: var(--ss-text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.inputWrap {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--ss-space-2);
+  padding-inline: var(--ss-space-3);
+  border: 1px solid var(--ss-border);
+  border-radius: var(--ss-radius-md);
+  background: var(--ss-surface-inset);
+  color: var(--ss-gold);
+  font-family: var(--mono);
+  font-size: 1rem;
+}
+
+.inputWrap:focus-within { border-color: var(--ss-gold); }
+
+.inputWrap input {
+  min-width: 0;
+  padding: 0.72rem 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ss-text);
+  font: inherit;
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.inputWrap input:disabled { color: var(--ss-text-dim); }
+
+.years {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.years legend {
+  margin-bottom: var(--ss-space-1);
+  color: var(--ss-text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.yearOptions {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(34px, 1fr));
+  gap: var(--ss-space-1);
+}
+
+.yearOption {
+  position: relative;
+  display: grid;
+  min-height: 40px;
+  place-items: center;
+  border: 1px solid var(--ss-border);
+  border-radius: var(--ss-radius-md);
+  color: var(--ss-text-muted);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-weight: 800;
+}
+
+.yearOption:has(input:checked) {
+  border-color: var(--ss-gold);
+  background: rgb(255 201 77 / 12%);
+  color: var(--ss-gold);
+}
+
+.yearOption input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.yearOption:has(input:focus-visible) {
+  outline: 3px solid var(--ss-gold);
+  outline-offset: 3px;
+}
+
+.commitment {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ss-space-2);
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.saved { color: var(--ss-payroll-cash); }
+.unsaved { color: var(--ss-gold); }
+
+.error {
+  margin: 0;
+  color: var(--ss-danger-text);
+  font-size: 0.78rem;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+@media (max-width: 420px) {
+  .yearOptions { grid-template-columns: repeat(3, minmax(44px, 1fr)); }
+}
