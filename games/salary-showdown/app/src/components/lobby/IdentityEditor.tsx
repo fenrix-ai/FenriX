@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactElement } from 'react';
+import { useEffect, useRef, useState, type ReactElement } from 'react';
 import type { TeamIdentity } from '../../lib/franchiseIdentity';
 import { ErrorNotice } from '../ui/ErrorNotice';
 import styles from './IdentityEditor.module.css';
@@ -18,6 +18,10 @@ const JERSEYS: { value: TeamIdentity['jersey']; label: string }[] = [
   { value: 'chevron', label: 'Chevron' },
 ];
 
+function identityKey(identity: TeamIdentity): string {
+  return `${identity.accent}/${identity.jersey}`;
+}
+
 export function IdentityEditor({ identity, onSave, disabled }: {
   identity: TeamIdentity;
   onSave: (identity: TeamIdentity) => Promise<void>;
@@ -28,6 +32,17 @@ export function IdentityEditor({ identity, onSave, disabled }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [saved, setSaved] = useState(false);
+  const observed = useRef({ identity, key: identityKey(identity), revision: 0 });
+  const nextKey = identityKey(identity);
+  if (nextKey !== observed.current.key) {
+    observed.current = {
+      identity,
+      key: nextKey,
+      revision: observed.current.revision + 1,
+    };
+  } else {
+    observed.current.identity = identity;
+  }
 
   useEffect(() => {
     if (!dirty) setDraft(identity);
@@ -43,11 +58,17 @@ export function IdentityEditor({ identity, onSave, disabled }: {
   };
 
   const save = async () => {
+    const submitted = draft;
+    const startingRevision = observed.current.revision;
     setBusy(true);
     setSaved(false);
     setError(null);
     try {
-      await onSave(draft);
+      await onSave(submitted);
+      const latest = observed.current;
+      setDraft(latest.revision > startingRevision && latest.key !== identityKey(submitted)
+        ? latest.identity
+        : submitted);
       setDirty(false);
       setSaved(true);
     } catch (caught) {

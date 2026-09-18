@@ -46,10 +46,10 @@ test('lobby shows own seats, fallback coverage, teammate arrival, and identity s
 
 test('lobby rename (playtest-2): a member names their own franchise, live for the room', async () => {
   localStorage.removeItem('ss.gameId'); // isolation from the prior test's claim
-  // Names chosen to discriminate numeric-aware collation from plain lexicographic:
-  // teamIds[0] = 'Franchise 10' is the team this test joins and renames.
+  // The joined team is separate so both numbered franchises remain rivals.
+  // Their order discriminates numeric-aware collation from plain lexicographic.
   const seeded = await seedToPhase({
-    to: 'LOBBY', teams: ['Franchise 10', 'Franchise 2', 'Beta', 'Alpha'],
+    to: 'LOBBY', teams: ['Home Team', 'Franchise 10', 'Franchise 2', 'Beta', 'Alpha'],
   });
   await signInAnonymously(auth);
   await waitFor(() => expect(auth.currentUser).toBeTruthy(), { timeout: 15000 });
@@ -64,7 +64,7 @@ test('lobby rename (playtest-2): a member names their own franchise, live for th
   // Numeric-aware name sort (T1 review carry): Franchise 2 before Franchise 10.
   // A lexicographic regression (or dropping the sort) flips this exact order.
   expect([...document.querySelectorAll('[data-rival-name]')].map((e) => e.textContent))
-    .toEqual(['Alpha', 'Beta', 'Franchise 2']);
+    .toEqual(['Alpha', 'Beta', 'Franchise 2', 'Franchise 10']);
   await user.clear(input);
   await user.type(input, 'Cap Crunchers');
   await user.click(screen.getByRole('button', { name: 'Rename' }));
@@ -80,7 +80,8 @@ test('lobby rename (playtest-2): a member names their own franchise, live for th
   // Rival teams keep their names — rename can only target the caller's team.
   expect(screen.getByText('Beta')).toBeInTheDocument();
   expect(screen.getByText('Franchise 2')).toBeInTheDocument();
+  expect(screen.getByText('Franchise 10')).toBeInTheDocument();
   // The own franchise remains the hero; rival cards retain numeric-aware ordering.
   expect([...document.querySelectorAll('[data-rival-name]')].map((e) => e.textContent))
-    .toEqual(['Alpha', 'Beta', 'Franchise 2']);
+    .toEqual(['Alpha', 'Beta', 'Franchise 2', 'Franchise 10']);
 }, 120000);

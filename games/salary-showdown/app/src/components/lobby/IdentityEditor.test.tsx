@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, test, vi } from 'vitest';
 import { IdentityEditor } from './IdentityEditor';
@@ -64,5 +64,28 @@ test('a phase change disables a racing save without erasing its rejected preview
 
   expect(await screen.findByRole('alert')).toHaveTextContent('That did not go through');
   expect(screen.getByRole('radio', { name: 'Violet' })).toBeChecked();
+  expect(screen.getByRole('button', { name: 'Save identity' })).toBeDisabled();
+});
+
+test('a successful save reconciles a newer teammate snapshot received while pending', async () => {
+  let finishSave!: () => void;
+  const onSave = vi.fn(() => new Promise<void>((resolve) => { finishSave = resolve; }));
+  const { rerender } = render(
+    <IdentityEditor identity={{ accent: 'gold', jersey: 'classic' }}
+      onSave={onSave} disabled={false} />,
+  );
+
+  await userEvent.click(screen.getByRole('radio', { name: 'Teal' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Save identity' }));
+
+  // Our write lands first, then a teammate's later write wins before the callable returns.
+  rerender(<IdentityEditor identity={{ accent: 'teal', jersey: 'classic' }}
+    onSave={onSave} disabled={false} />);
+  rerender(<IdentityEditor identity={{ accent: 'coral', jersey: 'stripe' }}
+    onSave={onSave} disabled={false} />);
+  await act(async () => finishSave());
+
+  expect(screen.getByRole('radio', { name: 'Coral' })).toBeChecked();
+  expect(screen.getByRole('radio', { name: 'Stripe' })).toBeChecked();
   expect(screen.getByRole('button', { name: 'Save identity' })).toBeDisabled();
 });
