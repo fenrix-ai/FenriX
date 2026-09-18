@@ -100,12 +100,16 @@ test('a different uid in the same team and role cannot inherit a pending receipt
   const { rerender } = render(<AuctionPage />);
   change('8');
   fireEvent.click(screen.getByRole('button', { name: 'Lock in bids' }));
+  const resolveOldScope = app.resolvePending;
 
   app.uid = 'user-b';
   rerender(<AuctionPage />);
-  await act(async () => app.resolvePending?.({}));
+  await act(async () => resolveOldScope?.({}));
 
   expect(screen.queryByTestId('sealed-receipt')).not.toBeInTheDocument();
+  change('8');
+  fireEvent.click(screen.getByRole('button', { name: 'Lock in bids' }));
+  expect(app.call).toHaveBeenCalledTimes(2);
 });
 
 test('a rejected save leaves the edit unsaved and never shows SEALED', async () => {
@@ -118,4 +122,36 @@ test('a rejected save leaves the edit unsaved and never shows SEALED', async () 
   expect(input()).toHaveValue(8);
   expect(screen.getByRole('button', { name: 'Lock in bids' })).toBeEnabled();
   expect(screen.queryByTestId('sealed-receipt')).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Lock in bids' }));
+  expect(app.call).toHaveBeenCalledTimes(2);
+});
+
+test('a newer teammate snapshot is not relabeled as the older saved payload', async () => {
+  render(<AuctionPage />);
+  change('8');
+  fireEvent.click(screen.getByRole('button', { name: 'Lock in bids' }));
+
+  await act(async () => {
+    app.emit?.(bid(8));
+    app.emit?.(bid(9));
+    app.resolvePending?.({});
+  });
+
+  expect(input()).toHaveValue(8);
+  expect(screen.getByRole('button', { name: 'Lock in bids' })).toBeEnabled();
+  expect(screen.queryByTestId('sealed-receipt')).not.toBeInTheDocument();
+});
+
+test('two submit clicks in one render frame issue one callable', () => {
+  render(<AuctionPage />);
+  change('8');
+  const button = screen.getByRole('button', { name: 'Lock in bids' });
+
+  act(() => {
+    button.click();
+    button.click();
+  });
+
+  expect(app.call).toHaveBeenCalledTimes(1);
 });

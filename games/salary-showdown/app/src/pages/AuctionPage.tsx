@@ -56,12 +56,14 @@ export default function AuctionPage() {
   const dirtyRef = useRef<Set<string>>(new Set());
   const editClockRef = useRef(0);
   const editVersionsRef = useRef<Map<string, number>>(new Map());
+  const snapshotVersionRef = useRef(0);
   const scopeRef = useRef('');
   const submissionGeneration = useRef(0);
   const pendingSubmissionRef = useRef<{
     generation: number;
     payload: Bids;
     editVersions: ReadonlyMap<string, number>;
+    snapshotVersion: number;
   } | null>(null);
 
   const round = game?.round ?? 1;
@@ -93,6 +95,7 @@ export default function AuctionPage() {
     pendingSubmissionRef.current = null;
     editClockRef.current = 0;
     editVersionsRef.current = new Map();
+    snapshotVersionRef.current = 0;
     replaceDraft({});
     replaceDirty(new Set());
     replaceSaved({});
@@ -128,6 +131,7 @@ export default function AuctionPage() {
         if (scopeRef.current !== listenerScope) return;
         const remoteDoc = snapshot.exists() ? snapshot.data() as PrivateAuctionDoc : undefined;
         const remote: Bids = remoteDoc?.round === round && remoteDoc.bids ? remoteDoc.bids : {};
+        snapshotVersionRef.current += 1;
         replaceSaved(remote);
 
         const current = draftRef.current;
@@ -217,7 +221,8 @@ export default function AuctionPage() {
   };
 
   const lockIn = async () => {
-    if (!gameId || busy || hasProblems || dirtyRef.current.size === 0) return;
+    if (!gameId || busy || pendingSubmissionRef.current
+      || hasProblems || dirtyRef.current.size === 0) return;
     const operationScope = scope;
     const generation = submissionGeneration.current + 1;
     submissionGeneration.current = generation;
@@ -226,6 +231,7 @@ export default function AuctionPage() {
       generation,
       payload,
       editVersions: new Map(editVersionsRef.current),
+      snapshotVersion: snapshotVersionRef.current,
     };
     pendingSubmissionRef.current = submission;
     setBusy(true);
@@ -233,13 +239,15 @@ export default function AuctionPage() {
     try {
       await run('Offers sealed', () => call('submitBids', { gameId, bids: payload }));
       if (scopeRef.current !== operationScope || submissionGeneration.current !== generation) return;
-      replaceSaved(payload);
+      const sawSnapshotAfterSubmit = snapshotVersionRef.current > submission.snapshotVersion;
+      if (!sawSnapshotAfterSubmit) replaceSaved(payload);
+      const acknowledgedSaved = sawSnapshotAfterSubmit ? savedRef.current : payload;
       const remaining = new Set<string>();
       for (const pid of dirtyRef.current) {
         const submittedVersion = submission.editVersions.get(pid) ?? 0;
         const currentVersion = editVersionsRef.current.get(pid) ?? 0;
         if (currentVersion > submittedVersion
-          || !rawOfferMatchesBid(draftRef.current[pid], payload[pid])) {
+          || !rawOfferMatchesBid(draftRef.current[pid], acknowledgedSaved[pid])) {
           remaining.add(pid);
         }
       }
