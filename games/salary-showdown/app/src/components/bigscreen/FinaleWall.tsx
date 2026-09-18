@@ -5,6 +5,7 @@ import { WeightsCompare } from '../charts/WeightsCompare';
 import { WinsPerDollar } from '../charts/WinsPerDollar';
 import { STEP_TITLES } from '../../lib/stepTitles';
 import type { StandingsRow } from '../../types/models';
+import { FranchiseMark } from '../franchise/FranchiseMark';
 
 // FINALE wall (design spec §6.5): the projector face of the sanctioned reveal
 // (parent spec §11.14) — value-per-dollar, wins-per-dollar, trap labels and the
@@ -49,6 +50,8 @@ export function FinaleWall() {
           {podiumOrder.map((r) => (
             <div key={r.teamId}
               className={r.rank === 1 ? 'card bs-podium-card champ' : 'card bs-podium-card'}>
+              <FranchiseMark teamId={r.teamId} name={r.name}
+                identity={teams.get(r.teamId)?.identity} size={r.rank === 1 ? 88 : 68} />
               <div className="mono bs-podium-rank">#{r.rank}</div>
               <div className="bs-podium-name">{r.name}</div>
               <div className="muted bs-podium-record">{r.wins}–{r.losses}</div>
@@ -60,22 +63,22 @@ export function FinaleWall() {
         <p className="dim bs-finale-loading">Loading the reveal…</p>
       )}
       {step === 1 && reveal && (
-        <div data-testid="finale-scatter">
+        <div data-testid="finale-scatter" className="bs-reveal-chart">
           <ScatterTI rows={reveal.scatter} />
         </div>
       )}
       {step === 2 && reveal && (
-        <div data-testid="finale-weights">
+        <div data-testid="finale-weights" className="bs-reveal-chart">
           <WeightsCompare trueWeights={reveal.trueWeights} />
         </div>
       )}
       {step === 3 && reveal && (
-        <div data-testid="finale-wpd">
+        <div data-testid="finale-wpd" className="bs-reveal-chart">
           <WinsPerDollar rows={reveal.winsPerDollar} teamNames={teamNames} />
         </div>
       )}
       {step === 4 && reveal && (
-        <div data-testid="finale-bestworst">
+        <div data-testid="finale-bestworst" className="bs-reveal-chart">
           <BestWorst perTeam={reveal.perTeam} teamNames={teamNames}
             playerNames={playerNames} />
         </div>

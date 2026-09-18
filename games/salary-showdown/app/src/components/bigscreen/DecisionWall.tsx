@@ -2,6 +2,7 @@ import { useProfessor } from '../../contexts/ProfessorContext';
 import { LedTimer } from '../ui/LedTimer';
 import { PHASE_NAMES } from '../../lib/phaseNames';
 import { LIGHT_PHASES, submittedTeamIds } from '../../lib/submissionLights';
+import { FranchiseMark } from '../franchise/FranchiseMark';
 
 // Submission-light rules live in src/lib/submissionLights.ts (T7) — ONE
 // definition shared by the panel's confirm guard (T7), SubmissionGrid (T9) and
@@ -39,7 +40,8 @@ export function DecisionWall() {
           // numeric-aware: Franchise 2 before Franchise 10
           .sort((a, b) => a[1].name.localeCompare(b[1].name, undefined, { numeric: true }))
           .map(([tid, t]) => (
-          <div key={tid} className="bs-light-row">
+          <div key={tid} className="bs-light-row" data-testid="bs-light-row">
+            <FranchiseMark teamId={tid} name={t.name} identity={t.identity} size={34} />
             <span className={lit.has(tid) ? 'bs-dot ok' : 'bs-dot dim'} aria-hidden="true">
               {lit.has(tid) ? '●' : '○'}
             </span>
