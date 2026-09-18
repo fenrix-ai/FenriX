@@ -1,0 +1,293 @@
+.page {
+  display: grid;
+  gap: var(--ss-space-4);
+}
+
+.commandBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ss-space-5);
+  padding: var(--ss-space-4) var(--ss-space-5);
+  border: 1px solid var(--ss-border-subtle);
+  border-radius: var(--ss-radius-lg);
+  background: var(--ss-surface-inset);
+}
+
+.commandBar h2 { margin: 0; font-size: clamp(1.05rem, 2vw, 1.35rem); }
+.commandBar p {
+  max-width: 66ch;
+  margin: var(--ss-space-1) 0 0;
+  color: var(--ss-text-muted);
+  font-size: 0.84rem;
+}
+
+.doneControl {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--ss-space-3);
+}
+
+.doneNote {
+  max-width: 18rem;
+  color: var(--ss-payroll-cash);
+  font-size: 0.78rem;
+}
+
+.readOnly,
+.fallback { margin: 0; color: var(--ss-text-muted); }
+
+.receipt {
+  margin: 0;
+  padding: var(--ss-space-3) var(--ss-space-4);
+  border: 1px solid var(--ss-payroll-cash);
+  border-radius: var(--ss-radius-md);
+  background: rgb(85 189 125 / 10%);
+  color: var(--ss-payroll-cash);
+  font-weight: 800;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  align-items: start;
+  gap: var(--ss-space-5);
+}
+
+.decisionColumn,
+.detailColumn {
+  display: grid;
+  min-width: 0;
+  gap: var(--ss-space-4);
+}
+
+.detailColumn {
+  position: sticky;
+  top: calc(var(--ss-student-header-offset, 0px) + var(--ss-space-4));
+  max-height: calc(100vh - var(--ss-student-header-offset, 0px) - var(--ss-space-6));
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.panel,
+.emptyDetail {
+  min-width: 0;
+  padding: var(--ss-space-5);
+  border: 1px solid var(--ss-border);
+  border-radius: var(--ss-radius-xl);
+  background: var(--ss-surface);
+  box-shadow: var(--ss-shadow-panel);
+}
+
+.panelHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ss-space-4);
+  margin-bottom: var(--ss-space-4);
+}
+
+.panelHeading h2,
+.emptyDetail h2 { margin: 0; font-size: 1.05rem; }
+.panelHeading p,
+.emptyDetail p {
+  max-width: 60ch;
+  margin: var(--ss-space-1) 0 0;
+  color: var(--ss-text-muted);
+  font-size: 0.8rem;
+}
+.panelHeading > strong {
+  flex: 0 0 auto;
+  color: var(--ss-gold);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.emptyState {
+  display: grid;
+  gap: var(--ss-space-1);
+  padding: var(--ss-space-4);
+  border: 1px dashed var(--ss-border);
+  border-radius: var(--ss-radius-md);
+  color: var(--ss-text-muted);
+}
+.emptyState strong { color: var(--ss-text); }
+.emptyState span { font-size: 0.8rem; }
+
+.decisionList,
+.rosterList,
+.marketList {
+  display: grid;
+  gap: var(--ss-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.decisionButton {
+  display: grid;
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--ss-space-2) var(--ss-space-4);
+  padding: var(--ss-space-3);
+  border: 1px solid var(--ss-border-subtle);
+  border-radius: var(--ss-radius-md);
+  background: var(--ss-surface-inset);
+  color: var(--ss-text);
+  text-align: left;
+  cursor: pointer;
+}
+.decisionButton[data-selected] {
+  border-color: var(--ss-gold);
+  box-shadow: inset 3px 0 var(--ss-gold);
+}
+
+.playerSummary,
+.rosterPlayer {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--ss-space-3);
+}
+.playerSummary > span:last-child,
+.rosterPlayer > span:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.playerSummary strong,
+.rosterPlayer strong { overflow-wrap: anywhere; }
+.playerSummary small,
+.statLine {
+  color: var(--ss-text-muted);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+.decisionState {
+  color: var(--ss-text-muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.rosterList > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--ss-space-3);
+  padding: var(--ss-space-3);
+  border: 1px solid var(--ss-border-subtle);
+  border-radius: var(--ss-radius-md);
+  background: var(--ss-surface-inset);
+}
+.contractTerms {
+  color: var(--ss-text-muted);
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.marketList { margin-top: var(--ss-space-3); }
+.marketList li {
+  display: flex;
+  align-items: center;
+  gap: var(--ss-space-3);
+  padding: var(--ss-space-2) var(--ss-space-3);
+  border-bottom: 1px solid var(--ss-border-subtle);
+}
+.marketList strong { flex: 1; }
+.marketEmpty,
+.marketFootnote {
+  margin: var(--ss-space-3) 0 0;
+  color: var(--ss-text-muted);
+  font-size: 0.78rem;
+}
+
+.decisionDetail { min-width: 0; }
+.contractComposer,
+.walkDecision {
+  display: grid;
+  width: 100%;
+  gap: var(--ss-space-3);
+}
+.contractComposer label {
+  display: grid;
+  gap: var(--ss-space-2);
+  color: var(--ss-text-muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+.contractComposer select {
+  width: 100%;
+  padding: var(--ss-space-3);
+  border: 1px solid var(--ss-border);
+  border-radius: var(--ss-radius-md);
+  background: var(--ss-surface-inset);
+  color: var(--ss-text);
+  font: inherit;
+}
+.commitment {
+  display: grid;
+  gap: var(--ss-space-1);
+  margin: 0;
+}
+.commitment div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--ss-space-3);
+}
+.commitment dt { color: var(--ss-text-dim); font-size: 0.76rem; }
+.commitment dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+.capOk,
+.capBlocked,
+.walkDecision p { margin: 0; font-size: 0.8rem; font-weight: 800; }
+.capOk,
+.savedDecision {
+  color: var(--ss-payroll-cash);
+  display: grid;
+  font-size: 0.8rem;
+  font-weight: 800;
+  gap: 0.2rem;
+  margin: 0;
+}
+.savedDecision p { margin: 0; }
+.savedDecision p:last-child { color: var(--ss-text-muted); font-size: 0.72rem; }
+.capBlocked { color: var(--ss-danger-text); }
+.walkDecision p { color: var(--ss-gold); }
+.decisionActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ss-space-2);
+}
+
+@media (max-width: 1100px) {
+  .workspace { grid-template-columns: minmax(0, 1fr); }
+  .detailColumn {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+@media (max-width: 700px) {
+  .commandBar,
+  .panelHeading,
+  .doneControl {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .rosterList > li { grid-template-columns: minmax(0, 1fr); }
+  .contractTerms { padding-left: 2.2rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .receipt { animation: none; }
+}
