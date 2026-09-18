@@ -1,4 +1,5 @@
 import { useProfessor } from '../../contexts/ProfessorContext';
+import styles from './ProfessorDesk.module.css';
 
 // Round context (design spec §5 item 6, wording synced in this task's
 // commit): compact READ-ONLY facts from the last COMPLETED round.
@@ -14,21 +15,27 @@ export function RoundContext() {
   if (!round || contextRound == null) return null;
   const nameOf = (teamId: string) => teams.get(teamId)?.name ?? teamId;
   return (
-    <section className="card" data-testid="round-context" style={{ marginTop: 12 }}>
-      <strong>{`Standings · through Round ${contextRound}`}</strong>
-      {round.standings.map((row) => (
-        <div key={row.teamId} data-testid={`standing-${row.teamId}`} className="mono"
-          style={{ marginTop: 4, fontSize: 13 }}>
-          {`${row.rank} · ${row.name} · ${row.wins}-${row.losses} · ${row.pointDiff >= 0 ? '+' : ''}${row.pointDiff}`}
+    <section className={`${styles.panel} ${styles.contextPanel}`} data-testid="round-context">
+      <div>
+        <h2 className={styles.panelTitle}>{`Standings · through Round ${contextRound}`}</h2>
+        <div className={styles.contextList}>
+          {round.standings.map((row) => (
+            <div key={row.teamId} data-testid={`standing-${row.teamId}`} className="mono">
+              {`${row.rank} · ${row.name} · ${row.wins}-${row.losses} · ${row.pointDiff >= 0 ? '+' : ''}${row.pointDiff}`}
+            </div>
+          ))}
         </div>
-      ))}
-      <strong style={{ display: 'block', marginTop: 10 }}>{`Round ${contextRound} scores`}</strong>
-      {round.games.map((g) => (
-        <div key={g.game_id} data-testid={`score-${g.game_id}`} className="mono"
-          style={{ marginTop: 4, fontSize: 13 }}>
-          {`${nameOf(g.home)} ${g.homeScore}–${g.awayScore} ${nameOf(g.away)}`}
+      </div>
+      <div>
+        <h2 className={styles.panelTitle}>{`Round ${contextRound} scores`}</h2>
+        <div className={styles.contextList}>
+          {round.games.map((g) => (
+            <div key={g.game_id} data-testid={`score-${g.game_id}`} className="mono">
+              {`${nameOf(g.home)} ${g.homeScore}–${g.awayScore} ${nameOf(g.away)}`}
+            </div>
+          ))}
         </div>
-      ))}
+      </div>
     </section>
   );
 }

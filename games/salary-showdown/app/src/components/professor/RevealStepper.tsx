@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useProfessor } from '../../contexts/ProfessorContext';
 import { ErrorNotice } from '../ui/ErrorNotice';
 import { STEP_TITLES } from '../../lib/stepTitles';
+import styles from './ProfessorDesk.module.css';
 
 // Finale reveal stepper (design spec §5.8): FINALE-only professor control
 // walking the projector wall through the five reveal steps via setRevealStep
@@ -31,9 +32,10 @@ export function RevealStepper() {
     } catch (e) { setErr(e); } finally { setBusy(false); }
   };
   return (
-    <section className="card" data-testid="reveal-stepper" style={{ marginTop: 12 }}>
-      <strong>Finale reveal</strong>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
+    <section className={styles.panel} data-testid="reveal-stepper">
+      <h2 className={styles.panelTitle}>Finale reveal</h2>
+      <p className={styles.panelCopy}>This changes the projector step. Student debriefs stay independent.</p>
+      <div className={styles.controlRow} style={{ marginTop: 10 }}>
         <button type="button" className="btn" aria-label="previous step"
           disabled={busy || step === 0} onClick={() => void go(step - 1)}>
           {'‹'}

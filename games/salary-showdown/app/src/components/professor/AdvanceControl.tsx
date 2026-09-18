@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useProfessor } from '../../contexts/ProfessorContext';
 import { PHASE_NAMES } from '../../lib/phaseNames';
 import { LIGHT_PHASES, submittedTeamIds } from '../../lib/submissionLights';
 import { ErrorNotice } from '../ui/ErrorNotice';
 import { nextOf, TOTAL_ROUNDS } from '../../lib/phaseOrder';
+import styles from './ProfessorDesk.module.css';
 
 // Phase order + nextOf live in src/lib/phaseOrder.ts (client mirror of
 // backend phases.js, parity-pinned by phaseOrder.test.ts).
@@ -28,6 +29,7 @@ export function AdvanceControl({ stuckThresholdMs = 10_000 }: { stuckThresholdMs
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [stuck, setStuck] = useState(false);
+  const pendingRef = useRef(false);
 
   // Continuous-settling detector. The effect re-runs only when `settling`
   // flips, so the timeout measures ONE continuous stretch — any recovery
@@ -54,6 +56,8 @@ export function AdvanceControl({ stuckThresholdMs = 10_000 }: { stuckThresholdMs
     : null;
 
   const advance = async () => {
+    if (pendingRef.current) return;
+    pendingRef.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -65,6 +69,7 @@ export function AdvanceControl({ stuckThresholdMs = 10_000 }: { stuckThresholdMs
     } catch (e) {
       setError(e);
     } finally {
+      pendingRef.current = false;
       setBusy(false);
     }
   };
@@ -80,7 +85,8 @@ export function AdvanceControl({ stuckThresholdMs = 10_000 }: { stuckThresholdMs
   // exactly how concurrent losers are rejected. Do NOT "fix" this to use
   // game.phase/game.round.
   const resolveStuck = async () => {
-    if (!raw) return;
+    if (!raw || pendingRef.current) return;
+    pendingRef.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -89,6 +95,7 @@ export function AdvanceControl({ stuckThresholdMs = 10_000 }: { stuckThresholdMs
     } catch (e) {
       setError(e);
     } finally {
+      pendingRef.current = false;
       setBusy(false);
     }
   };
@@ -113,8 +120,14 @@ export function AdvanceControl({ stuckThresholdMs = 10_000 }: { stuckThresholdMs
   };
 
   return (
-    <section className="card" style={{ marginTop: 10 }} aria-label="Phase control">
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+    <section className={styles.panel} aria-label="Phase control">
+      <div className={styles.panelHeader}>
+        <div>
+          <h2 className={styles.panelTitle}>Phase control</h2>
+          <p className={styles.panelCopy}>Advance only after reviewing the readiness board.</p>
+        </div>
+      </div>
+      <div className={styles.controlRow}>
         <button type="button" className="btn gold" disabled={settling || busy}
           onClick={onAdvanceClick}>
           {`Advance → ${PHASE_NAMES[next.phase]} · R${next.round}`}
@@ -131,18 +144,21 @@ export function AdvanceControl({ stuckThresholdMs = 10_000 }: { stuckThresholdMs
       </div>
       <ErrorNotice error={error} />
       {confirm && (
-        <div className="drawer" role="dialog" aria-label="confirm advance"
-          style={{ position: 'fixed', left: 16, right: 16, bottom: 16, maxWidth: 688, margin: '0 auto' }}>
-          <p style={{ marginTop: 0 }}>
-            {confirm.kind === 'missing'
-              ? `${confirm.names.length} teams haven't submitted: ${confirm.names.join(', ')}. Advance anyway? Server defaults will apply.`
-              : 'End the season and reveal? This cannot be undone.'}
-          </p>
-          <button type="button" className="btn gold" disabled={settling || busy}
-            onClick={() => void advance()}>
-            {confirm.kind === 'missing' ? 'Advance anyway' : 'End the season'}
-          </button>{' '}
-          <button type="button" className="btn" onClick={() => setConfirm(null)}>Cancel</button>
+        <div className={styles.overlay}>
+          <div className={styles.drawer} role="dialog" aria-label="confirm advance">
+            <p style={{ marginTop: 0 }}>
+              {confirm.kind === 'missing'
+                ? `${confirm.names.length} teams haven't submitted: ${confirm.names.join(', ')}. Advance anyway? Server defaults will apply.`
+                : 'End the season and reveal? This cannot be undone.'}
+            </p>
+            <div className={styles.controlRow}>
+              <button type="button" className="btn gold" disabled={settling || busy}
+                onClick={() => void advance()}>
+                {confirm.kind === 'missing' ? 'Advance anyway' : 'End the season'}
+              </button>
+              <button type="button" className="btn" onClick={() => setConfirm(null)}>Cancel</button>
+            </div>
+          </div>
         </div>
       )}
     </section>

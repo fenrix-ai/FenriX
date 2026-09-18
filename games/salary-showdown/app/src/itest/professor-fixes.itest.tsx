@@ -1,5 +1,6 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 import { signInAnonymously } from 'firebase/auth';
@@ -14,6 +15,71 @@ import App from '../App';
 // so start every test from a clean slate and set the ss.prof* keys each test
 // actually depends on (same hygiene T2 retrofits onto professor.itest.tsx).
 beforeEach(() => localStorage.clear());
+
+test('advance control: two clicks in one render frame start only one pending advance', async () => {
+  let settle!: () => void;
+  const pending = new Promise<void>((resolve) => { settle = resolve; });
+  const call = vi.fn(() => pending);
+
+  vi.resetModules();
+  vi.doMock('../contexts/ProfessorContext', () => ({
+    useProfessor: () => ({
+      gameId: 'pending-game',
+      game: {
+        joinCode: 'PENDING', status: 'active', phase: 'RESULTS', round: 1,
+        timerEndsAt: null, timerPausedMs: null, teamCount: 2,
+        config: { cap: 100, totalRounds: 5 }, professorUid: 'professor',
+      },
+      settling: false,
+      raw: { phase: 'RESULTS', round: 1 },
+      teams: new Map(),
+      bidsSubmitted: new Set(),
+      call,
+    }),
+  }));
+  const { AdvanceControl: PendingAdvanceControl } = await import(
+    '../components/professor/AdvanceControl'
+  );
+  render(<PendingAdvanceControl />);
+  const button = screen.getByRole('button', { name: 'Advance → Front Office · R2' });
+
+  act(() => {
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
+
+  expect(call).toHaveBeenCalledTimes(1);
+  expect(button).toBeDisabled();
+  settle();
+  await act(async () => { await pending; });
+  vi.doUnmock('../contexts/ProfessorContext');
+  vi.resetModules();
+});
+
+test('phase heading remains on the source phase while a transition marker is present', async () => {
+  await signInAnonymously(auth);
+  await waitFor(() => expect(auth.currentUser).toBeTruthy(), { timeout: 15000 });
+  const { gameId } = await httpsCallable(functions, 'createGame')({
+    teamNames: ['Alpha', 'Beta'],
+  }).then((r) => r.data as { gameId: string; joinCode: string });
+  await httpsCallable(functions, 'startSeason')({ gameId });
+  await adminDb().doc(`games/${gameId}`).update({
+    phase: 'AUCTION',
+    transition: {
+      fromRound: 1, fromPhase: 'FREE_AGENCY', toRound: 1, toPhase: 'AUCTION',
+    },
+  });
+
+  localStorage.setItem('ss.profGameId', gameId);
+  localStorage.setItem('ss.profAutoArm', '0');
+  localStorage.setItem('ss.profAutoAdvance', '0');
+  render(<MemoryRouter initialEntries={['/professor']}><App /></MemoryRouter>);
+
+  expect(await screen.findByText('Draft Night · Round 1', {}, { timeout: 20000 }))
+    .toBeInTheDocument();
+  expect(screen.queryByText('Star Auction · Round 1')).toBeNull();
+  expect(screen.getByText('advancing…')).toBeInTheDocument();
+});
 
 test('stuck advance: continuous settling past the threshold offers Resolve; resolving adopts the crashed flip', async () => {
   await signInAnonymously(auth);

@@ -26,6 +26,9 @@ test('seat panel (playtest-2): two-click release frees a claimed seat', async ()
   const user = userEvent.setup();
   render(<MemoryRouter initialEntries={['/professor']}><App /></MemoryRouter>);
 
+  const manageSeats = await screen.findByRole('button', { name: 'Manage seats' },
+    { timeout: 20000 });
+  await user.click(manageSeats);
   const panel = await screen.findByTestId('seat-panel', {}, { timeout: 20000 });
   await waitFor(() => expect(panel.textContent).toContain('Scout: Leaver'), { timeout: 15000 });
 
@@ -38,4 +41,8 @@ test('seat panel (playtest-2): two-click release frees a claimed seat', async ()
   }, { timeout: 15000 });
   await waitFor(() => expect(screen.getByTestId(`seats-${teamA}`).textContent).toContain('Scout: open'),
     { timeout: 15000 });
+
+  await user.click(screen.getByRole('button', { name: 'Close seat tools' }));
+  await waitFor(() => expect(screen.queryByTestId('seat-panel')).toBeNull());
+  expect(manageSeats).toHaveFocus();
 }, 120000);
