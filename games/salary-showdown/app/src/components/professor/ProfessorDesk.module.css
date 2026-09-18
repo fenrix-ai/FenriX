@@ -1,0 +1,259 @@
+.panel {
+  min-width: 0;
+  border: 1px solid var(--ss-border);
+  border-radius: var(--ss-radius-lg);
+  background: linear-gradient(180deg, var(--ss-surface-raised), var(--ss-surface));
+  box-shadow: var(--ss-shadow-panel);
+  padding: 14px;
+}
+
+.panelHeader,
+.boardHeader,
+.controlRow,
+.teamHeading,
+.seatRow,
+.drawerHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.panelHeader,
+.boardHeader,
+.drawerHeader { justify-content: space-between; }
+
+.panelTitle {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.panelCopy {
+  margin: 5px 0 0;
+  color: var(--ss-text-muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.controlRow { flex-wrap: wrap; }
+
+.setupCount {
+  margin: 10px 0 0;
+  color: var(--ss-text-muted);
+  font-size: 0.88rem;
+}
+
+.resumeRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.resumeRow input,
+.teamPicker {
+  min-width: 0;
+  border: 1px solid var(--ss-border);
+  border-radius: 8px;
+  background: var(--ss-surface-inset);
+  color: var(--ss-text);
+  padding: 10px 12px;
+}
+
+.board {
+  border: 1px solid var(--ss-border);
+  border-radius: var(--ss-radius-lg);
+  background: rgb(9 21 36 / 55%);
+  padding: 14px;
+}
+
+.boardHeader { margin-bottom: 12px; }
+
+.boardMeta {
+  color: var(--ss-text-muted);
+  font-family: var(--mono);
+  font-size: 0.82rem;
+}
+
+.teamGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(210px, 1fr));
+  gap: 10px;
+}
+
+.teamCard {
+  min-width: 0;
+  border: 1px solid var(--ss-border-subtle);
+  border-radius: 9px;
+  background: linear-gradient(145deg, rgb(26 51 87 / 88%), rgb(20 38 64 / 94%));
+  padding: 11px;
+}
+
+.teamCard[data-submitted='true'] {
+  border-color: var(--ss-payroll-cash);
+  box-shadow: inset 3px 0 0 var(--ss-payroll-cash);
+}
+
+.teamHeading { align-items: flex-start; }
+.teamIdentity { min-width: 0; flex: 1; }
+
+.teamName {
+  display: block;
+  overflow: hidden;
+  font-size: 0.95rem;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doneState {
+  display: block;
+  margin-top: 3px;
+  color: var(--ss-text-muted);
+  font-size: 0.76rem;
+  line-height: 1.3;
+}
+
+.doneState[data-submitted='true'] { color: var(--ss-payroll-cash); }
+
+.roleList {
+  display: grid;
+  gap: 5px;
+  margin: 10px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.roleItem {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 8px;
+  color: var(--ss-text-muted);
+  font-size: 0.78rem;
+}
+
+.roleName { color: var(--ss-text-dim); font-weight: 700; }
+.roleHolder { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.openSeat { color: var(--ss-text-dim); }
+
+.manageButton { width: 100%; padding-block: 7px; font-size: 0.8rem; }
+
+.overlay {
+  position: fixed;
+  z-index: 50;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(3 9 17 / 72%);
+}
+
+.drawer {
+  width: min(100%, 760px);
+  max-height: min(88vh, 760px);
+  overflow: auto;
+  border: 1px solid var(--ss-gold);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #1b355a, #10233d);
+  box-shadow: 0 28px 70px rgb(0 0 0 / 48%);
+  padding: 16px;
+}
+
+.drawerHeader { align-items: flex-start; }
+.drawerHeader h2 { margin: 0; font-size: 1.25rem; }
+
+.drawerIntro {
+  max-width: 62ch;
+  margin: 5px 0 0;
+  color: var(--ss-text-muted);
+  font-size: 0.85rem;
+}
+
+.pickerLabel {
+  display: grid;
+  gap: 5px;
+  margin-top: 16px;
+  color: var(--ss-text-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.seatTeam {
+  margin-top: 12px;
+  border: 1px solid var(--ss-border-subtle);
+  border-radius: 9px;
+  background: var(--ss-surface-inset);
+  padding: 12px;
+}
+
+.seatTeamTitle { margin: 0 0 10px; font-size: 1rem; }
+.seatRows { display: grid; gap: 8px; }
+
+.seatRow {
+  justify-content: space-between;
+  min-height: 46px;
+  border-top: 1px solid var(--ss-border-subtle);
+  padding-top: 8px;
+}
+
+.seatRow:first-child { border-top: 0; padding-top: 0; }
+.seatLabel { min-width: 60px; color: var(--ss-text-dim); font-weight: 700; }
+.seatHolder { min-width: 0; flex: 1; }
+.seatOpen { color: var(--ss-text-dim); }
+
+.timerSettings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 10px;
+  border: 1px solid var(--ss-border-subtle);
+  border-radius: 8px;
+  background: var(--ss-surface-inset);
+  padding: 10px;
+}
+
+.timerSetting {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px 14px;
+  gap: 6px;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: 0.76rem;
+}
+
+.timerSetting input {
+  width: 100%;
+  border: 1px solid var(--ss-border);
+  border-radius: 6px;
+  background: var(--ss-surface);
+  color: var(--ss-text);
+  padding: 7px;
+}
+
+.fullRow { grid-column: 1 / -1; }
+
+.contextPanel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.contextList {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+  color: var(--ss-text-muted);
+  font-size: 0.78rem;
+}
+
+@media (max-width: 1380px) {
+  .teamGrid { grid-template-columns: repeat(2, minmax(210px, 1fr)); }
+}
+
+@media (max-width: 760px) {
+  .teamGrid, .timerSettings, .contextPanel { grid-template-columns: minmax(0, 1fr); }
+  .boardHeader, .seatRow { align-items: stretch; flex-direction: column; }
+  .resumeRow { grid-template-columns: minmax(0, 1fr); }
+  .overlay { align-items: end; padding: 0; }
+  .drawer { max-height: 92vh; border-radius: 12px 12px 0 0; }
+}

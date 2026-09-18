@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState, type MouseEvent } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { useProfessor } from '../../contexts/ProfessorContext';
@@ -14,89 +14,112 @@ import { RoundContext } from '../../components/professor/RoundContext';
 import { ErrorNotice } from '../../components/ui/ErrorNotice';
 import { concatBoxCsv } from '../../lib/exportSeason';
 import type { RoundDoc } from '../../types/models';
+import styles from './ProfessorPage.module.css';
 
-// /professor control-panel shell (design spec §5.1). Mounted below the
-// header: SessionSetup, AdvanceControl, TimerStrip, SubmissionGrid,
-// SeatPanel, RevealStepper, RoundContext and the season CSV export — each
-// renders null outside the phases it serves — except SeatPanel and the
-// season CSV export, which span phases (SeatPanel whenever a session
-// exists; the export from round 1 on).
 export default function ProfessorPage() {
   const { gameId, game, settling, gameError, setGameId } = useProfessor();
+  const [seatPanelOpen, setSeatPanelOpen] = useState(false);
+  const [seatTeamId, setSeatTeamId] = useState<string | null>(null);
+  const seatOpener = useRef<HTMLElement | null>(null);
+
+  const openSeatPanel = (teamId: string | null, trigger: HTMLElement) => {
+    seatOpener.current = trigger;
+    setSeatTeamId(teamId);
+    setSeatPanelOpen(true);
+  };
+  const closeSeatPanel = () => {
+    setSeatPanelOpen(false);
+    queueMicrotask(() => seatOpener.current?.focus());
+  };
+  const openGeneralSeatPanel = (event: MouseEvent<HTMLButtonElement>) => {
+    openSeatPanel(null, event.currentTarget);
+  };
+
   return (
-    <main className="page">
-      <div className="phase-head">
-        <div>
-          <div className="brand">Salary Showdown</div>
-          <h1 style={{ margin: '2px 0 0', fontSize: 22 }}>Professor panel</h1>
+    <main className={styles.page}>
+      <header className={styles.masthead}>
+        <div className={styles.titleGroup}>
+          <div className={styles.brand}>Salary Showdown</div>
+          <h1 className={styles.title}>Professor control desk</h1>
         </div>
-        <button type="button" className="btn" onClick={() => window.open('/bigscreen')}>
-          Open projector
-        </button>
-      </div>
+        <div className={styles.headerActions}>
+          {game && (
+            <button type="button" className="btn" aria-expanded={seatPanelOpen}
+              aria-controls="professor-seat-panel" onClick={openGeneralSeatPanel}>
+              Manage seats
+            </button>
+          )}
+          <button type="button" className="btn" onClick={() => window.open('/bigscreen')}>
+            Open projector
+          </button>
+        </div>
+      </header>
+
       {game ? (
-        <section className="card" style={{ marginTop: 10 }} aria-label="Session">
-          <div className="mono" aria-label="Join code"
-            style={{ fontSize: 44, fontWeight: 700, letterSpacing: 6, lineHeight: 1.1 }}>
-            {game.joinCode}
+        <section className={styles.session} aria-label="Session">
+          <div>
+            <div className={styles.sessionLabel}>Join code</div>
+            <div className={styles.sessionCode} aria-label="Join code">{game.joinCode}</div>
           </div>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', marginTop: 4 }}>
-            <strong>
+          <div className={styles.sessionDetails}>
+            <strong className={styles.phaseLine}>
               {PHASE_NAMES[game.phase]}{game.round > 0 ? ` · Round ${game.round}` : ''}
             </strong>
-            {settling && <span className="dim">advancing…</span>}
+            {settling && <span className={styles.settling}>advancing…</span>}
+            <span className={styles.configLine}>
+              Cap {fmtM(game.config.cap)} · {game.config.totalRounds} rounds
+            </span>
           </div>
-          {/* Config shown read-only (spec §5 item 9). Hard rule: cap/totalRounds
-              are DECORATIVE — plain text only, never an input or button. */}
-          <div className="muted" style={{ marginTop: 4 }}>
-            Cap {fmtM(game.config.cap)} · {game.config.totalRounds} rounds
-          </div>
-          <button type="button" className="btn" style={{ marginTop: 8 }}
-            onClick={() => setGameId(null)}>
+          <button type="button" className="btn" onClick={() => setGameId(null)}>
             Clear session
           </button>
         </section>
       ) : gameId ? (
-        <section className="card" style={{ marginTop: 10 }} aria-label="Session">
-          <p className="muted" style={{ margin: 0 }}>Connecting to session…</p>
+        <section className={styles.connection} aria-label="Session">
+          <p className="muted">Connecting to session…</p>
           {gameError && (
-            <p className="muted" data-testid="connect-error" style={{ margin: '6px 0 0' }}>
+            <p className="muted" data-testid="connect-error">
               This browser can't open that game — either the game id is mistyped, or
               this isn't the browser that created it (professor identity stays in the
               creating browser). If that browser is gone, see the runbook's Lost
               laptop recovery.
             </p>
           )}
-          {/* Bad-gameId dead-end fix (3b T1): a mistyped or foreign gameId
-              never produces a game doc (rules deny the read), so without
-              this button the panel sits on "Connecting" forever. Clearing
-              drops ss.profGameId + state and SessionSetup's create/resume
-              view returns. */}
-          <button type="button" className="btn" style={{ marginTop: 8 }}
-            onClick={() => setGameId(null)}>
+          <button type="button" className="btn" onClick={() => setGameId(null)}>
             Clear session
           </button>
         </section>
+      ) : null}
+
+      {!game ? (
+        <div className={styles.setupOnly}><SessionSetup /></div>
       ) : (
-        <p className="muted" style={{ marginTop: 10 }}>No active session.</p>
+        <>
+          <div className={styles.workspace}>
+            <div className={styles.boardColumn}>
+              <SubmissionGrid onManageSeats={openSeatPanel} />
+            </div>
+            <aside className={styles.controlRail} aria-label="Session controls">
+              <div className={styles.stickyControls}>
+                <SessionSetup />
+                <AdvanceControl />
+                <TimerStrip />
+                <RevealStepper />
+              </div>
+            </aside>
+          </div>
+          <div className={styles.contextGrid}>
+            <RoundContext />
+            <ExportSeasonButton />
+          </div>
+        </>
       )}
-      <SessionSetup />
-      <AdvanceControl />
-      <TimerStrip />
-      <SubmissionGrid />
-      <SeatPanel />
-      <RevealStepper />
-      <RoundContext />
-      <ExportSeasonButton />
+
+      <SeatPanel open={seatPanelOpen} initialTeamId={seatTeamId} onClose={closeSeatPanel} />
     </main>
   );
 }
 
-// Design spec §5.7: "Download season CSV". The panel only SUBSCRIBES to the
-// current round, so the export does one-shot getDoc reads of rounds/1..round
-// and concatenates client-side (single header row, concatBoxCsv). Rounds not
-// yet simulated simply do not exist and are skipped — exporting mid-round is
-// legal. The 23-column boxCsv format is frozen; rows pass through verbatim.
 function ExportSeasonButton() {
   const { gameId, game } = useProfessor();
   const [busy, setBusy] = useState(false);
@@ -117,11 +140,6 @@ function ExportSeasonButton() {
       const a = document.createElement('a');
       a.href = url;
       a.download = `salary-showdown-season-${joinCode}.csv`;
-      // 3b T1: the anchor must be IN the document for the click to download
-      // reliably (Firefox no-ops clicks on unattached anchors), and the
-      // object URL must outlive the click — a synchronous revoke can cancel
-      // a download the browser starts asynchronously. 10s is comfortably
-      // past any download start.
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -133,9 +151,13 @@ function ExportSeasonButton() {
     }
   };
   return (
-    <section className="card" style={{ marginTop: 10 }} aria-label="Export">
+    <section className={styles.exportCard} aria-label="Export">
+      <div>
+        <strong>Season data</strong>
+        <p className="muted">Download every completed round in the frozen 23-column format.</p>
+      </div>
       <button type="button" className="btn" disabled={busy} onClick={() => void download()}>
-        Download season CSV
+        {busy ? 'Preparing CSV…' : 'Download season CSV'}
       </button>
       <ErrorNotice error={error} />
     </section>
