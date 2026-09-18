@@ -38,7 +38,7 @@ test('a mid-advance transition marker holds the client on the fully-built phase'
   // blank Star Auction (AuctionPage renders null while the wave doc is missing).
   await new Promise((r) => setTimeout(r, 1500));
   expect(screen.getByText(/Draft Night · Round 1/)).toBeInTheDocument();
-  expect(screen.queryAllByLabelText(/salary for /)).toHaveLength(0);
+  expect(screen.queryAllByRole('spinbutton', { name: /Salary per round for/ })).toHaveLength(0);
 
   // Enter hook lands (any five catalog pids render fine as a wave), marker
   // clears — the client must now follow to the auction and show all five cards.
@@ -46,7 +46,7 @@ test('a mid-advance transition marker holds the client on the fully-built phase'
   await adminDb().doc(`games/${seeded.gameId}/auctions/1`)
     .set({ stars: cat.docs.map((d) => Number(d.id)) });
   await adminDb().doc(`games/${seeded.gameId}`).update({ transition: FieldValue.delete() });
-  await waitFor(() => expect(screen.getAllByLabelText(/salary for /)).toHaveLength(5),
+  await waitFor(() => expect(screen.getAllByRole('spinbutton', { name: /Salary per round for/ })).toHaveLength(5),
     { timeout: 20000 });
 }, 120000);
 

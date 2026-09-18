@@ -53,9 +53,8 @@ test('second-tab strand (F6): a pre-membership boot recovers after join, no relo
   await user.type(screen.getByLabelText('display name'), 'Tab Two');
   await user.click(screen.getByRole('button', { name: 'Find game' }));
   await waitFor(() => expect(screen.getByText('Alpha')).toBeInTheDocument(), { timeout: 15000 });
-  const alphaCard = screen.getByText('Alpha').closest('.card')!;
-  await user.click(Array.from(alphaCard.querySelectorAll('button'))
-    .find((b) => b.textContent === 'GM')!);
+  await user.click(screen.getByRole('button', { name: 'Choose Alpha' }));
+  await user.click(screen.getByRole('button', { name: 'Join as GM' }));
 
   await waitFor(() => expect(screen.getByRole('heading', { name: /Lobby/ })).toBeInTheDocument(),
     { timeout: 15000 });
