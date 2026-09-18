@@ -1,57 +1,124 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useGame } from '../contexts/GameContext';
-import { useRoundDoc } from '../hooks/useRoundDoc';
+import { useRoundPresentation } from '../contexts/RoundPresentationContext';
 import { PhaseHeader } from '../components/ui/PhaseHeader';
+import { MatchReveal } from '../components/simulation/MatchReveal';
+import { CompletedGames } from '../components/simulation/CompletedGames';
+import { MatchBoxscore } from '../components/simulation/MatchBoxscore';
+import styles from './SimulatePage.module.css';
 
 export default function SimulatePage() {
-  const { game, membership, teams } = useGame();
+  const { game, membership, team, teams } = useGame();
+  const presentation = useRoundPresentation();
   const round = game?.round ?? 1;
-  const rd = useRoundDoc(round);
-  const [shown, setShown] = useState(0);
+  const { rd, applied, complete } = presentation;
+  const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
+  const ownTeamId = membership?.teamId ?? null;
 
-  const mine = useMemo(() => {
-    if (!rd || !membership) return [];
-    return rd.games
-      .filter((g) => g.home === membership.teamId || g.away === membership.teamId)
-      .map((g) => {
-        const home = g.home === membership.teamId;
-        return {
-          id: g.game_id,
-          opponent: teams.get(home ? g.away : g.home)?.name ?? '—',
-          us: home ? g.homeScore : g.awayScore,
-          them: home ? g.awayScore : g.homeScore,
-        };
-      });
-  }, [rd, membership, teams]);
+  const visibleGames = useMemo(
+    () => rd?.games.slice(0, applied) ?? [],
+    [applied, rd],
+  );
+  const completedGames = useMemo(
+    () => ownTeamId
+      ? visibleGames.filter((gameResult) =>
+          gameResult.home === ownTeamId || gameResult.away === ownTeamId)
+      : [],
+    [ownTeamId, visibleGames],
+  );
 
-  useEffect(() => { // cosmetic client pacing — the data is already server-final
-    if (mine.length === 0) return;
-    setShown(0);
-    const interval = Math.min(3000, 45000 / mine.length);
-    const id = setInterval(() => setShown((n) => {
-      if (n + 1 >= mine.length) clearInterval(id);
-      return n + 1;
-    }), interval);
-    return () => clearInterval(id);
-  }, [mine.length]);
+  useEffect(() => {
+    setSelectedGameId(null);
+  }, [round]);
 
-  if (!game || !membership) return null;
-  const done = mine.length > 0 && shown >= mine.length;
+  useEffect(() => {
+    if (selectedGameId && !completedGames.some((gameResult) => gameResult.game_id === selectedGameId)) {
+      setSelectedGameId(null);
+    }
+  }, [completedGames, selectedGameId]);
+
+  const featured = useMemo(() => {
+    if (!rd || !ownTeamId) return { game: null, revealed: false };
+    const lastApplied = visibleGames.at(-1);
+    if (lastApplied && (lastApplied.home === ownTeamId || lastApplied.away === ownTeamId)) {
+      return { game: lastApplied, revealed: true };
+    }
+    const next = rd.games.slice(applied).find((gameResult) =>
+      gameResult.home === ownTeamId || gameResult.away === ownTeamId);
+    if (next) return { game: next, revealed: false };
+    return { game: completedGames.at(-1) ?? null, revealed: completedGames.length > 0 };
+  }, [applied, completedGames, ownTeamId, rd, visibleGames]);
+
+  const selectedGame = selectedGameId
+    ? completedGames.find((gameResult) => gameResult.game_id === selectedGameId) ?? null
+    : null;
+  const record = membership
+    ? presentation.rows.find((row) => row.teamId === membership.teamId) ?? null
+    : null;
+
+  if (!game || !membership || !team) return null;
   return (
-    <main className="page">
+    <main className={`page ${styles.page}`}>
       <PhaseHeader title="Simulate" round={round} timerEndsAt={game.timerEndsAt} timerPausedMs={game.timerPausedMs} />
-      {mine.length === 0 && <p className="muted">Crunching the round…</p>}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {mine.slice(0, shown).map((g) => (
-          <div key={g.id} className="card mono" style={{ display: 'flex', gap: 12 }}
-            data-testid={g.us > g.them ? 'game-win' : 'game-loss'}>
-            <span className={g.us > g.them ? 'ok' : 'neg'}>{g.us > g.them ? 'W' : 'L'}</span>
-            <span style={{ flex: 1 }}>vs {g.opponent}</span>
-            <span>{g.us}–{g.them}</span>
+      {!rd ? (
+        <section className={styles.preparing} role="status" aria-live="polite">
+          <div className={styles.preparingCourt} aria-hidden="true"><span /></div>
+          <div>
+            <h2>Preparing round {round} results</h2>
+            <p>The server is assembling the league feed. Your franchise and current round remain in view.</p>
           </div>
-        ))}
-      </div>
-      {done && <p className="ok" role="status">Round complete — results ready.</p>}
+        </section>
+      ) : (
+        <>
+          <div className={styles.scoreboardBar}>
+            <div>
+              <span>Live record</span>
+              <strong className="mono" data-testid="simulation-record">
+                {record ? `${record.wins}–${record.losses}` : '—'}
+              </strong>
+            </div>
+            <div className={styles.feedProgress}>
+              <span>League feed</span>
+              <strong className="mono">{applied} / {rd.games.length}</strong>
+            </div>
+            <button
+              className="btn gold"
+              disabled={complete}
+              onClick={presentation.revealAll}
+              type="button"
+            >
+              Reveal all results
+            </button>
+          </div>
+
+          <MatchReveal
+            game={featured.game}
+            key={`${round}-${featured.game?.game_id ?? 'complete'}-${featured.revealed ? 'final' : 'intro'}`}
+            ownTeamId={membership.teamId}
+            revealed={featured.revealed}
+            teams={teams}
+          />
+
+          <CompletedGames
+            games={completedGames}
+            onSelect={(gameId) => setSelectedGameId((current) => current === gameId ? null : gameId)}
+            ownTeamId={membership.teamId}
+            round={round}
+            selectedGameId={selectedGameId}
+            teams={teams}
+          />
+
+          {selectedGame ? <MatchBoxscore boxCsv={rd.boxCsv} game={selectedGame} teams={teams} /> : null}
+
+          {complete ? (
+            <p className={styles.complete} role="status">Round complete — results ready.</p>
+          ) : (
+            <p className={styles.progressNote}>
+              Scores, the record, and completed matchups update from the same league reveal.
+            </p>
+          )}
+        </>
+      )}
     </main>
   );
 }
