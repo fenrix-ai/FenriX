@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, test, vi } from 'vitest';
 import type { ReactNode } from 'react';
@@ -18,6 +18,11 @@ vi.mock('@dnd-kit/core', () => ({
 
 vi.mock('../../contexts/GameContext', () => ({ useGame: vi.fn() }));
 vi.mock('../ui/PhaseHeader', () => ({ PhaseHeader: () => <header>Set Lineup</header> }));
+
+const authState = vi.hoisted(() => ({ uid: 'coach-a' }));
+vi.mock('../../contexts/AuthContext', () => ({
+  useAuth: () => ({ uid: authState.uid, ready: true }),
+}));
 
 const player = (pid: number, name: string, position: 'G' | 'W' | 'B') => ({
   pid, name, position, pts_per_game: '10.0', rebounds_per_game: '5.0',
@@ -70,6 +75,7 @@ const mockContext = (call = vi.fn().mockResolvedValue({ ok: true })) => ({
 });
 
 beforeEach(() => {
+  authState.uid = 'coach-a';
   vi.mocked(useGame).mockReturnValue(
     mockContext() as unknown as ReturnType<typeof useGame>,
   );
@@ -158,4 +164,63 @@ test('submit keeps only the first two bench entries active and sends later depth
   }));
   expect(screen.getByRole('status', { name: 'Placement status' }))
     .toHaveTextContent('Lineup saved for round 1. You can revise it until the phase closes.');
+});
+
+test('a pending save cannot acknowledge a different authenticated user with matching membership labels', async () => {
+  let resolveSave!: () => void;
+  const call = vi.fn(() => new Promise<void>((resolve) => { resolveSave = resolve; }));
+  const context = mockContext(call);
+  vi.mocked(useGame).mockReturnValue(context as unknown as ReturnType<typeof useGame>);
+  const { rerender } = render(<LineupPage />);
+  const user = userEvent.setup();
+
+  await user.click(await screen.findByRole('button', { name: 'Submit lineup' }));
+  authState.uid = 'coach-b';
+  rerender(<LineupPage />);
+  await act(async () => resolveSave());
+
+  expect(screen.queryAllByText(/Lineup saved for round 1/)).toHaveLength(0);
+  expect(screen.getByRole('button', { name: 'Submit lineup' })).toBeEnabled();
+});
+
+test('a pending save cannot publish success after the game scope changes', async () => {
+  let resolveSave!: () => void;
+  const call = vi.fn(() => new Promise<void>((resolve) => { resolveSave = resolve; }));
+  const context = mockContext(call);
+  vi.mocked(useGame).mockReturnValue(context as unknown as ReturnType<typeof useGame>);
+  const { rerender } = render(<LineupPage />);
+  const user = userEvent.setup();
+
+  await user.click(await screen.findByRole('button', { name: 'Submit lineup' }));
+  vi.mocked(useGame).mockReturnValue({
+    ...context,
+    gameId: 'game-w05-next',
+  } as unknown as ReturnType<typeof useGame>);
+  rerender(<LineupPage />);
+  await act(async () => resolveSave());
+
+  expect(screen.queryAllByText(/Lineup saved for round 1/)).toHaveLength(0);
+  expect(screen.getByRole('button', { name: 'Submit lineup' })).toBeEnabled();
+});
+
+test('a pending save cannot publish an error or keep the next game busy after rejection', async () => {
+  let rejectSave!: (error: Error) => void;
+  const call = vi.fn(() => new Promise<void>((_resolve, reject) => { rejectSave = reject; }));
+  const context = mockContext(call);
+  vi.mocked(useGame).mockReturnValue(context as unknown as ReturnType<typeof useGame>);
+  const { rerender } = render(<LineupPage />);
+  const user = userEvent.setup();
+
+  await user.click(await screen.findByRole('button', { name: 'Submit lineup' }));
+  vi.mocked(useGame).mockReturnValue({
+    ...context,
+    gameId: 'game-w05-next',
+  } as unknown as ReturnType<typeof useGame>);
+  rerender(<LineupPage />);
+  expect(screen.getByRole('button', { name: 'Submit lineup' })).toBeEnabled();
+
+  await act(async () => rejectSave(new Error('old game save rejected')));
+
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Submit lineup' })).toBeEnabled();
 });

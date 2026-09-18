@@ -8,6 +8,7 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core';
 import { useGame } from '../contexts/GameContext';
+import { useAuth } from '../contexts/AuthContext';
 import { PhaseHeader } from '../components/ui/PhaseHeader';
 import { ErrorNotice } from '../components/ui/ErrorNotice';
 import { CourtSlot } from '../components/lineup/CourtSlot';
@@ -122,7 +123,15 @@ function SlotDropZone({
   );
 }
 
-export default function LineupPage(): ReactElement | null {
+export default function LineupPage(): ReactElement {
+  const { game, membership, gameId } = useGame();
+  const { uid } = useAuth();
+  const scope = [gameId, game?.round, game?.phase, membership?.teamId, uid].join('/');
+
+  return <LineupWorkspace key={scope} scope={scope} />;
+}
+
+function LineupWorkspace({ scope }: { scope: string }): ReactElement | null {
   const { game, team, catalog, membership, call, gameId, actsAs } = useGame();
   const [slots, setSlots] = useState<Slots | null>(null);
   const [style, setStyle] = useState<Playstyle>('Balanced');
@@ -147,10 +156,7 @@ export default function LineupPage(): ReactElement | null {
   const identity = team && membership
     ? resolveIdentity(membership.teamId, team.identity)
     : undefined;
-  const receiptScope = [
-    gameId, round, game?.phase, membership?.teamId, membership?.role, membership?.displayName,
-  ].join('/');
-  const { receipt, run } = useActionReceipt(receiptScope);
+  const { receipt, run } = useActionReceipt(scope);
 
   useEffect(() => {
     if (!team || catalog.size === 0 || active.length === 0 || slots) return;
