@@ -33,7 +33,7 @@ export function PayrollTimeline({ team, round, preview }: PayrollTimelineProps):
         <li><span className={styles.previewKey} />Candidate</li>
       </ul>
 
-      <ol className={styles.rounds}>
+      <ol aria-labelledby={titleId} className={styles.rounds} tabIndex={0}>
         {points.map((point) => {
           const overCap = point.total > CAP + 1e-9;
           const heights = {
