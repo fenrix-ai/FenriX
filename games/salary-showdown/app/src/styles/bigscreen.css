@@ -145,6 +145,43 @@
 .bs-live-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bs-live-rec { width: 2.8em; text-align: right; }
 
+/* Reduced motion reveals every final live rank immediately. For a classroom
+   league, use the wall width below the eight-score page instead of building an
+   over-height sidebar; smaller leagues keep the standard split composition. */
+.bs-sim-reduced-dense { height: 100dvh; min-height: 0; padding-block: 14px;
+  gap: 8px; }
+.bs-sim-reduced-dense .bs-sim-split { display: grid; grid-template-columns: 1fr;
+  grid-template-rows: auto minmax(0, 1fr); gap: 8px; align-items: stretch; }
+.bs-sim-reduced-dense .bs-scoreboard-page { width: 100%; }
+.bs-sim-reduced-dense .bs-flood { gap: 6px 10px; }
+.bs-sim-reduced-dense .bs-scorecard { align-items: center; gap: 8px; padding: 6px 10px;
+  font-size: clamp(15px, 1.35vw, 24px); }
+.bs-sim-reduced-dense .bs-score-team { overflow: visible; text-overflow: clip;
+  white-space: normal; overflow-wrap: anywhere; line-height: 1.05; }
+.bs-sim-reduced-dense .bs-page-status { margin-top: 4px; }
+.bs-sim-reduced-dense .bs-live-standings.is-classroom-grid { width: 100%; min-width: 0;
+  display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-rows: auto repeat(3, minmax(0, 1fr));
+  align-content: stretch; gap: 4px 8px; }
+.bs-sim-reduced-dense .bs-live-title { grid-column: 1 / -1; margin: 0; }
+.bs-live-standings.is-classroom-grid .bs-live-row { min-width: 0; display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "rank mark delta" "name name name" "record record record";
+  align-content: center; gap: 1px 5px; padding: 3px 6px;
+  border: 1px solid var(--border); font-size: clamp(13px, .95vw, 20px); }
+.bs-live-standings.is-classroom-grid .bs-live-rank { grid-area: rank; width: auto; }
+.bs-live-standings.is-classroom-grid .bs-live-row svg { grid-area: mark;
+  justify-self: center; --mark-size: 20px !important; }
+.bs-live-standings.is-classroom-grid .bs-live-name { grid-area: name; min-width: 0;
+  overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere;
+  line-height: 1.05; }
+.bs-live-standings.is-classroom-grid .bs-live-rec { grid-area: record; width: auto;
+  text-align: left; }
+.bs-live-standings.is-classroom-grid .bs-live-row > :last-child { grid-area: delta;
+  text-align: right; }
+.bs-sim-reduced-dense > .bs-sub[role="status"] { margin: 0;
+  font-size: clamp(14px, 1.4vw, 22px); }
+
 @keyframes bs-final-in {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
@@ -165,6 +202,9 @@
   .bs-scorecard > svg { display: none; }
   .bs-shuffle.is-static-grid.is-classroom-grid {
     grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .bs-sim-reduced-dense .bs-live-standings.is-classroom-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-rows: auto repeat(5, minmax(0, 1fr)); }
 }
 
 /* A 720p classroom wall has only three card rows to spend. Compact the lobby
@@ -194,6 +234,10 @@
   .bs-led { margin-left: auto; }
   .bs-sim-split { flex-direction: column; }
   .bs-live-standings { width: 100%; }
+  .bs-sim-reduced-dense { height: auto; min-height: 100dvh; }
+  .bs-sim-reduced-dense .bs-sim-split { grid-template-rows: auto; }
+  .bs-sim-reduced-dense .bs-live-standings.is-classroom-grid {
+    grid-template-columns: 1fr; grid-template-rows: auto; }
   .bs-shuffle.is-static-grid,
   .bs-shuffle.is-static-grid.is-classroom-grid { grid-template-columns: 1fr; }
   .bs-podium { align-items: stretch; flex-direction: column; }

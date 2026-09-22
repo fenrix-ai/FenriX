@@ -36,8 +36,9 @@ export function SimulateFlood() {
   const scoreStart = scorePage * SCORE_PAGE_SIZE;
   const scoreEnd = Math.min(total, (scorePage + 1) * SCORE_PAGE_SIZE);
   const visibleLive = reduced ? live : live.slice(livePager.start, livePager.end);
+  const denseReduced = reduced && live.length > 12;
   return (
-    <main className="bigscreen">
+    <main className={`bigscreen${denseReduced ? ' bs-sim-reduced-dense' : ''}`}>
       <header className="bs-broadcast-head">
         <div className="brand bs-brand">Salary Showdown</div>
         <h1 className="bs-phase-title">{PHASE_NAMES.SIMULATE}</h1>
@@ -84,7 +85,8 @@ export function SimulateFlood() {
             arrive together. Facts only: rank, name, record, movement vs the
             round start. The RESULTS shuffle is unchanged; this previews it. */}
         {total > 0 && (
-          <aside className="bs-live-standings" data-testid="bs-live-standings">
+          <aside className={`bs-live-standings${denseReduced ? ' is-classroom-grid' : ''}`}
+            data-testid="bs-live-standings">
             <div className="bs-live-title">Standings</div>
             {visibleLive.map((r) => {
               const visual = teams.get(r.teamId);
