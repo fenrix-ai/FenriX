@@ -18,7 +18,7 @@ export function WeightsCompare({ trueWeights }: { trueWeights: RevealDoc['trueWe
         <g key={grp.title}>
           <text x={grp.boxX} y={22} fontSize={15} fontWeight={700} fill="var(--gold)">
             {grp.title}</text>
-          <text x={grp.boxX} y={42} fontSize={11} fill="var(--dim)">
+          <text x={grp.boxX} y={42} fontSize={11} fill="var(--muted)">
             {wrapChartLabel(grp.unitLabel, 48).slice(0, 2).map((line, index) => (
               <tspan key={line} x={grp.boxX} dy={index === 0 ? 0 : 14}>{line}</tspan>
             ))}
@@ -41,7 +41,7 @@ export function WeightsCompare({ trueWeights }: { trueWeights: RevealDoc['trueWe
           ))}
         </g>
       ))}
-      <text x={F.w / 2} y={F.h - 10} textAnchor="middle" fontSize={12} fill="var(--dim)">
+      <text x={F.w / 2} y={F.h - 10} textAnchor="middle" fontSize={12} fill="var(--muted)">
         {g.caption}</text>
     </svg>
   );

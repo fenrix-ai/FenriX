@@ -17,7 +17,7 @@ export function BestWorst({ perTeam, teamNames, playerNames, order, highlightTea
     <svg data-testid="chart-best-worst" viewBox={`0 0 ${w} ${h}`} role="img"
       aria-label="Best and worst signing per team, TrueImpact per million dollars"
       style={{ width: '100%', height: 'auto', display: 'block' }}>
-      <g fontSize={11} fill="var(--dim)">
+      <g fontSize={11} fill="var(--muted)">
         <text x={12} y={18}>TEAM</text>
         <text x={210} y={18}>BEST SIGNING · TI PER $M</text>
         <text x={560} y={18}>WORST SIGNING · TI PER $M</text>

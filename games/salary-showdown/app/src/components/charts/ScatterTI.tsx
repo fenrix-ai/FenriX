@@ -42,14 +42,14 @@ export function ScatterTI({ rows, selectedPid = null, onSelectPid,
       {g.xTicks.map((t) => (
         <g key={`x${t.label}`}>
           <line x1={t.pos} y1={y1} x2={t.pos} y2={y1 + 4} stroke="var(--border)" />
-          <text x={t.pos} y={y1 + 18} textAnchor="middle" fontSize={12} fill="var(--dim)">
+          <text x={t.pos} y={y1 + 18} textAnchor="middle" fontSize={12} fill="var(--muted)">
             {t.label}</text>
         </g>
       ))}
       {g.yTicks.map((t) => (
         <g key={`y${t.label}`}>
           <line x1={x0 - 4} y1={t.pos} x2={x0} y2={t.pos} stroke="var(--border)" />
-          <text x={x0 - 8} y={t.pos + 4} textAnchor="end" fontSize={12} fill="var(--dim)">
+          <text x={x0 - 8} y={t.pos + 4} textAnchor="end" fontSize={12} fill="var(--muted)">
             {t.label}</text>
         </g>
       ))}

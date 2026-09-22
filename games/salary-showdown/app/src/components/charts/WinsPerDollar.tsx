@@ -16,7 +16,7 @@ export function WinsPerDollar({ rows, teamNames }: {
     <svg data-testid="chart-wins-per-dollar" viewBox={`0 0 ${f.w} ${f.h}`} role="img"
       aria-label="Wins per payroll dollar by team, best first"
       style={{ width: '100%', height: 'auto', display: 'block' }}>
-      <text x={f.padL} y={18} fontSize={11} fill="var(--dim)">
+      <text x={f.padL} y={18} fontSize={11} fill="var(--muted)">
         Wins per $M of committed payroll — cut contracts still count</text>
       {bars.map((b) => (
         <g key={b.teamId}>
