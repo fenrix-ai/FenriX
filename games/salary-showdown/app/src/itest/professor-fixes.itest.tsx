@@ -110,6 +110,50 @@ test('advance confirmation contains focus, closes on Escape, and restores its tr
   vi.resetModules();
 });
 
+test('successful advance confirmation restores focus after the surviving trigger is enabled', async () => {
+  const call = vi.fn().mockResolvedValue(undefined);
+  vi.resetModules();
+  vi.doMock('../contexts/ProfessorContext', () => ({
+    useProfessor: () => ({
+      gameId: 'confirm-success-game',
+      game: {
+        joinCode: 'SUCCESS', status: 'active', phase: 'FREE_AGENCY', round: 1,
+        timerEndsAt: null, timerPausedMs: null, teamCount: 2,
+        config: { cap: 100, totalRounds: 5 }, professorUid: 'professor',
+      },
+      settling: false,
+      raw: { phase: 'FREE_AGENCY', round: 1 },
+      teams: new Map([
+        ['alpha', { name: 'Alpha' }],
+        ['beta', { name: 'Beta' }],
+      ]),
+      bidsSubmitted: new Set<string>(),
+      call,
+    }),
+  }));
+  const { AdvanceControl: ConfirmAdvanceControl } = await import(
+    '../components/professor/AdvanceControl'
+  );
+  const user = userEvent.setup();
+  render(<ConfirmAdvanceControl />);
+  const trigger = screen.getByRole('button', { name: 'Advance → Star Auction · R1' });
+
+  await user.click(trigger);
+  await user.click(screen.getByRole('button', { name: 'Advance anyway' }));
+  await waitFor(() => {
+    expect(screen.queryByRole('dialog', { name: 'confirm advance' })).toBeNull();
+    expect(trigger).toBeEnabled();
+  });
+  expect(trigger).toHaveFocus();
+  expect(call).toHaveBeenCalledWith('advancePhase', {
+    gameId: 'confirm-success-game',
+    expectedPhase: 'FREE_AGENCY',
+    expectedRound: 1,
+  });
+  vi.doUnmock('../contexts/ProfessorContext');
+  vi.resetModules();
+});
+
 test('phase heading remains on the source phase while a transition marker is present', async () => {
   await signInAnonymously(auth);
   await waitFor(() => expect(auth.currentUser).toBeTruthy(), { timeout: 15000 });

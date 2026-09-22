@@ -42,6 +42,7 @@ export function AdvanceControl({ stuckThresholdMs = 10_000 }: { stuckThresholdMs
   const advanceTriggerRef = useRef<HTMLButtonElement>(null);
   const confirmDialogRef = useRef<HTMLDivElement>(null);
   const confirmActionRef = useRef<HTMLButtonElement>(null);
+  const restoreAdvanceFocusRef = useRef(false);
 
   // Continuous-settling detector. The effect re-runs only when `settling`
   // flips, so the timeout measures ONE continuous stretch — any recovery
@@ -53,9 +54,17 @@ export function AdvanceControl({ stuckThresholdMs = 10_000 }: { stuckThresholdMs
   }, [settling, stuckThresholdMs]);
 
   const dismissConfirm = () => {
+    restoreAdvanceFocusRef.current = true;
     setConfirm(null);
-    queueMicrotask(() => advanceTriggerRef.current?.focus());
   };
+
+  useEffect(() => {
+    if (confirm || busy || settling || !restoreAdvanceFocusRef.current) return;
+    const trigger = advanceTriggerRef.current;
+    if (!trigger || trigger.disabled) return;
+    restoreAdvanceFocusRef.current = false;
+    trigger.focus();
+  }, [confirm, busy, settling, game?.phase, game?.round, game?.status]);
 
   useEffect(() => {
     if (!confirm) return;
@@ -113,6 +122,7 @@ export function AdvanceControl({ stuckThresholdMs = 10_000 }: { stuckThresholdMs
       // expectedRound, taken from the transition-GATED game view.
       await call('advancePhase',
         { gameId, expectedPhase: game.phase, expectedRound: game.round });
+      restoreAdvanceFocusRef.current = true;
       setConfirm(null);
     } catch (e) {
       setError(e);
