@@ -133,6 +133,95 @@ test('simulation uses elapsed pacing and never shows final records before their 
   expect(screen.getByTestId('bs-live-record-a')).toHaveTextContent('2–0');
 });
 
+test('reduced-motion classroom simulation shows every rank in a dense no-scroll wall', () => {
+  mocks.reduced = true;
+  const names = Array.from({ length: 21 }, (_, index) =>
+    index === 0 ? 'North Coast Trailblazers' : `Classroom Franchise ${index + 1}`);
+  const teams = new Map(names.map((name, index) => [`t${index + 1}`, team(name)]));
+  const games = Array.from({ length: 8 }, (_, index) => ({
+    game_id: `g${index + 1}`,
+    home: `t${index * 2 + 1}`,
+    away: `t${index * 2 + 2}`,
+    homeScore: 80 + index,
+    awayScore: 70 + index,
+  }));
+  const rows = standings(21).map((row, index) => ({ ...row, name: names[index] }));
+  mocks.professor = {
+    gameId: 'game-classroom',
+    game: game({ phase: 'SIMULATE', teamCount: 21 }),
+    round: { games, standings: rows, awards: {}, boxCsv: '' },
+    teams,
+  };
+
+  render(<SimulateFlood />);
+
+  expect(document.querySelector('main.bigscreen')).toHaveClass(
+    'bs-sim-classroom', 'bs-sim-reduced-dense');
+  expect(screen.getByTestId('bs-live-standings')).toHaveClass('is-classroom-grid');
+  expect(screen.getAllByTestId('bs-live-row')).toHaveLength(21);
+  expect(screen.getAllByTestId('bs-scorecard')).toHaveLength(8);
+  expect(within(screen.getByTestId('bs-live-standings'))
+    .getByText('North Coast Trailblazers')).toBeInTheDocument();
+  expect(within(screen.getAllByTestId('bs-scorecard')[0])
+    .getByText('North Coast Trailblazers')).toBeInTheDocument();
+});
+
+test('normal-motion classroom simulation keeps full names inside paged rows', () => {
+  const names = Array.from({ length: 21 }, (_, index) =>
+    index === 0 ? 'North Coast Trailblazers' : `Classroom Franchise ${index + 1}`);
+  const teams = new Map(names.map((name, index) => [`t${index + 1}`, team(name)]));
+  const games = Array.from({ length: 8 }, (_, index) => ({
+    game_id: `g${index + 1}`,
+    home: `t${index * 2 + 1}`,
+    away: `t${index * 2 + 2}`,
+    homeScore: 80 + index,
+    awayScore: 70 + index,
+  }));
+  const rows = standings(21).map((row, index) => ({ ...row, name: names[index] }));
+  mocks.professor = {
+    gameId: 'game-classroom-normal',
+    game: game({ phase: 'SIMULATE', teamCount: 21 }),
+    round: { games, standings: rows, awards: {}, boxCsv: '' },
+    teams,
+  };
+
+  render(<SimulateFlood />);
+  act(() => vi.advanceTimersByTime(26000));
+
+  expect(document.querySelector('main.bigscreen')).toHaveClass('bs-sim-classroom');
+  expect(document.querySelector('main.bigscreen')).not.toHaveClass('bs-sim-reduced-dense');
+  expect(screen.getByTestId('bs-live-standings')).not.toHaveClass('is-classroom-grid');
+  expect(screen.getAllByTestId('bs-live-row')).toHaveLength(7);
+  expect(screen.getByTestId('bs-live-page-status')).toHaveTextContent(/Page [123] of 3/);
+  expect(within(screen.getAllByTestId('bs-scorecard')[0])
+    .getByText('North Coast Trailblazers')).toBeInTheDocument();
+  expect(within(screen.getByTestId('bs-live-standings'))
+    .getByText('Classroom Franchise 8')).toBeInTheDocument();
+});
+
+test('reduced-motion small-league simulation keeps the standard split wall', () => {
+  mocks.reduced = true;
+  const rows = standings(2);
+  mocks.professor = {
+    gameId: 'game-small',
+    game: game({ phase: 'SIMULATE', teamCount: 2 }),
+    round: {
+      games: [{ game_id: 'g1', home: 't1', away: 't2', homeScore: 90, awayScore: 80 }],
+      standings: rows,
+      awards: {},
+      boxCsv: '',
+    },
+    teams: new Map([['t1', team('Franchise 1')], ['t2', team('Franchise 2')]]),
+  };
+
+  render(<SimulateFlood />);
+
+  expect(document.querySelector('main.bigscreen')).not.toHaveClass(
+    'bs-sim-classroom', 'bs-sim-reduced-dense');
+  expect(screen.getByTestId('bs-live-standings')).not.toHaveClass('is-classroom-grid');
+  expect(screen.getAllByTestId('bs-live-row')).toHaveLength(2);
+});
+
 test('reduced motion exposes all 21 final placements immediately', () => {
   mocks.reduced = true;
   mocks.professor = {
