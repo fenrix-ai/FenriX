@@ -7,6 +7,8 @@ Projector: never type its URL — open it from the panel's "Open projector" butt
 
 ## Verified local rehearsal — 2026-09-21
 
+[GitHub-readable acceptance report and selected screenshots](salary-showdown-ui-acceptance/README.md).
+
 The durable integration checkout is `/Users/dylanmassaro/FenriX/.worktrees/ss-ui-integration`, branch `codex/salary-showdown-ui-integration`, product commit `9ae30473c0c0d87e8b1f663c75e44c440392a272`. No deployment occurred in this acceptance continuation; the production history below is a separate record.
 
 At core candidate `f1f0cb4`, fresh two-team and 21-team games completed five rounds on Node 20.20.2 using only `salary-showdown-dev`. Both passed the laptop/200% zoom and 720p/1080p/4K projector matrices, keyboard controls, saved revisions, reduced-motion changes, background return and reconnect. The classroom drill claimed 63 seats and used nine browsers across three representative teams. All 21 final standings were present. It was not a 63-browser production load test; some local emulator advances took 20–30 seconds.

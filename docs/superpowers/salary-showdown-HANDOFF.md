@@ -9,6 +9,8 @@ gotchas. Everything here was verified at the time of writing.
 
 ## Final local acceptance — 2026-09-21
 
+[GitHub-readable acceptance report and selected screenshots](salary-showdown-ui-acceptance/README.md).
+
 This section supersedes earlier pending visual/runtime status. Historical production records below are unchanged; no deployment or production game mutation occurred in this continuation.
 
 - Tested product candidate: `9ae30473c0c0d87e8b1f663c75e44c440392a272`, branch `codex/salary-showdown-ui-integration`, durable checkout `/Users/dylanmassaro/FenriX/.worktrees/ss-ui-integration`. Original dirty main checkout untouched. Subsequent acceptance-document changes do not change the tested product tree.
