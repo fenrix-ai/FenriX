@@ -6,6 +6,15 @@ import { ErrorNotice } from '../ui/ErrorNotice';
 import { nextOf, TOTAL_ROUNDS } from '../../lib/phaseOrder';
 import styles from './ProfessorDesk.module.css';
 
+const FOCUSABLE = [
+  'button:not([disabled])',
+  'select:not([disabled])',
+  'input:not([disabled])',
+  'textarea:not([disabled])',
+  'a[href]',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',');
+
 // Phase order + nextOf live in src/lib/phaseOrder.ts (client mirror of
 // backend phases.js, parity-pinned by phaseOrder.test.ts).
 
@@ -30,6 +39,9 @@ export function AdvanceControl({ stuckThresholdMs = 10_000 }: { stuckThresholdMs
   const [error, setError] = useState<unknown>(null);
   const [stuck, setStuck] = useState(false);
   const pendingRef = useRef(false);
+  const advanceTriggerRef = useRef<HTMLButtonElement>(null);
+  const confirmDialogRef = useRef<HTMLDivElement>(null);
+  const confirmActionRef = useRef<HTMLButtonElement>(null);
 
   // Continuous-settling detector. The effect re-runs only when `settling`
   // flips, so the timeout measures ONE continuous stretch — any recovery
@@ -39,6 +51,42 @@ export function AdvanceControl({ stuckThresholdMs = 10_000 }: { stuckThresholdMs
     const id = setTimeout(() => setStuck(true), stuckThresholdMs);
     return () => clearTimeout(id);
   }, [settling, stuckThresholdMs]);
+
+  const dismissConfirm = () => {
+    setConfirm(null);
+    queueMicrotask(() => advanceTriggerRef.current?.focus());
+  };
+
+  useEffect(() => {
+    if (!confirm) return;
+    queueMicrotask(() => confirmActionRef.current?.focus());
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        dismissConfirm();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const dialog = confirmDialogRef.current;
+      if (!dialog) return;
+      const controls = [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE)];
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (!first || !last) return;
+      if (!dialog.contains(document.activeElement)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [confirm]);
 
   if (!gameId || !game) return null;
   // status !== 'active' normally hides this control (lobby / post-finale).
@@ -128,7 +176,8 @@ export function AdvanceControl({ stuckThresholdMs = 10_000 }: { stuckThresholdMs
         </div>
       </div>
       <div className={styles.controlRow}>
-        <button type="button" className="btn gold" disabled={settling || busy}
+        <button ref={advanceTriggerRef} type="button" className="btn gold"
+          disabled={settling || busy}
           onClick={onAdvanceClick}>
           {`Advance → ${PHASE_NAMES[next.phase]} · R${next.round}`}
         </button>
@@ -145,18 +194,20 @@ export function AdvanceControl({ stuckThresholdMs = 10_000 }: { stuckThresholdMs
       <ErrorNotice error={error} />
       {confirm && (
         <div className={styles.overlay}>
-          <div className={styles.drawer} role="dialog" aria-label="confirm advance">
+          <div ref={confirmDialogRef} className={styles.drawer} role="dialog"
+            aria-modal="true" aria-label="confirm advance">
             <p style={{ marginTop: 0 }}>
               {confirm.kind === 'missing'
                 ? `${confirm.names.length} teams haven't submitted: ${confirm.names.join(', ')}. Advance anyway? Server defaults will apply.`
                 : 'End the season and reveal? This cannot be undone.'}
             </p>
             <div className={styles.controlRow}>
-              <button type="button" className="btn gold" disabled={settling || busy}
+              <button ref={confirmActionRef} type="button" className="btn gold"
+                disabled={settling || busy}
                 onClick={() => void advance()}>
                 {confirm.kind === 'missing' ? 'Advance anyway' : 'End the season'}
               </button>
-              <button type="button" className="btn" onClick={() => setConfirm(null)}>Cancel</button>
+              <button type="button" className="btn" onClick={dismissConfirm}>Cancel</button>
             </div>
           </div>
         </div>
