@@ -17,7 +17,7 @@ Node 20.20.2 with the `salary-showdown-dev` emulators. Mutable suites ran sequen
 | UI rules | `npm run audit:ui` | 122 files clean |
 | Build | `npm run build` | Passed; existing bundle-size advisory |
 
-These results were recorded on the accepted product candidate. A fresh pre-merge rerun is recorded in the coordinator ledger when complete.
+These results were recorded on the accepted product candidate and passed again on September 22 after the documentation-only merge of `origin/main`: backend 60.78s, frontend 23.05s and browser-SDK integration 277.93s; all commands exited zero. Product code is unchanged. [PR #233](https://github.com/fenrix-ai/FenriX/pull/233) publishes this integrated work.
 
 ## Browser acceptance
 
