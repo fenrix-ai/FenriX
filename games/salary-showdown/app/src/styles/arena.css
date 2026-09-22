@@ -65,7 +65,7 @@ body {
   background: transparent; color: var(--muted); cursor: pointer; font-size: 13px; }
 .chip.on { border-color: var(--gold); color: var(--gold); }
 .table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.table th { text-align: right; color: var(--dim); font-weight: 600; padding: 6px 8px;
+.table th { text-align: right; color: var(--muted); font-weight: 600; padding: 6px 8px;
   cursor: pointer; white-space: nowrap; }
 .table th.name, .table td.name { text-align: left; }
 .table td { text-align: right; padding: 6px 8px; border-top: 1px solid var(--track);
