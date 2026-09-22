@@ -39,7 +39,8 @@ export function FinaleWall() {
   const podiumOrder = [podium[1], podium[0], podium[2]]
     .filter((r): r is StandingsRow => r !== undefined);
   return (
-    <main className="bigscreen bs-center" data-testid="finale-wall">
+    <main className={`bigscreen bs-center bs-finale${step > 0 ? ' bs-finale-chart' : ''}`}
+      data-testid="finale-wall">
       <div className="brand bs-brand">Salary Showdown</div>
       <div className="dim bs-finale-kicker">Finale</div>
       <h1 className="bs-step-title" data-testid="finale-step-title">

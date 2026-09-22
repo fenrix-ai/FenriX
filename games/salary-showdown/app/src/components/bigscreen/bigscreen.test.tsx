@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { GameDoc, RevealDoc, RoundDoc, TeamDoc } from '../../types/models';
 import { DecisionWall } from './DecisionWall';
 import { FinaleWall } from './FinaleWall';
+import { LobbyWall } from './LobbyWall';
 import { SimulateFlood } from './SimulateFlood';
 import { StandingsShuffle } from './StandingsShuffle';
 
@@ -141,9 +142,35 @@ test('reduced motion exposes all 21 final placements immediately', () => {
 
   render(<StandingsShuffle />);
 
+  expect(document.querySelector('main.bigscreen')).toHaveClass('bs-results');
   expect(screen.getAllByTestId('bs-shuffle-row')).toHaveLength(21);
   expect(screen.getByText('Franchise 1')).toBeInTheDocument();
   expect(screen.getByText('Franchise 21')).toBeInTheDocument();
+});
+
+test('dense lobby preserves every full franchise name and role in compact cards', () => {
+  const names = [
+    ...Array.from({ length: 19 }, (_, index) => `Classroom Franchise ${index + 3}`),
+    'North Coast Trailblazers',
+    'South Coast Independents',
+  ];
+  const teams = new Map(names.map((name, index) => [`t${index + 1}`, team(name)]));
+  mocks.professor = {
+    game: game({ phase: 'LOBBY', teamCount: 21 }),
+    teams,
+    players: new Map(),
+  };
+
+  render(<LobbyWall />);
+
+  const cards = [...document.querySelectorAll<HTMLElement>('.bs-teamcard')];
+  expect(cards).toHaveLength(21);
+  expect(cards.map((card) => card.querySelector('h2')?.textContent))
+    .toEqual([...names].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })));
+  expect(document.querySelectorAll('.bs-teamcard .chip')).toHaveLength(63);
+  cards.forEach((card) => {
+    expect(card.querySelector('svg')?.style.getPropertyValue('--mark-size')).toBe('32px');
+  });
 });
 
 test('turning reduced motion off cannot shroud placements already exposed', () => {
@@ -242,6 +269,7 @@ describe('finale wall steps', () => {
     mocks.professor = finaleContext(step);
     render(<FinaleWall />);
 
+    expect(screen.getByTestId('finale-wall')).toHaveClass('bs-finale');
     expect(screen.getByTestId('finale-step-title')).toHaveTextContent(title);
     const content = screen.getByTestId(testId);
     if (step > 0) expect(content).toHaveClass('bs-reveal-chart');

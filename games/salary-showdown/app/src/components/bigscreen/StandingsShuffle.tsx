@@ -66,7 +66,7 @@ export function StandingsShuffle() {
   const end = Math.min(rows.length, (page + 1) * PAGE_SIZE);
   const visibleRows = reduced ? rows : rows.slice(start, end);
   return (
-    <main className="bigscreen">
+    <main className="bigscreen bs-results">
       <header>
         <div className="brand bs-brand">Salary Showdown</div>
         <h1 className="bs-phase-title">{PHASE_NAMES.RESULTS}</h1>
