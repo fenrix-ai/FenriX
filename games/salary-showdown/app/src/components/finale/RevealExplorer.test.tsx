@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { RevealDoc, StandingsRow, TeamDoc } from '../../types/models';
 import FinalePage from '../../pages/FinalePage';
+import { ScatterTI } from '../charts/ScatterTI';
 import { Podium } from './Podium';
 import { RevealExplorer } from './RevealExplorer';
 import { SigningStory } from './SigningStory';
@@ -160,6 +161,28 @@ describe('FinalePage reveal scope', () => {
 });
 
 describe('RevealExplorer', () => {
+  test('uses group semantics for interactive points and image semantics when read only', () => {
+    const interactive = render(<RevealExplorer rows={scatter} teams={teams} />);
+    const interactiveChart = screen.getByTestId('chart-scatter-ti');
+    expect(interactiveChart).toHaveAttribute('role', 'group');
+    expect(interactiveChart).toHaveAccessibleName(/interactive hype versus trueimpact/i);
+    interactive.unmount();
+
+    render(<ScatterTI rows={scatter} />);
+    const readOnlyChart = screen.getByTestId('chart-scatter-ti');
+    expect(readOnlyChart).toHaveAttribute('role', 'img');
+    expect(readOnlyChart).toHaveAccessibleName('Hype versus TrueImpact, traps and bargains labeled');
+    expect(screen.queryAllByRole('button')).toHaveLength(0);
+  });
+
+  test('makes the scrollable visible-player data a named keyboard focus region', () => {
+    render(<RevealExplorer rows={scatter} teams={teams} />);
+
+    const region = screen.getByRole('region', { name: 'Visible player data' });
+    expect(region).toHaveAttribute('tabindex', '0');
+    expect(region).toContainElement(screen.getByText('Quiet Perimeter Defender'));
+  });
+
   test('selects a scatter point from the keyboard and publishes equivalent facts', () => {
     render(<RevealExplorer rows={scatter} teams={teams} />);
     const point = screen.getByRole('button', { name: /Quiet Perimeter Defender/ });
