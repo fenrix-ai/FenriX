@@ -5,6 +5,20 @@ Students join at: **https://salary-showdown.web.app/** (the projector shows this
 Projector: never type its URL — open it from the panel's "Open projector" button.
 
 
+## Verified local rehearsal — 2026-09-21
+
+The durable integration checkout is `/Users/dylanmassaro/FenriX/.worktrees/ss-ui-integration`, branch `codex/salary-showdown-ui-integration`, product commit `9ae30473c0c0d87e8b1f663c75e44c440392a272`. No deployment occurred in this acceptance continuation; the production history below is a separate record.
+
+At core candidate `f1f0cb4`, fresh two-team and 21-team games completed five rounds on Node 20.20.2 using only `salary-showdown-dev`. Both passed the laptop/200% zoom and 720p/1080p/4K projector matrices, keyboard controls, saved revisions, reduced-motion changes, background return and reconnect. The classroom drill claimed 63 seats and used nine browsers across three representative teams. All 21 final standings were present. It was not a 63-browser production load test; some local emulator advances took 20–30 seconds.
+
+The final W10-only follow-up was verified at `9ae3047` in 20 projector captures across motion modes, three display resolutions and actual 200% zoom, including child-element bounds and full-name visibility. Projector corrections keep all franchise names and role chips visible in the dense lobby, fit reduced-motion simulation/results with readable matchup names, and keep every finale chart within the viewport. Confirmation dialogs now keep keyboard focus and restore the Advance trigger after closing. Secondary text and chart labels meet the audited contrast thresholds. The laptop finale remains independent of the professor's projector step.
+
+Backend 214 and frontend 220 tests, TypeScript, build and the 122-file UI audit pass at the final product commit. All 55 browser-SDK integration tests also pass. Local acceptance is complete and the emulator reservation is released; services are retained. See [the I01 acceptance ledger](plans/salary-showdown-ui-tasks/completions/I01.md) for actual counts, exact owner commits, failed-run history and the [saved report with before/after screenshots](/Users/dylanmassaro/FenriX/.worktrees/ss-ui-evidence/2026-09-21/acceptance-summary.md). VoiceOver and physical classroom projection were not certified by these local checks.
+
+For another local rehearsal, reserve the sole mutable emulator slot with Coordinator MAIN. The retained service uses Auth9199, Firestore8180, Functions5101 and Vite5193; check readiness before use. Keep mutable suites separate. Do not clear shared data or use a production game as a fixture.
+
+Deployment requires a separate explicit instruction. Release from the clean accepted integration commit, verify the additive identity callable is present before Hosting, and build fresh assets. The callable was recorded deployed on September18; there are no new backend changes in these acceptance corrections. Follow [the handoff](salary-showdown-HANDOFF.md) for release and rollback steps.
+
 ## Production deployment — 2026-09-18
 
 This section supersedes the older undeployed/preview status below. The user explicitly requested “deploy it for real” after reviewing the preview and the required additive function deployment.
