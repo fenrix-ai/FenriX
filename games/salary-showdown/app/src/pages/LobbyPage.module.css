@@ -1,0 +1,140 @@
+.lobby { max-width: 1400px; }
+
+.ticker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 38px;
+  margin-bottom: 14px;
+  padding: 8px 12px;
+  border: 1px solid rgb(255 201 77 / 32%);
+  border-radius: var(--ss-radius-md);
+  background: rgb(255 201 77 / 8%);
+  color: var(--ss-text-muted);
+  font-size: 0.82rem;
+}
+.ticker span {
+  flex: 0 0 auto;
+  color: var(--ss-gold);
+  font-size: 0.66rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.ticker strong { color: var(--ss-text); font-weight: 650; }
+
+.hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 18px;
+  padding: clamp(18px, 3vw, 28px);
+  border: 1px solid var(--ss-border);
+  border-radius: var(--ss-radius-xl);
+  background:
+    radial-gradient(circle at 10% 10%, rgb(255 201 77 / 12%), transparent 34%),
+    linear-gradient(135deg, rgb(26 51 87 / 98%), rgb(9 21 36 / 96%));
+  box-shadow: var(--ss-shadow-panel);
+}
+.heroIdentity { display: flex; min-width: 0; align-items: center; gap: 20px; }
+.kicker {
+  color: var(--ss-gold);
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.hero h2 { margin: 4px 0; font-size: clamp(2rem, 4vw, 3.6rem); letter-spacing: -0.045em; }
+.hero p { margin: 0; color: var(--ss-text-muted); }
+.waiting {
+  display: flex;
+  max-width: 280px;
+  align-items: center;
+  gap: 9px;
+  color: var(--ss-text-muted);
+  font-size: 0.8rem;
+  text-align: right;
+}
+.pulse {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--ss-payroll-cash);
+  box-shadow: 0 0 0 4px rgb(85 189 125 / 14%);
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(330px, 0.75fr);
+  gap: 18px;
+}
+.teamPanel {
+  display: grid;
+  align-content: start;
+  gap: 22px;
+  padding: 18px;
+  border: 1px solid var(--ss-border);
+  border-radius: var(--ss-radius-xl);
+  background: linear-gradient(155deg, rgb(26 51 87 / 90%), rgb(13 27 46 / 96%));
+}
+.rename {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(280px, 1.2fr);
+  gap: 14px 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--ss-border-subtle);
+}
+.rename h3, .rename p { margin: 0; }
+.rename h3 { font-size: 0.95rem; }
+.rename p { margin-top: 4px; color: var(--ss-text-muted); font-size: 0.76rem; }
+.renameControls { display: flex; align-items: center; gap: 8px; }
+.renameControls input { min-width: 0; flex: 1; color: var(--ss-text); }
+.rename :global(.error-notice) { grid-column: 1 / -1; margin: 0; }
+
+.rivals {
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid var(--ss-border-subtle);
+  border-radius: var(--ss-radius-xl);
+  background: rgb(9 21 36 / 54%);
+}
+.rivalHeading { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+.rivalHeading h2, .rivalHeading p { margin: 0; }
+.rivalHeading h2 { margin-top: 3px; font-size: 1.15rem; }
+.rivalHeading p { color: var(--ss-text-dim); font-family: var(--mono); font-size: 0.75rem; }
+.rivalGrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; }
+.rivalCard {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--ss-border-subtle);
+  border-radius: var(--ss-radius-md);
+  background: rgb(20 38 64 / 72%);
+}
+.rivalCard strong { overflow: hidden; font-size: 0.8rem; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (max-width: 1024px) {
+  .workspace { grid-template-columns: minmax(0, 1fr); }
+  .rivalGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 700px) {
+  .hero { align-items: flex-start; flex-direction: column; }
+  .waiting { text-align: left; }
+  .rename { grid-template-columns: minmax(0, 1fr); }
+  .rivalGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rivalHeading { align-items: flex-start; flex-direction: column; }
+}
+@media (max-width: 440px) {
+  .heroIdentity { align-items: flex-start; }
+  .rivalGrid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pulse { animation: lobby-pulse 1.8s ease-in-out infinite; }
+}
+@keyframes lobby-pulse {
+  50% { opacity: 0.55; transform: scale(0.82); }
+}

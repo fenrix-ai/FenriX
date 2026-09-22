@@ -2,8 +2,8 @@
    big type, zero interactivity. Color tokens come from arena.css :root; this file
    adds bs-* layout only. Type sizes use clamp() so the same wall reads on a 720p
    classroom projector and a 4K panel. */
-.bigscreen { min-height: 100vh; padding: 4vh 5vw; display: flex; flex-direction: column;
-  gap: 3vh; }
+.bigscreen { min-height: 100vh; padding: clamp(14px, 3vh, 40px) clamp(18px, 4vw, 64px);
+  display: flex; flex-direction: column; gap: clamp(10px, 2vh, 28px); overflow: hidden; }
 .bs-center { align-items: center; justify-content: center; text-align: center; }
 /* Chips on the wall are status labels, not controls — kill the pointer affordance. */
 .bigscreen .chip { cursor: default; font-size: clamp(14px, 1.6vw, 24px); padding: 6px 16px; }
@@ -12,11 +12,13 @@
   letter-spacing: 0.12em; line-height: 1; }
 .bs-joinline { font-size: clamp(18px, 2.4vw, 36px); color: var(--text); margin: 0; }
 .bs-seats { font-size: clamp(16px, 2vw, 30px); color: var(--muted); margin: 0; }
-.bs-teamgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+.bs-teamgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 16px; width: 100%; }
 .bs-teamcard { background: linear-gradient(180deg, var(--card-a), var(--card-b));
   border: 1px solid var(--border); border-radius: 12px; padding: 16px; text-align: left; }
 .bs-teamcard h2 { margin: 0 0 10px; font-size: clamp(18px, 2vw, 30px); }
+.bs-team-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.bs-team-title h2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bs-chips { display: flex; gap: 10px; flex-wrap: wrap; }
 .bs-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; }
 .bs-phase-title { margin: 4px 0 0; font-size: clamp(40px, 7vw, 96px);
@@ -24,14 +26,34 @@
 .bs-sub { font-size: clamp(20px, 2.6vw, 40px); color: var(--muted); margin: 4px 0 0; }
 .bs-led .led { font-size: clamp(56px, 9vw, 140px); padding: 12px 32px; border-width: 3px;
   border-radius: 12px; }
-.bs-lights { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+.bs-lights { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 12px 28px; }
 .bs-light-row { display: flex; align-items: center; gap: 14px;
   font-size: clamp(22px, 3vw, 44px); }
+.bs-light-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bs-dot { font-size: 0.9em; line-height: 1; }
 
+/* A classroom league is 21 franchises. Seven deliberate columns keep every
+   public lobby/submission status visible without a scroll at projector ratios. */
+.bs-dense { justify-content: flex-start; }
+.bs-dense .bs-joincode { font-size: clamp(54px, 9vw, 132px); }
+.bs-dense .bs-teamgrid,
+.bigscreen .bs-lights { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.bs-dense .bs-teamgrid { gap: clamp(6px, 1vh, 12px); }
+.bs-dense .bs-teamcard { padding: 8px; min-width: 0; }
+.bs-dense .bs-team-title { align-items: flex-start; gap: 7px; }
+.bs-dense .bs-team-title svg { flex: 0 0 auto; }
+.bs-dense .bs-teamcard h2 { margin: 0; font-size: clamp(13px, 1.15vw, 21px);
+  line-height: 1.08; overflow: visible; text-overflow: clip; white-space: normal;
+  overflow-wrap: anywhere; }
+.bs-dense .bs-chips { display: grid; gap: 3px; margin-top: 5px; }
+.bs-dense .chip { min-width: 0; padding: 2px 5px; font-size: clamp(10px, .82vw, 14px);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bigscreen .bs-lights { flex: 1; align-content: center; gap: clamp(8px, 1.4vh, 16px) 16px; }
+.bigscreen .bs-light-row { min-width: 0; gap: 7px; font-size: clamp(15px, 1.45vw, 26px); }
+
 /* --- Task 11: SimulateFlood + StandingsShuffle --- */
-.bs-flood { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+.bs-flood { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px; width: 100%; }
 .bs-scorecard { display: flex; align-items: baseline; gap: 14px;
   background: linear-gradient(180deg, var(--card-a), var(--card-b));
@@ -40,6 +62,14 @@
 .bs-score-team { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bs-score-team.away { text-align: right; }
 .bs-score-num { font-weight: 800; }
+.bs-scorecard.latest { border-color: rgba(255, 201, 77, 0.72);
+  animation: bs-final-in 360ms ease-out both; }
+.bs-scoreboard-page { flex: 1; min-width: 0; }
+.bs-broadcast-head { display: flex; align-items: baseline; gap: 24px; }
+.bs-broadcast-head .bs-sub { margin-left: auto; }
+.bs-matchup-intro { display: flex; align-items: baseline; justify-content: center; gap: 18px;
+  border-block: 1px solid var(--border); padding: 10px 16px;
+  font-size: clamp(16px, 1.7vw, 28px); }
 .bs-shuffle { display: flex; flex-direction: column; gap: 10px; width: 100%;
   max-width: 1100px; margin: 0 auto; }
 .bs-shuffle-row { display: flex; align-items: baseline; gap: 18px;
@@ -51,11 +81,35 @@
 .bs-shuffle-record { color: var(--muted); }
 .bs-delta { min-width: 3.2em; text-align: right; }
 .bs-shuffle-shroud { color: var(--gold); letter-spacing: 0.06em; }
+.bs-page-status { align-self: center; margin: 8px 0 0; color: var(--dim);
+  font-size: clamp(13px, 1.15vw, 20px); }
+.bs-shuffle.is-static-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  max-width: none; gap: 7px 12px; }
+.bs-shuffle.is-static-grid .bs-shuffle-row { min-width: 0; gap: 8px; padding: 6px 9px;
+  font-size: clamp(14px, 1.35vw, 24px); }
+.bs-shuffle.is-static-grid .bs-shuffle-rank { min-width: 2em; }
+.bs-shuffle.is-static-grid .bs-delta { min-width: 2.6em; }
+.bs-shuffle.is-static-grid.is-classroom-grid {
+  grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.bs-shuffle.is-static-grid.is-classroom-grid .bs-shuffle-row { display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "rank mark delta" "name name name" "record record record";
+  align-content: center; gap: 2px 6px; padding: 6px 8px;
+  font-size: clamp(12px, 1.05vw, 24px); }
+.bs-shuffle.is-static-grid.is-classroom-grid .bs-shuffle-rank {
+  grid-area: rank; min-width: 0; }
+.bs-shuffle.is-static-grid.is-classroom-grid svg { grid-area: mark; justify-self: center; }
+.bs-shuffle.is-static-grid.is-classroom-grid .bs-shuffle-name { grid-area: name; min-width: 0;
+  line-height: 1.08; overflow-wrap: anywhere; }
+.bs-shuffle.is-static-grid.is-classroom-grid .bs-shuffle-record { grid-area: record; }
+.bs-shuffle.is-static-grid.is-classroom-grid .bs-delta {
+  grid-area: delta; min-width: 0; text-align: right; }
 
 /* --- Plan 3b Task 2: FinaleWall on the bs-* clamp scale --- */
 .bs-finale-kicker { font-size: clamp(16px, 2vw, 30px); letter-spacing: 0.2em;
   text-transform: uppercase; }
-.bs-step-title { font-size: clamp(36px, 5.5vw, 84px); margin: 8px 0 28px; }
+.bs-step-title { font-size: clamp(32px, 5vw, 76px); margin: clamp(2px, 1vh, 10px) 0
+  clamp(10px, 2vh, 26px); line-height: 1.05; }
 .bs-podium { display: flex; justify-content: center; align-items: flex-end; gap: 28px; }
 .bs-podium-card { padding: 26px 32px; min-width: 220px; }
 .bs-podium-card.champ { padding: 40px 44px; }
@@ -65,9 +119,18 @@
 .bs-podium-card.champ .bs-podium-name { font-size: clamp(26px, 3.2vw, 50px); }
 .bs-podium-record { font-size: clamp(16px, 1.8vw, 30px); }
 .bs-finale-loading { font-size: clamp(18px, 2.2vw, 34px); }
+.bs-finale { height: 100dvh; min-height: 0; }
+.bs-finale-chart { justify-content: flex-start; }
+.bigscreen .bs-reveal-chart { width: min(92vw, 1600px); min-width: 0; min-height: 0;
+  max-height: none; flex: 1 1 auto; display: flex; align-items: stretch;
+  justify-content: center; }
+.bigscreen .bs-reveal-chart > svg { width: 100%; height: 100% !important; min-height: 0;
+  max-height: none; display: block; }
+.bs-results { height: 100dvh; min-height: 0; }
 
 /* Simulate wall split: score flood left, live standings right (playtest-2). */
-.bs-sim-split { display: flex; gap: 28px; align-items: flex-start; }
+.bs-sim-split { display: flex; gap: clamp(14px, 2vw, 28px); align-items: flex-start;
+  min-height: 0; flex: 1; }
 .bs-sim-split .bs-flood { flex: 1; }
 .bs-live-standings { width: clamp(300px, 26vw, 520px); flex-shrink: 0; }
 .bs-live-title { font-size: clamp(16px, 1.6vw, 26px); color: var(--muted); margin-bottom: 6px; }
@@ -81,3 +144,123 @@
 .bs-live-rank { width: 1.6em; text-align: right; }
 .bs-live-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bs-live-rec { width: 2.8em; text-align: right; }
+
+/* Classroom names need a second line before they need an ellipsis. The normal
+   motion wall keeps its score/standing pagination; this scope only gives the
+   existing rows enough typography and wrapping to stay distinguishable. */
+.bs-sim-classroom .bs-scorecard { align-items: center; gap: 5px; padding: 7px 9px;
+  font-size: clamp(14px, 1.25vw, 22px); }
+.bs-sim-classroom .bs-score-team { min-width: 0; overflow: visible;
+  text-overflow: clip; white-space: normal; overflow-wrap: anywhere; line-height: 1.05; }
+.bs-sim-classroom .bs-live-row { align-items: center; gap: 5px; padding: 2px 6px;
+  font-size: clamp(13px, 1.15vw, 20px); }
+.bs-sim-classroom .bs-live-name { min-width: 0; overflow: visible;
+  text-overflow: clip; white-space: normal; overflow-wrap: anywhere; line-height: 1.05; }
+
+/* Reduced motion reveals every final live rank immediately. For a classroom
+   league, use the wall width below the eight-score page instead of building an
+   over-height sidebar; smaller leagues keep the standard split composition. */
+.bs-sim-reduced-dense { height: 100dvh; min-height: 0; padding-block: 14px;
+  gap: 8px; }
+.bs-sim-reduced-dense .bs-sim-split { display: grid; grid-template-columns: 1fr;
+  grid-template-rows: auto minmax(0, 1fr); gap: 8px; align-items: stretch; }
+.bs-sim-reduced-dense .bs-scoreboard-page { width: 100%; }
+.bs-sim-reduced-dense .bs-flood { gap: 6px 10px; }
+.bs-sim-reduced-dense .bs-scorecard { align-items: center; gap: 8px; padding: 6px 10px;
+  font-size: clamp(15px, 1.35vw, 24px); }
+.bs-sim-reduced-dense .bs-score-team { overflow: visible; text-overflow: clip;
+  white-space: normal; overflow-wrap: anywhere; line-height: 1.05; }
+.bs-sim-reduced-dense .bs-page-status { margin-top: 4px; }
+.bs-sim-reduced-dense .bs-live-standings.is-classroom-grid { width: 100%; min-width: 0;
+  display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-rows: auto repeat(3, minmax(0, 1fr));
+  align-content: stretch; gap: 4px 8px; }
+.bs-sim-reduced-dense .bs-live-title { grid-column: 1 / -1; margin: 0; }
+.bs-live-standings.is-classroom-grid .bs-live-row { min-width: 0; display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "rank mark delta" "name name name" "record record record";
+  align-content: center; gap: 1px 5px; padding: 3px 6px;
+  border: 1px solid var(--border); font-size: clamp(13px, .95vw, 20px); }
+.bs-live-standings.is-classroom-grid .bs-live-rank { grid-area: rank; width: auto; }
+.bs-live-standings.is-classroom-grid .bs-live-row svg { grid-area: mark;
+  justify-self: center; --mark-size: 20px !important; }
+.bs-live-standings.is-classroom-grid .bs-live-name { grid-area: name; min-width: 0;
+  overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere;
+  line-height: 1.05; }
+.bs-live-standings.is-classroom-grid .bs-live-rec { grid-area: record; width: auto;
+  text-align: left; }
+.bs-live-standings.is-classroom-grid .bs-live-row > :last-child { grid-area: delta;
+  text-align: right; }
+.bs-sim-reduced-dense > .bs-sub[role="status"] { margin: 0;
+  font-size: clamp(14px, 1.4vw, 22px); }
+
+@keyframes bs-final-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-aspect-ratio: 4/3) {
+  .bigscreen .bs-teamgrid,
+  .bigscreen .bs-lights { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .bs-dense .bs-team-title svg { display: none; }
+  .bs-dense .bs-teamcard { padding: 6px 8px; }
+}
+
+@media (max-width: 1100px) {
+  .bigscreen { padding-inline: 18px; }
+  .bs-sim-split { gap: 12px; }
+  .bs-live-standings { width: clamp(270px, 31vw, 340px); }
+  .bs-scorecard { gap: 7px; padding: 9px; }
+  .bs-scorecard > svg { display: none; }
+  .bs-shuffle.is-static-grid.is-classroom-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .bs-sim-reduced-dense .bs-live-standings.is-classroom-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-rows: auto repeat(5, minmax(0, 1fr)); }
+}
+
+/* A 720p classroom wall has only three card rows to spend. Compact the lobby
+   masthead and let the grid own the remaining height without hiding a role. */
+@media (min-width: 701px) and (max-height: 800px) {
+  .bs-lobby.bs-dense { height: 100dvh; min-height: 0; justify-content: flex-start;
+    padding-block: clamp(10px, 1.6vh, 18px); gap: clamp(5px, .9vh, 8px); }
+  .bs-lobby.bs-dense .bs-brand { font-size: clamp(18px, 2vw, 28px); }
+  .bs-lobby.bs-dense .bs-joincode { font-size: clamp(50px, 7vw, 90px); }
+  .bs-lobby.bs-dense .bs-joinline { font-size: clamp(14px, 1.55vw, 22px); }
+  .bs-lobby.bs-dense .bs-seats { font-size: clamp(13px, 1.3vw, 19px); }
+  .bs-lobby.bs-dense .bs-teamgrid { flex: 1; min-height: 0;
+    grid-template-rows: repeat(3, minmax(0, 1fr)); }
+  .bs-lobby.bs-dense .bs-teamcard { align-self: stretch; padding: 6px; }
+  .bs-lobby.bs-dense .bs-teamcard h2 { font-size: clamp(13px, 1vw, 15px); }
+  .bs-lobby.bs-dense .bs-chips { gap: 2px; margin-top: 3px; }
+  .bs-lobby.bs-dense .chip { padding-block: 1px; font-size: clamp(10px, .76vw, 12px); }
+}
+
+/* 200% browser zoom presents a narrow CSS viewport. Reflow vertically instead
+   of shrinking the seven-column classroom wall into unreadable fragments. */
+@media (max-width: 700px) {
+  .bigscreen { min-height: 100dvh; overflow-y: auto; }
+  .bigscreen .bs-teamgrid,
+  .bigscreen .bs-lights { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .bs-head, .bs-broadcast-head { align-items: flex-start; flex-wrap: wrap; }
+  .bs-led { margin-left: auto; }
+  .bs-sim-split { flex-direction: column; }
+  .bs-live-standings { width: 100%; }
+  .bs-sim-reduced-dense { height: auto; min-height: 100dvh; }
+  .bs-sim-reduced-dense .bs-sim-split { grid-template-rows: auto; }
+  .bs-sim-reduced-dense .bs-live-standings.is-classroom-grid {
+    grid-template-columns: 1fr; grid-template-rows: auto; }
+  .bs-shuffle.is-static-grid,
+  .bs-shuffle.is-static-grid.is-classroom-grid { grid-template-columns: 1fr; }
+  .bs-podium { align-items: stretch; flex-direction: column; }
+  .bs-finale { height: auto; min-height: 100dvh; }
+  .bigscreen .bs-reveal-chart { flex: none; }
+  .bigscreen .bs-reveal-chart > svg { height: auto !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bigscreen .bs-reveal-chart,
+  .bigscreen .bs-scorecard,
+  .bigscreen .bs-live-row,
+  .bigscreen .bs-shuffle-row { animation: none; transition: none; }
+}

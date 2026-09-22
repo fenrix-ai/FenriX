@@ -1,0 +1,144 @@
+.timeline {
+  min-width: 0;
+  padding: var(--ss-space-5);
+  border: 1px solid var(--ss-border);
+  border-radius: var(--ss-radius-xl);
+  background: var(--ss-surface);
+  box-shadow: var(--ss-shadow-panel);
+  color: var(--ss-text);
+}
+
+.heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ss-space-4);
+}
+
+.heading h2 { margin: 0; font-size: 1.1rem; }
+.heading p { margin: var(--ss-space-1) 0 0; color: var(--ss-text-muted); font-size: 0.82rem; }
+
+.cap {
+  flex: 0 0 auto;
+  color: var(--ss-gold);
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ss-space-3);
+  margin: var(--ss-space-4) 0;
+  padding: 0;
+  color: var(--ss-text-muted);
+  font-size: 0.75rem;
+  list-style: none;
+}
+
+.legend li { display: inline-flex; align-items: center; gap: var(--ss-space-1); }
+.legend li span { width: 9px; height: 9px; border-radius: 2px; }
+.cashKey, .cashBar { background: var(--ss-payroll-cash); }
+.deadKey, .deadBar { background: var(--ss-payroll-dead); }
+.previewKey, .previewBar { background: var(--ss-payroll-preview); }
+
+.rounds {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(8.5rem, 1fr));
+  gap: var(--ss-space-2);
+  overflow-x: auto;
+  margin: 0;
+  padding: 0 0 var(--ss-space-2);
+  list-style: none;
+  scrollbar-color: var(--ss-border) transparent;
+}
+
+.round {
+  min-width: 0;
+  padding: var(--ss-space-3);
+  border: 1px solid var(--ss-border-subtle);
+  border-radius: var(--ss-radius-md);
+  background: var(--ss-surface-inset);
+}
+
+.round.current { border-color: var(--ss-gold); }
+.round.over { border-color: var(--ss-danger); }
+
+.round > header {
+  display: flex;
+  min-height: 1.2rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ss-space-2);
+  color: var(--ss-text-muted);
+  font-size: 0.76rem;
+}
+
+.round > header small { color: var(--ss-gold); font-size: 0.7rem; }
+
+.round > strong {
+  display: block;
+  margin-top: var(--ss-space-1);
+  font-family: var(--mono);
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart {
+  position: relative;
+  height: 7rem;
+  margin: var(--ss-space-3) 0;
+  border-bottom: 1px solid var(--ss-border);
+  background: linear-gradient(to top, rgb(255 255 255 / 2%), transparent);
+}
+
+.capLine {
+  position: absolute;
+  z-index: 2;
+  right: 0;
+  bottom: var(--cap-position);
+  left: 0;
+  border-top: 1px dashed var(--ss-gold);
+}
+
+.stack {
+  position: absolute;
+  inset: 0 16% 0;
+  display: flex;
+  flex-direction: column-reverse;
+  justify-content: flex-start;
+}
+
+.stack span { display: block; min-height: 0; }
+.cashBar { height: var(--cash-height); }
+.deadBar { height: var(--dead-height); }
+.previewBar { height: var(--preview-height); }
+
+.values {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+}
+
+.values div { display: flex; justify-content: space-between; gap: var(--ss-space-2); }
+.values dt { color: var(--ss-text-dim); font-size: 0.72rem; }
+.values dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.warning {
+  display: block;
+  margin-top: var(--ss-space-2);
+  color: var(--ss-danger-text);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+@media (max-width: 640px) {
+  .timeline { padding: var(--ss-space-4); }
+  .heading { flex-direction: column; }
+}

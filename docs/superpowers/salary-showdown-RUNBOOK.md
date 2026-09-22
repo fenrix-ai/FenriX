@@ -4,6 +4,47 @@ Panel (your laptop): **https://salary-showdown.web.app/professor**
 Students join at: **https://salary-showdown.web.app/** (the projector shows this with the code)
 Projector: never type its URL — open it from the panel's "Open projector" button.
 
+
+## Verified local rehearsal — 2026-09-21
+
+[GitHub-readable acceptance report and selected screenshots](salary-showdown-ui-acceptance/README.md).
+
+The durable integration checkout is `/Users/dylanmassaro/FenriX/.worktrees/ss-ui-integration`, branch `codex/salary-showdown-ui-integration`, product commit `9ae30473c0c0d87e8b1f663c75e44c440392a272`. No deployment occurred in this acceptance continuation; the production history below is a separate record.
+
+At core candidate `f1f0cb4`, fresh two-team and 21-team games completed five rounds on Node 20.20.2 using only `salary-showdown-dev`. Both passed the laptop/200% zoom and 720p/1080p/4K projector matrices, keyboard controls, saved revisions, reduced-motion changes, background return and reconnect. The classroom drill claimed 63 seats and used nine browsers across three representative teams. All 21 final standings were present. It was not a 63-browser production load test; some local emulator advances took 20–30 seconds.
+
+The final W10-only follow-up was verified at `9ae3047` in 20 projector captures across motion modes, three display resolutions and actual 200% zoom, including child-element bounds and full-name visibility. Projector corrections keep all franchise names and role chips visible in the dense lobby, fit reduced-motion simulation/results with readable matchup names, and keep every finale chart within the viewport. Confirmation dialogs now keep keyboard focus and restore the Advance trigger after closing. Secondary text and chart labels meet the audited contrast thresholds. The laptop finale remains independent of the professor's projector step.
+
+Backend 214 and frontend 220 tests, TypeScript, build and the 122-file UI audit pass at the final product commit. All 55 browser-SDK integration tests also pass. Local acceptance is complete and the emulator reservation is released; services are retained. See [the I01 acceptance ledger](plans/salary-showdown-ui-tasks/completions/I01.md) for actual counts, exact owner commits, failed-run history and the [saved report with before/after screenshots](/Users/dylanmassaro/FenriX/.worktrees/ss-ui-evidence/2026-09-21/acceptance-summary.md). VoiceOver and physical classroom projection were not certified by these local checks.
+
+For another local rehearsal, reserve the sole mutable emulator slot with Coordinator MAIN. The retained service uses Auth9199, Firestore8180, Functions5101 and Vite5193; check readiness before use. Keep mutable suites separate. Do not clear shared data or use a production game as a fixture.
+
+Deployment requires a separate explicit instruction. Release from the clean accepted integration commit, verify the additive identity callable is present before Hosting, and build fresh assets. The callable was recorded deployed on September18; there are no new backend changes in these acceptance corrections. Follow [the handoff](salary-showdown-HANDOFF.md) for release and rollback steps.
+
+## Production deployment — 2026-09-18
+
+This section supersedes the older undeployed/preview status below. The user explicitly requested “deploy it for real” after reviewing the preview and the required additive function deployment.
+
+- Live: https://salary-showdown.web.app/ (professor panel: https://salary-showdown.web.app/professor).
+- Deployed from clean integration commit `9d1ff3e62dc5764f2434648844afe05efbfaa20e`, branch `codex/salary-showdown-ui-integration`, in `/private/tmp/salary-showdown-ui-worktrees/I01`. Fresh production build PASS; ignored production web configuration only. Main checkout untouched.
+- Additive `setTeamIdentity` callable successfully created in `salary-showdown`, us-west1, Node 20, before Hosting deployment. Unauthenticated callable smoke check correctly returned HTTP 401 / UNAUTHENTICATED. No other functions or Firestore rules deployed; no production game fixtures created or modified.
+- Hosting release `1789769610242000`, version `f8171fbd999bbfc1`, released at `2026-09-18T22:13:30.242Z`. Live HTML HTTP 200; JS `index-C8qFzVo4.js` and CSS `index-CYTQUwbi.css` SHA-256 match the freshly built local assets. Browser visibly renders the new three-step join page; captured warning/error console is empty.
+- Rollback target: previous live version `7d5ce13d20e4ed83`, release `1789597570840000` (2026-09-16T22:26:10.840Z), recorded before deployment. Restore through Firebase Hosting release history if needed; the backward-compatible additive callable can remain.
+- Evidence outside git: `/private/tmp/salary-showdown-ui-worktrees/evidence/production-release-build.log`, `production-identity-deploy.log`, `production-hosting-deploy.json`, `production-channels-before.json`, `production-channels-after.json`.
+- Automated integration evidence remains 213 frontend unit, 53 browser-SDK integration, and 214 backend tests passing, plus types/build/UI audit. Full saved visual/classroom matrix, actual zoom/reduced-motion and representative 21-team/three-role/reconnect review remain pending; this deployment does not mark those checks passed. Local Node 20 runtime parity remains unverified. Firebase warned Node 20 is deprecated and will be decommissioned 2026-10-30; runtime/dependency upgrades were not included in this release.
+
+## Laptop UI candidate rehearsal — 2026-09-17
+
+The redesigned UI is an undeployed integration candidate in `/private/tmp/salary-showdown-ui-worktrees/I01`, branch `codex/salary-showdown-ui-integration`; all screens merged at `c586f18dc66ad0e278de605d751401eb3b99e143`, with integration tests updated at `dbde850`. The production URLs above are historical class-day instructions and do not imply this candidate is live.
+
+Use the existing local DEV emulators and port 5193 preview for rehearsal. I01 owns the sole mutable test/browser slot; workers are idle. Never run the browser drill concurrently with backend or browser-SDK integration tests, restart/clear the shared emulators, or use a production game as a fixture. Exact test outcomes and remaining gates are in [the live I01 ledger](plans/salary-showdown-ui-tasks/completions/I01.md).
+
+Before release, complete the student viewport matrix (1280×720,1366×768,1440×900,1024px fallback, actual 200% zoom), projector matrix (720p/1080p/4K, two/21 teams, all reveal steps), keyboard-only forms/lineup/focus, reduced-motion toggles during play, and a three-role representative-team reconnect drill. Save screenshots with their fixture IDs, phase/round, viewport, and tested commit. Existing automated passes do not substitute for these pending checks.
+
+The laptop finale remains independently browsable while the professor controls only the projector step. Auction exposure above cap is allowed, sealed offers remain revisable until the phase closes, Done is advisory, and ordinary free agents can appear on multiple teams. Inspect those behaviors in the rehearsal before accepting the candidate.
+
+Production deployment requires a separate explicit instruction. Follow the additive identity-callable-then-built-hosting sequence and recorded prior-Hosting-release rollback procedure in [the handoff](salary-showdown-HANDOFF.md); do not deploy individual worker bundles.
+
 ## Pre-class setup (10 minutes before)
 
 1. On the laptop, open the panel URL above.

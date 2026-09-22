@@ -5,6 +5,9 @@ import { signInAnonymously } from 'firebase/auth';
 import { adminDb, driveTo, newClient, type Seeded } from './harness';
 import { auth, functions } from '../lib/firebase';
 import App from '../App';
+import type { RevealDoc, StandingsRow } from '../types/models';
+
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // The rendered client IS the professor: it calls createGame with its own uid.
 // The professor holds no players/{uid} membership doc, so GameProvider/PhaseRouter
@@ -154,3 +157,120 @@ test('bigscreen: score-card flood, then standings shuffle with NEW and delta gly
     }
   }, { timeout: 30000 });
 }, 300000);
+
+test('bigscreen: finale follows all five exact steps, loads safely, and clamps wire values', async () => {
+  await signInAnonymously(auth);
+  const created = await httpsCallable(functions, 'createGame')({ teamNames: ['Alpha', 'Beta'] });
+  const { gameId, joinCode } = created.data as { gameId: string; joinCode: string };
+  const teamsSnap = await adminDb().collection(`games/${gameId}/teams`).get();
+  const teamIds = teamsSnap.docs.map((doc) => doc.id);
+  const prof: Seeded['prof'] = {
+    uid: auth.currentUser!.uid,
+    call: <T,>(fn: string, data: unknown) =>
+      httpsCallable(functions, fn)(data).then((r) => r.data as T),
+    dispose: () => Promise.resolve(),
+  };
+  const seeded: Seeded = { gameId, joinCode, teamIds, prof, bots: [] };
+  await driveTo(seeded, 'FINALE');
+  const revealRef = adminDb().doc(`games/${gameId}/reveal/latest`);
+  const reveal = (await revealRef.get()).data() as RevealDoc;
+
+  localStorage.removeItem('ss.gameId');
+  localStorage.setItem('ss.profGameId', gameId);
+  render(<MemoryRouter initialEntries={['/bigscreen']}><App /></MemoryRouter>);
+
+  const steps = [
+    [0, 'Podium', 'finale-podium'],
+    [1, 'Hype vs Reality', 'finale-scatter'],
+    [2, 'What the engine paid for', 'finale-weights'],
+    [3, 'Wins per dollar', 'finale-wpd'],
+    [4, 'Best & worst signings', 'finale-bestworst'],
+  ] as const;
+  for (const [step, title, testId] of steps) {
+    await prof.call('setRevealStep', { gameId, step });
+    await waitFor(() => {
+      expect(screen.getByTestId('finale-step-title')).toHaveTextContent(title);
+      expect(screen.getByTestId(testId)).toBeInTheDocument();
+    }, { timeout: 15000 });
+  }
+
+  await revealRef.delete();
+  await prof.call('setRevealStep', { gameId, step: 2 });
+  await waitFor(() => expect(screen.getByText('Loading the reveal…')).toBeInTheDocument(),
+    { timeout: 15000 });
+  await revealRef.set(reveal);
+
+  await adminDb().doc(`games/${gameId}`).update({ revealStep: -4 });
+  await waitFor(() => expect(screen.getByTestId('finale-podium')).toBeInTheDocument(),
+    { timeout: 15000 });
+  await adminDb().doc(`games/${gameId}`).update({ revealStep: 8 });
+  await waitFor(() => {
+    expect(screen.getByTestId('finale-step-title')).toHaveTextContent('Best & worst signings');
+    expect(screen.getByTestId('finale-bestworst')).toHaveClass('bs-reveal-chart');
+  }, { timeout: 15000 });
+}, 300000);
+
+test('bigscreen: a 21-team broadcast hides final totals and cycles every standings row', async () => {
+  await signInAnonymously(auth);
+  const names = Array.from({ length: 21 }, (_, index) => `Franchise ${index + 1}`);
+  const created = await httpsCallable(functions, 'createGame')({ teamNames: names });
+  const { gameId } = created.data as { gameId: string };
+  const teamsSnap = await adminDb().collection(`games/${gameId}/teams`).get();
+  const teams = teamsSnap.docs
+    .map((doc) => ({ id: doc.id, name: doc.data().name as string }))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  const standings: StandingsRow[] = teams.map((entry, index) => ({
+    teamId: entry.id,
+    name: entry.name,
+    wins: index === 0 ? 2 : 0,
+    losses: index === 1 ? 2 : 0,
+    pointDiff: index === 0 ? 19 : index === 1 ? -19 : 0,
+    pointsFor: index === 0 ? 200 : index === 1 ? 181 : 0,
+    tiebreakCoin: index / 100,
+    rank: index + 1,
+    previousRank: index + 1,
+  }));
+  await adminDb().doc(`games/${gameId}/rounds/2`).set({
+    games: [
+      { game_id: 'R2-G001', home: teams[0].id, away: teams[1].id,
+        homeScore: 101, awayScore: 90 },
+      { game_id: 'R2-G002', home: teams[0].id, away: teams[1].id,
+        homeScore: 99, awayScore: 91 },
+    ],
+    standings,
+    awards: { roundMvp: { pid: 1, teamId: teams[0].id, line: '' },
+      topScorer: { pid: 1, teamId: teams[0].id, pts: 1 }, bargain: null },
+    boxCsv: '',
+  });
+  await adminDb().doc(`games/${gameId}`).update({ status: 'active', phase: 'SIMULATE', round: 2 });
+
+  localStorage.removeItem('ss.gameId');
+  localStorage.setItem('ss.profGameId', gameId);
+  render(<MemoryRouter initialEntries={['/bigscreen']}><App /></MemoryRouter>);
+
+  await waitFor(() => {
+    expect(screen.getByTestId(`bs-live-record-${teams[0].id}`)).toHaveTextContent('0–0');
+    expect(screen.queryAllByTestId('bs-scorecard')).toHaveLength(0);
+  }, { timeout: 20000 });
+  await waitFor(() => {
+    expect(screen.getAllByTestId('bs-scorecard')).toHaveLength(1);
+    expect(screen.getByTestId(`bs-live-record-${teams[0].id}`)).toHaveTextContent('1–0');
+  }, { timeout: 8000 });
+
+  await adminDb().doc(`games/${gameId}`).update({ phase: 'RESULTS' });
+  await waitFor(() => {
+    expect(screen.getByTestId(`bs-delta-${teams[0].id}`)).toBeInTheDocument();
+    expect(screen.getByTestId('bs-page-status')).toHaveTextContent(/of 3/);
+  }, { timeout: 30000 });
+
+  const seen = new Set<string>();
+  for (let page = 0; page < 3; page += 1) {
+    screen.getAllByTestId('bs-shuffle-row').forEach((row) => {
+      const value = row.querySelector('.bs-shuffle-name')?.textContent;
+      if (value) seen.add(value);
+    });
+    await pause(6500);
+  }
+  expect([...seen].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })))
+    .toEqual(names);
+}, 180000);

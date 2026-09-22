@@ -1,5 +1,6 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 import { signInAnonymously } from 'firebase/auth';
@@ -14,6 +15,169 @@ import App from '../App';
 // so start every test from a clean slate and set the ss.prof* keys each test
 // actually depends on (same hygiene T2 retrofits onto professor.itest.tsx).
 beforeEach(() => localStorage.clear());
+
+test('advance control: two clicks in one render frame start only one pending advance', async () => {
+  let settle!: () => void;
+  const pending = new Promise<void>((resolve) => { settle = resolve; });
+  const call = vi.fn(() => pending);
+
+  vi.resetModules();
+  vi.doMock('../contexts/ProfessorContext', () => ({
+    useProfessor: () => ({
+      gameId: 'pending-game',
+      game: {
+        joinCode: 'PENDING', status: 'active', phase: 'RESULTS', round: 1,
+        timerEndsAt: null, timerPausedMs: null, teamCount: 2,
+        config: { cap: 100, totalRounds: 5 }, professorUid: 'professor',
+      },
+      settling: false,
+      raw: { phase: 'RESULTS', round: 1 },
+      teams: new Map(),
+      bidsSubmitted: new Set(),
+      call,
+    }),
+  }));
+  const { AdvanceControl: PendingAdvanceControl } = await import(
+    '../components/professor/AdvanceControl'
+  );
+  render(<PendingAdvanceControl />);
+  const button = screen.getByRole('button', { name: 'Advance → Front Office · R2' });
+
+  act(() => {
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
+
+  expect(call).toHaveBeenCalledTimes(1);
+  expect(button).toBeDisabled();
+  settle();
+  await act(async () => { await pending; });
+  vi.doUnmock('../contexts/ProfessorContext');
+  vi.resetModules();
+});
+
+test('advance confirmation contains focus, closes on Escape, and restores its trigger', async () => {
+  vi.resetModules();
+  vi.doMock('../contexts/ProfessorContext', () => ({
+    useProfessor: () => ({
+      gameId: 'confirm-game',
+      game: {
+        joinCode: 'CONFIRM', status: 'active', phase: 'FREE_AGENCY', round: 1,
+        timerEndsAt: null, timerPausedMs: null, teamCount: 2,
+        config: { cap: 100, totalRounds: 5 }, professorUid: 'professor',
+      },
+      settling: false,
+      raw: { phase: 'FREE_AGENCY', round: 1 },
+      teams: new Map([
+        ['alpha', { name: 'Alpha' }],
+        ['beta', { name: 'Beta' }],
+      ]),
+      bidsSubmitted: new Set<string>(),
+      call: vi.fn(),
+    }),
+  }));
+  const { AdvanceControl: ConfirmAdvanceControl } = await import(
+    '../components/professor/AdvanceControl'
+  );
+  const user = userEvent.setup();
+  render(<ConfirmAdvanceControl />);
+  const trigger = screen.getByRole('button', { name: 'Advance → Star Auction · R1' });
+
+  trigger.focus();
+  await user.keyboard('{Enter}');
+  const dialog = screen.getByRole('dialog', { name: 'confirm advance' });
+  const confirmButton = screen.getByRole('button', { name: 'Advance anyway' });
+  const cancelButton = screen.getByRole('button', { name: 'Cancel' });
+  expect(dialog).toHaveAttribute('aria-modal', 'true');
+  expect(confirmButton).toHaveFocus();
+
+  await user.tab();
+  expect(cancelButton).toHaveFocus();
+  await user.tab();
+  expect(confirmButton).toHaveFocus();
+  await user.tab({ shift: true });
+  expect(cancelButton).toHaveFocus();
+
+  await user.keyboard('{Escape}');
+  expect(screen.queryByRole('dialog', { name: 'confirm advance' })).toBeNull();
+  expect(trigger).toHaveFocus();
+
+  await user.keyboard('{Enter}');
+  await user.click(screen.getByRole('button', { name: 'Cancel' }));
+  expect(screen.queryByRole('dialog', { name: 'confirm advance' })).toBeNull();
+  expect(trigger).toHaveFocus();
+  vi.doUnmock('../contexts/ProfessorContext');
+  vi.resetModules();
+});
+
+test('successful advance confirmation restores focus after the surviving trigger is enabled', async () => {
+  const call = vi.fn().mockResolvedValue(undefined);
+  vi.resetModules();
+  vi.doMock('../contexts/ProfessorContext', () => ({
+    useProfessor: () => ({
+      gameId: 'confirm-success-game',
+      game: {
+        joinCode: 'SUCCESS', status: 'active', phase: 'FREE_AGENCY', round: 1,
+        timerEndsAt: null, timerPausedMs: null, teamCount: 2,
+        config: { cap: 100, totalRounds: 5 }, professorUid: 'professor',
+      },
+      settling: false,
+      raw: { phase: 'FREE_AGENCY', round: 1 },
+      teams: new Map([
+        ['alpha', { name: 'Alpha' }],
+        ['beta', { name: 'Beta' }],
+      ]),
+      bidsSubmitted: new Set<string>(),
+      call,
+    }),
+  }));
+  const { AdvanceControl: ConfirmAdvanceControl } = await import(
+    '../components/professor/AdvanceControl'
+  );
+  const user = userEvent.setup();
+  render(<ConfirmAdvanceControl />);
+  const trigger = screen.getByRole('button', { name: 'Advance → Star Auction · R1' });
+
+  await user.click(trigger);
+  await user.click(screen.getByRole('button', { name: 'Advance anyway' }));
+  await waitFor(() => {
+    expect(screen.queryByRole('dialog', { name: 'confirm advance' })).toBeNull();
+    expect(trigger).toBeEnabled();
+  });
+  expect(trigger).toHaveFocus();
+  expect(call).toHaveBeenCalledWith('advancePhase', {
+    gameId: 'confirm-success-game',
+    expectedPhase: 'FREE_AGENCY',
+    expectedRound: 1,
+  });
+  vi.doUnmock('../contexts/ProfessorContext');
+  vi.resetModules();
+});
+
+test('phase heading remains on the source phase while a transition marker is present', async () => {
+  await signInAnonymously(auth);
+  await waitFor(() => expect(auth.currentUser).toBeTruthy(), { timeout: 15000 });
+  const { gameId } = await httpsCallable(functions, 'createGame')({
+    teamNames: ['Alpha', 'Beta'],
+  }).then((r) => r.data as { gameId: string; joinCode: string });
+  await httpsCallable(functions, 'startSeason')({ gameId });
+  await adminDb().doc(`games/${gameId}`).update({
+    phase: 'AUCTION',
+    transition: {
+      fromRound: 1, fromPhase: 'FREE_AGENCY', toRound: 1, toPhase: 'AUCTION',
+    },
+  });
+
+  localStorage.setItem('ss.profGameId', gameId);
+  localStorage.setItem('ss.profAutoArm', '0');
+  localStorage.setItem('ss.profAutoAdvance', '0');
+  render(<MemoryRouter initialEntries={['/professor']}><App /></MemoryRouter>);
+
+  expect(await screen.findByText('Draft Night · Round 1', {}, { timeout: 20000 }))
+    .toBeInTheDocument();
+  expect(screen.queryByText('Star Auction · Round 1')).toBeNull();
+  expect(screen.getByText('advancing…')).toBeInTheDocument();
+});
 
 test('stuck advance: continuous settling past the threshold offers Resolve; resolving adopts the crashed flip', async () => {
   await signInAnonymously(auth);

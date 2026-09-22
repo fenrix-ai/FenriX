@@ -1,0 +1,192 @@
+.landing {
+  max-width: 1160px;
+  min-height: 100vh;
+  padding-top: clamp(28px, 5vw, 72px);
+}
+
+.hero { max-width: 720px; margin-bottom: 22px; }
+.brand { font-size: 0.78rem; }
+.eyebrow, .kicker {
+  color: var(--ss-gold);
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+.hero h1 {
+  max-width: 680px;
+  margin: 8px 0 6px;
+  font-size: clamp(2.2rem, 6vw, 4.7rem);
+  letter-spacing: -0.055em;
+  line-height: 0.98;
+}
+.hero h1:focus { outline: none; }
+.intro { max-width: 620px; margin: 0; color: var(--ss-text-muted); font-size: 1rem; }
+
+.progress {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 20px;
+  padding: 12px 16px;
+  border: 1px solid var(--ss-border-subtle);
+  border-radius: var(--ss-radius-lg);
+  background: rgb(9 21 36 / 72%);
+}
+.progressLabel {
+  color: var(--ss-text-muted);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.progress ol {
+  display: flex;
+  flex: 1;
+  justify-content: flex-end;
+  gap: clamp(12px, 4vw, 42px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.progress li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ss-text-dim);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.progress li span {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid var(--ss-border);
+  border-radius: 50%;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+}
+.progress .reached { color: var(--ss-text); }
+.progress .reached span { border-color: var(--ss-gold); color: var(--ss-gold); }
+
+.joinCard, .stepPanel, .rolePanel {
+  border: 1px solid var(--ss-border);
+  border-radius: var(--ss-radius-xl);
+  background: linear-gradient(145deg, rgb(26 51 87 / 94%), rgb(13 27 46 / 96%));
+  box-shadow: var(--ss-shadow-panel);
+}
+.joinCard {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.65fr) minmax(220px, 1fr) auto;
+  align-items: end;
+  gap: 14px;
+  max-width: 820px;
+  padding: clamp(18px, 3vw, 28px);
+}
+.joinCard label, .createCard label {
+  display: grid;
+  gap: 7px;
+  color: var(--ss-text-muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+.joinCard input, .createCard input { width: 100%; color: var(--ss-text); font-size: 1rem; }
+.stepPanel, .rolePanel { padding: clamp(16px, 2.5vw, 28px); }
+.stepToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+  color: var(--ss-text-dim);
+  font-size: 0.8rem;
+}
+.notice {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--ss-gold);
+  background: rgb(255 201 77 / 8%);
+  color: var(--ss-text-muted);
+}
+.teamGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.teamCard {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid var(--ss-border-subtle);
+  border-radius: var(--ss-radius-lg);
+  background: rgb(9 21 36 / 62%);
+}
+.teamCard h2, .teamCard p, .createCard h2, .createCard p,
+.selectedFranchise h2, .selectedFranchise p, .roleCard h3, .roleCard p { margin: 0; }
+.teamCard h2 {
+  overflow: hidden;
+  font-size: 1rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.teamCard p, .selectedFranchise p, .createCard p, .roleCard p {
+  margin-top: 4px;
+  color: var(--ss-text-muted);
+  font-size: 0.8rem;
+}
+.teamCard button { grid-column: 1 / -1; }
+.createCard {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(220px, 0.8fr) auto;
+  align-items: end;
+  gap: 16px;
+  margin-top: 20px;
+  padding: 18px;
+  border: 1px solid var(--ss-gold);
+  border-radius: var(--ss-radius-lg);
+  background: rgb(255 201 77 / 6%);
+}
+.createCard h2 { margin-top: 4px; font-size: 1.1rem; }
+.selectedFranchise {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  max-width: 680px;
+  margin: 0 auto 20px;
+  padding: 18px;
+  border-bottom: 1px solid var(--ss-border-subtle);
+}
+.selectedFranchise h2 { margin-top: 4px; font-size: clamp(1.5rem, 4vw, 2.3rem); }
+.roleGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.roleCard {
+  display: flex;
+  min-height: 210px;
+  flex-direction: column;
+  padding: 18px;
+  border: 1px solid var(--ss-border-subtle);
+  border-radius: var(--ss-radius-lg);
+  background: rgb(9 21 36 / 68%);
+}
+.roleNumber { color: var(--ss-gold); font-family: var(--mono); font-size: 0.72rem; }
+.roleCard h3 { margin-top: 10px; font-size: 1.35rem; }
+.roleCard p { flex: 1; line-height: 1.45; }
+
+@media (max-width: 900px) {
+  .teamGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .createCard { grid-template-columns: minmax(0, 1fr); align-items: stretch; }
+}
+@media (max-width: 680px) {
+  .progress { align-items: flex-start; flex-direction: column; }
+  .progress ol { width: 100%; justify-content: space-between; gap: 5px; }
+  .progress li { flex-direction: column; font-size: 0.68rem; }
+  .joinCard, .teamGrid, .roleGrid { grid-template-columns: minmax(0, 1fr); }
+  .selectedFranchise { align-items: flex-start; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .joinCard, .stepPanel, .rolePanel { animation: step-in var(--ss-motion-panel) ease-out; }
+  .teamCard { transition: border-color var(--ss-motion-fast), transform var(--ss-motion-fast); }
+  .teamCard:hover { border-color: var(--ss-gold); transform: translateY(-2px); }
+}
+@keyframes step-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}

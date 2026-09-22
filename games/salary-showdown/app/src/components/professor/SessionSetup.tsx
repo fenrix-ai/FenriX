@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useProfessor } from '../../contexts/ProfessorContext';
 import { ErrorNotice } from '../ui/ErrorNotice';
+import styles from './ProfessorDesk.module.css';
 
 // AMENDED HARD RULE (2026-08-17): the 21-franchise cap is now enforced
 // SERVER-SIDE in createTeam — students create their own franchises from the
@@ -38,19 +39,18 @@ export function SessionSetup() {
       }
     };
     return (
-      <section className="card" style={{ marginTop: 10 }} aria-label="Session setup">
-        <h2 style={{ margin: '0 0 8px', fontSize: 16 }}>New session</h2>
-        <p className="muted" style={{ margin: '0 0 8px', fontSize: 13 }}>
+      <section className={styles.panel} aria-label="Session setup">
+        <h2 className={styles.panelTitle}>New session</h2>
+        <p className={styles.panelCopy}>
           Students create and name their own franchises from the join screen —
           share the join code and they appear below. The server caps the
           league at 21 franchises.
         </p>
         <button type="button" className="btn gold" disabled={busy}
           onClick={() => void create()}>Create game</button>
-        <div style={{ marginTop: 14, display: 'flex', gap: 8 }}>
+        <div className={styles.resumeRow}>
           <input aria-label="game id" className="mono" value={resumeId}
-            onChange={(e) => setResumeId(e.target.value)} placeholder="Existing game id"
-            style={{ flex: 1 }} />
+            onChange={(e) => setResumeId(e.target.value)} placeholder="Existing game id" />
           <button type="button" className="btn" disabled={resumeId.trim().length === 0}
             onClick={() => setGameId(resumeId.trim())}>Resume</button>
         </div>
@@ -73,27 +73,22 @@ export function SessionSetup() {
     }
   };
   return (
-    <section className="card" style={{ marginTop: 10 }} aria-label="Lobby setup">
-      <h2 style={{ margin: '0 0 8px', fontSize: 16 }}>Franchises</h2>
+    <section className={styles.panel} aria-label="Lobby setup">
+      <h2 className={styles.panelTitle}>Start the season</h2>
       {teams.size === 0 && (
-        <p className="muted" style={{ margin: '0 0 6px', fontSize: 13 }}>
+        <p className={styles.panelCopy}>
           No franchises yet — students create them from the join screen.
         </p>
       )}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-        {[...teams.entries()]
-          // numeric-aware: Franchise 2 before Franchise 10 (collation sweep)
-          .sort((a, b) => a[1].name.localeCompare(b[1].name, undefined, { numeric: true }))
-          .map(([id, t]) => (
-            <span key={id} className="chip">{t.name}</span>
-          ))}
-      </div>
+      {teams.size > 0 && (
+        <p className={styles.setupCount}>{teams.size} {teams.size === 1 ? 'franchise' : 'franchises'} joined</p>
+      )}
       {teams.size < 2 && (
-        <p className="muted" style={{ margin: '8px 0 0', fontSize: 13 }}>
+        <p className={styles.panelCopy}>
           Start season unlocks once 2 franchises exist.
         </p>
       )}
-      <button type="button" className="btn green" style={{ marginTop: 10 }}
+      <button type="button" className="btn green" style={{ marginTop: 12 }}
         disabled={busy || teams.size < 2}
         onClick={() => void start()}>Start season</button>
       <ErrorNotice error={error} />

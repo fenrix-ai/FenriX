@@ -1,5 +1,6 @@
 import { useProfessor } from '../../contexts/ProfessorContext';
 import type { Role } from '../../types/models';
+import { FranchiseMark } from '../franchise/FranchiseMark';
 
 const ROLES: Role[] = ['GM', 'Scout', 'Coach'];
 
@@ -12,8 +13,9 @@ export function LobbyWall() {
   if (!game) return null;
   const seatTotal = game.teamCount * 3;
   const claimed = [...players.values()];
+  const dense = teams.size > 12;
   return (
-    <main className="bigscreen bs-center">
+    <main className={`bigscreen bs-center bs-lobby${dense ? ' bs-dense' : ''}`}>
       <div className="brand bs-brand">Salary Showdown</div>
       <div className="mono bs-joincode" data-testid="bs-joincode">{game.joinCode}</div>
       <p className="bs-joinline">join at {window.location.origin}/?code={game.joinCode}</p>
@@ -25,7 +27,11 @@ export function LobbyWall() {
           .sort((a, b) => a[1].name.localeCompare(b[1].name, undefined, { numeric: true }))
           .map(([tid, t]) => (
           <section key={tid} className="bs-teamcard">
-            <h2>{t.name}</h2>
+            <div className="bs-team-title">
+              <FranchiseMark teamId={tid} name={t.name} identity={t.identity}
+                size={dense ? 32 : 44} />
+              <h2>{t.name}</h2>
+            </div>
             <div className="bs-chips">
               {ROLES.map((role) => {
                 const seat = claimed.find((p) => p.teamId === tid && p.role === role);

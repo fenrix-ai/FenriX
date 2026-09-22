@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
@@ -26,6 +26,18 @@ test('lineup: pre-arranged legal, playstyle pick, submit locks the round', async
   // Alpha holds 8 hardship players → pre-arranged 5+1+2, zero depth, already legal.
   await waitFor(() => expect(lineupStatus())
     .toHaveTextContent('Lineup: 2 G · 2 W · 1 B — Legal · Playstyle: Balanced'), { timeout: 20000 });
+
+  const activeBench = screen.getByRole('button', { name: 'Active bench 1' });
+  const benchName = within(activeBench).getByTestId('lineup-player-name').textContent!;
+  const benchPosition = within(activeBench).getByTestId('lineup-player-position').textContent!;
+  const benchPid = within(activeBench).getByTestId('lineup-player-name')
+    .closest('[data-player-pid]')!.getAttribute('data-player-pid')!;
+  const target = benchPosition === 'G' ? 'Guard 1' : benchPosition === 'W' ? 'Wing 1' : 'Big';
+  await user.click(screen.getByRole('button', {
+    name: new RegExp(`^Select .*player ${benchPid}$`),
+  }));
+  await user.click(screen.getByRole('button', { name: target }));
+  expect(screen.getByRole('button', { name: target })).toHaveTextContent(benchName);
 
   await user.click(screen.getByText('Lockdown'));
   expect(lineupStatus()).toHaveTextContent('Playstyle: Lockdown');
@@ -96,10 +108,10 @@ test('lineup (F7): a GM tab follows the Coach\'s submit live and shows the locke
 
   // Faithful bench order: the ACTIVE BENCH zones show the Coach's exact
   // order (B then W), not the minutes-arranged one (W then B).
-  const benchLabel = screen.getByText('ACTIVE BENCH — these two play');
-  const benchZone = benchLabel.nextElementSibling as HTMLElement;
-  const badges = Array.from(benchZone.querySelectorAll('.slot')).map(
-    (s) => s.textContent ?? '');
+  const badges = [
+    screen.getByRole('button', { name: 'Active bench 1' }).textContent ?? '',
+    screen.getByRole('button', { name: 'Active bench 2' }).textContent ?? '',
+  ];
   expect(badges).toHaveLength(2);
   expect(badges[0]).toContain('B');
   expect(badges[1]).toContain('W');
@@ -154,11 +166,61 @@ test('lineup (F7 fix round 2): a Coach remount seeds the LOCKED lineup verbatim,
   render(<MemoryRouter initialEntries={['/game/lineup']}><App /></MemoryRouter>);
   await waitFor(() => expect(lineupStatus())
     .toHaveTextContent('Lineup: 2 G · 2 W · 1 B — Legal · Playstyle: Lockdown'), { timeout: 20000 });
-  const benchZone = screen.getByText('ACTIVE BENCH — these two play')
-    .nextElementSibling as HTMLElement;
-  const badges = Array.from(benchZone.querySelectorAll('.slot')).map(
-    (s) => s.textContent ?? '');
+  const badges = [
+    screen.getByRole('button', { name: 'Active bench 1' }).textContent ?? '',
+    screen.getByRole('button', { name: 'Active bench 2' }).textContent ?? '',
+  ];
   expect(badges).toHaveLength(2);
   expect(badges[0]).toContain('B'); // the locked order…
   expect(badges[1]).toContain('W'); // …not the minutes-arranged one
+}, 120000);
+
+test('lineup: a deep roster keeps every pid and later depth remains after the active bench', async () => {
+  localStorage.removeItem('ss.gameId');
+  const seeded = await seedToPhase({ to: 'R1:LINEUP' });
+  const teamRef = adminDb().doc(`games/${seeded.gameId}/teams/${seeded.teamIds[0]}`);
+  const team = (await teamRef.get()).data()!;
+  const rosterPids = new Set<number>(team.roster.map((c: { pid: number }) => c.pid));
+  const catalogSnap = await adminDb().collection(`games/${seeded.gameId}/catalog`).get();
+  const additions = ['G', 'W'].map((position) => {
+    const doc = catalogSnap.docs.find((candidate) =>
+      candidate.data().position === position && !rosterPids.has(Number(candidate.id)))!;
+    return {
+      pid: Number(doc.id), rate: 5, startRound: 1, years: 1,
+      viaAuction: false, hardship: false,
+    };
+  });
+  await teamRef.update({
+    roster: [...team.roster, ...additions],
+    lineup: null,
+    lineupLockedRound: 0,
+  });
+
+  await signInAnonymously(auth);
+  await httpsCallable(functions, 'joinGame')({
+    joinCode: seeded.joinCode, teamId: seeded.teamIds[0], role: 'Coach', displayName: 'Deep Coach',
+  });
+  localStorage.setItem('ss.gameId', seeded.gameId);
+  const user = userEvent.setup();
+  render(<MemoryRouter initialEntries={['/game/lineup']}><App /></MemoryRouter>);
+
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Inactive depth' }))
+    .toBeInTheDocument(), { timeout: 20000 });
+  const depthBefore = within(screen.getByRole('button', { name: 'Inactive depth' }))
+    .getAllByTestId('lineup-player-name').map((node) => node.textContent);
+  expect(depthBefore).toHaveLength(2);
+
+  await user.click(screen.getByRole('button', { name: 'Submit lineup' }));
+  await waitFor(async () => {
+    const saved = (await teamRef.get()).data()!;
+    expect(saved.lineupLockedRound).toBe(1);
+    expect(saved.lineup.bench).toHaveLength(4);
+    const savedPids = [
+      ...saved.lineup.starters, saved.lineup.sixth, ...saved.lineup.bench,
+    ].sort((a: number, b: number) => a - b);
+    expect(savedPids).toEqual(
+      [...team.roster.map((c: { pid: number }) => c.pid), ...additions.map((c) => c.pid)]
+        .sort((a, b) => a - b),
+    );
+  }, { timeout: 15000 });
 }, 120000);

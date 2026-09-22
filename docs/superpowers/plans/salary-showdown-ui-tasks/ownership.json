@@ -1,0 +1,247 @@
+{
+  "F01": {
+    "dependencies": [],
+    "files": [
+      "app/src/lib/franchiseIdentity.ts",
+      "app/src/lib/franchiseIdentity.test.ts",
+      "app/src/lib/payrollProjection.ts",
+      "app/src/lib/payrollProjection.test.ts",
+      "app/src/types/models.ts",
+      "app/src/components/franchise/FranchiseMark.tsx",
+      "app/src/components/players/PlayerCard.tsx",
+      "app/src/components/contracts/PayrollTimeline.tsx",
+      "app/src/components/contracts/PayrollTimeline.module.css",
+      "app/src/components/franchise/FranchiseMark.module.css",
+      "app/src/components/players/PlayerCard.module.css",
+      "app/src/hooks/useReducedMotion.ts",
+      "app/src/hooks/useActionReceipt.ts",
+      "app/src/hooks/useActionReceipt.test.tsx",
+      "app/src/styles/experience.css",
+      "app/src/styles/arena.css",
+      "app/src/main.tsx"
+    ],
+    "port": 5180
+  },
+  "F02": {
+    "dependencies": [],
+    "files": [
+      "backend/functions/src/teamIdentity.js",
+      "backend/functions/src/game.js",
+      "backend/functions/index.js",
+      "backend/functions/test/team-identity.test.js",
+      "backend/SCHEMA.md"
+    ],
+    "port": null
+  },
+  "F03": {
+    "dependencies": [
+      "F01"
+    ],
+    "files": [
+      "app/src/App.tsx",
+      "app/src/contexts/GameContext.tsx",
+      "app/src/contexts/RoundPresentationContext.tsx",
+      "app/src/contexts/RoundPresentationContext.test.tsx",
+      "app/src/hooks/useRoundDoc.ts",
+      "app/src/components/ui/PhaseHeader.tsx",
+      "app/src/components/ui/PayrollBar.tsx",
+      "app/src/components/shell/StudentShell.module.css",
+      "app/src/lib/presentationProgress.ts",
+      "app/src/lib/presentationProgress.test.ts",
+      "app/src/itest/contexts.itest.tsx",
+      "app/src/itest/transition.itest.tsx"
+    ],
+    "port": 5182
+  },
+  "W01": {
+    "dependencies": [
+      "F02",
+      "F03"
+    ],
+    "files": [
+      "app/src/pages/LandingPage.tsx",
+      "app/src/pages/LobbyPage.tsx",
+      "app/src/pages/LandingPage.module.css",
+      "app/src/pages/LobbyPage.module.css",
+      "app/src/components/lobby/IdentityEditor.tsx",
+      "app/src/components/lobby/RoleSeats.tsx",
+      "app/src/components/lobby/IdentityEditor.test.tsx",
+      "app/src/itest/landing.itest.tsx",
+      "app/src/itest/lobby.itest.tsx"
+    ],
+    "port": 5183
+  },
+  "W02": {
+    "dependencies": [
+      "F03"
+    ],
+    "files": [
+      "app/src/pages/FreeAgencyPage.tsx",
+      "app/src/pages/FreeAgencyPage.module.css",
+      "app/src/components/market/CompareTray.tsx",
+      "app/src/components/market/CompareTray.test.tsx",
+      "app/src/components/market/ContractComposer.tsx",
+      "app/src/components/market/RosterRail.tsx",
+      "app/src/itest/market.itest.tsx"
+    ],
+    "port": 5184
+  },
+  "W03": {
+    "dependencies": [
+      "F03"
+    ],
+    "files": [
+      "app/src/pages/FrontOfficePage.tsx",
+      "app/src/pages/FrontOfficePage.module.css",
+      "app/src/components/frontoffice/CutPreview.tsx",
+      "app/src/lib/cutPreview.ts",
+      "app/src/lib/cutPreview.test.ts",
+      "app/src/itest/frontoffice.itest.tsx"
+    ],
+    "port": 5185
+  },
+  "W04": {
+    "dependencies": [
+      "F03"
+    ],
+    "files": [
+      "app/src/pages/AuctionPage.tsx",
+      "app/src/pages/AuctionPage.module.css",
+      "app/src/components/auction/OfferCard.tsx",
+      "app/src/lib/auctionDraft.ts",
+      "app/src/lib/auctionDraft.test.ts",
+      "app/src/itest/auction.itest.tsx"
+    ],
+    "port": 5186
+  },
+  "W05": {
+    "dependencies": [
+      "F03"
+    ],
+    "files": [
+      "app/src/pages/LineupPage.tsx",
+      "app/src/pages/LineupPage.module.css",
+      "app/src/components/lineup/CourtSlot.tsx",
+      "app/src/components/lineup/LineupRoster.tsx",
+      "app/src/components/lineup/PlacementStatus.tsx",
+      "app/src/components/lineup/CourtSlot.test.tsx",
+      "app/src/itest/lineup.itest.tsx"
+    ],
+    "port": 5187
+  },
+  "W06": {
+    "dependencies": [
+      "F03"
+    ],
+    "files": [
+      "app/src/pages/SimulatePage.tsx",
+      "app/src/pages/SimulatePage.module.css",
+      "app/src/components/simulation/MatchReveal.tsx",
+      "app/src/components/simulation/CompletedGames.tsx",
+      "app/src/components/simulation/MatchBoxscore.tsx",
+      "app/src/lib/matchRows.ts",
+      "app/src/lib/matchRows.test.ts",
+      "app/src/itest/simulate.itest.tsx"
+    ],
+    "port": 5188
+  },
+  "W07": {
+    "dependencies": [
+      "F03"
+    ],
+    "files": [
+      "app/src/pages/ResultsPage.tsx",
+      "app/src/pages/StandingsPage.tsx",
+      "app/src/pages/ResultsPage.module.css",
+      "app/src/pages/StandingsPage.module.css",
+      "app/src/components/results/ResultsHero.tsx",
+      "app/src/components/results/BoxscoreExplorer.tsx",
+      "app/src/components/results/AuctionResolution.tsx",
+      "app/src/components/ui/StandingsTable.tsx",
+      "app/src/components/results/ResultsHero.test.tsx",
+      "app/src/itest/results.itest.tsx",
+      "app/src/itest/standings.itest.tsx",
+      "app/src/itest/auction-results.itest.tsx"
+    ],
+    "port": 5189
+  },
+  "W08": {
+    "dependencies": [
+      "F03"
+    ],
+    "files": [
+      "app/src/pages/FinalePage.tsx",
+      "app/src/pages/FinalePage.module.css",
+      "app/src/components/finale/Podium.tsx",
+      "app/src/components/finale/RevealExplorer.tsx",
+      "app/src/components/finale/SigningStory.tsx",
+      "app/src/components/finale/RevealExplorer.test.tsx",
+      "app/src/components/charts/BestWorst.tsx",
+      "app/src/components/charts/WinsPerDollar.tsx",
+      "app/src/components/charts/ScatterTI.tsx",
+      "app/src/components/charts/WeightsCompare.tsx",
+      "app/src/lib/revealCharts.ts",
+      "app/src/lib/revealCharts.test.ts",
+      "app/src/itest/finale.itest.tsx"
+    ],
+    "port": 5190
+  },
+  "W09": {
+    "dependencies": [
+      "F03"
+    ],
+    "files": [
+      "app/src/pages/professor/ProfessorPage.tsx",
+      "app/src/pages/professor/ProfessorPage.module.css",
+      "app/src/components/professor/AdvanceControl.tsx",
+      "app/src/components/professor/SessionSetup.tsx",
+      "app/src/components/professor/RevealStepper.tsx",
+      "app/src/components/professor/SubmissionGrid.tsx",
+      "app/src/components/professor/TimerStrip.tsx",
+      "app/src/components/professor/RoundContext.tsx",
+      "app/src/components/professor/SeatPanel.tsx",
+      "app/src/components/professor/ProfessorDesk.module.css",
+      "app/src/itest/professor.itest.tsx",
+      "app/src/itest/professor-seats.itest.tsx",
+      "app/src/itest/professor-fixes.itest.tsx"
+    ],
+    "port": 5191
+  },
+  "W10": {
+    "dependencies": [
+      "F03"
+    ],
+    "files": [
+      "app/src/pages/bigscreen/BigscreenPage.tsx",
+      "app/src/components/bigscreen/LobbyWall.tsx",
+      "app/src/components/bigscreen/DecisionWall.tsx",
+      "app/src/components/bigscreen/SimulateFlood.tsx",
+      "app/src/components/bigscreen/StandingsShuffle.tsx",
+      "app/src/components/bigscreen/FinaleWall.tsx",
+      "app/src/styles/bigscreen.css",
+      "app/src/itest/bigscreen.itest.tsx"
+    ],
+    "port": 5192
+  },
+  "I01": {
+    "dependencies": [
+      "W01",
+      "W02",
+      "W03",
+      "W04",
+      "W05",
+      "W06",
+      "W07",
+      "W08",
+      "W09",
+      "W10"
+    ],
+    "files": [
+      "app/src/itest/experience.itest.tsx",
+      "app/src/itest/season.itest.tsx",
+      "docs/superpowers/salary-showdown-HANDOFF.md",
+      "docs/superpowers/salary-showdown-RUNBOOK.md"
+    ],
+    "port": 5193
+  }
+}

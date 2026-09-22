@@ -1,42 +1,90 @@
+import type { MouseEvent } from 'react';
 import { useProfessor } from '../../contexts/ProfessorContext';
+import { FranchiseMark } from '../franchise/FranchiseMark';
 import { LIGHT_PHASES, submittedTeamIds } from '../../lib/submissionLights';
+import type { Role } from '../../types/models';
+import styles from './ProfessorDesk.module.css';
 
-// Submission grid (design spec §5.5): one row per team, one light for the
-// CURRENT phase. Lights only — this component must NEVER render bid contents
-// (rates, years, target pids) or any other private submission data; the
-// filled/empty dot is the entire disclosure. submittedTeamIds (Task 7) owns
-// the per-phase rule; LIGHT_PHASES (also Task 7) names the four phases that
-// have a lights section — outside them (LOBBY / SIMULATE / RESULTS / FINALE)
-// this renders nothing at all, not an empty shell. ● / ○ are sanctioned
-// glyphs, not emojis.
-export function SubmissionGrid() {
-  const { game, teams, bidsSubmitted } = useProfessor();
+const ROLES: Role[] = ['GM', 'Scout', 'Coach'];
+
+export function SubmissionGrid({ onManageSeats }: {
+  onManageSeats(teamId: string | null, trigger: HTMLElement): void;
+}) {
+  const { game, teams, players, bidsSubmitted } = useProfessor();
   if (!game) return null;
-  if (!LIGHT_PHASES.has(game.phase)) return null;
-  const lit = submittedTeamIds(game.phase, game.round, teams, bidsSubmitted);
-  // numeric-aware: Franchise 2 before Franchise 10
-  const rows = [...teams.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name, undefined, { numeric: true }));
+
+  const hasSubmissionLights = LIGHT_PHASES.has(game.phase);
+  const lit = hasSubmissionLights
+    ? submittedTeamIds(game.phase, game.round, teams, bidsSubmitted)
+    : new Set<string>();
+  const rows = [...teams.entries()].sort((a, b) =>
+    a[1].name.localeCompare(b[1].name, undefined, { numeric: true }));
+  const seatHolder = (teamId: string, role: Role) =>
+    [...players.values()].find((player) => player.teamId === teamId && player.role === role);
+
+  const manage = (teamId: string, event: MouseEvent<HTMLButtonElement>) => {
+    onManageSeats(teamId, event.currentTarget);
+  };
+
+  const content = (
+    <div className={styles.teamGrid}>
+      {rows.map(([teamId, team]) => {
+        const submitted = lit.has(teamId);
+        return (
+          <article key={teamId} className={styles.teamCard}
+            data-submitted={hasSubmissionLights ? submitted : undefined}
+            data-testid={`franchise-${teamId}`}>
+            <div className={styles.teamHeading} data-testid={`light-${teamId}`}>
+              <FranchiseMark teamId={teamId} name={team.name} identity={team.identity} size={46} />
+              <div className={styles.teamIdentity}>
+                <strong className={styles.teamName} title={team.name}>
+                  {hasSubmissionLights ? (submitted ? '● ' : '○ ') : ''}{team.name}
+                </strong>
+                <span className={styles.doneState} data-submitted={submitted}>
+                  {hasSubmissionLights
+                    ? (submitted ? 'Done signal received · revisions stay open' : 'Waiting for done signal')
+                    : game.phase === 'LOBBY' ? 'Lobby seats' : 'Round in progress'}
+                </span>
+              </div>
+            </div>
+            <ul className={styles.roleList} aria-label={`${team.name} role seats`}>
+              {ROLES.map((role) => {
+                const holder = seatHolder(teamId, role);
+                return (
+                  <li key={role} className={styles.roleItem}>
+                    <span className={styles.roleName}>{role}</span>
+                    <span className={holder ? styles.roleHolder : styles.openSeat}>
+                      {holder?.displayName ?? 'Open'}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+            <button type="button" className={`btn ${styles.manageButton}`}
+              aria-label={`Manage seats for ${team.name}`}
+              onClick={(event) => manage(teamId, event)}>
+              Manage seats
+            </button>
+          </article>
+        );
+      })}
+    </div>
+  );
+
   return (
-    <section className="card" data-testid="submission-grid" style={{ marginTop: 12 }}>
-      <strong>Submissions</strong>
-      <span className="mono muted" style={{ marginLeft: 8, fontSize: 13 }}>
-        {lit.size} of {rows.length} in
-      </span>
-      {rows.map(([teamId, t]) => (
-        <div key={teamId} data-testid={`light-${teamId}`}
-          style={{ display: 'flex', alignItems: 'center', marginTop: 6 }}>
-          <span className={lit.has(teamId) ? 'ok' : 'dim'} style={{ marginRight: 8 }}>
-            {lit.has(teamId) ? '●' : '○'}
-          </span>
-          {/* Explicit space text node: JSX strips the bare newline between the
-              two spans, and the Step 6 tests (and the '● <name>' text contract
-              in Produces) assert textContent '● Alpha' WITH a space. The flex
-              row ignores this node visually (marginRight above provides the
-              gap) but it is part of textContent. Do not remove. */}
-          {' '}
-          <span>{t.name}</span>
+    <section className={styles.board} data-testid="franchise-grid" aria-label="Franchise readiness">
+      <div className={styles.boardHeader}>
+        <div>
+          <h2 className={styles.panelTitle}>Franchise readiness</h2>
+          <p className={styles.panelCopy}>
+            Done is a status signal. Teams can revise until the phase advances.
+          </p>
         </div>
-      ))}
+        <span className={styles.boardMeta}>
+          {hasSubmissionLights ? `${lit.size} of ${rows.length} submitted` : `${rows.length} franchises`}
+        </span>
+      </div>
+      {hasSubmissionLights ? <div data-testid="submission-grid">{content}</div> : content}
     </section>
   );
 }

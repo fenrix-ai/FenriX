@@ -4,6 +4,7 @@ import { LedTimer, fmtClock } from '../ui/LedTimer';
 import { ErrorNotice } from '../ui/ErrorNotice';
 import { PHASE_NAMES } from '../../lib/phaseNames';
 import type { Phase } from '../../types/models';
+import styles from './ProfessorDesk.module.css';
 
 // Professor timer strip (design spec §5.4).
 // HARD RULES — do not "improve" these away:
@@ -150,9 +151,15 @@ export function TimerStrip() {
   };
 
   return (
-    <section className="card" data-testid="timer-strip">
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+    <section className={styles.panel} data-testid="timer-strip">
+      <div className={styles.panelHeader}>
+        <div>
+          <h2 className={styles.panelTitle}>Room timer</h2>
+          <p className={styles.panelCopy}>Advisory pacing; teams can still submit after zero.</p>
+        </div>
         <LedTimer endsAt={game.timerEndsAt} pausedMs={game.timerPausedMs} />
+      </div>
+      <div className={styles.controlRow} style={{ marginTop: 10 }}>
         {!running && !paused && (
           <button className="btn green" disabled={disabled}
             onClick={() => void setTimer('start', defaultSeconds)}>
@@ -195,19 +202,16 @@ export function TimerStrip() {
         </button>
       </div>
       {showSettings && (
-        <div className="inset"
-          style={{ marginTop: 8, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div className={styles.timerSettings}>
           {TIMER_PHASES.map((k) => (
-            <label key={k} className="mono"
-              style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+            <label key={k} className={styles.timerSetting}>
               {PHASE_NAMES[k]}
               <input type="number" min={1} max={3600} value={draft[k] ?? ''}
-                style={{ width: 70 }}
                 onChange={(e) => setDraft((d) => ({ ...d, [k]: e.target.value }))} />
               s
             </label>
           ))}
-          <button className="btn gold" onClick={saveSettings}>Save defaults</button>
+          <button className={`btn gold ${styles.fullRow}`} onClick={saveSettings}>Save defaults</button>
         </div>
       )}
       <ErrorNotice error={err} />

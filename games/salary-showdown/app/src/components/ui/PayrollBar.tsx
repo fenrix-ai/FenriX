@@ -8,7 +8,8 @@ export function PayrollBar({ team, round }: { team: TeamDoc; round: number }) {
   const { cash, dead } = payrollSplitAt(team, round);
   const room = r01(CAP - cash - dead);
   return (
-    <div className="payroll" data-testid="payroll-bar">
+    <div className="payroll" data-testid="payroll-bar"
+      style={{ top: 'var(--ss-student-header-offset, 0px)' }}>
       <span className="mono">
         Payroll {fmtM(cash)}{dead > 0 ? <> + <span className="neg">{fmtM(dead)} dead</span></> : null}
         {' '}/ {fmtM(CAP)} cap · <span className={room < 0 ? 'neg' : 'ok'}>{fmtM(room)} room</span>

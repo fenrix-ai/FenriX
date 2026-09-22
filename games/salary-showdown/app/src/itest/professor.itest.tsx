@@ -116,6 +116,25 @@ test('panel: zero-team create — franchises appear as students create them; sea
   await screen.findByRole('button', { name: 'Advance → Star Auction · R1' }, { timeout: 30000 });
 }, 240000);
 
+test('professor desk: all 21 franchises remain reachable from the lobby readiness board', async () => {
+  await signInAnonymously(auth);
+  await waitFor(() => expect(auth.currentUser).toBeTruthy(), { timeout: 15000 });
+  const names = Array.from({ length: 21 }, (_, index) => `Franchise ${index + 1}`);
+  const { gameId } = await httpsCallable(functions, 'createGame')({ teamNames: names })
+    .then((r) => r.data as { gameId: string; joinCode: string });
+
+  localStorage.setItem('ss.profGameId', gameId);
+  localStorage.setItem('ss.profAutoArm', '0');
+  localStorage.setItem('ss.profAutoAdvance', '0');
+  render(<MemoryRouter initialEntries={['/professor']}><App /></MemoryRouter>);
+
+  const board = await screen.findByTestId('franchise-grid', {}, { timeout: 20000 });
+  await waitFor(() => expect(within(board).getAllByTestId(/^franchise-/)).toHaveLength(21),
+    { timeout: 20000 });
+  expect(within(board).getByRole('button', { name: 'Manage seats for Franchise 21' }))
+    .toBeInTheDocument();
+}, 120000);
+
 test('panel advance: all-lights-on skips the modal; a missing submission names the team and confirm advances', async () => {
   await signInAnonymously(auth);
   await waitFor(() => expect(auth.currentUser).toBeTruthy(), { timeout: 15000 });
