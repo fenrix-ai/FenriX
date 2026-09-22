@@ -36,9 +36,11 @@ export function SimulateFlood() {
   const scoreStart = scorePage * SCORE_PAGE_SIZE;
   const scoreEnd = Math.min(total, (scorePage + 1) * SCORE_PAGE_SIZE);
   const visibleLive = reduced ? live : live.slice(livePager.start, livePager.end);
-  const denseReduced = reduced && live.length > 12;
+  const classroom = live.length > 12;
+  const denseReduced = reduced && classroom;
   return (
-    <main className={`bigscreen${denseReduced ? ' bs-sim-reduced-dense' : ''}`}>
+    <main className={`bigscreen${classroom ? ' bs-sim-classroom' : ''}${
+      denseReduced ? ' bs-sim-reduced-dense' : ''}`}>
       <header className="bs-broadcast-head">
         <div className="brand bs-brand">Salary Showdown</div>
         <h1 className="bs-phase-title">{PHASE_NAMES.SIMULATE}</h1>

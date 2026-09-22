@@ -145,6 +145,18 @@
 .bs-live-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bs-live-rec { width: 2.8em; text-align: right; }
 
+/* Classroom names need a second line before they need an ellipsis. The normal
+   motion wall keeps its score/standing pagination; this scope only gives the
+   existing rows enough typography and wrapping to stay distinguishable. */
+.bs-sim-classroom .bs-scorecard { align-items: center; gap: 5px; padding: 7px 9px;
+  font-size: clamp(14px, 1.25vw, 22px); }
+.bs-sim-classroom .bs-score-team { min-width: 0; overflow: visible;
+  text-overflow: clip; white-space: normal; overflow-wrap: anywhere; line-height: 1.05; }
+.bs-sim-classroom .bs-live-row { align-items: center; gap: 5px; padding: 2px 6px;
+  font-size: clamp(13px, 1.15vw, 20px); }
+.bs-sim-classroom .bs-live-name { min-width: 0; overflow: visible;
+  text-overflow: clip; white-space: normal; overflow-wrap: anywhere; line-height: 1.05; }
+
 /* Reduced motion reveals every final live rank immediately. For a classroom
    league, use the wall width below the eight-score page instead of building an
    over-height sidebar; smaller leagues keep the standard split composition. */

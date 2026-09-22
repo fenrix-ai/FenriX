@@ -155,7 +155,8 @@ test('reduced-motion classroom simulation shows every rank in a dense no-scroll 
 
   render(<SimulateFlood />);
 
-  expect(document.querySelector('main.bigscreen')).toHaveClass('bs-sim-reduced-dense');
+  expect(document.querySelector('main.bigscreen')).toHaveClass(
+    'bs-sim-classroom', 'bs-sim-reduced-dense');
   expect(screen.getByTestId('bs-live-standings')).toHaveClass('is-classroom-grid');
   expect(screen.getAllByTestId('bs-live-row')).toHaveLength(21);
   expect(screen.getAllByTestId('bs-scorecard')).toHaveLength(8);
@@ -163,6 +164,39 @@ test('reduced-motion classroom simulation shows every rank in a dense no-scroll 
     .getByText('North Coast Trailblazers')).toBeInTheDocument();
   expect(within(screen.getAllByTestId('bs-scorecard')[0])
     .getByText('North Coast Trailblazers')).toBeInTheDocument();
+});
+
+test('normal-motion classroom simulation keeps full names inside paged rows', () => {
+  const names = Array.from({ length: 21 }, (_, index) =>
+    index === 0 ? 'North Coast Trailblazers' : `Classroom Franchise ${index + 1}`);
+  const teams = new Map(names.map((name, index) => [`t${index + 1}`, team(name)]));
+  const games = Array.from({ length: 8 }, (_, index) => ({
+    game_id: `g${index + 1}`,
+    home: `t${index * 2 + 1}`,
+    away: `t${index * 2 + 2}`,
+    homeScore: 80 + index,
+    awayScore: 70 + index,
+  }));
+  const rows = standings(21).map((row, index) => ({ ...row, name: names[index] }));
+  mocks.professor = {
+    gameId: 'game-classroom-normal',
+    game: game({ phase: 'SIMULATE', teamCount: 21 }),
+    round: { games, standings: rows, awards: {}, boxCsv: '' },
+    teams,
+  };
+
+  render(<SimulateFlood />);
+  act(() => vi.advanceTimersByTime(26000));
+
+  expect(document.querySelector('main.bigscreen')).toHaveClass('bs-sim-classroom');
+  expect(document.querySelector('main.bigscreen')).not.toHaveClass('bs-sim-reduced-dense');
+  expect(screen.getByTestId('bs-live-standings')).not.toHaveClass('is-classroom-grid');
+  expect(screen.getAllByTestId('bs-live-row')).toHaveLength(7);
+  expect(screen.getByTestId('bs-live-page-status')).toHaveTextContent(/Page [123] of 3/);
+  expect(within(screen.getAllByTestId('bs-scorecard')[0])
+    .getByText('North Coast Trailblazers')).toBeInTheDocument();
+  expect(within(screen.getByTestId('bs-live-standings'))
+    .getByText('Classroom Franchise 8')).toBeInTheDocument();
 });
 
 test('reduced-motion small-league simulation keeps the standard split wall', () => {
@@ -182,7 +216,8 @@ test('reduced-motion small-league simulation keeps the standard split wall', () 
 
   render(<SimulateFlood />);
 
-  expect(document.querySelector('main.bigscreen')).not.toHaveClass('bs-sim-reduced-dense');
+  expect(document.querySelector('main.bigscreen')).not.toHaveClass(
+    'bs-sim-classroom', 'bs-sim-reduced-dense');
   expect(screen.getByTestId('bs-live-standings')).not.toHaveClass('is-classroom-grid');
   expect(screen.getAllByTestId('bs-live-row')).toHaveLength(2);
 });
