@@ -72,7 +72,9 @@ export function StandingsShuffle() {
         <h1 className="bs-phase-title">{PHASE_NAMES.RESULTS}</h1>
         <p className="bs-sub">Round {game.round}</p>
       </header>
-      <div className={`bs-shuffle${reduced ? ' is-static-grid' : ''}`} data-testid="bs-shuffle">
+      <div className={`bs-shuffle${reduced ? ' is-static-grid' : ''}${
+        reduced && rows.length > 12 ? ' is-classroom-grid' : ''}`}
+        data-testid="bs-shuffle">
         {visibleRows.map((s) => {
           // Bottom-up reveal: an unrevealed row is absent — EXCEPT the top
           // three, whose shrouded placeholders hold the podium slots open.
