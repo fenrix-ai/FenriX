@@ -83,19 +83,27 @@
 .bs-shuffle-shroud { color: var(--gold); letter-spacing: 0.06em; }
 .bs-page-status { align-self: center; margin: 8px 0 0; color: var(--dim);
   font-size: clamp(13px, 1.15vw, 20px); }
-.bs-shuffle.is-static-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
+.bs-shuffle.is-static-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
   max-width: none; gap: 7px 12px; }
-.bs-shuffle.is-static-grid .bs-shuffle-row { min-width: 0; display: grid;
+.bs-shuffle.is-static-grid .bs-shuffle-row { min-width: 0; gap: 8px; padding: 6px 9px;
+  font-size: clamp(14px, 1.35vw, 24px); }
+.bs-shuffle.is-static-grid .bs-shuffle-rank { min-width: 2em; }
+.bs-shuffle.is-static-grid .bs-delta { min-width: 2.6em; }
+.bs-shuffle.is-static-grid.is-classroom-grid {
+  grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.bs-shuffle.is-static-grid.is-classroom-grid .bs-shuffle-row { display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   grid-template-areas: "rank mark delta" "name name name" "record record record";
   align-content: center; gap: 2px 6px; padding: 6px 8px;
   font-size: clamp(12px, 1.05vw, 24px); }
-.bs-shuffle.is-static-grid .bs-shuffle-rank { grid-area: rank; min-width: 0; }
-.bs-shuffle.is-static-grid svg { grid-area: mark; justify-self: center; }
-.bs-shuffle.is-static-grid .bs-shuffle-name { grid-area: name; min-width: 0;
+.bs-shuffle.is-static-grid.is-classroom-grid .bs-shuffle-rank {
+  grid-area: rank; min-width: 0; }
+.bs-shuffle.is-static-grid.is-classroom-grid svg { grid-area: mark; justify-self: center; }
+.bs-shuffle.is-static-grid.is-classroom-grid .bs-shuffle-name { grid-area: name; min-width: 0;
   line-height: 1.08; overflow-wrap: anywhere; }
-.bs-shuffle.is-static-grid .bs-shuffle-record { grid-area: record; }
-.bs-shuffle.is-static-grid .bs-delta { grid-area: delta; min-width: 0; text-align: right; }
+.bs-shuffle.is-static-grid.is-classroom-grid .bs-shuffle-record { grid-area: record; }
+.bs-shuffle.is-static-grid.is-classroom-grid .bs-delta {
+  grid-area: delta; min-width: 0; text-align: right; }
 
 /* --- Plan 3b Task 2: FinaleWall on the bs-* clamp scale --- */
 .bs-finale-kicker { font-size: clamp(16px, 2vw, 30px); letter-spacing: 0.2em;
@@ -155,7 +163,8 @@
   .bs-live-standings { width: clamp(270px, 31vw, 340px); }
   .bs-scorecard { gap: 7px; padding: 9px; }
   .bs-scorecard > svg { display: none; }
-  .bs-shuffle.is-static-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .bs-shuffle.is-static-grid.is-classroom-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr)); }
 }
 
 /* A 720p classroom wall has only three card rows to spend. Compact the lobby
@@ -185,7 +194,8 @@
   .bs-led { margin-left: auto; }
   .bs-sim-split { flex-direction: column; }
   .bs-live-standings { width: 100%; }
-  .bs-shuffle.is-static-grid { grid-template-columns: 1fr; }
+  .bs-shuffle.is-static-grid,
+  .bs-shuffle.is-static-grid.is-classroom-grid { grid-template-columns: 1fr; }
   .bs-podium { align-items: stretch; flex-direction: column; }
   .bs-finale { height: auto; min-height: 100dvh; }
   .bigscreen .bs-reveal-chart { flex: none; }

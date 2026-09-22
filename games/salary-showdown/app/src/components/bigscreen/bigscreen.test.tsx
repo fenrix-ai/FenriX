@@ -143,9 +143,24 @@ test('reduced motion exposes all 21 final placements immediately', () => {
   render(<StandingsShuffle />);
 
   expect(document.querySelector('main.bigscreen')).toHaveClass('bs-results');
+  expect(screen.getByTestId('bs-shuffle')).toHaveClass('is-classroom-grid');
   expect(screen.getAllByTestId('bs-shuffle-row')).toHaveLength(21);
   expect(screen.getByText('Franchise 1')).toBeInTheDocument();
   expect(screen.getByText('Franchise 21')).toBeInTheDocument();
+});
+
+test('reduced motion keeps small-league standings at their readable wall scale', () => {
+  mocks.reduced = true;
+  mocks.professor = {
+    game: game({ phase: 'RESULTS', teamCount: 2 }),
+    round: { games: [], standings: standings(2), awards: {}, boxCsv: '' },
+  };
+
+  render(<StandingsShuffle />);
+
+  expect(screen.getByTestId('bs-shuffle')).toHaveClass('is-static-grid');
+  expect(screen.getByTestId('bs-shuffle')).not.toHaveClass('is-classroom-grid');
+  expect(screen.getAllByTestId('bs-shuffle-row')).toHaveLength(2);
 });
 
 test('dense lobby preserves every full franchise name and role in compact cards', () => {
