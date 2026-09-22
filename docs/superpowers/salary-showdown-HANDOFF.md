@@ -85,7 +85,7 @@ top-3 in **86%** of simulated seasons and wins the title in **48%**.
 | Current branch | `main` @ `eeac5cf` (2026-09-16 catch-up: playtest-2 + student-created teams merged 2026-08-23 @ `8add828`; then the two stranded 2026-08-15 fixes — Coach mount-seed locked lineup `e930761`, standings W/$M em-dash `eeac5cf` — cherry-picked, battery-verified, pushed) |
 | Open branch work | none for Salary Showdown. `claude/upbeat-almeida-f07a76` (DRP hardship-only, 2026-07-27) is SUPERSEDED by `756d3db` and only awaits deletion (catch-up plan Task 6). Everything else open is in `docs/superpowers/plans/2026-09-16-catch-up-to-main.md` |
 | `main` vs `origin/main` | in sync @ `eeac5cf` (pushed 2026-09-16; repo `fenrix-ai/FenriX` is PUBLIC — §2a posture unchanged) |
-| Production | **LIVE but BEHIND `main`** — Firebase project `salary-showdown` (Blaze), Hosting `https://salary-showdown.web.app` serves `index-DK89VFRi.js` built @ `1cd8e8a` (2026-08-19); 15 callables incl. `createTeam` + `(default)` Firestore in `us-west1`, anonymous auth on, $10 email budget alert armed (Dylan to verify, §4). NOT live yet: panel zero-team create + Start gating (`61e5f75`) and both 2026-09-16 fixes. Bundle `index-CfTQjkxR.js` is rebuilt from `eeac5cf` and staged in `backend/dist`; the hosting deploy is Dylan's to run (§5 — classifier-blocked for the assistant) |
+| Production | **LIVE, caught up @ `eeac5cf`** — Firebase project `salary-showdown` (Blaze), Hosting `https://salary-showdown.web.app` serves `index-CfTQjkxR.js` (Dylan's hosting release, 2026-09-16, verified by curl); 15 callables incl. `createTeam` + `(default)` Firestore in `us-west1`, anonymous auth on, $10 email budget alert armed (Dylan to verify, §4). Scripted prod smoke NOT yet re-run on this build (§5) |
 | Backend test suite | **27 files / 191 tests green** (fresh emulator, 2026-09-16; backend tree unchanged since `8add828`) |
 | App unit suite | **15 files / 81 tests green** (2026-09-16) |
 | App integration suite | **20 files / 38 tests green** (live emulators, 2026-09-16, one run on the merge candidate; browser-transport pin per §3) |
@@ -347,11 +347,7 @@ use an explicit `prod` alias.
 
 ## 5. Pre-class checklist (small, tracked, not yet done)
 
-- **Deploy production to `main`** — `cd games/salary-showdown/backend && firebase deploy --only hosting --project salary-showdown`
-  (bundle `index-CfTQjkxR.js` already staged from `eeac5cf`; functions unchanged in behaviour since the 2026-08-19 deploy —
-  the only `functions/src` diff is a comment). Verify with
-  `curl -s https://salary-showdown.web.app/ | grep -o 'index-[A-Za-z0-9_-]*\.js'`, then run the scripted smoke
-  (`docs/superpowers/salary-showdown-prod-smoke.md`). Classifier-blocked for the assistant — Dylan runs it.
+- **Scripted prod smoke on the 2026-09-16 build** — from `games/salary-showdown/app`: `node scripts/prod-smoke.mjs` (2–4 min, plays a full season on prod; see `docs/superpowers/salary-showdown-prod-smoke.md`). The hosting release itself is verified (`curl` shows `index-CfTQjkxR.js`); only the smoke is outstanding.
 - **30-second manual drag QA** at `/game/lineup` — drag a bench guard onto a guard slot (should
   swap) and a wing onto a guard slot (should snap back). The dnd-kit gesture is **provably
   un-automatable** (4 independent attempts across 2 agents; synthetic pointer events don't satisfy
