@@ -22,11 +22,15 @@ export type ScatterTIProps = {
 export function ScatterTI({ rows, selectedPid = null, onSelectPid,
   highlightPids, visiblePids }: ScatterTIProps) {
   const g = scatterGeometry(rows, F);
+  const interactive = Boolean(onSelectPid);
   const x0 = F.padL, x1 = F.w - F.padR, y0 = F.padT, y1 = F.h - F.padB;
   const points = visiblePids ? g.points.filter((point) => visiblePids.has(point.pid)) : g.points;
   return (
-    <svg data-testid="chart-scatter-ti" viewBox={`0 0 ${F.w} ${F.h}`} role="img"
-      aria-label="Hype versus TrueImpact, traps and bargains labeled"
+    <svg data-testid="chart-scatter-ti" viewBox={`0 0 ${F.w} ${F.h}`}
+      role={interactive ? 'group' : 'img'}
+      aria-label={interactive
+        ? 'Interactive Hype versus TrueImpact player chart'
+        : 'Hype versus TrueImpact, traps and bargains labeled'}
       data-total-points={g.points.length} data-visible-points={points.length}
       style={{ width: '100%', height: 'auto', display: 'block' }}>
       <desc>
@@ -62,10 +66,10 @@ export function ScatterTI({ rows, selectedPid = null, onSelectPid,
         return (
         <circle key={p.pid} cx={p.x} cy={p.y} r={DOT[p.cls].r + (selected ? 2 : 0)}
           fill={DOT[p.cls].fill} opacity={p.cls === 'normal' ? 0.62 : 0.94}
-          role={onSelectPid ? 'button' : undefined}
-          tabIndex={onSelectPid ? 0 : undefined}
-          aria-label={onSelectPid ? label : undefined}
-          aria-pressed={onSelectPid ? selected : undefined}
+          role={interactive ? 'button' : undefined}
+          tabIndex={interactive ? 0 : undefined}
+          aria-label={interactive ? label : undefined}
+          aria-pressed={interactive ? selected : undefined}
           data-highlighted={highlighted ? 'true' : 'false'}
           stroke={selected ? 'var(--gold)' : highlighted ? 'var(--ss-accent-sky)' : 'none'}
           strokeWidth={selected || highlighted ? 3 : 0}

@@ -89,7 +89,7 @@ export function RevealExplorer({ rows, teams }: {
         )}
       </div>
 
-      <div className={styles.pointList} aria-label="Visible player data">
+      <div className={styles.pointList} role="region" aria-label="Visible player data" tabIndex={0}>
         <h4>Visible player data</h4>
         <ul>
           {rows.filter((row) => visiblePids.has(row.pid)).map((row) => (
