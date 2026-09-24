@@ -32,3 +32,12 @@ _notes/
 agent_context/
 docs/chapman/
 meetings_transcripts/
+
+# Quant finance work — keep the dir skeletons, ignore bulk/generated content
+# Challenge data: keep the folder, ignore everything inside it
+quant_finance/data/*
+!quant_finance/data/.gitkeep
+# Model weights are huge — never commit them.
+# (registry.yaml, scripts/, cards/, README.md, AND results/ under models/ ARE
+#  tracked: small config + benchmark outputs + the report go to GitHub.)
+quant_finance/models/gguf/
