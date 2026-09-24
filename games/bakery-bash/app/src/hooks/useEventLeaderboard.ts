@@ -275,6 +275,11 @@ export function useEventLeaderboard() {
       new URLSearchParams(window.location.search).get("session"),
     );
   }, []);
+  const requestedGameId = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const value = new URLSearchParams(window.location.search).get("game");
+    return typeof value === "string" && value.trim() ? value.trim() : null;
+  }, []);
   const [roster, setRoster] = useState<EventRosterPlayer[]>([]);
   const [boardState, setBoardState] = useState<StoredBoardState>(() =>
     loadStoredBoardState(sessionId),
@@ -284,16 +289,18 @@ export function useEventLeaderboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const eventBoardRef = useMemo(() => doc(db, "eventBoards", sessionId), [sessionId]);
+  const ownerGameId = boardState.ownerGameId;
+  const authorizationGameId = gameId ?? requestedGameId ?? ownerGameId;
 
   useEffect(() => {
-    if (!gameId) {
+    if (!authorizationGameId) {
       setGameProfessorUid(null);
       setGameProfessorResolved(true);
       return;
     }
 
     setGameProfessorResolved(false);
-    const gameRef = doc(db, "games", gameId);
+    const gameRef = doc(db, "games", authorizationGameId);
     return onSnapshot(
       gameRef,
       (snapshot) => {
@@ -312,18 +319,19 @@ export function useEventLeaderboard() {
         setGameProfessorResolved(true);
       },
     );
-  }, [gameId]);
+  }, [authorizationGameId]);
 
   const isGameProfessor =
     user !== null && gameProfessorUid !== null && user.uid === gameProfessorUid;
   const canManageBoard = isProfessor || isGameProfessor;
   const accessLoading =
-    professorLoading || (!isProfessor && Boolean(gameId) && !gameProfessorResolved);
+    professorLoading ||
+    (!isProfessor && Boolean(authorizationGameId) && !gameProfessorResolved);
 
   const withBoardOwnership = (state: StoredBoardState): StoredBoardState => {
     const ownerGameId =
       state.ownerGameId ??
-      (gameId && canManageBoard ? gameId : null);
+      ((gameId ?? requestedGameId) && canManageBoard ? (gameId ?? requestedGameId) : null);
     return {
       ...state,
       ownerGameId,

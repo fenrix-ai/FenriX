@@ -23,6 +23,14 @@ const FREEZE_SECONDS = 2;
 // simulating, results_ready, lobby, and game_over don't need the overlay.
 const SUBMISSION_PHASE_BASES = new Set(["bid_ad", "bid_chef", "roster", "decide"]);
 
+function isStickyStandaloneRoute(pathname: string) {
+  return (
+    pathname === "/leaderboard" ||
+    pathname.startsWith("/event/") ||
+    pathname.startsWith("/professor")
+  );
+}
+
 /**
  * App-level listener that stays mounted regardless of route.
  *
@@ -198,7 +206,7 @@ export function GamePhaseListener() {
       }
 
       if (typeof phase !== "string" || phase === "lobby") return;
-      if (pathnameRef.current.startsWith("/professor")) return;
+      if (isStickyStandaloneRoute(pathnameRef.current)) return;
 
       const base = parseGamePhase(phase).base;
       let target: string;
@@ -305,7 +313,7 @@ export function GamePhaseListener() {
         });
 
         if (livePhase === "lobby") return;
-        if (pathnameRef.current.startsWith("/professor")) {
+        if (isStickyStandaloneRoute(pathnameRef.current)) {
           // Professor stays on /professor; just keep phase + ends in sync.
           if (phaseNameRef.current !== livePhase) {
             dispatch({ type: "SET_PHASE", payload: livePhase });
