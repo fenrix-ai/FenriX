@@ -1,0 +1,142 @@
+# models/registry.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# Single source of truth for the local-LLM benchmark on a 32 GB RTX 5090.
+# Consumed by scripts/{download,serve,bench}.sh and (later) the notebooks.
+#
+# Grid: 3 provider archetypes × 3 size tiers = 9 models, all GGUF (llama.cpp).
+#   providers:  gemma (US frontier / Google) · qwen (CN / Alibaba, RL-heavy) · llama (US classic / Meta)
+#   size_tier:  big-moe  (large MoE that barely fits 32 GB)
+#               mid-dense (dense model that barely fits 32 GB)
+#               small-fast (smaller/faster, "dumber" — clean fit)
+#
+# Quant baseline is Q4_K_M for cross-model fairness (constant ~4 bits/weight).
+# Models too big for 32 GB at Q4 drop to Q3_K_M — noted per entry via fits_32gb.
+#
+# est_vram_gb / fits_32gb are approximate (Q-level, 8K ctx); exact fit is
+# confirmed on the 5090 at download/serve time. Adding a model = one entry here.
+# ─────────────────────────────────────────────────────────────────────────────
+
+defaults:
+  server_port: 8080
+  context: 8192        # sized for the ~7k-word annual reports + prompt + output
+  ngl: 999             # offload all layers to GPU; override for offload models
+
+models:
+  # ── Gemma 4 — US frontier / Google ────────────────────────────────────────
+  - id: gemma4-26b-a4b
+    provider: gemma
+    size_tier: big-moe
+    kind: moe
+    family: "Gemma 4"
+    params_total: "26B"
+    params_active: "4B"
+    hf_repo: "unsloth/gemma-4-26B-A4B-it-GGUF"
+    quant: "Q4_K_M"
+    context: 8192
+    est_vram_gb: 19
+    fits_32gb: clean
+    notes: "US-frontier MoE; only 4B active → fast for its total size. GGUF ~17 GB (UD-Q4_K_M)."
+
+  - id: gemma4-31b
+    provider: gemma
+    size_tier: mid-dense
+    kind: dense
+    family: "Gemma 4"
+    params_total: "31B"
+    params_active: null
+    hf_repo: "unsloth/gemma-4-31B-it-GGUF"
+    quant: "Q4_K_M"
+    context: 8192
+    est_vram_gb: 20
+    fits_32gb: clean
+    notes: "Barely-fits dense at Q4 (GGUF ~18 GB); #3 open model on Arena at release."
+
+  - id: gemma4-12b
+    provider: gemma
+    size_tier: small-fast
+    kind: dense
+    family: "Gemma 4"
+    params_total: "12B"
+    params_active: null
+    hf_repo: "unsloth/gemma-4-12b-it-GGUF"
+    quant: "Q4_K_M"
+    context: 8192
+    est_vram_gb: 8
+    fits_32gb: clean
+    notes: "Small/fast Gemma (GGUF ~7 GB); lots of VRAM headroom."
+
+  # ── Qwen3.5 — CN / Alibaba (RL-heavy post-training) ───────────────────────
+  - id: qwen35-35b-a3b
+    provider: qwen
+    size_tier: big-moe
+    kind: moe
+    family: "Qwen3.5"
+    params_total: "35B"
+    params_active: "3B"
+    hf_repo: "unsloth/Qwen3.5-35B-A3B-GGUF"
+    quant: "Q4_K_M"
+    context: 8192
+    est_vram_gb: 20
+    fits_32gb: clean
+    notes: "CN-frontier MoE; only 3B active → fastest MoE in the row."
+
+  - id: qwen35-27b
+    provider: qwen
+    size_tier: mid-dense
+    kind: dense
+    family: "Qwen3.5"
+    params_total: "27B"
+    params_active: null
+    hf_repo: "unsloth/Qwen3.5-27B-GGUF"
+    quant: "Q4_K_M"
+    context: 8192
+    est_vram_gb: 16
+    fits_32gb: clean
+    notes: "Largest dense Qwen3.5; barely-fits tier at higher quant."
+
+  - id: qwen35-9b
+    provider: qwen
+    size_tier: small-fast
+    kind: dense
+    family: "Qwen3.5"
+    params_total: "9B"
+    params_active: null
+    hf_repo: "unsloth/Qwen3.5-9B-GGUF"
+    quant: "Q4_K_M"
+    context: 8192
+    est_vram_gb: 6
+    fits_32gb: clean
+    notes: "Small/fast Qwen; clean fit."
+
+  # ── Llama — US classic / Meta (mixed generations: 3.3 / 3.1) ──────────────
+  # NOTE: the Llama big-MoE (Llama 4 Scout, 109B / 17B-active) was dropped — its
+  # Q4_K_M GGUF is ~65 GB, far past 32 GB. The big-MoE size trajectory is
+  # extrapolated from the Gemma/Qwen MoEs + the dense size sweep instead.
+  - id: llama33-70b
+    provider: llama
+    size_tier: mid-dense
+    kind: dense
+    family: "Llama 3.3"
+    params_total: "70B"
+    params_active: null
+    hf_repo: "unsloth/Llama-3.3-70B-Instruct-GGUF"
+    quant: "Q3_K_M"
+    context: 8192
+    ngl: 42                 # partial GPU offload; TUNE on the 5090 (70B has 80 layers)
+    est_vram_gb: 34
+    fits_32gb: offload
+    notes: "No ~30B dense Llama exists → this is the honest mid-dense entry. Needs CPU offload on 32 GB, so expect much lower tok/s."
+
+  - id: llama31-8b
+    provider: llama
+    size_tier: small-fast
+    kind: dense
+    family: "Llama 3.1"
+    params_total: "8B"
+    params_active: null
+    hf_repo: "unsloth/Llama-3.1-8B-Instruct-GGUF"
+    quant: "Q4_K_M"
+    context: 8192
+    est_vram_gb: 5
+    fits_32gb: clean
+    notes: "The classic small dense baseline; clean fit."
