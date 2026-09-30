@@ -1,0 +1,90 @@
+[
+  {
+    "guess": "1) **AMD (Advanced Microcomputing Devices)**\n\n2) **Specific Clues:**\n*   **Product Lineup & Architecture:** The report mentions \"x86 microprocessors,\" \"APUs,\" and \"chiplets.\" Specifically, it references the \"Helix\" core architecture (a fictionalized version of **Zen**) and \"Stacked S-Cache\" (a reference to **3D V-Cache**).\n*   **Semi-Custom Business:** The text explicitly states the company developed the SoCs for the **Sony PlayForge 5** (PlayStation 5) and **Microsoft PixelBox Series X/S** (Xbox Series X/S), as well as a custom APU for the **Steam Deck**. AMD is the sole provider of these chips.\n*   **The \"Pending Acquisition\":** The report describes a $29 billion acquisition of \"Cortex Logic, Inc.\" expected to close in early 2022. This is a direct parallel to AMD's acquisition of **Xilinx**, which was valued at approximately $35-40 billion and closed in February 2022.\n*   **Competitive Landscape:** It identifies **Intel** as the primary competitor in CPUs and **NVIDIA** as the primary competitor in GPUs, and specifically mentions NVIDIA's attempt to acquire \"ARM-based\" companies (referencing the failed NVIDIA-ARM deal).\n*   **Leadership:** The mention of a female CEO (\"Dr. Carol Harmon\") who is highly regarded and appointed to a Presidential council is a clear reference to **Dr. Lisa Su**.",
+    "reasoning": "",
+    "finish_reason": "stop",
+    "prompt_tokens": 11426,
+    "completion_tokens": 329,
+    "latency_s": 9.3,
+    "model": "gemma4-31b",
+    "mode": "nothink",
+    "company": 1
+  },
+  {
+    "guess": "1) **AppLovin**\n\n2) **Clues:**\n*   **The Business Model:** The company operates a dual-segment model consisting of a high-scale AI-powered advertising platform (Advertising) and a portfolio of mobile games (Apps), which is the exact structure of AppLovin.\n*   **The Product Suite:** The fictional products map directly to AppLovin's real tools: \"NexReach\" is **AppDiscovery**, \"PEAK\" is **MAX** (their in-app bidding/mediation tool), and \"Calibrate\" is **Adjust** (the measurement/analytics platform they acquired).\n*   **The CTV Expansion:** The mention of \"StreamLink\" and the focus on Connected TV (CTV) mirrors AppLovin's recent strategic push into the CTV advertising space.\n*   **The Gaming Divestiture:** The report mentions a term sheet to sell the mobile gaming business for approximately $1 billion. This mirrors AppLovin's recent strategic shift to distance itself from first-party game development to focus on its software platform.\n*   **The AI Engine:** The emphasis on a proprietary AI engine (\"Prism\") that optimizes ad spend and matches demand with supply reflects AppLovin's heavy marketing of its **AXON** AI engine.",
+    "reasoning": "",
+    "finish_reason": "stop",
+    "prompt_tokens": 10921,
+    "completion_tokens": 269,
+    "latency_s": 8.7,
+    "model": "gemma4-31b",
+    "mode": "nothink",
+    "company": 2
+  },
+  {
+    "guess": "1) **General Motors (GM)**\n\n2) **Specific Clues:**\n*   **The Ignition Switch Recall:** The text repeatedly mentions legal proceedings and charges related to the \"Ignition Switch Recall,\" which was a massive, defining safety crisis for General Motors.\n*   **The \"RUC Trust\" and Bankruptcy Court:** The mention of the \"RUC Trust\" (referring to the Old GM/New GM split) and the Southern District of New York Bankruptcy Court refers to GM's 2009 government-led bankruptcy and reorganization.\n*   **Financial Services Arm:** The report describes a heavy reliance on a financial services entity (referred to as [COMPANY], which is GM Financial) to provide leasing and financing to customers and dealers.\n*   **Specific Market Data:** The report cites U.S. vehicle sales of 3.3 million units with a 17.9% market share for 2018, which aligns precisely with GM's historical performance data for that period.\n*   **Strategic Partnerships:** The mention of \"Meridian Motor Group Pilot Autonomy\" receiving investment from SoftBank and partnering with a company (Sakura Motor, a pseudonym for Honda) to develop a SAV (Shared Autonomous Vehicle) mirrors the real-world partnership between Cruise (GM's autonomous unit) and Honda.",
+    "reasoning": "",
+    "finish_reason": "stop",
+    "prompt_tokens": 14116,
+    "completion_tokens": 278,
+    "latency_s": 10.2,
+    "model": "gemma4-31b",
+    "mode": "nothink",
+    "company": 3
+  },
+  {
+    "guess": "1) **Kroger Co.**\n\n2) **Specific Clues:**\n*   **Store Count and Profile:** The report mentions operating 2,515 supermarkets, with a high percentage having pharmacies (2,270) and fuel centers (1,537). This closely matches Kroger's operational scale and business model.\n*   **Specific Brand Names:** While names were fictionalized, the \"Our Brands\" tiers (Reserve Collection, etc.) and the mention of \"Clear Harvest\" (a proxy for *Simple Truth*) mirror Kroger's private label strategy.\n*   **Financial Events:** The report details the sale of a \"convenience store business unit\" for $1.7 billion in April 2018. This is a direct reference to Kroger's sale of its Kwik Trip/convenience store assets.\n*   **Labor Relations:** The mention of approximately 360 collective bargaining agreements and specific contributions to the \"United Food and Commercial Workers (UFCW) Consolidated Pension Plan\" is a hallmark of Kroger's labor structure.\n*   **Fiscal Calendar:** The fiscal year ending on the last day of January (with a 53rd week in 2017) is the exact accounting calendar used by Kroger.",
+    "reasoning": "",
+    "finish_reason": "stop",
+    "prompt_tokens": 13102,
+    "completion_tokens": 267,
+    "latency_s": 9.6,
+    "model": "gemma4-31b",
+    "mode": "nothink",
+    "company": 4
+  },
+  {
+    "guess": "1) **AmerisourceBergen** (now known as Cencora)\n\n2) **Specific Clues:**\n*   **The \"Nexus Health Exchange\" Joint Venture:** The report describes a massive 2017 transaction where the \"Core ATS Business\" was contributed to a joint venture. This is a direct model of AmerisourceBergen's creation of the **The pharmacy services joint venture with Walgreens** (and the subsequent complex asset exchanges).\n*   **Customer Concentration (CVS Health):** The text explicitly mentions that its largest customer is **CVS Health**, accounting for approximately 18.6% of total consolidated revenues. This is a hallmark of AmerisourceBergen's financial profile, as they are a primary wholesaler for CVS.\n*   **Specific Acquisitions:** The report mentions the acquisition of **Maple Care Pharmacy** (a fictionalized version of **Alliance Boots** or their various international pharmacy acquisitions) and **MSD** (likely referring to **Medical Supplies Depot** or similar medical supply acquisitions).\n*   **Opioid Litigation:** The mention of being a defendant in many cases alleging claims related to the **distribution of controlled substances** (opioids) and the specific mention of a **New York state tax on opioid sales** aligns perfectly with the legal challenges faced by the \"Big Three\" wholesalers (AmerisourceBergen, Cardinal Health, and McKesson) during this period.\n*   **Financial Scale and Margins:** The revenue figures (approx. $184 billion) and the extremely thin gross profit margins (around 5%) are characteristic of the pharmaceutical wholesale industry, where high volume and low margins are the norm.",
+    "reasoning": "",
+    "finish_reason": "stop",
+    "prompt_tokens": 12897,
+    "completion_tokens": 347,
+    "latency_s": 11.4,
+    "model": "gemma4-31b",
+    "mode": "nothink",
+    "company": 5
+  },
+  {
+    "guess": "1) **Netflix**\n\n2) **Clues:**\n*   **AWS Dependency:** The report explicitly mentions that the company runs the \"vast majority of our computing on AWS\" and notes the unique tension that while the retail side of Amazon competes with them, they rely on AWS for infrastructure. This is a well-known, specific architectural characteristic of Netflix.\n*   **Business Model Pivot:** The text describes the transition to an \"ad-supported subscription plan\" and the scaling of \"original content\" and \"games,\" which mirrors Netflix's recent strategic shifts to combat subscriber saturation.\n*   **Content Amortization:** The mention of estimating \"content amortization patterns\" based on \"viewing patterns\" for licensed and produced series/films is the standard accounting treatment for a major streaming studio.\n*   **Industry-Specific Labor Risks:** The reference to collective bargaining agreements with \"writers, directors, actors, [and] trade employees\" and the risk of \"work stoppages\" (strikes) directly aligns with the 2023 WGA and SAG-AFTRA strikes that heavily impacted Netflix.\n*   **Financial Profile:** The mention of substantial long-term debt (senior notes) used to fund original content production is a hallmark of Netflix's historical financing strategy to build its content library.",
+    "reasoning": "",
+    "finish_reason": "stop",
+    "prompt_tokens": 10504,
+    "completion_tokens": 271,
+    "latency_s": 9.9,
+    "model": "gemma4-31b",
+    "mode": "nothink",
+    "company": 6
+  },
+  {
+    "guess": "1) **Palantir Technologies Inc.**\n\n2) **Specific Clues:**\n*   **Founding and Origins:** The report states the company was founded in 2003 and started by building software for the U.S. intelligence community to assist in counterterrorism\u2014this is the exact origin story of Palantir.\n*   **Product Lineup:** The fictional names \"DataForge Shield,\" \"Core,\" \"Deploy,\" and \"AIP\" map perfectly to Palantir's actual core platforms: **Palantir Gotham** (Shield/Defense), **Palantir Foundry** (Core/Enterprise), **Palantir Apollo** (Deploy/Continuous Delivery), and **Palantir AIP** (Artificial Intelligence Platform).\n*   **The \"Bootcamps\" Strategy:** The text mentions the introduction of \"AIP bootcamps\" in 2023 to accelerate customer acquisition by delivering real workflows on actual data in days. This is Palantir's current primary go-to-market strategy.\n*   **Customer Profile and Revenue Split:** The report describes a heavy reliance on government contracts (60%) and a growing commercial segment, as well as a specific mention of a strategic partnership with **Fujitsu** in Japan, which is a real-world partnership Palantir announced.\n*   **Governance and Structure:** The mention of a multi-class stock structure and a \"Founder Voting Trust\" involving specific founders (fictionalized as Weston, Cross, and Shore) mirrors the unique and controversial voting control held by Palantir's founders (Alex Karp, Peter Thiel, and Stephen Cohen).",
+    "reasoning": "",
+    "finish_reason": "stop",
+    "prompt_tokens": 10773,
+    "completion_tokens": 341,
+    "latency_s": 10.9,
+    "model": "gemma4-31b",
+    "mode": "nothink",
+    "company": 7
+  },
+  {
+    "guess": "1) **Western Digital**\n\n2) **Specific Clues:**\n*   **The Joint Venture with \"Kaisen Memory\":** The report describes a complex joint venture with \"Kaisen Memory\" (a fictional name for **Kioxia**) to manufacture NAND flash wafers in Japan (specifically mentioning facilities in Hoshima and Tachibana). Western Digital and Kioxia have a long-standing, high-profile joint venture for NAND production.\n*   **The \"Separation\" / Spin-off:** The text describes a separation from \"FlashCore Storage\" (the parent) to become a standalone company. This mirrors Western Digital's recently announced strategic plan to split its HDD (Hard Disk Drive) and Flash businesses into two independent public companies.\n*   **Market Segmentation:** The division of the business into \"Cloud,\" \"Client,\" and \"Consumer\" end markets, and the specific product mix (SSDs, removable cards, and USB drives), is identical to Western Digital's operational reporting structure.\n*   **Manufacturing Footprint:** The mention of in-house assembly and test facilities in **Penang, Malaysia**, is a specific geographic marker for Western Digital's operational hubs.\n*   **Competitive Set:** The list of competitors\u2014Samsung, SK Hynix, and \"Kaisen Memory\" (Kioxia)\u2014represents the exact \"Big Four\" of the global NAND flash memory market.",
+    "reasoning": "",
+    "finish_reason": "stop",
+    "prompt_tokens": 10978,
+    "completion_tokens": 290,
+    "latency_s": 10.2,
+    "model": "gemma4-31b",
+    "mode": "nothink",
+    "company": 8
+  }
+]

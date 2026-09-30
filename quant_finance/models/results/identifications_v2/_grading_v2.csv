@@ -1,0 +1,57 @@
+company,real,model,correct,guess,completion_tokens,latency_s
+1,AMD,gemma4-12b,1,"1) **AMD (Advanced Micro Devices, Inc.)**  2) **Specific Clues:** *   **Product Lineup & Architecture:** The report describes a company that",315,4.4
+2,AppLovin,gemma4-12b,1,"1) **AppLovin**  2) **Specific Clues:** *   **Product Portfolio (NexReach, PEAK, Calibrate, StreamLink):** These fictional names directly co",382,5.3
+3,General Motors,gemma4-12b,1,"1) **General Motors (GM)**  2) **Specific Clues:** *   **The Ignition Switch Recall:** The text explicitly mentions ""proceedings related to ",288,5.1
+4,Kroger,gemma4-12b,0,"1) ** Albertsons Companies**  2) **Specific Clues:** *   **The ""Extra Week"" and Fiscal Year End:** The report mentions a fiscal year ending ",324,5.3
+5,McKesson,gemma4-12b,0,"1) **AmerisourceBergen (now Cencora)**  2) **Specific Clues:** *   **The ""Nexus Health Exchange"" and ""Core MTS Business"" Joint Venture:** Th",377,5.5
+6,Netflix,gemma4-12b,1,"1) **Netflix, Inc.**  2) **Specific Clues:** *   **Business Model & Content Strategy:** The report describes a company that scales ""original",360,5.2
+7,Palantir,gemma4-12b,1,1) **Palantir Technologies Inc.**  2) **Specific Clues:** *   **Founding and Origin Story:** The report mentions being founded in 2003 and s,332,4.8
+8,SanDisk,gemma4-12b,1,"1) **Western Digital Corporation** (specifically modeled on the **SanDisk** brand/division).  2) **Specific Clues:** *   **The ""Spin-off"" an",309,4.5
+1,AMD,gemma4-26b-a4b,1,"1) **Advanced Micro Devices, Inc. (AMD)**  2) **Specific Clues:** * **Product Lineup:** The report describes a company specializing in x86 m",294,3.0
+2,AppLovin,gemma4-26b-a4b,1,"1) **AppLovin Corporation**  2) **Specific Clues:** * **Business Model Segments:** The report describes a dual-segment model consisting of """,297,3.0
+3,General Motors,gemma4-26b-a4b,1,1) **General Motors Company**  2) **Specific Clues:** * **The Ignition Switch Recall:** The text repeatedly mentions significant legal costs,257,3.1
+4,Kroger,gemma4-26b-a4b,0,"1) **Ahold Delhaize**  2) **Specific Clues:** * **The Merger History:** The text explicitly mentions the merger between ""Groupe Delhaize"" an",288,3.2
+5,McKesson,gemma4-26b-a4b,0,"1) **AmerisourceBergen** (now known as **Cencora**)  2) **Specific Clues:** * **The ""Nexus Health Exchange"" Joint Venture:** The report desc",326,3.5
+6,Netflix,gemma4-26b-a4b,1,"1) **Netflix, Inc.**  2) **Specific Clues:** * **Business Model & Recent Evolution:** The text explicitly mentions the transition to an ""ad-",262,2.8
+7,Palantir,gemma4-26b-a4b,1,1) **Palantir Technologies Inc.**  2) **Specific Clues:** * **Origins and Mission:** The report describes a company founded in 2003 that beg,310,3.0
+8,SanDisk,gemma4-26b-a4b,0,"1) **Kioxia Corporation**  2) **Specific Clues:** * **The Joint Venture Structure:** The report describes a complex relationship with ""Kaise",270,3.1
+1,AMD,gemma4-31b,1,"1) **AMD (Advanced Micro Devices, Inc.)**  2) **Specific Clues:** *   **Product Portfolio:** The report describes a company that produces x8",301,9.0
+2,AppLovin,gemma4-31b,1,1) **AppLovin**  2) **Specific Clues:** *   **The Business Model:** The report describes a dual-segment structure consisting of an AI-powere,310,9.8
+3,General Motors,gemma4-31b,1,"1) **General Motors (GM)**  2) **Specific Clues:** *   **The Ignition Switch Recall:** The text explicitly mentions ""proceedings related to ",292,10.5
+4,Kroger,gemma4-31b,1,"1) **Kroger** (The Kroger Co.)  2) **Specific Clues:** *   **Store Count and Profile:** The report mentions operating 2,515 supermarkets, wi",308,10.4
+5,McKesson,gemma4-31b,0,1) **AmerisourceBergen** (now known as **Cencora**)  2) **Specific Clues:** *   **Revenue and Financial Profile:** The report shows revenues,283,10.2
+6,Netflix,gemma4-31b,1,"1) **Netflix**  2) **Specific Clues:** *   **AWS Dependency:** The text explicitly mentions that the company runs the ""vast majority"" of its",281,9.9
+7,Palantir,gemma4-31b,1,1) **Palantir Technologies Inc.**  2) **Specific Clues:** *   **Origin Story:** The report mentions being founded in 2003 to build software ,345,11.2
+8,SanDisk,gemma4-31b,0,"1) **Solidigm** (or more accurately, the **SK Hynix/Solidigm** entity)  2) **Specific Clues:** *   **The Joint Venture with ""Kaisen Memory"":",331,11.2
+1,AMD,llama31-8b,1,1. **AMD (Advanced Micro Devices)**  3-5 specific clues from the text:  1. **Microprocessor offerings**: The report mentions that Vectron Sy,359,2.8
+2,AppLovin,llama31-8b,0,1) My single best guess for the real publicly-traded company this report is most likely modeled on is: Unity Software Inc. (NYSE: U)  3-5 sp,220,2.9
+3,General Motors,llama31-8b,1,1. My single best guess for the real publicly-traded company this report is most likely modeled on is:  General Motors Company (GM)  2. Here,301,3.5
+4,Kroger,llama31-8b,0,1) My single best guess for the real publicly-traded company this report is most likely modeled on is: **Walmart Inc.**  2) Here are 3-5 spe,288,3.5
+5,McKesson,llama31-8b,1,1. My single best guess for the real publicly-traded company this report is most likely modeled on is McKesson Corporation (MCK).  2. Here a,252,3.2
+6,Netflix,llama31-8b,1,"1) My single best guess for the real publicly-traded company this report is most likely modeled on is: **Netflix, Inc.**  2) Here are 3-5 sp",397,3.8
+7,Palantir,llama31-8b,1,1) My single best guess for the real publicly-traded company this report is most likely modeled on is Palantir Technologies Inc. (PLTR).  2),347,3.5
+8,SanDisk,llama31-8b,0,"1) My single best guess for the real publicly-traded company this report is most likely modeled on is: **Micron Technology, Inc.**  2) Here ",188,2.4
+1,AMD,qwen35-27b,1,"1) **Advanced Micro Devices, Inc. (AMD)**  2) **Specific Clues from the Text:** *   **Pending Acquisition:** The report details a pending me",558,11.0
+2,AppLovin,qwen35-27b,1,1) **AppLovin Corporation**  2) **Specific Clues:** *   **Product Name Mapping:** The fictional product names are direct analogs to AppLovin,700,13.1
+3,General Motors,qwen35-27b,1,"1) **General Motors Company**  2) **Specific Clues:** *   **The ""Ignition Switch Recall"":** The report repeatedly references a massive, defi",601,12.8
+4,Kroger,qwen35-27b,1,"1) **Kroger Co.**  2) **Specific Clues:** *   **Store Formats and Services:** The report explicitly mentions ""QuickPick®"" (Kroger's curbside",700,14.1
+5,McKesson,qwen35-27b,0,"1) **AmerisourceBergen Corporation** (now operating as **Cencora** following its 2023 rebranding, but the report reflects the AmerisourceBer",521,11.5
+6,Netflix,qwen35-27b,1,"1) **Netflix, Inc.**  2) **Specific Clues:** *   **Co-Chief Executive Officers:** The text explicitly names ""David Hartwell and Claire Morri",409,9.0
+7,Palantir,qwen35-27b,1,1) **Palantir Technologies Inc.**  2) **Specific Clues:** *   **Founding History & Origin:** The report states the company was founded in **,642,12.2
+8,SanDisk,qwen35-27b,1,"1) **Western Digital Corporation**  2) **Specific Clues:** *   **The ""Spin-Off"" Narrative:** The report describes a separation from a parent",416,9.1
+1,AMD,qwen35-35b-a3b,1,1) **AMD (Advanced Micro Devices)**  2) **Specific Clues:** *   **Product Lineup and Codenames:** The report lists specific product families,544,4.4
+2,AppLovin,qwen35-35b-a3b,0,"1) **Unity Software Inc.**  2) **Specific Clues:** *   **Product Name Parallels:** The report describes ""NexReach"" as a user acquisition sol",700,4.7
+3,General Motors,qwen35-35b-a3b,1,"1) General Motors (GM)  2) **Specific Clues:** *   **The ""Ignition Switch Recall"":** The text explicitly mentions legal proceedings, fines, ",700,5.2
+4,Kroger,qwen35-35b-a3b,1,"1) **Kroger Co.**  2) **Specific Clues:** *   **Fiscal Year End:** The report states the fiscal year ends on the ""last day of January."" This",700,5.3
+5,McKesson,qwen35-35b-a3b,1,"1) **Apex Health Distribution** (Modeled on **McKesson Corporation**)  2) **Specific Clues:** *   **The ""Nexus Health Exchange"" Joint Ventur",642,4.7
+6,Netflix,qwen35-35b-a3b,1,"1) **Netflix, Inc.**  2) **Specific Clues:** *   **AWS Dependency:** The report explicitly states, ""Currently, we run the vast majority of o",373,3.2
+7,Palantir,qwen35-35b-a3b,1,"1) Palantir Technologies  2) **Clues from the text:** *   **Founding History & Origin:** The text states the company was ""founded in 2003"" a",473,4.0
+8,SanDisk,qwen35-35b-a3b,0,"1) **Kioxia Holdings Corporation** (formerly Toshiba Memory Corporation)  2) **Specific Clues:** *   **The ""Kaisen"" Partnership:** The text ",621,4.4
+1,AMD,qwen35-9b,1,"1) **Advanced Micro Devices (AMD)**  2) **Specific Clues:** *   **Product Lineup & Naming:** The report lists the ""Apex"" series (referencing",392,3.3
+2,AppLovin,qwen35-9b,0,"1) **Unity Software** (Ticker: U)  2) **Specific Clues:** *   **The ""Prism"" AI Engine & ""NexReach"" Product:** The report describes an AI-pow",433,3.8
+3,General Motors,qwen35-9b,1,"1) **General Motors (GM)**  2) **Specific Clues:** *   **Ignition Switch Recall:** The report explicitly mentions ""proceedings related to th",324,3.3
+4,Kroger,qwen35-9b,0,"1) **Ahold Corp.** (now known as **The Ahold Delhaize Companies**, following the 2016 merger with Delhaize and the 2021 merger with Stop & S",595,4.7
+5,McKesson,qwen35-9b,0,"1) **Apex Health Distribution** (specifically the company **Apex Healthcare** or its successor, **Apex Health Distribution**, which was late",653,5.0
+6,Netflix,qwen35-9b,1,"Based on the anonymized text provided, here is the identification of the real company:  1) **Netflix, Inc.**  2) **Specific Clues:** *   **E",310,2.9
+7,Palantir,qwen35-9b,1,"Based on the detailed business description, product names, and specific historical context provided in the anonymized report, here is the id",528,4.1
+8,SanDisk,qwen35-9b,1,1) **Western Digital Corporation (WD)**  2) **Specific Clues:** *   **Spin-off from FlashCore Storage:** The report explicitly states the co,394,3.6
